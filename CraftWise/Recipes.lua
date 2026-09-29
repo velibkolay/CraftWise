@@ -318,6 +318,30 @@ local function IsSpellKnown(recipeID)
 	return false
 end
 
+-- Skill-up colour like the game's recipe list: "orange" | "yellow" | "green" | "grey",
+-- or "red" when the skill is below the recipe's requirement. Learned recipes use the colour the
+-- client reported; unlearned ones use the bundled thresholds. nil when nothing is known.
+local CLIENT_COLORS = { [0] = "orange", [1] = "yellow", [2] = "green", [3] = "grey" }
+function ns.SkillUpColor(recipeID, recipe, skill)
+	if recipe.learned and CLIENT_COLORS[recipe.difficulty] then
+		return CLIENT_COLORS[recipe.difficulty]
+	end
+	local t = ns.Thresholds and ns.Thresholds[recipeID]
+	if not (t and skill) then
+		return nil
+	end
+	if skill < t[1] then
+		return "red"
+	elseif skill < t[2] then
+		return "orange"
+	elseif skill < t[3] then
+		return "yellow"
+	elseif skill < t[4] then
+		return "green"
+	end
+	return "grey"
+end
+
 local function MakeRow(prof, recipeID, recipe, prices)
 	local status, required, tooLow = ns.RecipeStatus(prof, recipeID, recipe)
 	local learnCost, learnSource
@@ -339,6 +363,8 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.learnSource = learnSource
 	result.source = recipe.source
 	result.difficulty = recipe.difficulty
+	result.skillColor = ns.SkillUpColor(recipeID, recipe, prof.skill)
+	result.thresholds = ns.Thresholds and ns.Thresholds[recipeID]
 	result.noItemOutput = recipe.noItemOutput or result.noItemOutput
 	result.outputItemID = recipe.output and recipe.output.itemID
 	result.bundledOnly = recipe.bundledOnly

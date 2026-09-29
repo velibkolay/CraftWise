@@ -125,3 +125,15 @@ it("other-faction-only vendor recipes are flagged and hidden by the filter", fun
 	eq(r.otherFactionOnly, true); eq(r.vendorFaction, "Alliance")
 	eq(find(ns.BuildRows(165, true, true)), nil)
 end)
+
+it("skill-up colour: client colour for learned, thresholds for unlearned", function()
+	local ns = LoadAddon({ data = true })
+	local t = ns.Thresholds[2149] -- { 1, 40, 55, 70 }
+	eq(ns.SkillUpColor(2149, { learned = true, difficulty = 1 }, 60), "yellow")
+	eq(ns.SkillUpColor(2149, { learned = false }, t[1] - 1), "red")
+	eq(ns.SkillUpColor(2149, { learned = false }, t[2] - 1), "orange")
+	eq(ns.SkillUpColor(2149, { learned = false }, t[3] - 1), "yellow")
+	eq(ns.SkillUpColor(2149, { learned = false }, t[4] - 1), "green")
+	eq(ns.SkillUpColor(2149, { learned = false }, t[4]), "grey")
+	eq(ns.SkillUpColor(99999999, { learned = false }, 50), nil)
+end)

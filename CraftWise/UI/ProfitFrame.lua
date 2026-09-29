@@ -34,6 +34,11 @@ local STATUS_TEXT = {
 local ARROW_DOWN = " |TInterface\\Buttons\\Arrow-Down-Up:12:12:0:-3|t"
 local ARROW_UP = " |TInterface\\Buttons\\Arrow-Up-Up:12:12:0:3|t"
 
+-- Recipe name colours as in the game's profession window.
+local SKILL_COLORS = {
+	red = "|cffff4040", orange = "|cffff8040", yellow = "|cffffff00", green = "|cff40bf40", grey = "|cff808080",
+}
+
 local frame, rows, tabs = nil, {}, {}
 local state = { professionID = nil, offset = 0, data = {}, query = "" }
 
@@ -164,7 +169,8 @@ local function RenderRow(row, r, index)
 	row.data = r
 	row.stripe:SetShown(index % 2 == 0)
 	row.icon:SetTexture(r.icon or 134400)
-	row.name:SetText(r.name or ("Recipe " .. r.recipeID))
+	local color = SKILL_COLORS[r.skillColor] or "|cffffffff"
+	row.name:SetText(color .. (r.name or ("Recipe " .. r.recipeID)) .. "|r")
 	row.status:SetText(StatusLine(r))
 
 	local cells = row.cells
@@ -287,8 +293,13 @@ local function ShowTooltip(row)
 		return
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-	GameTooltip:AddLine(r.name or "?", 1, 1, 1)
+	GameTooltip:AddLine((SKILL_COLORS[r.skillColor] or "|cffffffff") .. (r.name or "?") .. "|r")
 	GameTooltip:AddLine(StatusLine(r))
+	local t = r.thresholds
+	if t then
+		GameTooltip:AddLine(("%s%d|r  %s%d|r  %s%d|r  %s%d|r"):format(SKILL_COLORS.orange, t[1], SKILL_COLORS.yellow, t[2],
+			SKILL_COLORS.green, t[3], SKILL_COLORS.grey, t[4]))
+	end
 
 	if r.status ~= "known" then
 		if r.learnCost then
