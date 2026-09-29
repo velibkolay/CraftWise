@@ -3,8 +3,11 @@ local stub = {}
 
 local function noop() end
 local frameMeta = {}
+-- Unknown methods (Capitalised) are no-ops; unknown fields are nil, as on real frames.
 frameMeta.__index = function(t, k)
-	return frameMeta[k] or noop
+	if frameMeta[k] then return frameMeta[k] end
+	if type(k) == "string" and k:match("^%u") then return noop end
+	return nil
 end
 function frameMeta.RegisterEvent(self, e) self.events[e] = true end
 function frameMeta.UnregisterEvent(self, e) self.events[e] = nil end

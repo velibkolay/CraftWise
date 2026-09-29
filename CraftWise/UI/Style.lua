@@ -49,6 +49,21 @@ function Style.Button(parent, width, height, text)
 		self.selected = selected
 		local c = selected and Style.colors.accent or Style.colors.tab
 		self:SetBackdropColor(c[1], c[2], c[3], c[4])
+		if self.icon then
+			self.icon:SetAlpha(selected and 1 or 0.6)
+		end
+	end
+	-- Icon left of the label; the label shifts right to make room.
+	function b:SetIcon(texture)
+		if not self.icon then
+			self.icon = self:CreateTexture(nil, "ARTWORK")
+			self.icon:SetSize(16, 16)
+			self.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+			self.label:ClearAllPoints()
+			self.label:SetPoint("CENTER", 10, 0)
+			self.icon:SetPoint("RIGHT", self.label, "LEFT", -6, 0)
+		end
+		self.icon:SetTexture(texture)
 	end
 	function b:SetLabel(t)
 		self.label:SetText(t)

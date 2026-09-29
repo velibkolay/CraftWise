@@ -39,6 +39,23 @@ function ns.ReadSchematic(recipeID)
 	return reagents, output
 end
 
+-- Profession icon as the game shows it (spellbook professions), matched by name.
+function ns.ProfessionIconFromClient(name)
+	if not (GetProfessions and GetProfessionInfo and name) then
+		return nil
+	end
+	local list = { GetProfessions() }
+	for i = 1, 6 do
+		local index = list[i]
+		if index then
+			local profName, icon = GetProfessionInfo(index)
+			if profName == name then
+				return icon
+			end
+		end
+	end
+end
+
 local function ProfessionContext()
 	if C_TradeSkillUI.IsTradeSkillLinked and C_TradeSkillUI.IsTradeSkillLinked() then
 		return nil
@@ -72,6 +89,7 @@ function ns.ScanProfession()
 	prof.name = base.professionName
 	prof.skill = base.skillLevel or prof.skill
 	prof.maxSkill = base.maxSkillLevel or prof.maxSkill
+	prof.icon = ns.ProfessionIconFromClient(base.professionName) or prof.icon
 	prof.scannedAt = time and time() or nil
 
 	for _, recipeID in ipairs(ids) do
@@ -125,6 +143,34 @@ ns.On("TRADE_SKILL_DATA_SOURCE_CHANGED", RequestScan)
 
 -- Bundled data (Data/*.lua, generated from the Forever client's DB2 and CMaNGOS classic-db by
 -- cjber/skillup-forever, GPL-3.0) fills what the client can't tell us with the window closed.
+
+-- Gathering professions have no crafts worth a profit table (their tab becomes a guide later).
+ns.GATHERING = { [182] = true, [186] = true, [356] = true, [393] = true } -- Herbalism, Mining, Fishing, Skinning
+
+-- Fallback icons per parent skill line, when the client doesn't give one.
+local FALLBACK_ICONS = {
+	[129] = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", -- First Aid
+	[164] = "Interface\\Icons\\Trade_BlackSmithing",
+	[165] = "Interface\\Icons\\Trade_LeatherWorking",
+	[171] = "Interface\\Icons\\Trade_Alchemy",
+	[182] = "Interface\\Icons\\Spell_Nature_NatureTouchGrow", -- Herbalism
+	[185] = "Interface\\Icons\\INV_Misc_Food_15", -- Cooking
+	[186] = "Interface\\Icons\\Trade_Mining",
+	[197] = "Interface\\Icons\\Trade_Tailoring",
+	[202] = "Interface\\Icons\\Trade_Engineering",
+	[333] = "Interface\\Icons\\Trade_Engraving", -- Enchanting
+	[356] = "Interface\\Icons\\Trade_Fishing",
+	[393] = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01", -- Skinning
+}
+
+function ns.ProfessionIcon(professionID)
+	local prof = ns.charDB and ns.charDB.professions[professionID]
+	return (prof and prof.icon) or FALLBACK_ICONS[ns.SkillLineOf(professionID)] or 134400
+end
+
+function ns.IsGathering(professionID)
+	return ns.GATHERING[ns.SkillLineOf(professionID)] or false
+end
 
 -- Parent skill line of a cached profession (enUS name lookup), falling back to its ID.
 function ns.SkillLineOf(professionID)

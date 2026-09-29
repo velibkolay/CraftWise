@@ -25,7 +25,7 @@ it("tooltips render for known, trainer, vendor and bundled-only rows", function(
 	ns.ToggleProfitFrame()
 	local rendered = 0
 	for _, f in ipairs(stub.frames) do
-		if rawget(f, "data") and f.scripts.OnEnter then
+		if f.data and f.scripts.OnEnter then
 			f.scripts.OnEnter(f)
 			f.scripts.OnLeave(f)
 			rendered = rendered + 1
@@ -34,7 +34,7 @@ it("tooltips render for known, trainer, vendor and bundled-only rows", function(
 	assert(rendered > 5, "expected visible rows, got " .. rendered)
 	-- sort by every column without errors
 	for _, f in ipairs(stub.frames) do
-		if f.scripts.OnClick and not rawget(f, "data") and not f.scripts.OnDragStart then f.scripts.OnClick(f) end
+		if f.scripts.OnClick and not f.data and not f.scripts.OnDragStart then f.scripts.OnClick(f) end
 	end
 	-- scroll
 	for _, f in ipairs(stub.frames) do
@@ -72,10 +72,45 @@ it("search filters rows by name", function()
 	box.scripts.OnTextChanged(box)
 	local visible = 0
 	for _, f in ipairs(stub.frames) do
-		if rawget(f, "data") and f.shown ~= false then
+		if f.data and f.shown ~= false then
 			visible = visible + 1
 			assert(f.data.name:lower():find("boots"), "unfiltered row " .. f.data.name)
 		end
 	end
 	assert(visible > 0)
+end)
+
+it("gathering professions get no tab; icons come from the client or fallbacks", function()
+	local ns, stub = LoadAddon()
+	GetProfessions = function() return 1, 2 end
+	GetProfessionInfo = function(i) if i == 1 then return "Leatherworking", 136247 end return "Skinning", 134366 end
+	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
+		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	stub.profession = { id = 393, name = "Skinning", skill = 60, max = 75, recipes = {
+		[9999] = { info = { name = "Skin", learned = true }, schematic = stub.Schematic({ { 1, 1 } }, 2) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.charDB.professions[165].icon, 136247)
+	eq(ns.IsGathering(393), true); eq(ns.IsGathering(165), false)
+	eq(ns.ProfessionIcon(12345), 134400)
+	ns.ToggleProfitFrame()
+	local tabs = 0
+	for _, f in ipairs(stub.frames) do
+		if f.label and f.icon and f.shown ~= false then tabs = tabs + 1 end
+	end
+	eq(tabs, 1)
+end)
+
+it("learn columns hide when unlearned recipes are hidden", function()
+	local ns, stub = LoadAddon({ savedDB = { settings = { includeUnlearned = false } } })
+	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
+		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.ToggleProfitFrame()
+	local learnHeader
+	for _, f in ipairs(stub.frames) do if f.label == "TO LEARN" then learnHeader = f end end
+	eq(learnHeader.shown, false)
+	ns.db.settings.includeUnlearned = true
+	ns.RefreshProfitFrame()
+	eq(learnHeader.shown, true)
 end)

@@ -17,8 +17,8 @@ local COLUMNS = {
 	{ key = "cost", label = "COST", width = 100, align = "RIGHT" },
 	{ key = "sellsFor", label = "SELLS FOR", width = 100, align = "RIGHT" },
 	{ key = "profit", label = "PROFIT", width = 100, align = "RIGHT" },
-	{ key = "learnCost", label = "TO LEARN", width = 95, align = "RIGHT" },
-	{ key = "breakEven", label = "PAYS OFF", width = 75, align = "RIGHT" },
+	{ key = "learnCost", label = "TO LEARN", width = 95, align = "RIGHT", learn = true },
+	{ key = "breakEven", label = "PAYS OFF", width = 75, align = "RIGHT", learn = true },
 }
 
 local STATUS_TEXT = {
@@ -99,7 +99,7 @@ end
 local function ProfessionIDs()
 	local ids = {}
 	for id, prof in pairs(ns.charDB.professions) do
-		if next(prof.recipes) then
+		if next(prof.recipes) and not ns.IsGathering(id) then
 			ids[#ids + 1] = id
 		end
 	end
@@ -121,6 +121,7 @@ local function RenderTabs(ids)
 		end
 		local prof = ns.charDB.professions[id]
 		tab:SetLabel(("%s  %s%d/%d|r"):format(prof.name or "?", C.muted, prof.skill or 0, prof.maxSkill or 0))
+		tab:SetIcon(ns.ProfessionIcon(id))
 		tab:SetSelected(id == state.professionID)
 		tab:SetScript("OnClick", function()
 			state.professionID, state.offset = id, 0
@@ -202,6 +203,43 @@ local function UpdateScrollBar()
 	bar:SetShown(maxOffset > 0)
 end
 
+-- Positions headers and cells. Learn columns only show with unlearned recipes; without them
+-- the recipe column takes their space.
+local function Layout(showLearn)
+	local extra = 0
+	for _, col in ipairs(COLUMNS) do
+		if col.learn and not showLearn then
+			extra = extra + col.width + 8
+		end
+	end
+	local nameWidth = COLUMNS[1].width + extra
+	local hx, cx = PAD + 42, 42
+	for i, col in ipairs(COLUMNS) do
+		local visible = showLearn or not col.learn
+		local width = i == 1 and nameWidth or col.width
+		local header = frame.headers[col.key]
+		header:SetShown(visible)
+		header:ClearAllPoints()
+		header:SetPoint("TOPLEFT", hx, HEADER_Y)
+		header:SetWidth(width)
+		for _, row in ipairs(rows) do
+			if i == 1 then
+				row.name:SetWidth(width)
+				row.status:SetWidth(width)
+			else
+				local cell = row.cells[col.key]
+				cell:SetShown(visible)
+				cell:ClearAllPoints()
+				cell:SetPoint("LEFT", cx, 0)
+			end
+		end
+		if visible then
+			hx, cx = hx + width + 8, cx + width + 8
+		end
+	end
+	state.layoutLearn = showLearn
+end
+
 local function Refresh()
 	if not (frame and frame:IsShown() and ns.charDB) then
 		return
@@ -211,6 +249,9 @@ local function Refresh()
 		state.professionID = ids[1]
 	end
 	RenderTabs(ids)
+	if state.layoutLearn ~= Settings().includeUnlearned then
+		Layout(Settings().includeUnlearned)
+	end
 
 	state.data = FilteredRows()
 	local s = Settings()
