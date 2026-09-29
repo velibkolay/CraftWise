@@ -1,0 +1,3 @@
+-- Reads known AND unlearned recipes from the open profession window.
+-- TODO (verify in beta): does C_TradeSkillUI return unlearned recipes on Forever?
+local addonName, ns = ...

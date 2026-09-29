@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: CraftWise
+## Notes: Crafting profit for every recipe you know or can learn - WoW: Forever
+## Author: velibkolay
+## Version: 0.1.0
+## OptionalDeps: Auctionator
+## SavedVariables: CraftWiseDB
+## SavedVariablesPerCharacter: CraftWiseCharDB
+
+Core.lua
+Prices.lua
+Recipes.lua
+Profit.lua
+UI\ProfitFrame.lua

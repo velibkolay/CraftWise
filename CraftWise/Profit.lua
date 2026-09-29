@@ -1,0 +1,3 @@
+-- cost = sum(reagent price * qty); sells for = output price * numMade; profit = sellsFor * 0.95 - cost
+local addonName, ns = ...
+ns.AH_CUT = 0.05
