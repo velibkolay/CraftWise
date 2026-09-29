@@ -312,8 +312,10 @@ local function BuildHeader()
 	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
 	subtitle:SetText(Muted("Crafting profit for every recipe you know or can learn"))
 
-	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", -4, -4)
+	local close = Style.CloseButton(frame, function()
+		frame:Hide()
+	end)
+	close:SetPoint("TOPRIGHT", -10, -12)
 
 	-- Filter row: search on the left, toggles on the right.
 	local search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
@@ -341,12 +343,12 @@ local function BuildHeader()
 		Settings().ownFactionOnly = v
 		Refresh()
 	end)
-	faction:SetPoint("TOPRIGHT", -140, -98)
+	faction:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	local unlearned = Style.Check(frame, "Show unlearned", Settings().includeUnlearned, function(v)
 		Settings().includeUnlearned, state.offset = v, 0
 		Refresh()
 	end)
-	unlearned:SetPoint("RIGHT", faction, "LEFT", -120, 0)
+	unlearned:SetPoint("RIGHT", faction, "LEFT", -24, 0)
 
 	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.summary:SetPoint("TOPLEFT", PAD, -130)

@@ -12,7 +12,7 @@ end
 
 local function Place()
 	local angle = math.rad(Settings().angle or 215)
-	local radius = (Minimap:GetWidth() / 2) + 6
+	local radius = (Minimap:GetWidth() / 2) + 10
 	button:ClearAllPoints()
 	button:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end
@@ -40,8 +40,9 @@ end
 local function Build()
 	button = CreateFrame("Button", "CraftWiseMinimapButton", Minimap)
 	button:SetSize(31, 31)
+	-- Above the minimap and any border art drawn on top of it.
 	button:SetFrameStrata("MEDIUM")
-	button:SetFrameLevel(8)
+	button:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 20)
 	button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	button:RegisterForDrag("LeftButton")
 	button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")

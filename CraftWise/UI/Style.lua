@@ -63,16 +63,57 @@ function Style.Button(parent, width, height, text)
 	return b
 end
 
--- Small checkbox with a label on its right. onChange(checked) fires on click.
+-- Flat checkbox: bordered square, accent fill when checked, label on the right.
+-- onChange(checked) fires on click. The label is part of the click area.
 function Style.Check(parent, label, checked, onChange)
-	local c = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-	c:SetSize(22, 22)
-	c:SetChecked(checked)
+	local c = CreateFrame("Button", nil, parent)
+	c:SetHeight(18)
+	local box = CreateFrame("Frame", nil, c, "BackdropTemplate")
+	box:SetSize(16, 16)
+	box:SetPoint("LEFT")
+	Style.Panel(box, Style.colors.tab, { 0.40, 0.46, 0.58, 1 })
+	local fill = box:CreateTexture(nil, "ARTWORK")
+	fill:SetPoint("TOPLEFT", 3, -3)
+	fill:SetPoint("BOTTOMRIGHT", -3, 3)
+	Style.Fill(fill, Style.colors.accent)
 	c.text = c:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	c.text:SetPoint("LEFT", c, "RIGHT", 2, 1)
+	c.text:SetPoint("LEFT", box, "RIGHT", 6, 0)
 	c.text:SetText(label)
+	c:SetWidth(22 + (c.text:GetStringWidth() or 90))
+	function c:SetChecked(v)
+		self.checked = v and true or false
+		fill:SetShown(self.checked)
+	end
+	function c:GetChecked()
+		return self.checked
+	end
+	c:SetChecked(checked)
 	c:SetScript("OnClick", function(self)
-		onChange(self:GetChecked() and true or false)
+		self:SetChecked(not self.checked)
+		onChange(self.checked)
+	end)
+	c:SetScript("OnEnter", function()
+		box:SetBackdropBorderColor(Style.colors.accentHover[1], Style.colors.accentHover[2], Style.colors.accentHover[3], 1)
+	end)
+	c:SetScript("OnLeave", function()
+		box:SetBackdropBorderColor(0.40, 0.46, 0.58, 1)
 	end)
 	return c
+end
+
+-- Flat close button: an "x" that turns red on hover.
+function Style.CloseButton(parent, onClick)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(24, 24)
+	b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	b.text:SetPoint("CENTER", 0, 1)
+	b.text:SetText("|cff8a93a6x|r")
+	b:SetScript("OnEnter", function(self)
+		self.text:SetText("|cffff5a5ax|r")
+	end)
+	b:SetScript("OnLeave", function(self)
+		self.text:SetText("|cff8a93a6x|r")
+	end)
+	b:SetScript("OnClick", onClick)
+	return b
 end

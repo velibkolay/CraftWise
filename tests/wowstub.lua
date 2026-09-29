@@ -20,6 +20,8 @@ function frameMeta.GetChecked(self) return self.checked end
 function frameMeta.SetChecked(self, v) self.checked = v end
 local function widget() return setmetatable({ events = {}, scripts = {} }, frameMeta) end
 function frameMeta.CreateFontString() return widget() end
+function frameMeta.GetStringWidth() return 80 end
+function frameMeta.GetFrameLevel() return 2 end
 function frameMeta.CreateTexture() return widget() end
 
 stub.frames = {}
