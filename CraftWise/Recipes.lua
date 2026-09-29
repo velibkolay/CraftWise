@@ -216,22 +216,52 @@ function ns.LearnCost(recipeID)
 	end
 end
 
--- Vendor NPC names for a recipe item, filtered to the player's faction.
-function ns.RecipeVendors(recipeID)
+local FACTION_CODE = { Horde = "H", Alliance = "A" }
+local FACTION_NAME = { H = "Horde", A = "Alliance" }
+
+function ns.PlayerFactionCode()
+	local faction = UnitFactionGroup and UnitFactionGroup("player")
+	return FACTION_CODE[faction]
+end
+
+-- Vendors of a recipe item: { name, faction = "Horde"|"Alliance"|nil, own = bool }.
+-- Own faction and neutral vendors first, then the other faction's (players can switch
+-- faction or level an alt there). ownOnly drops the other faction's vendors.
+function ns.RecipeVendors(recipeID, ownOnly)
 	local source = RecipeItemSource(recipeID)
 	if not (source and source.vendors and ns.SourceNPCs) then
 		return {}
 	end
-	local faction = UnitFactionGroup and UnitFactionGroup("player")
-	local mine = faction == "Horde" and "H" or faction == "Alliance" and "A" or nil
-	local names = {}
+	local mine = ns.PlayerFactionCode()
+	local own, other = {}, {}
 	for _, npc in ipairs(source.vendors) do
 		local info = ns.SourceNPCs[npc]
-		if info and (info[2] == "" or mine == nil or info[2] == mine) then
-			table.insert(names, info[1])
+		if info then
+			local isOwn = info[2] == "" or mine == nil or info[2] == mine
+			local entry = { name = info[1], faction = FACTION_NAME[info[2]], own = isOwn }
+			table.insert(isOwn and own or other, entry)
 		end
 	end
-	return names
+	if not ownOnly then
+		for _, entry in ipairs(other) do
+			table.insert(own, entry)
+		end
+	end
+	return own
+end
+
+-- True when every vendor of this recipe item belongs to the other faction.
+function ns.OtherFactionOnly(recipeID)
+	local vendors = ns.RecipeVendors(recipeID)
+	if #vendors == 0 then
+		return false
+	end
+	for _, v in ipairs(vendors) do
+		if v.own then
+			return false
+		end
+	end
+	return true, vendors[1].faction
 end
 
 local function IsSpellKnown(recipeID)
@@ -266,13 +296,16 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.noItemOutput = recipe.noItemOutput or result.noItemOutput
 	result.outputItemID = recipe.output and recipe.output.itemID
 	result.bundledOnly = recipe.bundledOnly
+	if status == "vendor" then
+		result.otherFactionOnly, result.vendorFaction = ns.OtherFactionOnly(recipeID)
+	end
 	return result
 end
 
 -- Rows for the profit table of one profession. Cached recipes come first-hand from the client;
 -- with includeUnlearned, bundled recipes of the same skill line that the client never listed are
 -- added too, so "what could I learn" works even if the client only lists learned recipes.
-function ns.BuildRows(professionID, includeUnlearned)
+function ns.BuildRows(professionID, includeUnlearned, ownFactionOnly)
 	local prof = ns.charDB and ns.charDB.professions[professionID]
 	if not prof then
 		return {}
@@ -314,6 +347,15 @@ function ns.BuildRows(professionID, includeUnlearned)
 				end
 			end
 		end
+	end
+	if ownFactionOnly then
+		local kept = {}
+		for _, row in ipairs(rows) do
+			if not row.otherFactionOnly then
+				table.insert(kept, row)
+			end
+		end
+		rows = kept
 	end
 	return rows
 end

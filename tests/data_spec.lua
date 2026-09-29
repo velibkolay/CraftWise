@@ -71,3 +71,57 @@ it("cached recipe without schematic gets bundled reagents", function()
 	-- the cache itself is untouched
 	eq(ns.charDB.professions[165].recipes[2149].reagents, nil)
 end)
+
+it("vendors: own faction and neutral first, other faction after, ownOnly drops them", function()
+	local ns = LoadAddon({ data = true })
+	-- find a vendor recipe with vendors of both factions
+	local pick
+	for id, s in pairs(ns.RecipeSources) do
+		if s.vendors then
+			local a, h = false, false
+			for _, npc in ipairs(s.vendors) do
+				local info = ns.SourceNPCs[npc]
+				if info and info[2] == "A" then a = true end
+				if info and info[2] == "H" then h = true end
+			end
+			if a and h then pick = id break end
+		end
+	end
+	assert(pick, "no mixed-faction vendor recipe in data")
+	UnitFactionGroup = function() return "Horde" end
+	local all = ns.RecipeVendors(pick)
+	local sawOther = false
+	for _, v in ipairs(all) do
+		if v.own then assert(not sawOther, "own vendor after other faction") else sawOther = true; eq(v.faction, "Alliance") end
+	end
+	assert(sawOther)
+	for _, v in ipairs(ns.RecipeVendors(pick, true)) do assert(v.own) end
+	UnitFactionGroup = function() return "Alliance" end
+	for _, v in ipairs(ns.RecipeVendors(pick, true)) do assert(v.faction ~= "Horde") end
+end)
+
+it("other-faction-only vendor recipes are flagged and hidden by the filter", function()
+	local ns, stub = LoadAddon({ data = true })
+	UnitFactionGroup = function() return "Horde" end
+	local pick
+	for id, s in pairs(ns.RecipeSources) do
+		if s.vendors and ns.RecipeData[id] and ns.RecipeData[id].skillLine == 165 and not ns.TrainerFees[id] then
+			local allA = true
+			for _, npc in ipairs(s.vendors) do
+				local info = ns.SourceNPCs[npc]
+				if not info or info[2] ~= "A" then allA = false end
+			end
+			if allA then pick = id break end
+		end
+	end
+	assert(pick, "no alliance-only leatherworking vendor recipe")
+	stub.profession = { id = 165, name = "Leatherworking", skill = 1, max = 75, recipes = {
+		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	local function find(rows)
+		for _, r in ipairs(rows) do if r.recipeID == pick then return r end end
+	end
+	local r = find(ns.BuildRows(165, true, false))
+	eq(r.otherFactionOnly, true); eq(r.vendorFaction, "Alliance")
+	eq(find(ns.BuildRows(165, true, true)), nil)
+end)

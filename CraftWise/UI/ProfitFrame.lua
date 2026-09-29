@@ -28,6 +28,8 @@ local function StatusText(r)
 	local text = STATUS_TEXT[r.status] or r.status
 	if r.status == "known" then
 		return "|cff9d9d9d" .. text .. "|r"
+	elseif r.otherFactionOnly then
+		return ("|cffb0b0ff%s (%s)|r"):format(text, r.vendorFaction or "other faction")
 	elseif r.tooLow then
 		return ("|cffffd100%s (%d)|r"):format(text, r.required or 0)
 	elseif r.status == "unlearned" then
@@ -113,7 +115,7 @@ local function Refresh()
 		tabs[i]:Hide()
 	end
 
-	state.data = state.professionID and ns.BuildRows(state.professionID, Settings().includeUnlearned) or {}
+	state.data = state.professionID and ns.BuildRows(state.professionID, Settings().includeUnlearned, Settings().ownFactionOnly) or {}
 	SortData()
 
 	-- Status line
@@ -196,10 +198,14 @@ local function ShowTooltip(row)
 			GameTooltip:AddLine(("Learn: %s (%s)"):format(Money(r.learnCost), how), 1, 1, 1)
 		end
 		if r.status == "vendor" then
-			local vendors = ns.RecipeVendors(r.recipeID)
-			if #vendors > 0 then
-				local shown = { unpack(vendors, 1, math.min(3, #vendors)) }
-				local more = #vendors > 3 and (" +%d more"):format(#vendors - 3) or ""
+			local vendors = ns.RecipeVendors(r.recipeID, Settings().ownFactionOnly)
+			local shown = {}
+			for i = 1, math.min(4, #vendors) do
+				local v = vendors[i]
+				shown[i] = v.own and v.name or ("|cffb0b0ff%s (%s)|r"):format(v.name, v.faction or "?")
+			end
+			if #shown > 0 then
+				local more = #vendors > 4 and (" +%d more"):format(#vendors - 4) or ""
 				GameTooltip:AddLine("Sold by " .. table.concat(shown, ", ") .. more, 0.8, 0.8, 0.8, true)
 			end
 		end
@@ -276,6 +282,18 @@ local function Build()
 	local checkLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	checkLabel:SetPoint("LEFT", check, "RIGHT", 2, 0)
 	checkLabel:SetText("Show unlearned")
+
+	local factionCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+	factionCheck:SetSize(24, 24)
+	factionCheck:SetPoint("TOPRIGHT", -290, -34)
+	factionCheck:SetChecked(Settings().ownFactionOnly)
+	factionCheck:SetScript("OnClick", function(self)
+		Settings().ownFactionOnly = self:GetChecked() and true or false
+		Refresh()
+	end)
+	local factionLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	factionLabel:SetPoint("LEFT", factionCheck, "RIGHT", 2, 0)
+	factionLabel:SetText("My faction only")
 
 	frame.statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.statusText:SetPoint("TOPLEFT", 16, -64)

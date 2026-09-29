@@ -44,7 +44,7 @@ local DB_DEFAULTS = {
 	version = 1,
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
-	settings = { includeUnlearned = true, sortKey = "profit", sortDesc = true },
+	settings = { includeUnlearned = true, ownFactionOnly = false, sortKey = "profit", sortDesc = true },
 }
 local CHAR_DEFAULTS = {
 	version = 1,

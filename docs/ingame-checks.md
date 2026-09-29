@@ -23,6 +23,7 @@ Things the headless tests cannot prove. Run after installing, in the Forever bet
 - [ ] Window drags, closes with Esc and the X button.
 - [ ] Profession buttons switch tables; "Show unlearned" toggles rows.
 - [ ] Header click sorts, second click flips direction.
+- [ ] Vendor recipe tooltip: own-faction vendors first, other faction in blue with "(Horde)"/"(Alliance)". "My faction only" hides recipes sold only by the other faction. Try on a Horde and an Alliance character.
 - [ ] Mouse wheel scrolls; Shift+wheel scrolls a page.
 - [ ] Row hover: reagent breakdown with source; clicking a row with the profession open selects the recipe.
 
