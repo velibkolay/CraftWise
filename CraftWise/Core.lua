@@ -44,6 +44,7 @@ local DB_DEFAULTS = {
 	version = 1,
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
+	minimap = { hide = false, angle = 215 },
 	settings = { includeUnlearned = true, ownFactionOnly = false, sortKey = "profit", sortDesc = true },
 }
 local CHAR_DEFAULTS = {
@@ -86,6 +87,10 @@ SLASH_CRAFTWISE1 = "/cw"
 SLASH_CRAFTWISE2 = "/craftwise"
 SlashCmdList.CRAFTWISE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
+	if msg == "minimap" then
+		ns.ToggleMinimapButton()
+		return
+	end
 	if msg == "debug" then
 		local n = 0
 		for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do

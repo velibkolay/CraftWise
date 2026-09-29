@@ -6,6 +6,7 @@
 ## Version: 0.1.0
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## OptionalDeps: Auctionator
+## AddonCompartmentFunc: CraftWise_OnAddonCompartmentClick
 ## SavedVariables: CraftWiseDB
 ## SavedVariablesPerCharacter: CraftWiseCharDB
 
@@ -19,4 +20,6 @@ Prices.lua
 Profit.lua
 Recipes.lua
 Trainer.lua
+UI\Style.lua
 UI\ProfitFrame.lua
+UI\MinimapButton.lua

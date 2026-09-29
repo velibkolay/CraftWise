@@ -1,17 +1,24 @@
--- Profit table window (/cw). Built lazily on first open, from plain widgets only.
+-- Profit table window. Opens from the minimap button, the addon compartment or /cw.
+-- Built lazily on first open, from plain widgets only.
 local _, ns = ...
+local Style = ns.Style
+local C = Style.colors
 
-local ROW_HEIGHT, VISIBLE_ROWS = 24, 16
-local WIDTH = 820
+local WIDTH, HEIGHT = 900, 580
+local PAD = 16
+local ROW_HEIGHT = 36
+local HEADER_Y = -150 -- top of the column header row
+local LIST_TOP = HEADER_Y - 22
+local VISIBLE_ROWS = math.floor((HEIGHT + LIST_TOP - 40) / ROW_HEIGHT)
 
+-- Recipe column is flexible; numbers are fixed and right aligned.
 local COLUMNS = {
-	{ key = "name", label = "Recipe", width = 250, align = "LEFT" },
-	{ key = "status", label = "Status", width = 110, align = "LEFT" },
-	{ key = "cost", label = "Cost", width = 95, align = "RIGHT" },
-	{ key = "sellsFor", label = "Sells for", width = 95, align = "RIGHT" },
-	{ key = "profit", label = "Profit", width = 95, align = "RIGHT" },
-	{ key = "learnCost", label = "Learn", width = 80, align = "RIGHT" },
-	{ key = "breakEven", label = "Break-even", width = 75, align = "RIGHT" },
+	{ key = "name", label = "RECIPE", width = 290, align = "LEFT" },
+	{ key = "cost", label = "COST", width = 100, align = "RIGHT" },
+	{ key = "sellsFor", label = "SELLS FOR", width = 100, align = "RIGHT" },
+	{ key = "profit", label = "PROFIT", width = 100, align = "RIGHT" },
+	{ key = "learnCost", label = "TO LEARN", width = 95, align = "RIGHT" },
+	{ key = "breakEven", label = "PAYS OFF", width = 75, align = "RIGHT" },
 }
 
 local STATUS_TEXT = {
@@ -20,29 +27,26 @@ local STATUS_TEXT = {
 	vendor = "Vendor recipe",
 	drop = "Drop recipe",
 	quest = "Quest recipe",
-	unlearned = "Not learned",
+	unlearned = "Source unknown",
 }
 
--- Grey when known, green when learnable now, yellow with the skill when the skill is too low.
-local function StatusText(r)
-	local text = STATUS_TEXT[r.status] or r.status
-	if r.status == "known" then
-		return "|cff9d9d9d" .. text .. "|r"
-	elseif r.otherFactionOnly then
-		return ("|cffb0b0ff%s (%s)|r"):format(text, r.vendorFaction or "other faction")
-	elseif r.tooLow then
-		return ("|cffffd100%s (%d)|r"):format(text, r.required or 0)
-	elseif r.status == "unlearned" then
-		return "|cffff8040" .. text .. "|r"
-	end
-	return "|cff40ff40" .. text .. "|r"
-end
+-- Texture arrows: the game font has no triangle glyphs.
+local ARROW_DOWN = " |TInterface\\Buttons\\Arrow-Down-Up:12:12:0:-3|t"
+local ARROW_UP = " |TInterface\\Buttons\\Arrow-Up-Up:12:12:0:3|t"
 
 local frame, rows, tabs = nil, {}, {}
-local state = { professionID = nil, offset = 0, data = {} }
+local state = { professionID = nil, offset = 0, data = {}, query = "" }
+
+local function Settings()
+	return ns.db.settings
+end
 
 local function Money(copper)
 	return ns.FormatMoney(copper)
+end
+
+local function Muted(text)
+	return C.muted .. text .. "|r"
 end
 
 local function ItemName(itemID)
@@ -50,135 +54,191 @@ local function ItemName(itemID)
 	if not name and GetItemInfo then
 		name = GetItemInfo(itemID)
 	end
-	return name or ("item:" .. itemID)
+	return name or ("item " .. itemID)
 end
 
-local function SourceLabel(source)
-	if source == "vendor" then
-		return "vendor"
-	elseif source == "auction" then
-		return "AH"
+local function StatusLine(r)
+	local text = STATUS_TEXT[r.status] or r.status
+	if r.status == "known" then
+		return Muted(text)
 	end
-	return source or ""
+	local parts = { text }
+	if r.required then
+		parts[#parts + 1] = ("skill %d"):format(r.required)
+	end
+	local color = C.good
+	if r.otherFactionOnly then
+		parts[#parts + 1] = r.vendorFaction or "other faction"
+		color = C.info
+	elseif r.tooLow then
+		color = C.warn
+	elseif r.status == "unlearned" then
+		color = C.muted
+	end
+	return color .. table.concat(parts, " · ") .. "|r"
 end
 
-local function Settings()
-	return ns.db.settings
-end
+-- Data ---------------------------------------------------------------------
 
--- Sorting ---------------------------------------------------------------
-
-local function SortData()
+local function FilteredRows()
 	local s = Settings()
-	table.sort(state.data, ns.Profit.Comparator(s.sortKey, s.sortDesc))
+	local all = state.professionID and ns.BuildRows(state.professionID, s.includeUnlearned, s.ownFactionOnly) or {}
+	local query = state.query:lower()
+	if query == "" then
+		return all
+	end
+	local out = {}
+	for _, r in ipairs(all) do
+		if (r.name or ""):lower():find(query, 1, true) then
+			out[#out + 1] = r
+		end
+	end
+	return out
+end
+
+local function ProfessionIDs()
+	local ids = {}
+	for id, prof in pairs(ns.charDB.professions) do
+		if next(prof.recipes) then
+			ids[#ids + 1] = id
+		end
+	end
+	table.sort(ids, function(a, b)
+		return (ns.charDB.professions[a].name or "") < (ns.charDB.professions[b].name or "")
+	end)
+	return ids
+end
+
+-- Rendering -----------------------------------------------------------------
+
+local function RenderTabs(ids)
+	for i, id in ipairs(ids) do
+		local tab = tabs[i]
+		if not tab then
+			tab = Style.Button(frame, 160, 26)
+			tab:SetPoint("TOPLEFT", PAD + (i - 1) * 166, -58)
+			tabs[i] = tab
+		end
+		local prof = ns.charDB.professions[id]
+		tab:SetLabel(("%s  %s%d/%d|r"):format(prof.name or "?", C.muted, prof.skill or 0, prof.maxSkill or 0))
+		tab:SetSelected(id == state.professionID)
+		tab:SetScript("OnClick", function()
+			state.professionID, state.offset = id, 0
+			ns.RefreshProfitFrame()
+		end)
+		tab:Show()
+	end
+	for i = #ids + 1, #tabs do
+		tabs[i]:Hide()
+	end
+end
+
+local function RenderSummary(ids)
+	local text
+	if #ids == 0 then
+		text = C.warn .. "Open a profession window once so CraftWise can read your recipes.|r"
+	elseif not ns.HasAuctionator() then
+		text = C.warn .. "Auctionator not found.|r " .. Muted("Only vendor prices are used. Install Auctionator and run a Full Scan at the auction house.")
+	else
+		local profitable, priced, unpriced = 0, 0, 0
+		for _, r in ipairs(state.data) do
+			if r.profit then
+				priced = priced + 1
+				if r.profit > 0 then
+					profitable = profitable + 1
+				end
+			elseif not r.noItemOutput then
+				unpriced = unpriced + 1
+			end
+		end
+		text = ("%s%d|r of %d priced recipes make a profit"):format(C.good, profitable, priced)
+		if unpriced > 0 then
+			text = text .. Muted(("  ·  %d without prices (run an Auctionator Full Scan)"):format(unpriced))
+		end
+	end
+	frame.summary:SetText(text)
+end
+
+local function RenderRow(row, r, index)
+	row.data = r
+	row.stripe:SetShown(index % 2 == 0)
+	row.icon:SetTexture(r.icon or 134400)
+	row.name:SetText(r.name or ("Recipe " .. r.recipeID))
+	row.status:SetText(StatusLine(r))
+
+	local cells = row.cells
+	if r.costComplete then
+		cells.cost:SetText(Money(r.cost))
+	elseif r.cost > 0 then
+		cells.cost:SetText(Money(r.cost) .. C.warn .. " +?|r")
+	else
+		cells.cost:SetText(Muted("-"))
+	end
+
+	if r.noItemOutput then
+		cells.sellsFor:SetText(Muted("no item"))
+	else
+		cells.sellsFor:SetText(r.sellsFor and Money(r.sellsFor) or Muted("-"))
+	end
+
+	if r.profit then
+		cells.profit:SetText((r.profit >= 0 and C.good .. "+" or C.bad) .. Money(r.profit) .. "|r")
+	else
+		cells.profit:SetText(Muted("-"))
+	end
+
+	cells.learnCost:SetText(r.learnCost and Money(r.learnCost) or "")
+	cells.breakEven:SetText(r.breakEven and ("%d crafts"):format(r.breakEven) or "")
+	row:Show()
+end
+
+local function UpdateScrollBar()
+	local maxOffset = math.max(0, #state.data - VISIBLE_ROWS)
+	local bar = frame.scrollBar
+	bar.updating = true
+	bar:SetMinMaxValues(0, maxOffset)
+	bar:SetValue(state.offset)
+	bar.updating = false
+	bar:SetShown(maxOffset > 0)
 end
 
 local function Refresh()
 	if not (frame and frame:IsShown() and ns.charDB) then
 		return
 	end
-	-- Profession tabs: one per cached profession with recipes.
-	local ids = {}
-	for id, prof in pairs(ns.charDB.professions) do
-		if next(prof.recipes) then
-			table.insert(ids, id)
-		end
-	end
-	table.sort(ids, function(a, b)
-		return (ns.charDB.professions[a].name or "") < (ns.charDB.professions[b].name or "")
-	end)
+	local ids = ProfessionIDs()
 	if not state.professionID or not ns.charDB.professions[state.professionID] then
 		state.professionID = ids[1]
 	end
-	for i, id in ipairs(ids) do
-		local tab = tabs[i]
-		if not tab then
-			tab = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-			tab:SetSize(130, 22)
-			tab:SetPoint("TOPLEFT", frame, "TOPLEFT", 14 + (i - 1) * 134, -34)
-			tabs[i] = tab
-		end
-		local prof = ns.charDB.professions[id]
-		tab:SetText(("%s %d"):format(prof.name or "?", prof.skill or 0))
-		tab:SetScript("OnClick", function()
-			state.professionID, state.offset = id, 0
-			Refresh()
-		end)
-		if id == state.professionID then
-			tab:LockHighlight()
-		else
-			tab:UnlockHighlight()
-		end
-		tab:Show()
-	end
-	for i = #ids + 1, #tabs do
-		tabs[i]:Hide()
-	end
+	RenderTabs(ids)
 
-	state.data = state.professionID and ns.BuildRows(state.professionID, Settings().includeUnlearned, Settings().ownFactionOnly) or {}
-	SortData()
+	state.data = FilteredRows()
+	local s = Settings()
+	table.sort(state.data, ns.Profit.Comparator(s.sortKey, s.sortDesc))
+	state.offset = math.max(0, math.min(state.offset, #state.data - VISIBLE_ROWS))
 
-	-- Status line
-	local profitable, priced = 0, 0
-	for _, r in ipairs(state.data) do
-		if r.profit then
-			priced = priced + 1
-			if r.profit > 0 then
-				profitable = profitable + 1
-			end
-		end
+	RenderSummary(ids)
+	for key, header in pairs(frame.headers) do
+		local arrow = s.sortKey == key and (s.sortDesc and ARROW_DOWN or ARROW_UP) or ""
+		header.text:SetText(header.label .. arrow)
 	end
-	local line
-	if #ids == 0 then
-		line = "|cffffd100Open a profession window once so CraftWise can read your recipes.|r"
-	elseif not ns.HasAuctionator() then
-		line = "|cffff8040Auctionator not found - only vendor prices are used.|r Install Auctionator and run a full scan."
-	else
-		line = ("%d of %d recipes make a profit. Prices come from your last Auctionator scan."):format(profitable, priced)
-	end
-	frame.statusText:SetText(line)
-
-	local maxOffset = math.max(0, #state.data - VISIBLE_ROWS)
-	state.offset = math.min(state.offset, maxOffset)
 
 	for i = 1, VISIBLE_ROWS do
-		local row, r = rows[i], state.data[i + state.offset]
+		local r = state.data[i + state.offset]
 		if r then
-			row.data = r
-			row.icon:SetTexture(r.icon or 134400)
-			row.cells.name:SetText(r.name or ("recipe " .. r.recipeID))
-			row.cells.status:SetText(StatusText(r))
-			if r.costComplete then
-				row.cells.cost:SetText(Money(r.cost))
-			elseif r.cost > 0 then
-				row.cells.cost:SetText(Money(r.cost) .. " |cffff8040+?|r") -- partial: some reagents unpriced
-			else
-				row.cells.cost:SetText("|cff9d9d9d?|r")
-			end
-			if r.noItemOutput then
-				row.cells.sellsFor:SetText("|cff9d9d9d-|r")
-			else
-				row.cells.sellsFor:SetText(r.sellsFor and Money(r.sellsFor) or "|cff9d9d9d?|r")
-			end
-			if r.profit then
-				local color = r.profit >= 0 and "|cff40ff40+" or "|cffff4040"
-				row.cells.profit:SetText(color .. Money(r.profit) .. "|r")
-			else
-				row.cells.profit:SetText("|cff9d9d9d?|r")
-			end
-			row.cells.learnCost:SetText(r.learnCost and Money(r.learnCost) or "")
-			row.cells.breakEven:SetText(r.breakEven and (r.breakEven .. " crafts") or "")
-			row:Show()
+			RenderRow(rows[i], r, i + state.offset)
 		else
-			row.data = nil
-			row:Hide()
+			rows[i].data = nil
+			rows[i]:Hide()
 		end
 	end
+	frame.count:SetText(Muted(("%d recipes"):format(#state.data)))
 	frame.empty:SetShown(#ids > 0 and #state.data == 0)
+	UpdateScrollBar()
 end
 ns.RefreshProfitFrame = Refresh
 
--- Tooltip ---------------------------------------------------------------
+-- Tooltip ------------------------------------------------------------------
 
 local function ShowTooltip(row)
 	local r = row.data
@@ -187,22 +247,19 @@ local function ShowTooltip(row)
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(r.name or "?", 1, 1, 1)
+	GameTooltip:AddLine(StatusLine(r))
+
 	if r.status ~= "known" then
-		if r.required then
-			local color = r.tooLow and "|cffff4040" or "|cff40ff40"
-			GameTooltip:AddLine(("Requires %s%d|r skill"):format(color, r.required), 1, 1, 1)
-		end
 		if r.learnCost then
-			local how = r.learnSource == "trainer" and "trainer fee" or r.learnSource == "vendor" and "recipe from a vendor"
-				or "recipe on the AH"
-			GameTooltip:AddLine(("Learn: %s (%s)"):format(Money(r.learnCost), how), 1, 1, 1)
+			local how = r.learnSource == "trainer" and "trainer" or r.learnSource == "vendor" and "vendor" or "auction house"
+			GameTooltip:AddDoubleLine("To learn", ("%s (%s)"):format(Money(r.learnCost), how), 0.8, 0.8, 0.8, 1, 1, 1)
 		end
 		if r.status == "vendor" then
 			local vendors = ns.RecipeVendors(r.recipeID, Settings().ownFactionOnly)
 			local shown = {}
 			for i = 1, math.min(4, #vendors) do
 				local v = vendors[i]
-				shown[i] = v.own and v.name or ("|cffb0b0ff%s (%s)|r"):format(v.name, v.faction or "?")
+				shown[i] = v.own and v.name or (C.info .. v.name .. " (" .. (v.faction or "?") .. ")|r")
 			end
 			if #shown > 0 then
 				local more = #vendors > 4 and (" +%d more"):format(#vendors - 4) or ""
@@ -212,153 +269,232 @@ local function ShowTooltip(row)
 		if r.source then
 			GameTooltip:AddLine(r.source, 0.8, 0.8, 0.8, true)
 		end
-		if r.bundledOnly then
-			GameTooltip:AddLine("From bundled data; open the profession to confirm.", 0.6, 0.6, 0.6, true)
-		end
 	end
+
 	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("Reagents", 1, 0.82, 0)
 	if #r.reagents == 0 then
-		GameTooltip:AddLine("Reagents unknown - open this profession again.", 1, 0.5, 0.25)
+		GameTooltip:AddLine("Unknown - open this profession again.", 1, 0.5, 0.25)
 	end
 	for _, line in ipairs(r.reagents) do
-		local left = ("%dx %s"):format(line.quantity, ItemName(line.itemID))
+		local left = ("%d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
-			GameTooltip:AddDoubleLine(left, ("%s (%s)"):format(Money(line.total), SourceLabel(line.source)), 1, 1, 1, 1, 1, 1)
+			local src = line.source == "vendor" and "vendor" or "AH"
+			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), Muted(src)), 1, 1, 1, 1, 1, 1)
 		else
 			GameTooltip:AddDoubleLine(left, "no price", 1, 1, 1, 1, 0.4, 0.4)
 		end
 	end
-	GameTooltip:AddLine(" ")
 	if r.outputItemID then
-		local sells = r.sellsFor and ("%s (%s)"):format(Money(r.sellsFor), r.sellSource == "vendor" and "vendor" or "AH, after 5% cut") or "no price"
+		GameTooltip:AddLine(" ")
+		local sells = r.sellsFor and ("%s  %s"):format(Money(r.sellsFor), Muted(r.sellSource == "vendor" and "vendor" or "AH, after 5% cut")) or "no price"
 		GameTooltip:AddDoubleLine("Sells for", sells, 1, 0.82, 0, 1, 1, 1)
 	end
 	if r.oldestAge and r.oldestAge > 1 then
-		GameTooltip:AddLine(("Oldest price is %d days old."):format(r.oldestAge), 1, 0.5, 0.25)
+		GameTooltip:AddLine(("Oldest price is %d days old."):format(r.oldestAge), 1, 0.6, 0.3)
 	end
 	if r.breakEven then
-		GameTooltip:AddLine(("Learning pays off after %d crafts."):format(r.breakEven), 0.25, 1, 0.25)
+		GameTooltip:AddLine(("Learning pays off after %d crafts."):format(r.breakEven), 0.3, 0.82, 0.55)
+	end
+	if r.bundledOnly then
+		GameTooltip:AddLine("From bundled data - open the profession to confirm.", 0.55, 0.55, 0.6, true)
 	end
 	GameTooltip:Show()
 end
 
--- Construction ----------------------------------------------------------
+-- Construction -------------------------------------------------------------
 
-local function Build()
-	frame = CreateFrame("Frame", "CraftWiseFrame", UIParent, "BackdropTemplate")
-	frame:SetSize(WIDTH, 132 + VISIBLE_ROWS * ROW_HEIGHT)
-	frame:SetPoint("CENTER")
-	frame:SetFrameStrata("HIGH")
-	frame:SetMovable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart", frame.StartMoving)
-	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-	frame:SetBackdrop({
-		bgFile = "Interface\\Buttons\\WHITE8x8",
-		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-		edgeSize = 14,
-		insets = { left = 3, right = 3, top = 3, bottom = 3 },
-	})
-	frame:SetBackdropColor(0.06, 0.07, 0.10, 0.95)
-	frame:SetBackdropBorderColor(0.3, 0.35, 0.45, 1)
-	table.insert(UISpecialFrames, "CraftWiseFrame")
-
+local function BuildHeader()
 	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	title:SetPoint("TOPLEFT", 16, -12)
-	title:SetText("CraftWise - crafting profit")
+	title:SetPoint("TOPLEFT", PAD, -16)
+	title:SetText("|cffffffffCraftWise|r")
+	local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
+	subtitle:SetText(Muted("Crafting profit for every recipe you know or can learn"))
 
 	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", -4, -4)
 
-	local check = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-	check:SetSize(24, 24)
-	check:SetPoint("TOPRIGHT", -150, -34)
-	check:SetChecked(Settings().includeUnlearned)
-	check:SetScript("OnClick", function(self)
-		Settings().includeUnlearned = self:GetChecked() and true or false
+	-- Filter row: search on the left, toggles on the right.
+	local search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+	search:SetSize(220, 22)
+	search:SetPoint("TOPLEFT", PAD + 6, -98)
+	search:SetAutoFocus(false)
+	search:SetScript("OnTextChanged", function(self)
+		state.query, state.offset = self:GetText() or "", 0
 		Refresh()
 	end)
-	local checkLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	checkLabel:SetPoint("LEFT", check, "RIGHT", 2, 0)
-	checkLabel:SetText("Show unlearned")
+	search:SetScript("OnEscapePressed", function(self)
+		self:ClearFocus()
+	end)
+	local hint = search:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	hint:SetPoint("LEFT", 2, 0)
+	hint:SetText("Search recipes")
+	search:SetScript("OnEditFocusGained", function()
+		hint:Hide()
+	end)
+	search:SetScript("OnEditFocusLost", function(self)
+		hint:SetShown((self:GetText() or "") == "")
+	end)
 
-	local factionCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-	factionCheck:SetSize(24, 24)
-	factionCheck:SetPoint("TOPRIGHT", -290, -34)
-	factionCheck:SetChecked(Settings().ownFactionOnly)
-	factionCheck:SetScript("OnClick", function(self)
-		Settings().ownFactionOnly = self:GetChecked() and true or false
+	local faction = Style.Check(frame, "My faction only", Settings().ownFactionOnly, function(v)
+		Settings().ownFactionOnly = v
 		Refresh()
 	end)
-	local factionLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	factionLabel:SetPoint("LEFT", factionCheck, "RIGHT", 2, 0)
-	factionLabel:SetText("My faction only")
+	faction:SetPoint("TOPRIGHT", -140, -98)
+	local unlearned = Style.Check(frame, "Show unlearned", Settings().includeUnlearned, function(v)
+		Settings().includeUnlearned, state.offset = v, 0
+		Refresh()
+	end)
+	unlearned:SetPoint("RIGHT", faction, "LEFT", -120, 0)
 
-	frame.statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	frame.statusText:SetPoint("TOPLEFT", 16, -64)
-	frame.statusText:SetPoint("RIGHT", -16, 0)
-	frame.statusText:SetJustifyH("LEFT")
+	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	frame.summary:SetPoint("TOPLEFT", PAD, -130)
+	frame.summary:SetPoint("RIGHT", -PAD, 0)
+	frame.summary:SetJustifyH("LEFT")
+end
 
-	-- Column headers (click to sort, click again to flip)
-	local x = 44
+local function BuildColumns()
+	frame.headers = {}
+	local x = PAD + 42
 	for _, col in ipairs(COLUMNS) do
 		local header = CreateFrame("Button", nil, frame)
 		header:SetSize(col.width, 18)
-		header:SetPoint("TOPLEFT", x, -84)
-		local text = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		text:SetAllPoints()
-		text:SetJustifyH(col.align)
-		text:SetText(col.label)
+		header:SetPoint("TOPLEFT", x, HEADER_Y)
+		header.label = col.label
+		header.text = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		header.text:SetAllPoints()
+		header.text:SetJustifyH(col.align)
+		header.text:SetTextColor(0.55, 0.58, 0.65)
 		header:SetScript("OnClick", function()
 			local s = Settings()
 			if s.sortKey == col.key then
 				s.sortDesc = not s.sortDesc
 			else
-				s.sortKey, s.sortDesc = col.key, col.key ~= "name" and col.key ~= "status"
+				s.sortKey, s.sortDesc = col.key, col.key ~= "name"
 			end
 			Refresh()
 		end)
-		x = x + col.width + 4
+		frame.headers[col.key] = header
+		x = x + col.width + 8
 	end
+	local line = frame:CreateTexture(nil, "ARTWORK")
+	Style.Fill(line, C.border)
+	line:SetHeight(1)
+	line:SetPoint("TOPLEFT", PAD, HEADER_Y - 20)
+	line:SetPoint("TOPRIGHT", -PAD, HEADER_Y - 20)
+end
 
+local function BuildRows()
 	for i = 1, VISIBLE_ROWS do
 		local row = CreateFrame("Button", nil, frame)
-		row:SetSize(WIDTH - 28, ROW_HEIGHT)
-		row:SetPoint("TOPLEFT", 14, -104 - (i - 1) * ROW_HEIGHT)
+		row:SetHeight(ROW_HEIGHT)
+		row:SetPoint("TOPLEFT", PAD, LIST_TOP - (i - 1) * ROW_HEIGHT)
+		row:SetPoint("RIGHT", -PAD - 14, 0)
+
+		row.stripe = row:CreateTexture(nil, "BACKGROUND")
+		row.stripe:SetAllPoints()
+		Style.Fill(row.stripe, C.stripe)
 		local hl = row:CreateTexture(nil, "HIGHLIGHT")
 		hl:SetAllPoints()
-		hl:SetColorTexture(1, 1, 1, 0.06)
+		Style.Fill(hl, C.hover)
+
 		row.icon = row:CreateTexture(nil, "ARTWORK")
-		row.icon:SetSize(20, 20)
-		row.icon:SetPoint("LEFT", 4, 0)
+		row.icon:SetSize(28, 28)
+		row.icon:SetPoint("LEFT", 6, 0)
+		row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+		row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		row.name:SetPoint("TOPLEFT", 42, -4)
+		row.name:SetWidth(COLUMNS[1].width)
+		row.name:SetJustifyH("LEFT")
+		row.name:SetWordWrap(false)
+		row.status = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		row.status:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -2)
+		row.status:SetWidth(COLUMNS[1].width)
+		row.status:SetJustifyH("LEFT")
+		row.status:SetWordWrap(false)
+
 		row.cells = {}
-		local cx = 30
-		for _, col in ipairs(COLUMNS) do
-			local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		local x = 42 + COLUMNS[1].width + 8
+		for c = 2, #COLUMNS do
+			local col = COLUMNS[c]
+			local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 			fs:SetSize(col.width, ROW_HEIGHT)
-			fs:SetPoint("LEFT", cx, 0)
+			fs:SetPoint("LEFT", x, 0)
 			fs:SetJustifyH(col.align)
 			fs:SetWordWrap(false)
 			row.cells[col.key] = fs
-			cx = cx + col.width + 4
+			x = x + col.width + 8
 		end
+
 		row:SetScript("OnEnter", ShowTooltip)
 		row:SetScript("OnLeave", function()
 			GameTooltip:Hide()
 		end)
 		row:SetScript("OnClick", function(self)
-			local r = self.data
-			if r and C_TradeSkillUI.OpenRecipe then
-				pcall(C_TradeSkillUI.OpenRecipe, r.recipeID)
+			if self.data and C_TradeSkillUI.OpenRecipe then
+				pcall(C_TradeSkillUI.OpenRecipe, self.data.recipeID)
 			end
 		end)
 		rows[i] = row
 	end
+end
+
+local function BuildScrollBar()
+	local bar = CreateFrame("Slider", nil, frame)
+	bar:SetOrientation("VERTICAL")
+	bar:SetWidth(6)
+	bar:SetPoint("TOPRIGHT", -PAD + 2, LIST_TOP)
+	bar:SetPoint("BOTTOMRIGHT", -PAD + 2, 40)
+	local track = bar:CreateTexture(nil, "BACKGROUND")
+	track:SetAllPoints()
+	Style.Fill(track, { 1, 1, 1, 0.05 })
+	local thumb = bar:CreateTexture(nil, "OVERLAY")
+	Style.Fill(thumb, C.accent)
+	thumb:SetSize(6, 40)
+	bar:SetThumbTexture(thumb)
+	bar:SetValueStep(1)
+	bar:SetObeyStepOnDrag(true)
+	bar:SetScript("OnValueChanged", function(self, value)
+		if self.updating then
+			return
+		end
+		state.offset = math.floor(value + 0.5)
+		Refresh()
+	end)
+	frame.scrollBar = bar
+end
+
+local function Build()
+	frame = CreateFrame("Frame", "CraftWiseFrame", UIParent, "BackdropTemplate")
+	frame:SetSize(WIDTH, HEIGHT)
+	frame:SetPoint("CENTER")
+	frame:SetFrameStrata("HIGH")
+	frame:SetToplevel(true)
+	frame:SetClampedToScreen(true)
+	frame:SetMovable(true)
+	frame:EnableMouse(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:SetScript("OnDragStart", frame.StartMoving)
+	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+	Style.Panel(frame)
+	table.insert(UISpecialFrames, "CraftWiseFrame")
+
+	BuildHeader()
+	BuildColumns()
+	BuildRows()
+	BuildScrollBar()
+
+	frame.count = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	frame.count:SetPoint("BOTTOMLEFT", PAD, 14)
+	local help = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	help:SetPoint("BOTTOMRIGHT", -PAD, 14)
+	help:SetText(Muted("Hover a row for details  ·  click a header to sort  ·  scroll with the mouse wheel"))
 
 	frame.empty = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-	frame.empty:SetPoint("CENTER", 0, -20)
-	frame.empty:SetText("No recipes to show. Tick \"Show unlearned\" or open the profession again.")
+	frame.empty:SetPoint("CENTER", 0, -40)
+	frame.empty:SetText("No recipes match. Clear the search or tick \"Show unlearned\".")
 
 	frame:EnableMouseWheel(true)
 	frame:SetScript("OnMouseWheel", function(_, delta)

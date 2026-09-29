@@ -39,6 +39,12 @@ function stub.Fire(event, ...)
 end
 
 UIParent = widget()
+Minimap = widget()
+function Minimap.GetWidth() return 140 end
+function Minimap.GetCenter() return 100, 100 end
+function Minimap.GetEffectiveScale() return 1 end
+function GetCursorPosition() return 150, 100 end
+math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 GameTooltip = widget()
 UISpecialFrames = {}
 function IsShiftKeyDown() return false end
