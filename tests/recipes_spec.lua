@@ -70,8 +70,9 @@ it("status uses trainer records against current skill", function()
 	local prof = ns.charDB.professions[165]
 	eq(ns.RecipeStatus(prof, 3760, prof.recipes[3760]), "unlearned")
 	ns.db.trainer[3760] = { fee = 500, required = 110 }
-	local s, req = ns.RecipeStatus(prof, 3760, prof.recipes[3760])
-	eq(s, "later"); eq(req, 110)
+	local s, req, tooLow = ns.RecipeStatus(prof, 3760, prof.recipes[3760])
+	eq(s, "trainable"); eq(req, 110); eq(tooLow, true)
 	ns.db.trainer[3760].required = 90
-	eq(ns.RecipeStatus(prof, 3760, prof.recipes[3760]), "trainable")
+	s, req, tooLow = ns.RecipeStatus(prof, 3760, prof.recipes[3760])
+	eq(s, "trainable"); eq(tooLow, false)
 end)

@@ -29,8 +29,11 @@ function LoadAddon(opts)
 	if opts and opts.auctionator then stub.EnableAuctionator() end
 	local ns = {}
 	for _, path in ipairs(tocFiles()) do
+		-- Bundled data is large; specs opt in with { data = true } and otherwise set tiny tables.
+		if opts and opts.data or not path:match("/Data/") then
 		local chunk = assert(loadfile(path))
 		chunk("CraftWise", ns)
+		end
 	end
 	if opts and opts.savedDB then CraftWiseDB = opts.savedDB end
 	stub.Fire("ADDON_LOADED", "CraftWise")
@@ -57,7 +60,7 @@ end
 baseline = {}
 for k in pairs(_G) do baseline[k] = true end
 
-local specs = { "profit_spec", "prices_spec", "recipes_spec", "trainer_spec", "money_spec", "ui_spec" }
+local specs = { "profit_spec", "prices_spec", "recipes_spec", "trainer_spec", "money_spec", "ui_spec", "data_spec" }
 for _, spec in ipairs(specs) do
 	print(spec)
 	dofile("tests/" .. spec .. ".lua")

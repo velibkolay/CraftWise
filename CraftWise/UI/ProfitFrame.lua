@@ -15,11 +15,26 @@ local COLUMNS = {
 }
 
 local STATUS_TEXT = {
-	known = "|cff9d9d9dKnown|r",
-	trainable = "|cff40ff40Trainable|r",
-	later = "|cffffd100Trainable at %d|r",
-	unlearned = "|cffff8040Not learned|r",
+	known = "Known",
+	trainable = "Trainer",
+	vendor = "Vendor recipe",
+	drop = "Drop recipe",
+	quest = "Quest recipe",
+	unlearned = "Not learned",
 }
+
+-- Grey when known, green when learnable now, yellow with the skill when the skill is too low.
+local function StatusText(r)
+	local text = STATUS_TEXT[r.status] or r.status
+	if r.status == "known" then
+		return "|cff9d9d9d" .. text .. "|r"
+	elseif r.tooLow then
+		return ("|cffffd100%s (%d)|r"):format(text, r.required or 0)
+	elseif r.status == "unlearned" then
+		return "|cffff8040" .. text .. "|r"
+	end
+	return "|cff40ff40" .. text .. "|r"
+end
 
 local frame, rows, tabs = nil, {}, {}
 local state = { professionID = nil, offset = 0, data = {} }
@@ -130,11 +145,7 @@ local function Refresh()
 			row.data = r
 			row.icon:SetTexture(r.icon or 134400)
 			row.cells.name:SetText(r.name or ("recipe " .. r.recipeID))
-			local status = STATUS_TEXT[r.status] or r.status
-			if r.status == "later" then
-				status = status:format(r.required or 0)
-			end
-			row.cells.status:SetText(status)
+			row.cells.status:SetText(StatusText(r))
 			if r.costComplete then
 				row.cells.cost:SetText(Money(r.cost))
 			elseif r.cost > 0 then
@@ -174,8 +185,30 @@ local function ShowTooltip(row)
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(r.name or "?", 1, 1, 1)
-	if r.source and r.status ~= "known" then
-		GameTooltip:AddLine(r.source, 0.8, 0.8, 0.8, true)
+	if r.status ~= "known" then
+		if r.required then
+			local color = r.tooLow and "|cffff4040" or "|cff40ff40"
+			GameTooltip:AddLine(("Requires %s%d|r skill"):format(color, r.required), 1, 1, 1)
+		end
+		if r.learnCost then
+			local how = r.learnSource == "trainer" and "trainer fee" or r.learnSource == "vendor" and "recipe from a vendor"
+				or "recipe on the AH"
+			GameTooltip:AddLine(("Learn: %s (%s)"):format(Money(r.learnCost), how), 1, 1, 1)
+		end
+		if r.status == "vendor" then
+			local vendors = ns.RecipeVendors(r.recipeID)
+			if #vendors > 0 then
+				local shown = { unpack(vendors, 1, math.min(3, #vendors)) }
+				local more = #vendors > 3 and (" +%d more"):format(#vendors - 3) or ""
+				GameTooltip:AddLine("Sold by " .. table.concat(shown, ", ") .. more, 0.8, 0.8, 0.8, true)
+			end
+		end
+		if r.source then
+			GameTooltip:AddLine(r.source, 0.8, 0.8, 0.8, true)
+		end
+		if r.bundledOnly then
+			GameTooltip:AddLine("From bundled data; open the profession to confirm.", 0.6, 0.6, 0.6, true)
+		end
 	end
 	GameTooltip:AddLine(" ")
 	if #r.reagents == 0 then

@@ -2,6 +2,7 @@
 ## Title: CraftWise
 ## Notes: Crafting profit for every recipe you know or can learn - WoW: Forever
 ## Author: velibkolay
+## X-License: GPL-3.0
 ## Version: 0.1.0
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## OptionalDeps: Auctionator
@@ -9,6 +10,10 @@
 ## SavedVariablesPerCharacter: CraftWiseCharDB
 
 Core.lua
+Data\Recipes.lua
+Data\Sources.lua
+Data\Trainer.lua
+Data\Vendor.lua
 Money.lua
 Prices.lua
 Profit.lua

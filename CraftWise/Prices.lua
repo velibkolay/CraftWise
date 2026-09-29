@@ -33,8 +33,9 @@ function ns.GetAuctionPrice(itemID)
 	return copper, age
 end
 
+-- Seen at a merchant beats the bundled list (Data/Vendor.lua), which is the base price.
 function ns.GetVendorBuyPrice(itemID)
-	local price = ns.db and ns.db.vendor[itemID]
+	local price = (ns.db and ns.db.vendor[itemID]) or (ns.VendorPrices and ns.VendorPrices[itemID])
 	return price and price > 0 and price or nil
 end
 
@@ -45,8 +46,11 @@ function ns.GetVendorSellPrice(itemID)
 		return nil
 	end
 	local sell = select(11, getInfo(itemID))
-	if sell == nil and C_Item and C_Item.RequestLoadItemDataByID then
-		C_Item.RequestLoadItemDataByID(itemID)
+	if sell == nil then
+		if C_Item and C_Item.RequestLoadItemDataByID then
+			C_Item.RequestLoadItemDataByID(itemID)
+		end
+		sell = ns.ItemSellPrices and ns.ItemSellPrices[itemID]
 	end
 	return sell
 end
