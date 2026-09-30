@@ -32,8 +32,5 @@ lua5.1 tests/run.lua
 Tests run headless against a stubbed client (`tests/wowstub.lua`). Anything the stub cannot reach (frames, tooltips, real API shapes) is listed in [docs/ingame-checks.md](docs/ingame-checks.md).
 
 ## Roadmap
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+Planned work lives in [GitHub issues](https://github.com/velibkolay/CraftWise/issues) grouped by [milestones](https://github.com/velibkolay/CraftWise/milestones).
 
-## Later
-- Own AH scan (#6)
-- Price export to velikopter.com (#7)
