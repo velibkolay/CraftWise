@@ -12,9 +12,6 @@
 
 Core.lua
 Data\Recipes.lua
-Data\Sources.lua
-Data\Thresholds.lua
-Data\Trainer.lua
 Data\Vendor.lua
 Money.lua
 Prices.lua

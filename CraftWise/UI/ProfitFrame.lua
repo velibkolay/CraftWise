@@ -24,10 +24,7 @@ local COLUMNS = {
 local STATUS_TEXT = {
 	known = "Known",
 	trainable = "Trainer",
-	vendor = "Vendor recipe",
-	drop = "Drop recipe",
-	quest = "Quest recipe",
-	unlearned = "Source unknown",
+	unlearned = "Source not known yet",
 }
 
 -- Texture arrows: the game font has no triangle glyphs.
@@ -69,13 +66,10 @@ local function StatusLine(r)
 	end
 	local parts = { text }
 	if r.required then
-		parts[#parts + 1] = (r.requiredEstimated and "skill ~%d" or "skill %d"):format(r.required)
+		parts[#parts + 1] = ("skill %d"):format(r.required)
 	end
 	local color = C.good
-	if r.otherFactionOnly then
-		parts[#parts + 1] = r.vendorFaction or "other faction"
-		color = C.info
-	elseif r.tooLow then
+	if r.tooLow then
 		color = C.warn
 	elseif r.status == "unlearned" then
 		color = C.muted
@@ -88,7 +82,7 @@ end
 -- Rows after the search box and the filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
-	local all = state.professionID and ns.BuildRows(state.professionID, s.includeUnlearned, s.ownFactionOnly) or {}
+	local all = state.professionID and ns.BuildRows(state.professionID, s.includeUnlearned) or {}
 	local query = state.query:lower()
 	local out, hidden = {}, 0
 	for _, r in ipairs(all) do
@@ -96,8 +90,8 @@ local function FilteredRows()
 		if keep then
 			if s.hideUnpriced and not r.profit then
 				keep, hidden = false, hidden + 1
-			elseif s.onlyReachable and r.status ~= "known" and (not r.required or r.tooLow or r.skillColor == "red") then
-				-- unknown requirement counts as not confirmed learnable
+			elseif s.onlyReachable and r.status ~= "known" and (not r.required or r.tooLow) then
+				-- only recipes a trainer confirmed are learnable now
 				keep, hidden = false, hidden + 1
 			end
 		end
@@ -305,28 +299,11 @@ local function ShowTooltip(row)
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	GameTooltip:AddLine((SKILL_COLORS[r.skillColor] or "|cffffffff") .. (r.name or "?") .. "|r")
 	GameTooltip:AddLine(StatusLine(r))
-	local t = r.thresholds
-	if t then
-		GameTooltip:AddLine(("%s%d|r  %s%d|r  %s%d|r  %s%d|r"):format(SKILL_COLORS.orange, t[1], SKILL_COLORS.yellow, t[2],
-			SKILL_COLORS.green, t[3], SKILL_COLORS.grey, t[4]))
-	end
+
 
 	if r.status ~= "known" then
 		if r.learnCost then
-			local how = r.learnSource == "trainer" and "trainer" or r.learnSource == "vendor" and "vendor" or "auction house"
-			GameTooltip:AddDoubleLine("To learn", ("%s (%s)"):format(Money(r.learnCost), how), 0.8, 0.8, 0.8, 1, 1, 1)
-		end
-		if r.status == "vendor" then
-			local vendors = ns.RecipeVendors(r.recipeID, Settings().ownFactionOnly)
-			local shown = {}
-			for i = 1, math.min(4, #vendors) do
-				local v = vendors[i]
-				shown[i] = v.own and v.name or (C.info .. v.name .. " (" .. (v.faction or "?") .. ")|r")
-			end
-			if #shown > 0 then
-				local more = #vendors > 4 and (" +%d more"):format(#vendors - 4) or ""
-				GameTooltip:AddLine("Sold by " .. table.concat(shown, ", ") .. more, 0.8, 0.8, 0.8, true)
-			end
+			GameTooltip:AddDoubleLine("To learn", ("%s (trainer)"):format(Money(r.learnCost)), 0.8, 0.8, 0.8, 1, 1, 1)
 		end
 		if r.source then
 			GameTooltip:AddLine(r.source, 0.8, 0.8, 0.8, true)
@@ -401,16 +378,11 @@ local function BuildHeader()
 		hint:SetShown((self:GetText() or "") == "")
 	end)
 
-	local faction = Style.Check(frame, "My faction only", Settings().ownFactionOnly, function(v)
-		Settings().ownFactionOnly = v
-		Refresh()
-	end)
-	faction:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	local unlearned = Style.Check(frame, "Show unlearned", Settings().includeUnlearned, function(v)
 		Settings().includeUnlearned, state.offset = v, 0
 		Refresh()
 	end)
-	unlearned:SetPoint("RIGHT", faction, "LEFT", -24, 0)
+	unlearned:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	local reachable = Style.Check(frame, "Can learn now", Settings().onlyReachable, function(v)
 		Settings().onlyReachable, state.offset = v, 0
 		Refresh()

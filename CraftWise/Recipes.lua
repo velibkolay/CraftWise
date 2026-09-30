@@ -141,8 +141,8 @@ ns.On("TRADE_SKILL_SHOW", RequestScan)
 ns.On("TRADE_SKILL_LIST_UPDATE", RequestScan)
 ns.On("TRADE_SKILL_DATA_SOURCE_CHANGED", RequestScan)
 
--- Bundled data (Data/*.lua, generated from the Forever client's DB2 and CMaNGOS classic-db by
--- cjber/skillup-forever, GPL-3.0) fills what the client can't tell us with the window closed.
+-- Bundled data (Data/*.lua, generated from the Forever client's own DB2 tables by
+-- cjber/skillup-forever, GPL-3.0): reagents, outputs, vendor prices, item sell prices.
 
 -- Gathering professions have no crafts worth a profit table (their tab becomes a guide later).
 ns.GATHERING = { [182] = true, [186] = true, [356] = true, [393] = true } -- Herbalism, Mining, Fishing, Skinning
@@ -203,115 +203,37 @@ local function BundledName(skillLine, recipeID)
 	return namesByID[skillLine][recipeID]
 end
 
+-- Only first-hand data decides how a recipe is learned: the trainer window (fee, required skill)
+-- recorded in game. Recipe sources, requirements and skill-up thresholds wait for reliable Forever
+-- data (issue #11); nothing is estimated.
 local function Trainer(recipeID)
 	local seen = ns.db and ns.db.trainer[recipeID]
 	if seen then
-		return seen.fee, seen.required, "seen"
+		return seen.fee, seen.required
 	end
-	local bundled = ns.TrainerFees and ns.TrainerFees[recipeID]
-	if bundled then
-		return bundled[1], bundled[2], "bundled"
-	end
-end
-
-local function RecipeItemSource(recipeID)
-	return ns.RecipeSources and ns.RecipeSources[recipeID]
 end
 
 -- Status of a recipe for this character, and the skill it needs:
 --   "known"      learned
---   "trainable"  a trainer teaches it and the skill is high enough
---   "vendor"     a recipe item sold by a vendor
---   "drop"       a recipe item from mob drops or world drops
---   "quest"      a recipe item from a quest
---   "unlearned"  no source known
--- The second return is the required skill; the third is true when the skill is too low.
+--   "trainable"  seen at a trainer (second return: required skill, third: skill too low)
+--   "unlearned"  not learned, source not known yet
 function ns.RecipeStatus(prof, recipeID, recipe)
 	if recipe.learned then
 		return "known"
 	end
-	local skill = prof.skill or 0
 	local _, required = Trainer(recipeID)
 	if required then
-		return "trainable", required, required > skill
-	end
-	local source = RecipeItemSource(recipeID)
-	if source then
-		local status = source.vendors and "vendor" or source.quests and "quest" or "drop"
-		return status, source.skill, (source.skill or 0) > skill
-	end
-	local required, estimated = ns.RequiredSkill(recipeID)
-	if required then
-		return "unlearned", required, required > skill, estimated
+		return "trainable", required, required > (prof.skill or 0)
 	end
 	return "unlearned"
 end
 
--- Cost to learn: trainer fee, else the recipe item's vendor price, else its AH price.
--- Returns copper and where it came from ("trainer" | "vendor" | "auction"), or nil.
+-- Cost to learn, from the trainer window. Returns copper and "trainer", or nil.
 function ns.LearnCost(recipeID)
 	local fee = Trainer(recipeID)
 	if fee then
 		return fee, "trainer"
 	end
-	local source = RecipeItemSource(recipeID)
-	if source then
-		if source.price then
-			return source.price, "vendor"
-		end
-		local ah = ns.GetAuctionPrice(source.item)
-		if ah then
-			return ah, "auction"
-		end
-	end
-end
-
-local FACTION_CODE = { Horde = "H", Alliance = "A" }
-local FACTION_NAME = { H = "Horde", A = "Alliance" }
-
-function ns.PlayerFactionCode()
-	local faction = UnitFactionGroup and UnitFactionGroup("player")
-	return FACTION_CODE[faction]
-end
-
--- Vendors of a recipe item: { name, faction = "Horde"|"Alliance"|nil, own = bool }.
--- Own faction and neutral vendors first, then the other faction's (players can switch
--- faction or level an alt there). ownOnly drops the other faction's vendors.
-function ns.RecipeVendors(recipeID, ownOnly)
-	local source = RecipeItemSource(recipeID)
-	if not (source and source.vendors and ns.SourceNPCs) then
-		return {}
-	end
-	local mine = ns.PlayerFactionCode()
-	local own, other = {}, {}
-	for _, npc in ipairs(source.vendors) do
-		local info = ns.SourceNPCs[npc]
-		if info then
-			local isOwn = info[2] == "" or mine == nil or info[2] == mine
-			local entry = { name = info[1], faction = FACTION_NAME[info[2]], own = isOwn }
-			table.insert(isOwn and own or other, entry)
-		end
-	end
-	if not ownOnly then
-		for _, entry in ipairs(other) do
-			table.insert(own, entry)
-		end
-	end
-	return own
-end
-
--- True when every vendor of this recipe item belongs to the other faction.
-function ns.OtherFactionOnly(recipeID)
-	local vendors = ns.RecipeVendors(recipeID)
-	if #vendors == 0 then
-		return false
-	end
-	for _, v in ipairs(vendors) do
-		if v.own then
-			return false
-		end
-	end
-	return true, vendors[1].faction
 end
 
 local function IsSpellKnown(recipeID)
@@ -322,62 +244,18 @@ local function IsSpellKnown(recipeID)
 	return false
 end
 
--- Skill needed to learn a recipe, and whether it is an estimate.
--- Order: trainer requirement, recipe item requirement, then thresholds. Many threshold rows come
--- from DB2 with a placeholder orange of 1 for recipes that are really learned much later
--- (e.g. Mongoose Boots: 1 / 310 / 320 / 330); for those the requirement is estimated as
--- yellow - 10, the usual gap between learning a recipe and it turning yellow.
-function ns.RequiredSkill(recipeID)
-	local _, required = Trainer(recipeID)
-	if required then
-		return required, false
-	end
-	local source = RecipeItemSource(recipeID)
-	if source and source.skill then
-		return source.skill, false
-	end
-	local t = ns.Thresholds and ns.Thresholds[recipeID]
-	if not t then
-		return nil
-	end
-	if t[1] <= 1 and t[2] > 30 then
-		return math.max(1, t[2] - 10), true
-	end
-	return t[1], false
-end
-
--- Skill-up colour like the game's recipe list: "orange" | "yellow" | "green" | "grey",
--- or "red" when the skill is below the recipe's requirement. Learned recipes use the colour the
--- client reported; unlearned ones use the requirement and the bundled thresholds.
--- nil when nothing is known.
+-- Skill-up colour of a learned recipe, as the client reports it: "orange" | "yellow" | "green" |
+-- "grey". Unlearned recipes are "red" when a trainer said the skill is too low, otherwise nil.
 local CLIENT_COLORS = { [0] = "orange", [1] = "yellow", [2] = "green", [3] = "grey" }
-function ns.SkillUpColor(recipeID, recipe, skill)
-	if recipe.learned and CLIENT_COLORS[recipe.difficulty] then
+function ns.SkillUpColor(recipe, tooLow)
+	if recipe.learned then
 		return CLIENT_COLORS[recipe.difficulty]
 	end
-	if not skill then
-		return nil
-	end
-	local required = ns.RequiredSkill(recipeID)
-	if required and skill < required then
-		return "red"
-	end
-	local t = ns.Thresholds and ns.Thresholds[recipeID]
-	if not t then
-		return nil
-	end
-	if skill < t[2] then
-		return "orange"
-	elseif skill < t[3] then
-		return "yellow"
-	elseif skill < t[4] then
-		return "green"
-	end
-	return "grey"
+	return tooLow and "red" or nil
 end
 
 local function MakeRow(prof, recipeID, recipe, prices)
-	local status, required, tooLow, estimated = ns.RecipeStatus(prof, recipeID, recipe)
+	local status, required, tooLow = ns.RecipeStatus(prof, recipeID, recipe)
 	local learnCost, learnSource
 	if not recipe.learned then
 		learnCost, learnSource = ns.LearnCost(recipeID)
@@ -394,25 +272,20 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.status = status
 	result.required = required
 	result.tooLow = tooLow
-	result.requiredEstimated = estimated
 	result.learnSource = learnSource
 	result.source = recipe.source
 	result.difficulty = recipe.difficulty
-	result.skillColor = ns.SkillUpColor(recipeID, recipe, prof.skill)
-	result.thresholds = ns.Thresholds and ns.Thresholds[recipeID]
+	result.skillColor = ns.SkillUpColor(recipe, tooLow)
 	result.noItemOutput = recipe.noItemOutput or result.noItemOutput
 	result.outputItemID = recipe.output and recipe.output.itemID
 	result.bundledOnly = recipe.bundledOnly
-	if status == "vendor" then
-		result.otherFactionOnly, result.vendorFaction = ns.OtherFactionOnly(recipeID)
-	end
 	return result
 end
 
 -- Rows for the profit table of one profession. Cached recipes come first-hand from the client;
 -- with includeUnlearned, bundled recipes of the same skill line that the client never listed are
 -- added too, so "what could I learn" works even if the client only lists learned recipes.
-function ns.BuildRows(professionID, includeUnlearned, ownFactionOnly)
+function ns.BuildRows(professionID, includeUnlearned)
 	local prof = ns.charDB and ns.charDB.professions[professionID]
 	if not prof then
 		return {}
@@ -454,15 +327,6 @@ function ns.BuildRows(professionID, includeUnlearned, ownFactionOnly)
 				end
 			end
 		end
-	end
-	if ownFactionOnly then
-		local kept = {}
-		for _, row in ipairs(rows) do
-			if not row.otherFactionOnly then
-				table.insert(kept, row)
-			end
-		end
-		rows = kept
 	end
 	return rows
 end
