@@ -138,5 +138,21 @@ it("filters: hide unpriced and can-learn-now", function()
 	ns.db.settings.onlyReachable = true
 	ns.RefreshProfitFrame()
 	n, seen = visible()
-	for _, r in ipairs(seen) do assert(r.status == "known" or (r.required and not r.tooLow), "unreachable row shown: " .. r.name) end
+	for _, r in ipairs(seen) do assert(r.status ~= "known" and r.required and not r.tooLow, "row not learnable now: " .. r.name) end
+end)
+
+it("learnable now shows trainer-confirmed unlearned recipes even with 'Show unlearned' off", function()
+	local ns, stub = LoadAddon({ savedDB = { settings = { includeUnlearned = false, onlyReachable = true } } })
+	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = {
+		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) },
+		[3760] = { info = { name = "Cloak", learned = false }, schematic = stub.Schematic({ { 2319, 5 } }, 3719) },
+		[3761] = { info = { name = "Tunic", learned = false }, schematic = stub.Schematic({ { 2319, 5 } }, 3720) },
+		[3762] = { info = { name = "Pants", learned = false }, schematic = stub.Schematic({ { 2319, 5 } }, 3721) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.db.trainer[3760] = { fee = 500, required = 90 }
+	ns.db.trainer[3761] = { fee = 900, required = 120 }
+	ns.ToggleProfitFrame()
+	local names = {}
+	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then names[#names + 1] = f.data.name end end
+	eq(#names, 1); eq(names[1], "Cloak")
 end)

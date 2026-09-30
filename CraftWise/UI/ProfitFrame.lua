@@ -82,7 +82,8 @@ end
 -- Rows after the search box and the filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
-	local all = state.professionID and ns.BuildRows(state.professionID, s.includeUnlearned) or {}
+	-- "Learnable now" lists unlearned recipes, so it needs them regardless of "Show unlearned".
+	local all = state.professionID and ns.BuildRows(state.professionID, s.includeUnlearned or s.onlyReachable) or {}
 	local query = state.query:lower()
 	local out, hidden = {}, 0
 	for _, r in ipairs(all) do
@@ -90,8 +91,8 @@ local function FilteredRows()
 		if keep then
 			if s.hideUnpriced and not r.profit then
 				keep, hidden = false, hidden + 1
-			elseif s.onlyReachable and r.status ~= "known" and (not r.required or r.tooLow) then
-				-- only recipes a trainer confirmed are learnable now
+			elseif s.onlyReachable and (r.status == "known" or not r.required or r.tooLow) then
+				-- unlearned recipes a trainer confirmed you can learn at your skill
 				keep, hidden = false, hidden + 1
 			end
 		end
@@ -162,7 +163,10 @@ local function RenderSummary(ids)
 		if unpriced > 0 then
 			text = text .. Muted(("  ·  %d without a price (reagent or item not on the AH)"):format(unpriced))
 		end
-		if state.hidden > 0 then
+		if Settings().onlyReachable and #state.data == 0 then
+			text = C.warn .. "Nothing confirmed learnable yet.|r " .. Muted("Open your trainer once so CraftWise records what it teaches and at which skill.")
+		end
+		if state.hidden > 0 and not (Settings().onlyReachable and #state.data == 0) then
 			text = text .. Muted(("  ·  %d hidden by filters"):format(state.hidden))
 		end
 	end
@@ -383,7 +387,7 @@ local function BuildHeader()
 		Refresh()
 	end)
 	unlearned:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	local reachable = Style.Check(frame, "Can learn now", Settings().onlyReachable, function(v)
+	local reachable = Style.Check(frame, "Learnable now", Settings().onlyReachable, function(v)
 		Settings().onlyReachable, state.offset = v, 0
 		Refresh()
 	end)
