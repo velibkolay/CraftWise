@@ -396,8 +396,17 @@ local function ShowTooltip(row)
 		return
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-	GameTooltip:AddLine((SKILL_COLORS[r.skillColor] or "|cffffffff") .. (r.name or "?") .. "|r")
-	GameTooltip:AddLine(StatusLine(r))
+	-- The crafted item's own tooltip first (item level, stats, requirements, other addons' lines),
+	-- then a CraftWise section. Recipes without an item output get the CraftWise section only.
+	if r.outputItemID and GameTooltip.SetItemByID then
+		GameTooltip:SetItemByID(r.outputItemID)
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("CraftWise", C.accent[1], C.accent[2], C.accent[3])
+		GameTooltip:AddLine((SKILL_COLORS[r.skillColor] or "|cffffffff") .. (r.name or "?") .. "|r  " .. StatusLine(r))
+	else
+		GameTooltip:AddLine((SKILL_COLORS[r.skillColor] or "|cffffffff") .. (r.name or "?") .. "|r")
+		GameTooltip:AddLine(StatusLine(r))
+	end
 
 
 	if r.status ~= "known" then
