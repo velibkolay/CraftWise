@@ -6,10 +6,15 @@ local handlers = {}
 local frame = CreateFrame("Frame")
 ns.eventFrame = frame
 
+-- Events this client doesn't know are recorded instead of raising an error at load time.
+ns.unknownEvents = {}
 function ns.On(event, fn)
 	if not handlers[event] then
 		handlers[event] = {}
-		frame:RegisterEvent(event)
+		local ok = pcall(frame.RegisterEvent, frame, event)
+		if not ok then
+			ns.unknownEvents[#ns.unknownEvents + 1] = event
+		end
 	end
 	table.insert(handlers[event], fn)
 end
@@ -79,6 +84,7 @@ ns.On("ADDON_LOADED", function(_, loaded)
 	ApplyDefaults(CraftWiseDB, DB_DEFAULTS)
 	ApplyDefaults(CraftWiseCharDB, CHAR_DEFAULTS)
 	ns.db, ns.charDB = CraftWiseDB, CraftWiseCharDB
+	ns.db.debug = { unknownEvents = ns.unknownEvents }
 	ns.Notify("DB_READY")
 end)
 
@@ -108,6 +114,13 @@ SlashCmdList.CRAFTWISE = function(msg)
 			ns.Print("no professions cached yet - open a profession window once")
 		end
 		ns.Print("Auctionator: " .. (ns.HasAuctionator() and "found" or "not found"))
+		if #ns.unknownEvents > 0 then
+			ns.Print("unknown events: " .. table.concat(ns.unknownEvents, ", "))
+		end
+		local d = ns.db and ns.db.debug and ns.db.debug.trainer
+		if d then
+			ns.Print(("last trainer: %s services, %d recorded, event %s"):format(tostring(d.services), d.recorded or 0, tostring(d.event)))
+		end
 		return
 	end
 	if ns.ToggleProfitFrame then

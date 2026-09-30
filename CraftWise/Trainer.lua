@@ -42,19 +42,42 @@ local function TooltipRecipeID(index)
 	end
 end
 
-function ns.RecordTrainer()
+function ns.RecordTrainer(event)
+	-- Diagnostics (issue #3): what the trainer API returned, kept in SavedVariables.
+	local diag = { event = event, api = GetNumTrainerServices and "ok" or "missing", samples = {} }
+	if ns.db then
+		ns.db.debug = ns.db.debug or {}
+		ns.db.debug.trainer = diag
+	end
 	if not (ns.db and GetNumTrainerServices) then
 		return 0
 	end
 	local names
 	local recorded = 0
-	for index = 1, GetNumTrainerServices() do
+	local okCount, count = pcall(GetNumTrainerServices)
+	diag.services = okCount and count or ("error: " .. tostring(count))
+	if not okCount then
+		return 0
+	end
+	for index = 1, count do
 		local name, kind = GetTrainerServiceInfo(index)
 		if name and kind ~= "header" then
 			local recipeID = TooltipRecipeID(index)
+			local via = recipeID and "tooltip"
 			if not recipeID then
 				names = names or NameIndex()
 				recipeID = names[name] or nil
+				via = recipeID and "name" or nil
+			end
+			if #diag.samples < 8 then
+				local okTip, tip = pcall(function()
+					return C_TooltipInfo and C_TooltipInfo.GetTrainerService(index)
+				end)
+				local tipID = okTip and tip and tip.id or nil
+				if tipID and issecretvalue and issecretvalue(tipID) then
+					tipID = "secret"
+				end
+				diag.samples[#diag.samples + 1] = { name = name, kind = kind, tooltipID = tipID, matched = recipeID, via = via }
 			end
 			if recipeID then
 				local _, required = GetTrainerServiceSkillReq(index)
@@ -63,6 +86,7 @@ function ns.RecordTrainer()
 			end
 		end
 	end
+	diag.recorded = recorded
 	if recorded > 0 then
 		ns.Notify("RECIPES_CHANGED")
 	end
