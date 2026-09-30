@@ -114,3 +114,29 @@ it("learn columns hide when unlearned recipes are hidden", function()
 	ns.RefreshProfitFrame()
 	eq(learnHeader.shown, true)
 end)
+
+it("filters: hide unpriced and can-learn-now", function()
+	local ns, stub = LoadAddon({ data = true, auctionator = true })
+	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
+		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	stub.ah[2318], stub.ah[2302] = 10, 100
+	ns.ToggleProfitFrame()
+	local function visible()
+		local n, rowsSeen = 0, {}
+		for _, f in ipairs(stub.frames) do
+			if f.data and f.shown ~= false then n = n + 1; rowsSeen[#rowsSeen + 1] = f.data end
+		end
+		return n, rowsSeen
+	end
+	ns.db.settings.hideUnpriced = true
+	ns.RefreshProfitFrame()
+	local n, seen = visible()
+	assert(n >= 1)
+	for _, r in ipairs(seen) do assert(r.profit, "unpriced row shown") end
+	ns.db.settings.hideUnpriced = false
+	ns.db.settings.onlyReachable = true
+	ns.RefreshProfitFrame()
+	n, seen = visible()
+	for _, r in ipairs(seen) do assert(r.skillColor ~= "red" and not r.tooLow, "unreachable row shown: " .. r.name) end
+end)

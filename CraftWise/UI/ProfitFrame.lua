@@ -40,7 +40,7 @@ local SKILL_COLORS = {
 }
 
 local frame, rows, tabs = nil, {}, {}
-local state = { professionID = nil, offset = 0, data = {}, query = "" }
+local state = { professionID = nil, offset = 0, data = {}, query = "", hidden = 0 }
 
 local function Settings()
 	return ns.db.settings
@@ -85,20 +85,26 @@ end
 
 -- Data ---------------------------------------------------------------------
 
+-- Rows after the search box and the filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
 	local all = state.professionID and ns.BuildRows(state.professionID, s.includeUnlearned, s.ownFactionOnly) or {}
 	local query = state.query:lower()
-	if query == "" then
-		return all
-	end
-	local out = {}
+	local out, hidden = {}, 0
 	for _, r in ipairs(all) do
-		if (r.name or ""):lower():find(query, 1, true) then
+		local keep = query == "" or (r.name or ""):lower():find(query, 1, true)
+		if keep then
+			if s.hideUnpriced and not r.profit then
+				keep, hidden = false, hidden + 1
+			elseif s.onlyReachable and (r.skillColor == "red" or r.tooLow) then
+				keep, hidden = false, hidden + 1
+			end
+		end
+		if keep then
 			out[#out + 1] = r
 		end
 	end
-	return out
+	return out, hidden
 end
 
 local function ProfessionIDs()
@@ -159,7 +165,10 @@ local function RenderSummary(ids)
 		end
 		text = ("%s%d|r of %d priced recipes make a profit"):format(C.good, profitable, priced)
 		if unpriced > 0 then
-			text = text .. Muted(("  ·  %d without prices (run an Auctionator Full Scan)"):format(unpriced))
+			text = text .. Muted(("  ·  %d without a price (reagent or item not on the AH)"):format(unpriced))
+		end
+		if state.hidden > 0 then
+			text = text .. Muted(("  ·  %d hidden by filters"):format(state.hidden))
 		end
 	end
 	frame.summary:SetText(text)
@@ -259,7 +268,7 @@ local function Refresh()
 		Layout(Settings().includeUnlearned)
 	end
 
-	state.data = FilteredRows()
+	state.data, state.hidden = FilteredRows()
 	local s = Settings()
 	table.sort(state.data, ns.Profit.Comparator(s.sortKey, s.sortDesc))
 	state.offset = math.max(0, math.min(state.offset, #state.data - VISIBLE_ROWS))
@@ -371,7 +380,7 @@ local function BuildHeader()
 
 	-- Filter row: search on the left, toggles on the right.
 	local search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-	search:SetSize(220, 22)
+	search:SetSize(200, 22)
 	search:SetPoint("TOPLEFT", PAD + 6, -98)
 	search:SetAutoFocus(false)
 	search:SetScript("OnTextChanged", function(self)
@@ -401,6 +410,16 @@ local function BuildHeader()
 		Refresh()
 	end)
 	unlearned:SetPoint("RIGHT", faction, "LEFT", -24, 0)
+	local reachable = Style.Check(frame, "Can learn now", Settings().onlyReachable, function(v)
+		Settings().onlyReachable, state.offset = v, 0
+		Refresh()
+	end)
+	reachable:SetPoint("RIGHT", unlearned, "LEFT", -24, 0)
+	local priced = Style.Check(frame, "Hide unpriced", Settings().hideUnpriced, function(v)
+		Settings().hideUnpriced, state.offset = v, 0
+		Refresh()
+	end)
+	priced:SetPoint("RIGHT", reachable, "LEFT", -24, 0)
 
 	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.summary:SetPoint("TOPLEFT", PAD, -130)
