@@ -116,7 +116,11 @@ function ns.BagRows()
 			row.ammo = select(6, C_Item.GetItemInfoInstant(id)) == 6 -- Projectile
 		end
 
-		row.kept = ns.db and ns.db.keep[id] or false
+		-- Quest items are always kept: they can't be sold and belong to a quest.
+		if C_Item and C_Item.GetItemInfoInstant then
+			row.questItem = select(6, C_Item.GetItemInfoInstant(id)) == 12 -- Quest
+		end
+		row.kept = row.questItem or (ns.db and ns.db.keep[id]) or false
 		if row.kept then
 			row.best, row.bestValue, row.margin = nil, nil, nil
 		end

@@ -93,3 +93,12 @@ it("kept items leave the advice and totals, sort last, and can be hidden", funct
 		if f.data and f.shown ~= false then assert(not f.data.kept, "kept item shown") end
 	end
 end)
+
+it("quest items are always kept", function()
+	local ns, stub = setup()
+	stub.items[500] = { name = "Dal Bloodclaw's Skull", sellPrice = 0 }
+	stub.itemClass[500] = 12
+	table.insert(stub.bags[1], { itemID = 500, stackCount = 1, quality = 1 })
+	local q = byID(ns.BagRows())[500]
+	eq(q.questItem, true); eq(q.kept, true); eq(q.best, nil)
+end)

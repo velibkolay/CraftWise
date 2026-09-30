@@ -303,7 +303,9 @@ local function RenderBagRow(row, r)
 	else
 		cells.deValue:SetText(Muted(r.canDisenchant and "?" or "-"))
 	end
-	if r.kept then
+	if r.questItem then
+		cells.bestValue:SetText(C.info .. "Quest item|r")
+	elseif r.kept then
 		cells.bestValue:SetText(C.info .. "Kept|r" .. Muted("  right-click to sell"))
 	elseif r.best then
 		local margin = r.margin and r.margin > 0 and Muted(("  +%s"):format(Money(r.margin))) or ""
@@ -522,7 +524,9 @@ local function ShowBagTooltip(row, r)
 	if r.canDisenchant then
 		GameTooltip:AddDoubleLine("Disenchant", r.deValue and Money(r.deValue) or "needs disenchant data", 0.8, 0.8, 0.8, 1, 1, 1)
 	end
-	if r.kept then
+	if r.questItem then
+		GameTooltip:AddLine("Quest item - always kept.", 0.54, 0.7, 1)
+	elseif r.kept then
 		GameTooltip:AddLine("Kept - not counted. Right-click to sell it again.", 0.54, 0.7, 1)
 	elseif r.best then
 		local line = BEST_TEXT[r.best]:upper()
@@ -794,7 +798,7 @@ local function BuildRows()
 				return
 			end
 			if View() == "bags" then
-				if mouse == "RightButton" then
+				if mouse == "RightButton" and not r.questItem then
 					ns.ToggleKeep(r.itemID)
 					ShowTooltip(self)
 				end
