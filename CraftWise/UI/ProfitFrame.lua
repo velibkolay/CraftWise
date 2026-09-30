@@ -69,7 +69,7 @@ local function StatusLine(r)
 	end
 	local parts = { text }
 	if r.required then
-		parts[#parts + 1] = ("skill %d"):format(r.required)
+		parts[#parts + 1] = (r.requiredEstimated and "skill ~%d" or "skill %d"):format(r.required)
 	end
 	local color = C.good
 	if r.otherFactionOnly then
@@ -96,7 +96,8 @@ local function FilteredRows()
 		if keep then
 			if s.hideUnpriced and not r.profit then
 				keep, hidden = false, hidden + 1
-			elseif s.onlyReachable and (r.skillColor == "red" or r.tooLow) then
+			elseif s.onlyReachable and r.status ~= "known" and (not r.required or r.tooLow or r.skillColor == "red") then
+				-- unknown requirement counts as not confirmed learnable
 				keep, hidden = false, hidden + 1
 			end
 		end

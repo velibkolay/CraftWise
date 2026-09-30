@@ -240,6 +240,10 @@ function ns.RecipeStatus(prof, recipeID, recipe)
 		local status = source.vendors and "vendor" or source.quests and "quest" or "drop"
 		return status, source.skill, (source.skill or 0) > skill
 	end
+	local required, estimated = ns.RequiredSkill(recipeID)
+	if required then
+		return "unlearned", required, required > skill, estimated
+	end
 	return "unlearned"
 end
 
@@ -318,21 +322,51 @@ local function IsSpellKnown(recipeID)
 	return false
 end
 
+-- Skill needed to learn a recipe, and whether it is an estimate.
+-- Order: trainer requirement, recipe item requirement, then thresholds. Many threshold rows come
+-- from DB2 with a placeholder orange of 1 for recipes that are really learned much later
+-- (e.g. Mongoose Boots: 1 / 310 / 320 / 330); for those the requirement is estimated as
+-- yellow - 10, the usual gap between learning a recipe and it turning yellow.
+function ns.RequiredSkill(recipeID)
+	local _, required = Trainer(recipeID)
+	if required then
+		return required, false
+	end
+	local source = RecipeItemSource(recipeID)
+	if source and source.skill then
+		return source.skill, false
+	end
+	local t = ns.Thresholds and ns.Thresholds[recipeID]
+	if not t then
+		return nil
+	end
+	if t[1] <= 1 and t[2] > 30 then
+		return math.max(1, t[2] - 10), true
+	end
+	return t[1], false
+end
+
 -- Skill-up colour like the game's recipe list: "orange" | "yellow" | "green" | "grey",
 -- or "red" when the skill is below the recipe's requirement. Learned recipes use the colour the
--- client reported; unlearned ones use the bundled thresholds. nil when nothing is known.
+-- client reported; unlearned ones use the requirement and the bundled thresholds.
+-- nil when nothing is known.
 local CLIENT_COLORS = { [0] = "orange", [1] = "yellow", [2] = "green", [3] = "grey" }
 function ns.SkillUpColor(recipeID, recipe, skill)
 	if recipe.learned and CLIENT_COLORS[recipe.difficulty] then
 		return CLIENT_COLORS[recipe.difficulty]
 	end
-	local t = ns.Thresholds and ns.Thresholds[recipeID]
-	if not (t and skill) then
+	if not skill then
 		return nil
 	end
-	if skill < t[1] then
+	local required = ns.RequiredSkill(recipeID)
+	if required and skill < required then
 		return "red"
-	elseif skill < t[2] then
+	end
+	local t = ns.Thresholds and ns.Thresholds[recipeID]
+	if not t then
+		return nil
+	end
+	if skill < t[2] then
 		return "orange"
 	elseif skill < t[3] then
 		return "yellow"
@@ -343,7 +377,7 @@ function ns.SkillUpColor(recipeID, recipe, skill)
 end
 
 local function MakeRow(prof, recipeID, recipe, prices)
-	local status, required, tooLow = ns.RecipeStatus(prof, recipeID, recipe)
+	local status, required, tooLow, estimated = ns.RecipeStatus(prof, recipeID, recipe)
 	local learnCost, learnSource
 	if not recipe.learned then
 		learnCost, learnSource = ns.LearnCost(recipeID)
@@ -360,6 +394,7 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.status = status
 	result.required = required
 	result.tooLow = tooLow
+	result.requiredEstimated = estimated
 	result.learnSource = learnSource
 	result.source = recipe.source
 	result.difficulty = recipe.difficulty

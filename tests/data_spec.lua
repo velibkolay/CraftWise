@@ -126,14 +126,27 @@ it("other-faction-only vendor recipes are flagged and hidden by the filter", fun
 	eq(find(ns.BuildRows(165, true, true)), nil)
 end)
 
-it("skill-up colour: client colour for learned, thresholds for unlearned", function()
+it("skill-up colour: client colour for learned, requirement + thresholds for unlearned", function()
 	local ns = LoadAddon({ data = true })
-	local t = ns.Thresholds[2149] -- { 1, 40, 55, 70 }
-	eq(ns.SkillUpColor(2149, { learned = true, difficulty = 1 }, 60), "yellow")
-	eq(ns.SkillUpColor(2149, { learned = false }, t[1] - 1), "red")
-	eq(ns.SkillUpColor(2149, { learned = false }, t[2] - 1), "orange")
-	eq(ns.SkillUpColor(2149, { learned = false }, t[3] - 1), "yellow")
-	eq(ns.SkillUpColor(2149, { learned = false }, t[4] - 1), "green")
-	eq(ns.SkillUpColor(2149, { learned = false }, t[4]), "grey")
+	ns.Thresholds[9000001] = { 50, 70, 80, 90 } -- real orange
+	ns.Thresholds[9000002] = { 1, 310, 320, 330 } -- DB2 placeholder orange
+	eq(ns.SkillUpColor(9000001, { learned = true, difficulty = 1 }, 60), "yellow")
+	eq(ns.SkillUpColor(9000001, { learned = false }, 49), "red")
+	eq(ns.SkillUpColor(9000001, { learned = false }, 69), "orange")
+	eq(ns.SkillUpColor(9000001, { learned = false }, 79), "yellow")
+	eq(ns.SkillUpColor(9000001, { learned = false }, 89), "green")
+	eq(ns.SkillUpColor(9000001, { learned = false }, 90), "grey")
+	eq(ns.SkillUpColor(9000002, { learned = false }, 97), "red")
+	local req, est = ns.RequiredSkill(9000002)
+	eq(req, 300); eq(est, true)
+	req, est = ns.RequiredSkill(9000001)
+	eq(req, 50); eq(est, false)
 	eq(ns.SkillUpColor(99999999, { learned = false }, 50), nil)
+end)
+
+it("unlearned recipes with an estimated requirement above the skill are flagged tooLow", function()
+	local ns = LoadAddon({ data = true })
+	ns.Thresholds[9000002] = { 1, 310, 320, 330 }
+	local s, req, tooLow, est = ns.RecipeStatus({ skill = 97 }, 9000002, { learned = false })
+	eq(s, "unlearned"); eq(req, 300); eq(tooLow, true); eq(est, true)
 end)

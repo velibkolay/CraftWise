@@ -138,5 +138,5 @@ it("filters: hide unpriced and can-learn-now", function()
 	ns.db.settings.onlyReachable = true
 	ns.RefreshProfitFrame()
 	n, seen = visible()
-	for _, r in ipairs(seen) do assert(r.skillColor ~= "red" and not r.tooLow, "unreachable row shown: " .. r.name) end
+	for _, r in ipairs(seen) do assert(r.status == "known" or (r.required and not r.tooLow), "unreachable row shown: " .. r.name) end
 end)
