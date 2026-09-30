@@ -21,6 +21,7 @@ Recipes.lua
 Trainer.lua
 Crafts.lua
 Bags.lua
+Upgrades.lua
 UI\Style.lua
 UI\ProfitFrame.lua
 UI\MinimapButton.lua

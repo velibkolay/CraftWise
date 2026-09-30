@@ -63,9 +63,11 @@ Enum = { CraftingReagentType = { Basic = 1, Modifying = 2 } }
 -- Items: [itemID] = { name, sellPrice }
 stub.items = {}
 function GetItemInfo(id)
+	if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) end
 	local item = stub.items[id]
 	if not item then return nil end
-	return item.name, nil, 1, 1, 1, "", "", 20, "", nil, item.sellPrice
+	return item.name, item.link or ("item:" .. id), item.quality or 1, item.level or 1, item.minLevel or 1, "", "", 20,
+		item.equipLoc or "", nil, item.sellPrice
 end
 C_Item = { GetItemInfo = GetItemInfo, RequestLoadItemDataByID = noop }
 
@@ -160,7 +162,10 @@ C_Container = {
 }
 -- classID by itemID: stub.itemClass[id] = 2 weapon / 4 armor / 7 trade goods
 stub.itemClass = {}
-C_Item.GetItemInfoInstant = function(id) return id, nil, nil, nil, nil, stub.itemClass[id] end
+C_Item.GetItemInfoInstant = function(id)
+	local item = stub.items[id]
+	return id, nil, nil, item and item.equipLoc or "", item and item.icon, stub.itemClass[id]
+end
 C_Item.GetItemNameByID = function(id) return stub.items[id] and stub.items[id].name end
 
 -- Time and the player's profession list (skill per skill line).
@@ -174,6 +179,34 @@ function GetProfessionInfo(index)
 	if index == 1 and p then
 		return p.name, 136247, p.skill, p.max, 0, 0, p.id
 	end
+end
+
+-- Equipment: stub.equipped[slotName] = itemID; item stats from stub.items[id].stats.
+stub.equipped = {}
+stub.level = 20
+local SLOT_IDS = { HEADSLOT = 1, NECKSLOT = 2, SHOULDERSLOT = 3, SHIRTSLOT = 4, CHESTSLOT = 5, WAISTSLOT = 6,
+	LEGSSLOT = 7, FEETSLOT = 8, WRISTSLOT = 9, HANDSSLOT = 10, FINGER0SLOT = 11, FINGER1SLOT = 12,
+	TRINKET0SLOT = 13, TRINKET1SLOT = 14, BACKSLOT = 15, MAINHANDSLOT = 16, SECONDARYHANDSLOT = 17, RANGEDSLOT = 18 }
+function GetInventorySlotInfo(name)
+	local id = SLOT_IDS[name]
+	if not id then error("bad slot") end
+	return id
+end
+function GetInventoryItemID(_, slot)
+	for name, id in pairs(SLOT_IDS) do
+		if id == slot then return stub.equipped[name] end
+	end
+end
+function UnitLevel() return stub.level end
+C_Item.GetItemStats = function(link)
+	local id = tonumber(tostring(link):match("item:(%d+)"))
+	return id and stub.items[id] and stub.items[id].stats
+end
+stub.counts = {}
+C_Item.GetItemCount = function(id) return stub.counts[id] or 0 end
+stub.cantUse = {}
+C_TooltipInfo.GetItemByID = function(id)
+	return { lines = { { leftText = "x", leftColor = stub.cantUse[id] and { r = 1, g = 0.1, b = 0.1 } or { r = 1, g = 1, b = 1 } } } }
 end
 
 return stub

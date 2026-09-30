@@ -50,11 +50,13 @@ local DB_DEFAULTS = {
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
+	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	minimap = { hide = false, angle = 215 },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
-		bagSortKey = "bestValue", bagSortDesc = true, showKept = true },
+		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
+		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false },
 }
 local CHAR_DEFAULTS = {
 	version = 1,

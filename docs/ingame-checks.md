@@ -33,3 +33,11 @@ Report Lua errors with BugSack + BugGrabber.
 - Recipe tooltip shows `Skill-ups  yellow X  grey Y` and `Your crafts  a skill-ups in b crafts`.
 - Orange crafts must all count as skill-ups. After `/reload`, `CraftWiseDB.skillups[recipeID][skill]` holds `{ n, ups, d }`.
 - Batch crafting (craft all): every craft counted once.
+
+## Upgrades view (#16)
+- Upgrades tab lists known recipes whose item has a higher item level (or same level, more armour) than what you wear, or fills an empty slot.
+- Items you can't wear (red line in the item tooltip) or are too low level for are not listed.
+- Tooltip: stat differences vs the equipped item, reagents with "have N". Right-click dismisses; "Show dismissed" shows them greyed at the bottom; right-click again restores.
+- Equip something from the list: the row disappears (PLAYER_EQUIPMENT_CHANGED).
+- Check: `C_Item.GetItemStats` returns armour under `RESISTANCE0_NAME` in the Forever client (else the armour gain shows 0).
+- Check: ranged items (bow/gun) compare against the ranged slot.
