@@ -571,6 +571,15 @@ local function ShowTooltip(row)
 		GameTooltip:AddLine(StatusLine(r))
 	end
 
+	-- Skill-up thresholds (client DB2) and crafts recorded in game (#15). No chance % until verified.
+	local yellow, grey = ns.RecipeThresholds(r.recipeID)
+	if yellow then
+		GameTooltip:AddDoubleLine("Skill-ups", ("|cffffff00yellow %d|r  |cff808080grey %d|r"):format(yellow, grey), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	local n, ups = ns.SkillUpStats(r.recipeID)
+	if n > 0 then
+		GameTooltip:AddDoubleLine("Your crafts", ("%d skill-ups in %d crafts"):format(ups, n), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
 
 	if r.status ~= "known" then
 		if r.learnCost then

@@ -13,11 +13,13 @@
 Core.lua
 Data\Recipes.lua
 Data\Vendor.lua
+Data\Thresholds.lua
 Money.lua
 Prices.lua
 Profit.lua
 Recipes.lua
 Trainer.lua
+Crafts.lua
 Bags.lua
 UI\Style.lua
 UI\ProfitFrame.lua

@@ -50,6 +50,7 @@ local DB_DEFAULTS = {
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
+	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	minimap = { hide = false, angle = 215 },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
@@ -116,6 +117,9 @@ SlashCmdList.CRAFTWISE = function(msg)
 		ns.Print("Auctionator: " .. (ns.HasAuctionator() and "found" or "not found"))
 		if #ns.unknownEvents > 0 then
 			ns.Print("unknown events: " .. table.concat(ns.unknownEvents, ", "))
+		end
+		if ns.CraftsRecorded then
+			ns.Print(("skill-up log: %d crafts recorded"):format(ns.CraftsRecorded()))
 		end
 		local d = ns.db and ns.db.debug and ns.db.debug.trainer
 		if d then

@@ -163,4 +163,17 @@ stub.itemClass = {}
 C_Item.GetItemInfoInstant = function(id) return id, nil, nil, nil, nil, stub.itemClass[id] end
 C_Item.GetItemNameByID = function(id) return stub.items[id] and stub.items[id].name end
 
+-- Time and the player's profession list (skill per skill line).
+stub.now = 1000
+function GetTime() return stub.now end
+function GetProfessions()
+	if stub.profession then return 1 end
+end
+function GetProfessionInfo(index)
+	local p = stub.profession
+	if index == 1 and p then
+		return p.name, 136247, p.skill, p.max, 0, 0, p.id
+	end
+end
+
 return stub

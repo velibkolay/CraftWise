@@ -27,3 +27,9 @@ Things the headless tests cannot prove. Run after installing, in the Forever bet
 - [ ] Row hover: reagent breakdown with source; clicking a row with the profession open selects the recipe.
 
 Report Lua errors with BugSack + BugGrabber.
+
+## Skill-up recorder (#15)
+- Craft a few recipes (orange and yellow). `/cw debug` shows "skill-up log: N crafts recorded" = number of crafts.
+- Recipe tooltip shows `Skill-ups  yellow X  grey Y` and `Your crafts  a skill-ups in b crafts`.
+- Orange crafts must all count as skill-ups. After `/reload`, `CraftWiseDB.skillups[recipeID][skill]` holds `{ n, ups, d }`.
+- Batch crafting (craft all): every craft counted once.
