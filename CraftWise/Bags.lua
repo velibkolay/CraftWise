@@ -112,6 +112,9 @@ function ns.BagRows()
 		end
 
 		row.reagent = reagents[id] or false
+		if C_Item and C_Item.GetItemInfoInstant then
+			row.ammo = select(6, C_Item.GetItemInfoInstant(id)) == 6 -- Projectile
+		end
 
 		-- Best option and how much more it pays than the next one.
 		local options = {}

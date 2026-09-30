@@ -218,7 +218,7 @@ local function RenderSummary(ids)
 		text = ("%d items  ·  best total %s%s|r  ·  vendor %s  ·  auction %s"):format(#state.data, C.good, Money(best),
 			Money(vendor), Money(auction))
 		if deable > 0 and not ns.DisenchantData then
-			text = text .. "\n" .. Muted(("%d items can be disenchanted; disenchant values come with the disenchant data (issue #11)."):format(deable))
+			text = text .. "\n" .. Muted(("%d %s can be disenchanted; disenchant values come with the disenchant data (issue #11)."):format(deable, deable == 1 and "item" or "items"))
 		end
 	elseif #ids == 0 then
 		text = C.warn .. "Open a profession window once so CraftWise can read your recipes.|r"
@@ -276,6 +276,9 @@ local function RenderBagRow(row, r)
 	end
 	if r.reagent then
 		notes[#notes + 1] = C.info .. "reagent for your recipes|r" .. C.muted
+	end
+	if r.ammo then
+		notes[#notes + 1] = C.info .. "ammo|r" .. C.muted
 	end
 	row.status:SetText(Muted(table.concat(notes, " · ")))
 	local cells = row.cells
@@ -454,7 +457,8 @@ local function Refresh()
 	RenderSummary(ids)
 	for key, header in pairs(frame.headers) do
 		local arrow = sortKey == key and (sortDesc and ARROW_DOWN or ARROW_UP) or ""
-		header.text:SetText(header.label .. arrow)
+		local label = (key == "name" and View() == "bags") and "ITEM" or header.label
+		header.text:SetText(label .. arrow)
 	end
 
 	for i = 1, VISIBLE_ROWS do
@@ -499,6 +503,9 @@ local function ShowBagTooltip(row, r)
 	end
 	if r.reagent then
 		GameTooltip:AddLine("Used by recipes you know - maybe keep it.", 0.54, 0.7, 1)
+	end
+	if r.ammo then
+		GameTooltip:AddLine("Ammo - keep what you shoot.", 0.54, 0.7, 1)
 	end
 	if r.ahAge and r.ahAge > 1 then
 		GameTooltip:AddLine(("AH price is %d days old."):format(r.ahAge), 1, 0.6, 0.3)
@@ -625,7 +632,8 @@ local function BuildHeader()
 	end)
 	local hint = search:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	hint:SetPoint("LEFT", 2, 0)
-	hint:SetText("Search recipes")
+	hint:SetText("Search")
+	frame.searchHint = hint
 	search:SetScript("OnEditFocusGained", function()
 		hint:Hide()
 	end)
