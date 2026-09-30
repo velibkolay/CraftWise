@@ -116,7 +116,12 @@ function ns.BagRows()
 			row.ammo = select(6, C_Item.GetItemInfoInstant(id)) == 6 -- Projectile
 		end
 
-		-- Best option and how much more it pays than the next one.
+		row.kept = ns.db and ns.db.keep[id] or false
+		if row.kept then
+			row.best, row.bestValue, row.margin = nil, nil, nil
+		end
+
+		-- Best option and how much more it pays than the next one (not for kept items).
 		local options = {}
 		if row.vendorValue then
 			options[#options + 1] = { "vendor", row.vendorValue }
@@ -130,12 +135,20 @@ function ns.BagRows()
 		table.sort(options, function(a, b)
 			return a[2] > b[2]
 		end)
-		if options[1] then
+		if options[1] and not row.kept then
 			row.best, row.bestValue = options[1][1], options[1][2]
 			row.margin = options[2] and (options[1][2] - options[2][2]) or nil
 		end
 	end
 	return order
+end
+
+function ns.ToggleKeep(itemID)
+	if not ns.db then
+		return
+	end
+	ns.db.keep[itemID] = not ns.db.keep[itemID] or nil
+	ns.Notify("BAGS_CHANGED")
 end
 
 ns.On("BAG_UPDATE_DELAYED", function()

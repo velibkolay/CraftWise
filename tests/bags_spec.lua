@@ -70,3 +70,26 @@ it("bags view renders, sorts by best value and shows tooltips", function()
 	eq(shown[1].itemID, 100) -- highest best value first
 	stub.Fire("BAG_UPDATE_DELAYED")
 end)
+
+it("kept items leave the advice and totals, sort last, and can be hidden", function()
+	local ns, stub = setup()
+	ns.ToggleKeep(100)
+	local rows = byID(ns.BagRows())
+	eq(rows[100].kept, true); eq(rows[100].best, nil); eq(rows[100].bestValue, nil)
+	ns.db.settings.view = "bags"
+	ns.ToggleProfitFrame()
+	local shown = {}
+	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then shown[#shown + 1] = f.data end end
+	eq(shown[#shown].itemID, 100) -- kept last
+	-- right-click toggles back
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.data.itemID == 100 and f.shown ~= false then f.scripts.OnClick(f, "RightButton") end
+	end
+	eq(ns.db.keep[100], nil)
+	ns.ToggleKeep(100)
+	ns.db.settings.showKept = false
+	ns.RefreshProfitFrame()
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.shown ~= false then assert(not f.data.kept, "kept item shown") end
+	end
+end)

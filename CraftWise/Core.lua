@@ -44,10 +44,11 @@ local DB_DEFAULTS = {
 	version = 1,
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
+	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	minimap = { hide = false, angle = 215 },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
-		bagSortKey = "bestValue", bagSortDesc = true },
+		bagSortKey = "bestValue", bagSortDesc = true, showKept = true },
 }
 local CHAR_DEFAULTS = {
 	version = 1,

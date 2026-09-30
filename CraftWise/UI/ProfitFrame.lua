@@ -131,12 +131,17 @@ local function FilteredRows()
 	if View() == "bags" then
 		local query = state.query:lower()
 		local out = {}
+		local hidden = 0
 		for _, r in ipairs(ns.BagRows()) do
 			if query == "" or r.name:lower():find(query, 1, true) then
-				out[#out + 1] = r
+				if r.kept and not s.showKept then
+					hidden = hidden + 1
+				else
+					out[#out + 1] = r
+				end
 			end
 		end
-		return out, 0
+		return out, hidden
 	end
 	local learnView = View() == "learn"
 	local all = state.professionID and ns.BuildRows(state.professionID, learnView or s.includeUnlearned) or {}
@@ -206,17 +211,25 @@ end
 local function RenderSummary(ids)
 	local text
 	if View() == "bags" then
-		local vendor, auction, best, deable = 0, 0, 0, 0
+		local vendor, auction, best, deable, kept = 0, 0, 0, 0, 0
 		for _, r in ipairs(state.data) do
-			vendor = vendor + (r.vendorValue or 0)
-			auction = auction + (r.ahValue or 0)
-			best = best + (r.bestValue or 0)
-			if r.canDisenchant then
-				deable = deable + 1
+			if r.kept then
+				kept = kept + 1
+			else
+				vendor = vendor + (r.vendorValue or 0)
+				auction = auction + (r.ahValue or 0)
+				best = best + (r.bestValue or 0)
+				if r.canDisenchant then
+					deable = deable + 1
+				end
 			end
 		end
-		text = ("%d items  ·  best total %s%s|r  ·  vendor %s  ·  auction %s"):format(#state.data, C.good, Money(best),
-			Money(vendor), Money(auction))
+		text = ("%d items to sell  ·  best total %s%s|r  ·  vendor %s  ·  auction %s"):format(#state.data - kept, C.good,
+			Money(best), Money(vendor), Money(auction))
+		kept = kept + state.hidden
+		if kept > 0 then
+			text = text .. Muted(("  ·  %d kept"):format(kept))
+		end
 		if deable > 0 and not ns.DisenchantData then
 			text = text .. "\n" .. Muted(("%d %s can be disenchanted; disenchant values come with the disenchant data (issue #11)."):format(deable, deable == 1 and "item" or "items"))
 		end
@@ -266,7 +279,8 @@ end
 
 local function RenderBagRow(row, r)
 	row.icon:SetTexture(r.icon or 134400)
-	row.name:SetText((QUALITY_COLORS[r.quality] or "|cffffffff") .. r.name .. "|r")
+	row.icon:SetDesaturated(r.kept)
+	row.name:SetText((r.kept and C.muted or (QUALITY_COLORS[r.quality] or "|cffffffff")) .. r.name .. "|r")
 	local notes = { ("x%d"):format(r.count) }
 	if r.bound then
 		notes[#notes + 1] = "soulbound"
@@ -289,7 +303,9 @@ local function RenderBagRow(row, r)
 	else
 		cells.deValue:SetText(Muted(r.canDisenchant and "?" or "-"))
 	end
-	if r.best then
+	if r.kept then
+		cells.bestValue:SetText(C.info .. "Kept|r" .. Muted("  right-click to sell"))
+	elseif r.best then
 		local margin = r.margin and r.margin > 0 and Muted(("  +%s"):format(Money(r.margin))) or ""
 		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. margin)
 	else
@@ -304,6 +320,7 @@ local function RenderRow(row, r, index)
 	if View() == "bags" then
 		return RenderBagRow(row, r)
 	end
+	row.icon:SetDesaturated(false)
 	row.icon:SetTexture(r.icon or 134400)
 	local color = SKILL_COLORS[r.skillColor] or "|cffffffff"
 	row.name:SetText(color .. (r.name or ("Recipe " .. r.recipeID)) .. "|r")
@@ -425,6 +442,7 @@ local function UpdateControls()
 	frame.priced:SetShown(not learnView and not bagsView)
 	frame.unlearned:SetShown(not learnView and not bagsView)
 	frame.fits:SetShown(learnView)
+	frame.showKept:SetShown(bagsView)
 	for _, tab in ipairs(tabs) do
 		if bagsView then
 			tab:Hide()
@@ -451,7 +469,17 @@ local function Refresh()
 
 	state.data, state.hidden = FilteredRows()
 	local sortKey, sortDesc = SortSettings()
-	table.sort(state.data, ns.Profit.Comparator(sortKey, sortDesc))
+	local compare = ns.Profit.Comparator(sortKey, sortDesc)
+	if View() == "bags" then
+		local inner = compare
+		compare = function(a, b)
+			if a.kept ~= b.kept then
+				return b.kept -- kept items last
+			end
+			return inner(a, b)
+		end
+	end
+	table.sort(state.data, compare)
 	state.offset = math.max(0, math.min(state.offset, #state.data - VISIBLE_ROWS))
 
 	RenderSummary(ids)
@@ -494,7 +522,9 @@ local function ShowBagTooltip(row, r)
 	if r.canDisenchant then
 		GameTooltip:AddDoubleLine("Disenchant", r.deValue and Money(r.deValue) or "needs disenchant data", 0.8, 0.8, 0.8, 1, 1, 1)
 	end
-	if r.best then
+	if r.kept then
+		GameTooltip:AddLine("Kept - not counted. Right-click to sell it again.", 0.54, 0.7, 1)
+	elseif r.best then
 		local line = BEST_TEXT[r.best]:upper()
 		if r.margin and r.margin > 0 then
 			line = line .. (" pays %s more"):format(Money(r.margin))
@@ -509,6 +539,9 @@ local function ShowBagTooltip(row, r)
 	end
 	if r.ahAge and r.ahAge > 1 then
 		GameTooltip:AddLine(("AH price is %d days old."):format(r.ahAge), 1, 0.6, 0.3)
+	end
+	if not r.kept then
+		GameTooltip:AddLine("Right-click: keep this item (leave it out of the advice)", 0.55, 0.55, 0.6)
 	end
 	GameTooltip:Show()
 end
@@ -656,7 +689,12 @@ local function BuildHeader()
 		Refresh()
 	end)
 	fits:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	frame.unlearned, frame.priced, frame.fits = unlearned, priced, fits
+	local showKept = Style.Check(frame, "Show kept items", Settings().showKept, function(v)
+		Settings().showKept, state.offset = v, 0
+		Refresh()
+	end)
+	showKept:SetPoint("TOPRIGHT", -PAD - 110, -100)
+	frame.unlearned, frame.priced, frame.fits, frame.showKept = unlearned, priced, fits, showKept
 
 	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.summary:SetPoint("TOPLEFT", PAD, -130)
@@ -749,9 +787,19 @@ local function BuildRows()
 		row:SetScript("OnLeave", function()
 			GameTooltip:Hide()
 		end)
-		row:SetScript("OnClick", function(self)
-			if self.data and C_TradeSkillUI.OpenRecipe then
-				pcall(C_TradeSkillUI.OpenRecipe, self.data.recipeID)
+		row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+		row:SetScript("OnClick", function(self, mouse)
+			local r = self.data
+			if not r then
+				return
+			end
+			if View() == "bags" then
+				if mouse == "RightButton" then
+					ns.ToggleKeep(r.itemID)
+					ShowTooltip(self)
+				end
+			elseif C_TradeSkillUI.OpenRecipe then
+				pcall(C_TradeSkillUI.OpenRecipe, r.recipeID)
 			end
 		end)
 		rows[i] = row
