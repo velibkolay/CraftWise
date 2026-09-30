@@ -141,4 +141,16 @@ C_TooltipInfo = { GetTrainerService = function(i)
 	return id and { id = id } or nil
 end }
 
+
+-- Bags: stub.bags[bag][slot] = { itemID, stackCount, quality, isBound, hasNoValue }
+stub.bags = {}
+C_Container = {
+	GetContainerNumSlots = function(bag) return stub.bags[bag] and #stub.bags[bag] or 0 end,
+	GetContainerItemInfo = function(bag, slot) return stub.bags[bag] and stub.bags[bag][slot] end,
+}
+-- classID by itemID: stub.itemClass[id] = 2 weapon / 4 armor / 7 trade goods
+stub.itemClass = {}
+C_Item.GetItemInfoInstant = function(id) return id, nil, nil, nil, nil, stub.itemClass[id] end
+C_Item.GetItemNameByID = function(id) return stub.items[id] and stub.items[id].name end
+
 return stub

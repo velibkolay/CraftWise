@@ -18,6 +18,7 @@ Prices.lua
 Profit.lua
 Recipes.lua
 Trainer.lua
+Bags.lua
 UI\Style.lua
 UI\ProfitFrame.lua
 UI\MinimapButton.lua

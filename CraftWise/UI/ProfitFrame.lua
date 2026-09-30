@@ -21,6 +21,10 @@ local COLUMN_DEFS = {
 	breakEven = { label = "PAYS OFF", align = "RIGHT" },
 	required = { label = "SKILL", align = "RIGHT" },
 	whereText = { label = "WHERE TO GET IT", align = "LEFT" },
+	vendorValue = { label = "VENDOR", align = "RIGHT" },
+	ahValue = { label = "AUCTION", align = "RIGHT" },
+	deValue = { label = "DISENCHANT", align = "RIGHT" },
+	bestValue = { label = "BEST", align = "LEFT" },
 }
 local VIEWS = {
 	-- Profit: what to craft. The learn columns only show with unlearned recipes.
@@ -40,8 +44,20 @@ local VIEWS = {
 		{ key = "learnCost", width = 95 },
 		{ key = "profit", width = 100 },
 	},
+	-- Bags: what to do with every item you carry.
+	bags = {
+		{ key = "name", width = 270 },
+		{ key = "vendorValue", width = 100 },
+		{ key = "ahValue", width = 100 },
+		{ key = "deValue", width = 100 },
+		{ key = "bestValue", width = 180 },
+	},
 }
-local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText" }
+local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
+	"vendorValue", "ahValue", "deValue", "bestValue" }
+
+local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
+local BEST_TEXT = { vendor = "Vendor", auction = "Auction", disenchant = "Disenchant" }
 
 local STATUS_TEXT = {
 	known = "Known",
@@ -105,12 +121,23 @@ end
 -- Data ---------------------------------------------------------------------
 
 local function View()
-	return Settings().view == "learn" and "learn" or "profit"
+	local v = Settings().view
+	return (v == "learn" or v == "bags") and v or "profit"
 end
 
 -- Rows after the search box and the view's filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
+	if View() == "bags" then
+		local query = state.query:lower()
+		local out = {}
+		for _, r in ipairs(ns.BagRows()) do
+			if query == "" or r.name:lower():find(query, 1, true) then
+				out[#out + 1] = r
+			end
+		end
+		return out, 0
+	end
 	local learnView = View() == "learn"
 	local all = state.professionID and ns.BuildRows(state.professionID, learnView or s.includeUnlearned) or {}
 	local query = state.query:lower()
@@ -178,7 +205,22 @@ end
 
 local function RenderSummary(ids)
 	local text
-	if #ids == 0 then
+	if View() == "bags" then
+		local vendor, auction, best, deable = 0, 0, 0, 0
+		for _, r in ipairs(state.data) do
+			vendor = vendor + (r.vendorValue or 0)
+			auction = auction + (r.ahValue or 0)
+			best = best + (r.bestValue or 0)
+			if r.canDisenchant then
+				deable = deable + 1
+			end
+		end
+		text = ("%d items  ·  best total %s%s|r  ·  vendor %s  ·  auction %s"):format(#state.data, C.good, Money(best),
+			Money(vendor), Money(auction))
+		if deable > 0 and not ns.DisenchantData then
+			text = text .. "\n" .. Muted(("%d items can be disenchanted; disenchant values come with the disenchant data (issue #11)."):format(deable))
+		end
+	elseif #ids == 0 then
 		text = C.warn .. "Open a profession window once so CraftWise can read your recipes.|r"
 	elseif View() == "learn" then
 		local withSource, fits = 0, 0
@@ -222,9 +264,43 @@ local function RenderSummary(ids)
 	frame.summary:SetText(text)
 end
 
+local function RenderBagRow(row, r)
+	row.icon:SetTexture(r.icon or 134400)
+	row.name:SetText((QUALITY_COLORS[r.quality] or "|cffffffff") .. r.name .. "|r")
+	local notes = { ("x%d"):format(r.count) }
+	if r.bound then
+		notes[#notes + 1] = "soulbound"
+	end
+	if r.canDisenchant then
+		notes[#notes + 1] = "can be disenchanted"
+	end
+	if r.reagent then
+		notes[#notes + 1] = C.info .. "reagent for your recipes|r" .. C.muted
+	end
+	row.status:SetText(Muted(table.concat(notes, " · ")))
+	local cells = row.cells
+	cells.vendorValue:SetText(r.vendorValue and Money(r.vendorValue) or Muted("-"))
+	cells.ahValue:SetText(r.ahValue and Money(r.ahValue) or Muted(r.bound and "bound" or "-"))
+	if r.deValue then
+		cells.deValue:SetText(Money(r.deValue))
+	else
+		cells.deValue:SetText(Muted(r.canDisenchant and "?" or "-"))
+	end
+	if r.best then
+		local margin = r.margin and r.margin > 0 and Muted(("  +%s"):format(Money(r.margin))) or ""
+		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. margin)
+	else
+		cells.bestValue:SetText(Muted("no value"))
+	end
+	row:Show()
+end
+
 local function RenderRow(row, r, index)
 	row.data = r
 	row.stripe:SetShown(index % 2 == 0)
+	if View() == "bags" then
+		return RenderBagRow(row, r)
+	end
 	row.icon:SetTexture(r.icon or 134400)
 	local color = SKILL_COLORS[r.skillColor] or "|cffffffff"
 	row.name:SetText(color .. (r.name or ("Recipe " .. r.recipeID)) .. "|r")
@@ -331,6 +407,8 @@ local function SortSettings()
 	local s = Settings()
 	if View() == "learn" then
 		return s.learnSortKey or "required", s.learnSortDesc
+	elseif View() == "bags" then
+		return s.bagSortKey or "bestValue", s.bagSortDesc ~= false
 	end
 	return s.sortKey, s.sortDesc
 end
@@ -340,9 +418,15 @@ local function UpdateControls()
 	for key, button in pairs(viewButtons) do
 		button:SetSelected(key == View())
 	end
-	frame.priced:SetShown(not learnView)
-	frame.unlearned:SetShown(not learnView)
+	local bagsView = View() == "bags"
+	frame.priced:SetShown(not learnView and not bagsView)
+	frame.unlearned:SetShown(not learnView and not bagsView)
 	frame.fits:SetShown(learnView)
+	for _, tab in ipairs(tabs) do
+		if bagsView then
+			tab:Hide()
+		end
+	end
 end
 
 local function Refresh()
@@ -353,7 +437,9 @@ local function Refresh()
 	if not state.professionID or not ns.charDB.professions[state.professionID] then
 		state.professionID = ids[1]
 	end
-	RenderTabs(ids)
+	if View() ~= "bags" then
+		RenderTabs(ids)
+	end
 	UpdateControls()
 	local showLearn = View() == "learn" or Settings().includeUnlearned
 	if state.layout ~= View() .. tostring(showLearn) then
@@ -380,20 +466,53 @@ local function Refresh()
 			rows[i]:Hide()
 		end
 	end
-	frame.count:SetText(Muted(("%d recipes"):format(#state.data)))
+	frame.count:SetText(Muted(("%d %s"):format(#state.data, View() == "bags" and "items" or "recipes")))
 	frame.empty:SetText(View() == "learn" and "No recipes match. Clear the search or untick \"Fits my skill\"."
 		or "No recipes match. Clear the search or tick \"Show unlearned\".")
-	frame.empty:SetShown(#ids > 0 and #state.data == 0)
+	frame.empty:SetShown((#ids > 0 or View() == "bags") and #state.data == 0)
 	UpdateScrollBar()
 end
 ns.RefreshProfitFrame = Refresh
 
 -- Tooltip ------------------------------------------------------------------
 
+local function ShowBagTooltip(row, r)
+	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+	if GameTooltip.SetItemByID then
+		GameTooltip:SetItemByID(r.itemID)
+	else
+		GameTooltip:AddLine(r.name)
+	end
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("CraftWise", C.accent[1], C.accent[2], C.accent[3])
+	GameTooltip:AddDoubleLine(("Vendor (x%d)"):format(r.count), r.vendorValue and Money(r.vendorValue) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
+	GameTooltip:AddDoubleLine("Auction, after 5% cut", r.ahValue and Money(r.ahValue) or (r.bound and "soulbound" or "no price"), 0.8, 0.8, 0.8, 1, 1, 1)
+	if r.canDisenchant then
+		GameTooltip:AddDoubleLine("Disenchant", r.deValue and Money(r.deValue) or "needs disenchant data", 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if r.best then
+		local line = BEST_TEXT[r.best]:upper()
+		if r.margin and r.margin > 0 then
+			line = line .. (" pays %s more"):format(Money(r.margin))
+		end
+		GameTooltip:AddLine(line, 0.3, 0.82, 0.55)
+	end
+	if r.reagent then
+		GameTooltip:AddLine("Used by recipes you know - maybe keep it.", 0.54, 0.7, 1)
+	end
+	if r.ahAge and r.ahAge > 1 then
+		GameTooltip:AddLine(("AH price is %d days old."):format(r.ahAge), 1, 0.6, 0.3)
+	end
+	GameTooltip:Show()
+end
+
 local function ShowTooltip(row)
 	local r = row.data
 	if not r then
 		return
+	end
+	if View() == "bags" then
+		return ShowBagTooltip(row, r)
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	-- The crafted item's own tooltip first (item level, stats, requirements, other addons' lines),
@@ -470,14 +589,16 @@ local function BuildHeader()
 	title:SetText("|cffffffffCraftWise|r")
 	local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
-	subtitle:SetText(Muted("Crafting profit and what to learn next"))
+	subtitle:SetText(Muted("Crafting profit, what to learn next, what to do with your loot"))
 
 	-- View switch: Profit (what to craft) | Learn (what to learn and where).
-	local learnBtn = Style.Button(frame, 90, 24, "Learn")
-	learnBtn:SetPoint("TOPRIGHT", -44, -14)
-	local profitBtn = Style.Button(frame, 90, 24, "Profit")
+	local bagsBtn = Style.Button(frame, 80, 24, "Bags")
+	bagsBtn:SetPoint("TOPRIGHT", -44, -14)
+	local learnBtn = Style.Button(frame, 80, 24, "Learn")
+	learnBtn:SetPoint("RIGHT", bagsBtn, "LEFT", -6, 0)
+	local profitBtn = Style.Button(frame, 80, 24, "Profit")
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
-	viewButtons.profit, viewButtons.learn = profitBtn, learnBtn
+	viewButtons.profit, viewButtons.learn, viewButtons.bags = profitBtn, learnBtn, bagsBtn
 	for key, button in pairs(viewButtons) do
 		button:SetScript("OnClick", function()
 			Settings().view, state.offset = key, 0
@@ -548,7 +669,13 @@ local function BuildColumns()
 		header:SetScript("OnClick", function()
 			local s = Settings()
 			local ascending = key == "name" or key == "whereText" or key == "required"
-			if View() == "learn" then
+			if View() == "bags" then
+				if (s.bagSortKey or "bestValue") == key then
+					s.bagSortDesc = not (s.bagSortDesc ~= false)
+				else
+					s.bagSortKey, s.bagSortDesc = key, key ~= "name"
+				end
+			elseif View() == "learn" then
 				if s.learnSortKey == key then
 					s.learnSortDesc = not s.learnSortDesc
 				else
@@ -703,4 +830,9 @@ end
 
 ns.Listen("RECIPES_CHANGED", Refresh)
 ns.Listen("PRICES_CHANGED", Refresh)
+ns.Listen("BAGS_CHANGED", function()
+	if frame and frame:IsShown() and View() == "bags" then
+		Refresh()
+	end
+end)
 ns.On("AUCTION_HOUSE_CLOSED", Refresh) -- Auctionator prices may have changed during a scan

@@ -46,7 +46,8 @@ local DB_DEFAULTS = {
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	minimap = { hide = false, angle = 215 },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
-		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false },
+		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
+		bagSortKey = "bestValue", bagSortDesc = true },
 }
 local CHAR_DEFAULTS = {
 	version = 1,
