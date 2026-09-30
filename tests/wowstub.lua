@@ -130,14 +130,24 @@ function GetMerchantItemInfo(i)
 	return "item", nil, m.price, m.stack or 1, -1, true, true, m.extended
 end
 
--- Trainer: stub.trainer = { { name, kind, fee, required, tooltipID } }
+-- Trainer: stub.trainer = { { name, kind, fee, required, tooltipID } }; the list honours the type filter
 stub.trainer = {}
-function GetNumTrainerServices() return #stub.trainer end
-function GetTrainerServiceInfo(i) return stub.trainer[i].name, stub.trainer[i].kind end
-function GetTrainerServiceCost(i) return stub.trainer[i].fee end
-function GetTrainerServiceSkillReq(i) return "Leatherworking", stub.trainer[i].required, true end
+stub.trainerFilter = { available = 1, unavailable = 1, used = 1 }
+local function visibleServices()
+	local out = {}
+	for _, s in ipairs(stub.trainer) do
+		if s.kind == "header" or stub.trainerFilter[s.kind] == 1 then out[#out + 1] = s end
+	end
+	return out
+end
+function GetTrainerServiceTypeFilter(t) return stub.trainerFilter[t] == 1 and 1 or nil end
+function SetTrainerServiceTypeFilter(t, v) stub.trainerFilter[t] = v end
+function GetNumTrainerServices() return #visibleServices() end
+function GetTrainerServiceInfo(i) local s = visibleServices()[i]; return s.name, s.kind end
+function GetTrainerServiceCost(i) return visibleServices()[i].fee end
+function GetTrainerServiceSkillReq(i) return "Leatherworking", visibleServices()[i].required, true end
 C_TooltipInfo = { GetTrainerService = function(i)
-	local id = stub.trainer[i].tooltipID
+	local id = visibleServices()[i].tooltipID
 	return id and { id = id } or nil
 end }
 

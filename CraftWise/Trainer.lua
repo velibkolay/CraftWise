@@ -93,5 +93,37 @@ function ns.RecordTrainer(event)
 	return recorded
 end
 
-ns.On("TRAINER_SHOW", ns.RecordTrainer)
-ns.On("TRAINER_UPDATE", ns.RecordTrainer)
+-- The trainer list only shows what its filter allows (by default not learned or too-high recipes).
+-- On open, briefly show every service type, record, then restore the player's filter.
+local FILTER_TYPES = { "available", "unavailable", "used" }
+local expanding = false
+
+local function RecordAll(event)
+	if expanding or not (GetTrainerServiceTypeFilter and SetTrainerServiceTypeFilter) then
+		return ns.RecordTrainer(event)
+	end
+	expanding = true
+	local saved = {}
+	local ok = pcall(function()
+		for _, t in ipairs(FILTER_TYPES) do
+			saved[t] = GetTrainerServiceTypeFilter(t) and 1 or 0
+			SetTrainerServiceTypeFilter(t, 1)
+		end
+	end)
+	ns.RecordTrainer(event)
+	if ok then
+		pcall(function()
+			for _, t in ipairs(FILTER_TYPES) do
+				SetTrainerServiceTypeFilter(t, saved[t])
+			end
+		end)
+	end
+	expanding = false
+end
+
+ns.On("TRAINER_SHOW", RecordAll)
+ns.On("TRAINER_UPDATE", function(event)
+	if not expanding then
+		ns.RecordTrainer(event)
+	end
+end)
