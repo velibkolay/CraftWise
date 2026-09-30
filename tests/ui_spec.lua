@@ -115,34 +115,15 @@ it("learn columns hide when unlearned recipes are hidden", function()
 	eq(learnHeader.shown, true)
 end)
 
-it("filters: hide unpriced and can-learn-now", function()
-	local ns, stub = LoadAddon({ data = true, auctionator = true })
-	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
-		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
-	stub.Fire("TRADE_SKILL_SHOW")
-	stub.ah[2318], stub.ah[2302] = 10, 100
-	ns.ToggleProfitFrame()
-	local function visible()
-		local n, rowsSeen = 0, {}
-		for _, f in ipairs(stub.frames) do
-			if f.data and f.shown ~= false then n = n + 1; rowsSeen[#rowsSeen + 1] = f.data end
-		end
-		return n, rowsSeen
-	end
-	ns.db.settings.hideUnpriced = true
-	ns.RefreshProfitFrame()
-	local n, seen = visible()
-	assert(n >= 1)
-	for _, r in ipairs(seen) do assert(r.profit, "unpriced row shown") end
-	ns.db.settings.hideUnpriced = false
-	ns.db.settings.onlyReachable = true
-	ns.RefreshProfitFrame()
-	n, seen = visible()
-	for _, r in ipairs(seen) do assert(r.status ~= "known" and r.required and not r.tooLow, "row not learnable now: " .. r.name) end
-end)
 
-it("learnable now shows trainer-confirmed unlearned recipes even with 'Show unlearned' off", function()
-	local ns, stub = LoadAddon({ savedDB = { settings = { includeUnlearned = false, onlyReachable = true } } })
+local function visibleRows(stub)
+	local out = {}
+	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then out[#out + 1] = f.data end end
+	return out
+end
+
+local function lwWithTrainer()
+	local ns, stub = LoadAddon({ auctionator = true })
 	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = {
 		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) },
 		[3760] = { info = { name = "Cloak", learned = false }, schematic = stub.Schematic({ { 2319, 5 } }, 3719) },
@@ -151,8 +132,64 @@ it("learnable now shows trainer-confirmed unlearned recipes even with 'Show unle
 	stub.Fire("TRADE_SKILL_SHOW")
 	ns.db.trainer[3760] = { fee = 500, required = 90 }
 	ns.db.trainer[3761] = { fee = 900, required = 120 }
+	return ns, stub
+end
+
+it("hide unpriced filter in the profit view", function()
+	local ns, stub = lwWithTrainer()
+	stub.ah[2318], stub.ah[2302] = 10, 100
+	ns.db.settings.hideUnpriced = true
 	ns.ToggleProfitFrame()
-	local names = {}
-	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then names[#names + 1] = f.data.name end end
-	eq(#names, 1); eq(names[1], "Cloak")
+	local rows = visibleRows(stub)
+	assert(#rows >= 1)
+	for _, r in ipairs(rows) do assert(r.profit, "unpriced row shown") end
+end)
+
+it("learn view lists every unlearned recipe, sorted by skill, with where-to-get text", function()
+	local ns, stub = lwWithTrainer()
+	ns.db.settings.view = "learn"
+	ns.ToggleProfitFrame()
+	local rows = visibleRows(stub)
+	eq(#rows, 3)
+	for _, r in ipairs(rows) do assert(r.status ~= "known") end
+	eq(rows[1].name, "Cloak"); eq(rows[1].whereText, "Trainer")
+	eq(rows[2].name, "Tunic")
+	eq(rows[3].whereText, nil) -- Pants: source not known yet, sorted last
+end)
+
+it("learn view 'Fits my skill' keeps only known requirements at or below the skill", function()
+	local ns, stub = lwWithTrainer()
+	ns.db.settings.view, ns.db.settings.learnFitsSkill = "learn", true
+	ns.ToggleProfitFrame()
+	local rows = visibleRows(stub)
+	eq(#rows, 1); eq(rows[1].name, "Cloak")
+end)
+
+it("learn view uses bundled source data when present: vendors own faction first, AH price, required skill", function()
+	local ns, stub = lwWithTrainer()
+	UnitFactionGroup = function() return "Horde" end
+	ns.SourceData = { [3762] = { skill = 95, item = 5555,
+		vendors = { { name = "Alliance Guy", zone = "Stormwind", faction = "A", price = 2000 },
+			{ name = "Goblin", zone = "Booty Bay", price = 2500 } } } }
+	stub.ah[5555] = 1800
+	local where = ns.RecipeWhere(3762)
+	eq(where[1].text, "Vendor: Goblin (Booty Bay) - " .. ns.FormatMoney(2500))
+	eq(where[2].own, false)
+	eq(where[3].text, "AH: " .. ns.FormatMoney(1800))
+	local s, req, tooLow = ns.RecipeStatus({ skill = 100 }, 3762, { learned = false })
+	eq(s, "vendor"); eq(req, 95); eq(tooLow, false)
+	local cost, how = ns.LearnCost(3762)
+	eq(cost, 2000); eq(how, "vendor")
+	ns.db.settings.view = "learn"
+	ns.ToggleProfitFrame()
+	for _, f in ipairs(stub.frames) do if f.data and f.scripts.OnEnter then f.scripts.OnEnter(f) end end
+end)
+
+it("view buttons switch views", function()
+	local ns, stub = lwWithTrainer()
+	ns.ToggleProfitFrame()
+	for _, f in ipairs(stub.frames) do
+		if f.label and f.label.text == "Learn" then f.scripts.OnClick(f) end
+	end
+	eq(ns.db.settings.view, "learn")
 end)

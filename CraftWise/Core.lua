@@ -45,7 +45,8 @@ local DB_DEFAULTS = {
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	minimap = { hide = false, angle = 215 },
-	settings = { includeUnlearned = true, onlyReachable = false, hideUnpriced = false, sortKey = "profit", sortDesc = true },
+	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
+		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false },
 }
 local CHAR_DEFAULTS = {
 	version = 1,

@@ -203,37 +203,117 @@ local function BundledName(skillLine, recipeID)
 	return namesByID[skillLine][recipeID]
 end
 
--- Only first-hand data decides how a recipe is learned: the trainer window (fee, required skill)
--- recorded in game. Recipe sources, requirements and skill-up thresholds wait for reliable Forever
--- data (issue #11); nothing is estimated.
+-- How a recipe is learned. Two sources, both verified:
+--   1. the trainer window, recorded in game (db.trainer)
+--   2. ns.SourceData, a bundled dataset from Wowhead or manual entry (issue #11). Not shipped yet.
+-- Schema of ns.SourceData[recipeID]:
+--   { skill = required skill, item = recipe item ID,
+--     trainer = { fee = copper },
+--     vendors = { { name, zone, faction = "A"|"H"|nil, price = copper, currency = "Merchant's Favor" } },
+--     drops = { { name, zone, chance = percent } }, world = true,
+--     quests = { { name, faction } } }
+-- Nothing is estimated: missing fields stay missing.
 local function Trainer(recipeID)
 	local seen = ns.db and ns.db.trainer[recipeID]
 	if seen then
 		return seen.fee, seen.required
 	end
+	local data = ns.SourceData and ns.SourceData[recipeID]
+	if data and data.trainer then
+		return data.trainer.fee, data.skill
+	end
+end
+
+local function SourceEntry(recipeID)
+	return ns.SourceData and ns.SourceData[recipeID]
 end
 
 -- Status of a recipe for this character, and the skill it needs:
---   "known"      learned
---   "trainable"  seen at a trainer (second return: required skill, third: skill too low)
---   "unlearned"  not learned, source not known yet
+--   "known" | "trainable" | "vendor" | "drop" | "quest" | "unlearned" (source not known yet)
+-- Second return: required skill (nil if unknown). Third: skill too low.
 function ns.RecipeStatus(prof, recipeID, recipe)
 	if recipe.learned then
 		return "known"
 	end
+	local skill = prof.skill or 0
 	local _, required = Trainer(recipeID)
 	if required then
-		return "trainable", required, required > (prof.skill or 0)
+		return "trainable", required, required > skill
+	end
+	local data = SourceEntry(recipeID)
+	if data then
+		local status = data.vendors and "vendor" or data.quests and "quest" or (data.drops or data.world) and "drop" or "unlearned"
+		return status, data.skill, data.skill and data.skill > skill or false
 	end
 	return "unlearned"
 end
 
--- Cost to learn, from the trainer window. Returns copper and "trainer", or nil.
+-- Cost to learn: trainer fee, else vendor price (gold), else the recipe item's AH price.
+-- Returns copper and "trainer" | "vendor" | "auction", or nil.
 function ns.LearnCost(recipeID)
 	local fee = Trainer(recipeID)
 	if fee then
 		return fee, "trainer"
 	end
+	local data = SourceEntry(recipeID)
+	if not data then
+		return nil
+	end
+	for _, v in ipairs(data.vendors or {}) do
+		if v.price and not v.currency then
+			return v.price, "vendor"
+		end
+	end
+	if data.item then
+		local ah = ns.GetAuctionPrice(data.item)
+		if ah then
+			return ah, "auction"
+		end
+	end
+end
+
+-- Where to get a recipe, as short lines for the Learn view ("Trainer", "Vendor: Name (Zone)", ...).
+-- Own faction and neutral vendors first; the other faction's are kept and tagged.
+function ns.RecipeWhere(recipeID)
+	local lines = {}
+	if Trainer(recipeID) then
+		lines[#lines + 1] = { kind = "trainer", text = "Trainer" }
+	end
+	local data = SourceEntry(recipeID)
+	if data then
+		local faction = UnitFactionGroup and UnitFactionGroup("player")
+		local mine = faction == "Horde" and "H" or faction == "Alliance" and "A" or nil
+		local own, other = {}, {}
+		for _, v in ipairs(data.vendors or {}) do
+			local cost = v.currency and ("%s %s"):format(v.price or "?", v.currency) or (v.price and ns.FormatMoney(v.price))
+			local text = ("Vendor: %s%s%s"):format(v.name or "?", v.zone and (" (" .. v.zone .. ")") or "", cost and (" - " .. cost) or "")
+			local isOwn = not v.faction or mine == nil or v.faction == mine
+			table.insert(isOwn and own or other, { kind = "vendor", text = text, faction = v.faction, own = isOwn })
+		end
+		for _, e in ipairs(own) do
+			lines[#lines + 1] = e
+		end
+		for _, e in ipairs(other) do
+			lines[#lines + 1] = e
+		end
+		for _, d in ipairs(data.drops or {}) do
+			local chance = d.chance and (" %.1f%%"):format(d.chance) or ""
+			lines[#lines + 1] = { kind = "drop", text = ("Drop: %s%s%s"):format(d.name or "?", d.zone and (" (" .. d.zone .. ")") or "", chance) }
+		end
+		if data.world then
+			lines[#lines + 1] = { kind = "drop", text = "World drop" }
+		end
+		for _, q in ipairs(data.quests or {}) do
+			lines[#lines + 1] = { kind = "quest", text = "Quest: " .. (q.name or "?") }
+		end
+		if data.item then
+			local ah = ns.GetAuctionPrice(data.item)
+			if ah then
+				lines[#lines + 1] = { kind = "auction", text = "AH: " .. ns.FormatMoney(ah) }
+			end
+		end
+	end
+	return lines
 end
 
 local function IsSpellKnown(recipeID)
