@@ -27,6 +27,8 @@ local COLUMN_DEFS = {
 	bestValue = { label = "BEST", align = "LEFT" },
 	equippedText = { label = "REPLACES", align = "LEFT" },
 	gain = { label = "UPGRADE", align = "LEFT" },
+	songText = { label = "SONG", align = "LEFT" },
+	modeText = { label = "NEXT CAST", align = "LEFT" },
 }
 local VIEWS = {
 	-- Profit: what to craft. The learn columns only show with unlearned recipes.
@@ -61,9 +63,15 @@ local VIEWS = {
 		{ key = "gain", width = 150 },
 		{ key = "cost", width = 110 },
 	},
+	-- Music: a song per profession while you level it.
+	music = {
+		{ key = "name", width = 260 },
+		{ key = "songText", width = 300 },
+		{ key = "modeText", width = 240 },
+	},
 }
 local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
-	"vendorValue", "ahValue", "deValue", "bestValue", "equippedText", "gain" }
+	"vendorValue", "ahValue", "deValue", "bestValue", "equippedText", "gain", "songText", "modeText" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
 local BEST_TEXT = { vendor = "Vendor", auction = "Auction", disenchant = "Disenchant" }
@@ -131,17 +139,27 @@ end
 
 local function View()
 	local v = Settings().view
-	return (v == "learn" or v == "bags" or v == "upgrades") and v or "profit"
+	return (v == "learn" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
 end
 
 -- Views that list items across all professions (no profession tabs).
 local function ItemView()
-	return View() == "bags" or View() == "upgrades"
+	return View() == "bags" or View() == "upgrades" or View() == "music"
 end
 
 -- Rows after the search box and the view's filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
+	if View() == "music" then
+		local out = {}
+		local music = ns.db.music
+		for _, prof in ipairs(ns.Music.Professions()) do
+			local choice = music.professions[prof.name] or {}
+			out[#out + 1] = { name = prof.name, icon = prof.icon, skill = prof.skill, maxSkill = prof.maxSkill,
+				song = choice.song, mode = choice.mode or "resume", position = choice.song and music.position[choice.song] }
+		end
+		return out, 0
+	end
 	if View() == "upgrades" then
 		local query = state.query:lower()
 		local out, hidden = {}, 0
@@ -238,7 +256,15 @@ end
 
 local function RenderSummary(ids)
 	local text
-	if View() == "upgrades" then
+	if View() == "music" then
+		local songs = #ns.Music.SongNames()
+		if songs == 0 then
+			text = C.warn .. "No songs found.|r " .. Muted("Make the CraftWise_Music folder with tools/music_split.py (see README), then restart the game.")
+		else
+			text = ("%s%d|r songs  ·  music plays while you cast a profession and stops when the cast ends"):format(C.good, songs)
+				.. "\n" .. Muted("Left-click: next song  ·  right-click: resume where it stopped / start from the beginning")
+		end
+	elseif View() == "upgrades" then
 		local ready, dismissed = 0, state.hidden
 		for _, r in ipairs(state.data) do
 			if r.dismissed then
@@ -397,9 +423,30 @@ local function RenderUpgradeRow(row, r)
 	row:Show()
 end
 
+local function RenderMusicRow(row, r)
+	row.icon:SetTexture(r.icon or 134400)
+	row.icon:SetDesaturated(not r.song)
+	row.name:SetText("|cffffffff" .. r.name .. "|r")
+	row.status:SetText(r.skill and Muted(("%d/%d"):format(r.skill, r.maxSkill or 0)) or "")
+	local playing, prof = ns.Music.IsPlaying()
+	local note = playing and prof == r.name and ("  " .. C.good .. "playing|r") or ""
+	row.cells.songText:SetText(r.song and (r.song .. note) or Muted("none"))
+	if not r.song then
+		row.cells.modeText:SetText("")
+	elseif r.mode == "restart" then
+		row.cells.modeText:SetText("Start from the beginning")
+	else
+		row.cells.modeText:SetText("Resume where it stopped" .. (r.position and Muted(("  (part %d)"):format(r.position)) or ""))
+	end
+	row:Show()
+end
+
 local function RenderRow(row, r, index)
 	row.data = r
 	row.stripe:SetShown(index % 2 == 0)
+	if View() == "music" then
+		return RenderMusicRow(row, r)
+	end
 	if View() == "bags" then
 		return RenderBagRow(row, r)
 	elseif View() == "upgrades" then
@@ -516,6 +563,8 @@ local function SortSettings()
 		return s.bagSortKey or "bestValue", s.bagSortDesc ~= false
 	elseif View() == "upgrades" then
 		return s.upgradeSortKey or "gain", s.upgradeSortDesc ~= false
+	elseif View() == "music" then
+		return "name", false
 	end
 	return s.sortKey, s.sortDesc
 end
@@ -530,6 +579,7 @@ local function UpdateControls()
 	local upgradesView = View() == "upgrades"
 	frame.showKept:SetShown(bagsView)
 	frame.showDismissed:SetShown(upgradesView)
+	frame.musicOn:SetShown(View() == "music")
 	frame.priced:SetShown(not learnView and not ItemView())
 	frame.unlearned:SetShown(not learnView and not ItemView())
 	for _, tab in ipairs(tabs) do
@@ -559,7 +609,7 @@ local function Refresh()
 	state.data, state.hidden = FilteredRows()
 	local sortKey, sortDesc = SortSettings()
 	local compare = ns.Profit.Comparator(sortKey, sortDesc)
-	if ItemView() then
+	if ItemView() and View() ~= "music" then
 		local inner = compare
 		local flag = View() == "bags" and "kept" or "dismissed"
 		compare = function(a, b)
@@ -575,7 +625,12 @@ local function Refresh()
 	RenderSummary(ids)
 	for key, header in pairs(frame.headers) do
 		local arrow = sortKey == key and (sortDesc and ARROW_DOWN or ARROW_UP) or ""
-		local label = (key == "name" and ItemView()) and "ITEM" or header.label
+		local label = header.label
+		if key == "name" and View() == "music" then
+			label = "PROFESSION"
+		elseif key == "name" and ItemView() then
+			label = "ITEM"
+		end
 		header.text:SetText(label .. arrow)
 	end
 
@@ -588,7 +643,8 @@ local function Refresh()
 			rows[i]:Hide()
 		end
 	end
-	frame.count:SetText(Muted(("%d %s"):format(#state.data, ItemView() and "items" or "recipes")))
+	local unit = View() == "music" and "professions" or ItemView() and "items" or "recipes"
+	frame.count:SetText(Muted(("%d %s"):format(#state.data, unit)))
 	local empty = "No recipes match. Clear the search or tick \"Show unlearned\"."
 	if View() == "learn" then
 		empty = "No recipes match. Clear the search or untick \"Fits my skill\"."
@@ -707,6 +763,15 @@ local function ShowTooltip(row)
 		return ShowBagTooltip(row, r)
 	elseif View() == "upgrades" then
 		return ShowUpgradeTooltip(row, r)
+	elseif View() == "music" then
+		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+		GameTooltip:AddLine(r.name)
+		GameTooltip:AddLine("Plays while you cast " .. r.name .. " and stops when the cast ends.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("Left-click: next song", 0.55, 0.55, 0.6)
+		GameTooltip:AddLine("Right-click: resume / start from the beginning", 0.55, 0.55, 0.6)
+		GameTooltip:Show()
+		return
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	-- The crafted item's own tooltip first (item level, stats, requirements, other addons' lines),
@@ -795,16 +860,18 @@ local function BuildHeader()
 	subtitle:SetText(Muted("Profit, learning, gear upgrades and loot"))
 
 	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Upgrades | Bags.
-	local bagsBtn = Style.Button(frame, 80, 24, "Bags")
-	bagsBtn:SetPoint("TOPRIGHT", -44, -14)
-	local upgradesBtn = Style.Button(frame, 90, 24, "Upgrades")
+	local musicBtn = Style.Button(frame, 70, 24, "Music")
+	musicBtn:SetPoint("TOPRIGHT", -44, -14)
+	local bagsBtn = Style.Button(frame, 70, 24, "Bags")
+	bagsBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
+	local upgradesBtn = Style.Button(frame, 86, 24, "Upgrades")
 	upgradesBtn:SetPoint("RIGHT", bagsBtn, "LEFT", -6, 0)
-	local learnBtn = Style.Button(frame, 80, 24, "Learn")
+	local learnBtn = Style.Button(frame, 70, 24, "Learn")
 	learnBtn:SetPoint("RIGHT", upgradesBtn, "LEFT", -6, 0)
-	local profitBtn = Style.Button(frame, 80, 24, "Profit")
+	local profitBtn = Style.Button(frame, 70, 24, "Profit")
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
 	viewButtons.profit, viewButtons.learn, viewButtons.bags = profitBtn, learnBtn, bagsBtn
-	viewButtons.upgrades = upgradesBtn
+	viewButtons.upgrades, viewButtons.music = upgradesBtn, musicBtn
 	for key, button in pairs(viewButtons) do
 		button:SetScript("OnClick", function()
 			Settings().view, state.offset = key, 0
@@ -867,6 +934,15 @@ local function BuildHeader()
 	showDismissed:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	frame.unlearned, frame.priced, frame.fits, frame.showKept = unlearned, priced, fits, showKept
 	frame.showDismissed = showDismissed
+	local musicOn = Style.Check(frame, "Music on", ns.db.music.enabled, function(v)
+		ns.db.music.enabled = v
+		if not v then
+			ns.Music.Stop()
+		end
+		Refresh()
+	end)
+	musicOn:SetPoint("TOPRIGHT", -PAD - 110, -100)
+	frame.musicOn = musicOn
 
 	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.summary:SetPoint("TOPLEFT", PAD, -130)
@@ -887,7 +963,9 @@ local function BuildColumns()
 		header:SetScript("OnClick", function()
 			local s = Settings()
 			local ascending = key == "name" or key == "whereText" or key == "required"
-			if View() == "upgrades" then
+			if View() == "music" then
+				return
+			elseif View() == "upgrades" then
 				if (s.upgradeSortKey or "gain") == key then
 					s.upgradeSortDesc = not (s.upgradeSortDesc ~= false)
 				else
@@ -976,6 +1054,13 @@ local function BuildRows()
 					ns.ToggleKeep(r.itemID)
 					ShowTooltip(self)
 				end
+			elseif View() == "music" then
+				if mouse == "RightButton" then
+					ns.Music.ToggleMode(r.name)
+				else
+					ns.Music.CycleSong(r.name)
+				end
+				ShowTooltip(self)
 			elseif View() == "upgrades" and mouse == "RightButton" then
 				ns.ToggleDismissed(r.itemID)
 				ShowTooltip(self)
@@ -1069,6 +1154,11 @@ ns.Listen("RECIPES_CHANGED", Refresh)
 ns.Listen("PRICES_CHANGED", Refresh)
 ns.Listen("BAGS_CHANGED", function()
 	if frame and frame:IsShown() and ItemView() then
+		Refresh()
+	end
+end)
+ns.Listen("MUSIC_CHANGED", function()
+	if frame and frame:IsShown() and View() == "music" then
 		Refresh()
 	end
 end)

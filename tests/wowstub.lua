@@ -210,4 +210,28 @@ C_TooltipInfo.GetItemByID = function(id)
 	return { lines = { { leftText = "x", leftColor = stub.cantUse[id] and { r = 1, g = 0.1, b = 0.1 } or { r = 1, g = 1, b = 1 } } } }
 end
 
+-- Sound: stub.sounds = list of { file, channel, handle, stopped }
+stub.sounds = {}
+function PlaySoundFile(file, channel)
+	local h = #stub.sounds + 1
+	stub.sounds[h] = { file = file, channel = channel, handle = h }
+	return true, h
+end
+function StopSound(h) if stub.sounds[h] then stub.sounds[h].stopped = true end end
+-- Timers from NewTimer wait until a spec runs them: stub.RunTimers()
+stub.timers = {}
+C_Timer.NewTimer = function(_, fn)
+	local t = { fn = fn }
+	function t:Cancel() self.cancelled = true end
+	table.insert(stub.timers, t)
+	return t
+end
+function stub.RunTimers()
+	local list = stub.timers
+	stub.timers = {}
+	for _, t in ipairs(list) do if not t.cancelled then t.fn() end end
+end
+stub.spells = {}
+C_Spell = { GetSpellInfo = function(id) return stub.spells[id] and { name = stub.spells[id] } end }
+
 return stub

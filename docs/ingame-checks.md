@@ -41,3 +41,11 @@ Report Lua errors with BugSack + BugGrabber.
 - Equip something from the list: the row disappears (PLAYER_EQUIPMENT_CHANGED).
 - Check: `C_Item.GetItemStats` returns armour under `RESISTANCE0_NAME` in the Forever client (else the armour gain shows 0).
 - Check: ranged items (bow/gun) compare against the ranged slot.
+
+## Music (#17)
+- `CraftWise_Music` made with `tools/music_split.py`, game restarted: Music tab shows the songs count.
+- Left-click a profession cycles songs, right-click switches resume / start from the beginning.
+- Skinning: music starts with the cast and stops when the cast ends (also when interrupted by moving). Next skin continues from the same part (resume) or from the start (restart).
+- Pressing another ability during a cast doesn't stop the music.
+- Listen for gaps or clicks between 2 s chunks; if audible, try `--chunk 4`.
+- Channel is Master: master volume applies, game music keeps playing underneath (turn it down in Sound settings if needed).

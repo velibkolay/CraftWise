@@ -52,6 +52,7 @@ local DB_DEFAULTS = {
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
+	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
