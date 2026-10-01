@@ -28,9 +28,10 @@ function frameMeta.GetFrameLevel() return 2 end
 function frameMeta.CreateTexture() return widget() end
 
 stub.frames = {}
-function CreateFrame()
+function CreateFrame(_, name)
 	local f = setmetatable({ events = {}, scripts = {} }, frameMeta)
 	table.insert(stub.frames, f)
+	if name then _G[name] = f end -- named frames become globals, as in the client
 	return f
 end
 

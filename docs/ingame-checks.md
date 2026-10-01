@@ -44,7 +44,7 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Music (#17)
 - `CraftWise_Music` made with `tools/music_split.py`, game restarted: Music tab shows the songs count.
-- Left-click a profession cycles songs, right-click switches resume / start from the beginning.
+- Click a profession: a picker lists "No music" and every song with Play/Stop preview, plus Resume / From the beginning. Escape or X closes it and stops the preview.
 - Skinning: music starts with the cast and stops when the cast ends (also when interrupted by moving). Next skin continues from the same part (resume) or from the start (restart).
 - Pressing another ability during a cast doesn't stop the music.
 - Listen for gaps or clicks between 2 s chunks; if audible, try `--chunk 4`.

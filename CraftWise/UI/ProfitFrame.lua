@@ -262,7 +262,7 @@ local function RenderSummary(ids)
 			text = C.warn .. "No songs found.|r " .. Muted("Make the CraftWise_Music folder with tools/music_split.py (see README), then restart the game.")
 		else
 			text = ("%s%d|r songs  ·  music plays while you cast a profession and stops when the cast ends"):format(C.good, songs)
-				.. "\n" .. Muted("Left-click: next song  ·  right-click: resume where it stopped / start from the beginning")
+				.. "\n" .. Muted("Click a profession to choose its song, preview it, and pick resume or start over.")
 		end
 	elseif View() == "upgrades" then
 		local ready, dismissed = 0, state.hidden
@@ -430,7 +430,7 @@ local function RenderMusicRow(row, r)
 	row.status:SetText(r.skill and Muted(("%d/%d"):format(r.skill, r.maxSkill or 0)) or "")
 	local playing, prof = ns.Music.IsPlaying()
 	local note = playing and prof == r.name and ("  " .. C.good .. "playing|r") or ""
-	row.cells.songText:SetText(r.song and (r.song .. note) or Muted("none"))
+	row.cells.songText:SetText(r.song and (r.song:gsub("_", " ") .. note) or Muted("none  -  click to choose"))
 	if not r.song then
 		row.cells.modeText:SetText("")
 	elseif r.mode == "restart" then
@@ -768,8 +768,7 @@ local function ShowTooltip(row)
 		GameTooltip:AddLine(r.name)
 		GameTooltip:AddLine("Plays while you cast " .. r.name .. " and stops when the cast ends.", 0.8, 0.8, 0.8, true)
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("Left-click: next song", 0.55, 0.55, 0.6)
-		GameTooltip:AddLine("Right-click: resume / start from the beginning", 0.55, 0.55, 0.6)
+		GameTooltip:AddLine("Click: choose the song, preview it, resume or start over", 0.55, 0.55, 0.6)
 		GameTooltip:Show()
 		return
 	end
@@ -848,6 +847,128 @@ local function ShowTooltip(row)
 	end
 	GameTooltip:Show()
 end
+
+-- Song picker (Music view) -------------------------------------------------
+
+local picker
+
+local function BuildPicker()
+	picker = CreateFrame("Frame", "CraftWiseSongPicker", frame, "BackdropTemplate")
+	picker:SetFrameStrata("DIALOG")
+	picker:SetWidth(300)
+	picker:EnableMouse(true)
+	Style.Panel(picker)
+	table.insert(UISpecialFrames, "CraftWiseSongPicker")
+	picker.title = picker:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	picker.title:SetPoint("TOPLEFT", 12, -10)
+	local close = Style.CloseButton(picker, function()
+		picker:Hide()
+	end)
+	close:SetPoint("TOPRIGHT", -6, -6)
+	picker.songs = {}
+	picker.modeLabel = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	picker.modeLabel:SetText(Muted("Next cast"))
+	picker.resume = Style.Button(picker, 134, 22, "Resume where it stopped")
+	picker.restart = Style.Button(picker, 134, 22, "From the beginning")
+	picker.empty = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	picker.empty:SetPoint("TOPLEFT", 12, -36)
+	picker.empty:SetPoint("RIGHT", -12, 0)
+	picker.empty:SetJustifyH("LEFT")
+	picker.empty:SetText(Muted("No songs yet. Add them with tools/music_split.py and restart the game."))
+	picker:SetScript("OnHide", function()
+		if ns.Music.PreviewSong() then
+			ns.Music.Stop()
+		end
+	end)
+end
+
+local function RenderPicker(prof)
+	local choice = ns.db.music.professions[prof] or {}
+	local names = ns.Music.SongNames()
+	local options = { false }
+	for _, n in ipairs(names) do
+		options[#options + 1] = n
+	end
+	picker.title:SetText(prof .. "  " .. Muted("song"))
+	local y = -34
+	for i, name in ipairs(options) do
+		local line = picker.songs[i]
+		if not line then
+			line = {}
+			line.pick = Style.Button(picker, 214, 22)
+			line.play = Style.Button(picker, 50, 22)
+			picker.songs[i] = line
+		end
+		line.pick:ClearAllPoints()
+		line.pick:SetPoint("TOPLEFT", 12, y)
+		line.play:ClearAllPoints()
+		line.play:SetPoint("LEFT", line.pick, "RIGHT", 6, 0)
+		line.pick:SetLabel(name and name:gsub("_", " ") or "No music")
+		line.pick:SetSelected((choice.song or false) == name)
+		line.pick:SetScript("OnClick", function()
+			ns.Music.SetSong(prof, name or nil)
+			RenderPicker(prof)
+		end)
+		line.pick:Show()
+		if name then
+			line.play:SetLabel(ns.Music.PreviewSong() == name and "Stop" or "Play")
+			line.play:SetScript("OnClick", function()
+				if ns.Music.PreviewSong() == name then
+					ns.Music.Stop()
+				else
+					ns.Music.Preview(name)
+				end
+				RenderPicker(prof)
+			end)
+			line.play:Show()
+		else
+			line.play:Hide()
+		end
+		y = y - 26
+	end
+	for i = #options + 1, #picker.songs do
+		picker.songs[i].pick:Hide()
+		picker.songs[i].play:Hide()
+	end
+	picker.empty:SetShown(#names == 0)
+	if #names == 0 then
+		y = y - 30
+	end
+	picker.modeLabel:ClearAllPoints()
+	picker.modeLabel:SetPoint("TOPLEFT", 12, y - 8)
+	picker.resume:ClearAllPoints()
+	picker.resume:SetPoint("TOPLEFT", 12, y - 24)
+	picker.restart:ClearAllPoints()
+	picker.restart:SetPoint("LEFT", picker.resume, "RIGHT", 6, 0)
+	local restart = choice.mode == "restart"
+	picker.resume:SetSelected(not restart)
+	picker.restart:SetSelected(restart)
+	picker.resume:SetScript("OnClick", function()
+		ns.Music.SetMode(prof, "resume")
+		RenderPicker(prof)
+	end)
+	picker.restart:SetScript("OnClick", function()
+		ns.Music.SetMode(prof, "restart")
+		RenderPicker(prof)
+	end)
+	picker:SetHeight(-(y - 24) + 34)
+	picker.profession = prof
+end
+
+local function ShowPicker(row, prof)
+	if not picker then
+		BuildPicker()
+	end
+	if picker:IsShown() and picker.profession == prof then
+		picker:Hide()
+		return
+	end
+	RenderPicker(prof)
+	picker:ClearAllPoints()
+	picker:SetPoint("TOPLEFT", row.cells.songText, "TOPLEFT", -8, -4)
+	picker:Show()
+end
+ns.ShowSongPicker = ShowPicker
 
 -- Construction -------------------------------------------------------------
 
@@ -1055,12 +1176,7 @@ local function BuildRows()
 					ShowTooltip(self)
 				end
 			elseif View() == "music" then
-				if mouse == "RightButton" then
-					ns.Music.ToggleMode(r.name)
-				else
-					ns.Music.CycleSong(r.name)
-				end
-				ShowTooltip(self)
+				ShowPicker(self, r.name)
 			elseif View() == "upgrades" and mouse == "RightButton" then
 				ns.ToggleDismissed(r.itemID)
 				ShowTooltip(self)

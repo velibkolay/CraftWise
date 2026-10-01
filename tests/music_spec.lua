@@ -69,7 +69,7 @@ it("plays for crafting recipes of a profession and cycles back to no song", func
 	eq(ns.db.music.professions.Leatherworking.song, nil)
 end)
 
-it("music view renders professions; clicks cycle song and toggle mode", function()
+it("music view: clicking a profession opens the song picker with preview and mode", function()
 	local ns, stub = setup()
 	ns.db.settings.view = "music"
 	ns.ToggleProfitFrame()
@@ -79,8 +79,19 @@ it("music view renders professions; clicks cycle song and toggle mode", function
 	end
 	eq(row.data.song, "Song")
 	row.scripts.OnEnter(row)
-	row.scripts.OnClick(row, "RightButton")
-	eq(ns.db.music.professions.Skinning.mode, "restart")
 	row.scripts.OnClick(row, "LeftButton")
+	local picker = CraftWiseSongPicker
+	assert(picker and picker.shown ~= false, "picker shown")
+	-- options: No music, Other, Song
+	eq(picker.songs[3].pick.selected, true)
+	picker.restart.scripts.OnClick(picker.restart)
+	eq(ns.db.music.professions.Skinning.mode, "restart")
+	picker.songs[2].play.scripts.OnClick(picker.songs[2].play) -- preview Other
+	eq(ns.Music.PreviewSong(), "Other")
+	eq(stub.sounds[#stub.sounds].file, "P\\001.ogg")
+	picker.songs[2].pick.scripts.OnClick(picker.songs[2].pick)
+	eq(ns.db.music.professions.Skinning.song, "Other")
+	picker.songs[1].pick.scripts.OnClick(picker.songs[1].pick)
 	eq(ns.db.music.professions.Skinning.song, nil)
+	eq(ns.db.music.position.Other, nil) -- preview never saves a position
 end)

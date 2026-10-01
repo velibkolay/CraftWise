@@ -127,7 +127,7 @@ function Music.Start(professionName, castGUID)
 	if not choice or not choice.song or not Music.Songs()[choice.song] then
 		return false
 	end
-	if playing and playing.profession == professionName then
+	if playing and not playing.preview and playing.profession == professionName then
 		playing.castGUID = castGUID or playing.castGUID
 		return true -- already playing
 	end
@@ -154,11 +154,57 @@ function Music.Stop()
 		pcall(StopSound, playing.handle, FADE_MS)
 	end
 	local s = Settings()
-	if s then
+	if s and not playing.preview then
 		-- Resume replays the interrupted chunk from its start; restart forgets the position.
 		s.position[playing.song] = playing.mode ~= "restart" and playing.index or nil
 	end
 	playing = nil
+end
+
+-- Listen to a song from the start in the picker; doesn't touch the saved position.
+function Music.Preview(songName)
+	Music.Stop()
+	if not Music.Songs()[songName] then
+		return false
+	end
+	token = token + 1
+	playing = { song = songName, index = 1, token = token, mode = "restart", preview = true }
+	PlayChunk(token)
+	return true
+end
+
+function Music.PreviewSong()
+	return playing and playing.preview and playing.song or nil
+end
+
+local function Choice(professionName)
+	local s = Settings()
+	if not s then
+		return nil
+	end
+	local choice = s.professions[professionName] or { mode = "resume" }
+	s.professions[professionName] = choice
+	return choice
+end
+
+function Music.SetSong(professionName, songName)
+	local choice = Choice(professionName)
+	if not choice then
+		return
+	end
+	choice.song = songName
+	if playing and playing.profession == professionName then
+		Music.Stop()
+	end
+	ns.Notify("MUSIC_CHANGED")
+end
+
+function Music.SetMode(professionName, mode)
+	local choice = Choice(professionName)
+	if choice then
+		choice.mode = mode == "restart" and "restart" or "resume"
+		ns.Notify("MUSIC_CHANGED")
+	end
 end
 
 function Music.IsPlaying()
