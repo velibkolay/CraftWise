@@ -153,6 +153,10 @@ local function FilteredRows()
 	if View() == "music" then
 		local out = {}
 		local music = ns.db.music
+		local partyChoice = music.professions[ns.Music.PARTY] or {}
+		out[1] = { name = ns.Music.PARTY, icon = ns.Music.PARTY_ICON, party = true, song = partyChoice.song,
+			video = partyChoice.video, mode = partyChoice.mode or "resume",
+			position = partyChoice.song and music.position[partyChoice.song] }
 		for _, prof in ipairs(ns.Music.Professions()) do
 			local choice = music.professions[prof.name] or {}
 			out[#out + 1] = { name = prof.name, icon = prof.icon, skill = prof.skill, maxSkill = prof.maxSkill,
@@ -428,7 +432,12 @@ local function RenderMusicRow(row, r)
 	row.icon:SetTexture(r.icon or 134400)
 	row.icon:SetDesaturated(not r.song)
 	row.name:SetText("|cffffffff" .. r.name .. "|r")
-	row.status:SetText(r.skill and Muted(("%d/%d"):format(r.skill, r.maxSkill or 0)) or "")
+	if r.party then
+		row.status:SetText(Muted(ns.Music.PartyActive() and (C.good .. "on|r  ·  press the key again or move to stop")
+			or "key: Key Bindings > AddOns > CraftWise, or /cw party"))
+	else
+		row.status:SetText(r.skill and Muted(("%d/%d"):format(r.skill, r.maxSkill or 0)) or "")
+	end
 	local playing, prof = ns.Music.IsPlaying()
 	local note = playing and prof == r.name and ("  " .. C.good .. "playing|r") or ""
 	row.cells.songText:SetText(r.song and (r.song:gsub("_", " ") .. note) or Muted("none  -  click to choose"))
@@ -581,6 +590,9 @@ local function UpdateControls()
 	frame.showKept:SetShown(bagsView)
 	frame.showDismissed:SetShown(upgradesView)
 	frame.musicOn:SetShown(View() == "music")
+	frame.partyBtn:SetShown(View() == "music")
+	frame.partyBtn:SetLabel(ns.Music.PartyActive() and "Stop party" or "Party!")
+	frame.partyBtn:SetSelected(ns.Music.PartyActive())
 	frame.priced:SetShown(not learnView and not ItemView())
 	frame.unlearned:SetShown(not learnView and not ItemView())
 	for _, tab in ipairs(tabs) do
@@ -767,7 +779,12 @@ local function ShowTooltip(row)
 	elseif View() == "music" then
 		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 		GameTooltip:AddLine(r.name)
-		GameTooltip:AddLine("Plays while you cast " .. r.name .. " and stops when the cast ends.", 0.8, 0.8, 0.8, true)
+		if r.party then
+			GameTooltip:AddLine("One key: your character dances, the Party song and video start. Press again or move to stop.", 0.8, 0.8, 0.8, true)
+			GameTooltip:AddLine("Key: Esc > Options > Key Bindings > AddOns > CraftWise. Macro: /cw party", 0.8, 0.8, 0.8, true)
+		else
+			GameTooltip:AddLine("Plays while you cast " .. r.name .. " and stops when the cast ends.", 0.8, 0.8, 0.8, true)
+		end
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddLine("Click: choose the song, preview it, resume or start over", 0.55, 0.55, 0.6)
 		GameTooltip:Show()
@@ -1199,6 +1216,13 @@ local function BuildHeader()
 	end)
 	musicOn:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	frame.musicOn = musicOn
+	local partyBtn = Style.Button(frame, 96, 22, "Party!")
+	partyBtn:SetPoint("RIGHT", musicOn, "LEFT", -24, 0)
+	partyBtn:SetScript("OnClick", function()
+		ns.Music.ToggleParty()
+		Refresh()
+	end)
+	frame.partyBtn = partyBtn
 
 	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.summary:SetPoint("TOPLEFT", PAD, -130)

@@ -133,7 +133,7 @@ local function Play(name, startFrame, extra)
 	return true
 end
 
-function Video.Start(professionName, castGUID)
+function Video.Start(professionName, castGUID, party)
 	local s = Settings()
 	local choice = s and s.enabled and s.professions[professionName]
 	if not (choice and choice.video and Video.Videos()[choice.video]) then
@@ -145,7 +145,7 @@ function Video.Start(professionName, castGUID)
 	end
 	Video.Stop()
 	s.videoPos = s.videoPos or {}
-	return Play(choice.video, s.videoPos[choice.video], { profession = professionName, castGUID = castGUID })
+	return Play(choice.video, s.videoPos[choice.video], { profession = professionName, castGUID = castGUID, party = party })
 end
 
 function Video.Stop()
@@ -211,7 +211,7 @@ end)
 for _, event in ipairs({ "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
 	"UNIT_SPELLCAST_CHANNEL_STOP" }) do
 	ns.On(event, function(_, unit, castGUID)
-		if unit ~= "player" or not current or current.preview then
+		if unit ~= "player" or not current or current.preview or current.party then
 			return
 		end
 		if current.castGUID and castGUID and not Secret(castGUID) and castGUID ~= current.castGUID then

@@ -100,6 +100,12 @@ SLASH_CRAFTWISE1 = "/cw"
 SLASH_CRAFTWISE2 = "/craftwise"
 SlashCmdList.CRAFTWISE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
+	if msg == "party" then
+		if ns.Music then
+			ns.Music.ToggleParty()
+		end
+		return
+	end
 	if msg == "minimap" then
 		ns.ToggleMinimapButton()
 		return

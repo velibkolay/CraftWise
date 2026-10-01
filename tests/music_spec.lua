@@ -166,3 +166,39 @@ it("restores a volume left over from a crash at login", function()
 	eq(stub.cvars.Sound_DialogVolume, "0.7")
 	eq(ns.db.music.savedVolume, nil)
 end)
+
+it("party: one toggle dances and starts song + video, ignores casts, stops on the key or moving", function()
+	local ns, stub = setup()
+	local emotes = {}
+	DoEmote = function(e) emotes[#emotes + 1] = e end
+	CraftWiseMusicVideos = { Clip = { path = "V\\", sheets = 1, frames = 10, fps = 10, cols = 5, rows = 5, width = 192, height = 190, size = 1024 } }
+	eq(ns.Music.ToggleParty(), false) -- not set up yet
+	ns.Music.SetSong("Party", "Song")
+	ns.Video.SetVideo("Party", "Clip")
+	stub.Fire("PLAYER_LOGIN")
+	SlashCmdList.CRAFTWISE("party")
+	eq(ns.Music.PartyActive(), true)
+	eq(emotes[1], "DANCE")
+	eq(last(stub).file, "Interface\\AddOns\\CraftWise_Music\\Song\\001.ogg")
+	assert(CraftWiseVideoFrame.shown, "video shown")
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "x", 133) -- an unrelated cast ending doesn't stop it
+	eq(ns.Music.PartyActive(), true)
+	CraftWise_PartyToggle() -- key binding
+	eq(ns.Music.PartyActive(), false)
+	eq(CraftWiseVideoFrame.shown, false)
+	CraftWise_PartyToggle()
+	stub.Fire("PLAYER_STARTED_MOVING")
+	eq(ns.Music.PartyActive(), false)
+end)
+
+it("music view lists Party first with a party button", function()
+	local ns, stub = setup()
+	ns.db.settings.view = "music"
+	ns.ToggleProfitFrame()
+	local first
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.shown ~= false and f.data.party then first = f end
+	end
+	assert(first, "party row")
+	first.scripts.OnEnter(first)
+end)

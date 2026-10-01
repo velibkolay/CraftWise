@@ -236,7 +236,7 @@ function Music.RestoreVolume()
 	s.savedVolume = nil
 end
 
-function Music.Start(professionName, castGUID)
+function Music.Start(professionName, castGUID, party)
 	local s = Settings()
 	local choice = s and s.enabled and s.professions[professionName]
 	if not choice or not choice.song or not Music.Songs()[choice.song] then
@@ -253,7 +253,7 @@ function Music.Start(professionName, castGUID)
 		index = s.position[choice.song] or 1
 	end
 	playing = { profession = professionName, song = choice.song, index = index, token = token, mode = choice.mode,
-		castGUID = castGUID }
+		castGUID = castGUID, party = party }
 	ApplyVolume(choice.volume)
 	PlayChunk(token)
 	return true
@@ -418,8 +418,8 @@ end
 
 -- A failed second spell while casting must not stop the music: only the cast that started it counts.
 local function OnStop(_, unit, castGUID)
-	if unit ~= "player" or not playing then
-		return
+	if unit ~= "player" or not playing or playing.party then
+		return -- party mode ignores casts; it stops on the key or when you move
 	end
 	if playing.castGUID and castGUID and not Secret(castGUID) and castGUID ~= playing.castGUID then
 		return
@@ -442,4 +442,66 @@ ns.On("PLAYER_LOGOUT", function()
 		Music.Stop()
 	end
 	Music.RestoreVolume()
+end)
+
+-- Party (issue #20): one key starts the Party song and video and makes the character dance;
+-- the same key or moving stops it. "Party" is set up in the Music tab like a profession.
+Music.PARTY = "Party"
+Music.PARTY_ICON = "Interface\\Icons\\INV_Misc_Drum_01"
+
+function Music.PartyActive()
+	return (playing and playing.party) or (ns.Video and ns.Video.Current() and ns.Video.Current().party) or false
+end
+
+function Music.StopParty()
+	if playing and playing.party then
+		Music.Stop()
+	end
+	local v = ns.Video and ns.Video.Current()
+	if v and v.party then
+		ns.Video.Stop()
+	end
+	ns.Notify("MUSIC_CHANGED")
+end
+
+function Music.ToggleParty()
+	if Music.PartyActive() then
+		Music.StopParty()
+		return false
+	end
+	local s = Settings()
+	local choice = s and s.professions[Music.PARTY]
+	if not (choice and (choice.song or choice.video)) then
+		ns.Print("Set up Party in the Music tab first (song and/or video).")
+		return false
+	end
+	if not s.enabled then
+		ns.Print("Music is off - tick \"Music on\" in the Music tab.")
+		return false
+	end
+	Music.Stop()
+	if choice.song then
+		Music.Start(Music.PARTY, nil, true)
+	end
+	if ns.Video and choice.video then
+		ns.Video.Start(Music.PARTY, nil, true)
+	end
+	if DoEmote then
+		pcall(DoEmote, "DANCE")
+	end
+	ns.Notify("MUSIC_CHANGED")
+	return true
+end
+
+-- Key binding (Bindings.xml) and macro: /cw party
+_G.BINDING_HEADER_CRAFTWISE = "CraftWise"
+_G.BINDING_NAME_CRAFTWISE_PARTY = "Party: music, video and dance"
+function CraftWise_PartyToggle()
+	Music.ToggleParty()
+end
+
+ns.On("PLAYER_STARTED_MOVING", function()
+	if Music.PartyActive() then
+		Music.StopParty()
+	end
 end)

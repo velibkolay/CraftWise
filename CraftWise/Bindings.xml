@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="CRAFTWISE_PARTY" header="CRAFTWISE" category="ADDONS">
+		CraftWise_PartyToggle()
+	</Binding>
+</Bindings>
