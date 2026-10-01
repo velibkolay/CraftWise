@@ -103,3 +103,13 @@ it("a recipe learned at the trainer leaves the learn list right away", function(
 	stub.Fire("TRAINER_UPDATE")
 	eq(ns.charDB.professions[165].recipes[9146].learned, true)
 end)
+
+it("profession IDs are used as skill lines directly, so non-English clients work", function()
+	local ns, stub = LoadAddon()
+	stub.profession = { id = 165, name = "Lederverarbeitung", skill = 50, max = 75, recipes = {
+		[2149] = { info = { name = "Stiefel", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.SkillLineOf(165), 165)
+	eq(ns.IsGathering(393), true)
+	eq(ns.L["Profit"], "Profit") -- untranslated text falls back to English
+end)

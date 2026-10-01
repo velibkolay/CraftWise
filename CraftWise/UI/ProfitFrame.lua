@@ -2,6 +2,7 @@
 -- Built lazily on first open, from plain widgets only.
 local _, ns = ...
 local Style = ns.Style
+local L = ns.L
 local C = Style.colors
 
 local WIDTH, HEIGHT = 900, 580
@@ -13,22 +14,22 @@ local VISIBLE_ROWS = math.floor((HEIGHT + LIST_TOP - 40) / ROW_HEIGHT)
 
 -- Column definitions; each view lists the columns it shows, in order, with widths.
 local COLUMN_DEFS = {
-	name = { label = "RECIPE", align = "LEFT" },
-	cost = { label = "COST", align = "RIGHT" },
-	sellsFor = { label = "SELLS FOR", align = "RIGHT" },
-	profit = { label = "PROFIT", align = "RIGHT" },
-	learnCost = { label = "TO LEARN", align = "RIGHT" },
-	breakEven = { label = "PAYS OFF", align = "RIGHT" },
-	required = { label = "SKILL", align = "RIGHT" },
-	whereText = { label = "WHERE TO GET IT", align = "LEFT" },
-	vendorValue = { label = "VENDOR", align = "RIGHT" },
-	ahValue = { label = "AUCTION", align = "RIGHT" },
-	deValue = { label = "DISENCHANT", align = "RIGHT" },
-	bestValue = { label = "BEST", align = "LEFT" },
-	equippedText = { label = "REPLACES", align = "LEFT" },
-	gain = { label = "UPGRADE", align = "LEFT" },
-	songText = { label = "SONG", align = "LEFT" },
-	modeText = { label = "NEXT CAST", align = "LEFT" },
+	name = { label = L["RECIPE"], align = "LEFT" },
+	cost = { label = L["COST"], align = "RIGHT" },
+	sellsFor = { label = L["SELLS FOR"], align = "RIGHT" },
+	profit = { label = L["PROFIT"], align = "RIGHT" },
+	learnCost = { label = L["TO LEARN"], align = "RIGHT" },
+	breakEven = { label = L["PAYS OFF"], align = "RIGHT" },
+	required = { label = L["SKILL"], align = "RIGHT" },
+	whereText = { label = L["WHERE TO GET IT"], align = "LEFT" },
+	vendorValue = { label = L["VENDOR"], align = "RIGHT" },
+	ahValue = { label = L["AUCTION"], align = "RIGHT" },
+	deValue = { label = L["DISENCHANT"], align = "RIGHT" },
+	bestValue = { label = L["BEST"], align = "LEFT" },
+	equippedText = { label = L["REPLACES"], align = "LEFT" },
+	gain = { label = L["UPGRADE"], align = "LEFT" },
+	songText = { label = L["SONG"], align = "LEFT" },
+	modeText = { label = L["NEXT CAST"], align = "LEFT" },
 }
 local VIEWS = {
 	-- Profit: what to craft. The learn columns only show with unlearned recipes.
@@ -74,15 +75,15 @@ local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "req
 	"vendorValue", "ahValue", "deValue", "bestValue", "equippedText", "gain", "songText", "modeText" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
-local BEST_TEXT = { vendor = "Vendor", auction = "Auction", disenchant = "Disenchant" }
+local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"] }
 
 local STATUS_TEXT = {
-	known = "Known",
-	trainable = "Trainer",
-	vendor = "Vendor recipe",
-	drop = "Drop recipe",
-	quest = "Quest recipe",
-	unlearned = "Source not known yet",
+	known = L["Known"],
+	trainable = L["Trainer"],
+	vendor = L["Vendor recipe"],
+	drop = L["Drop recipe"],
+	quest = L["Quest recipe"],
+	unlearned = L["Source not known yet"],
 }
 
 -- Texture arrows: the game font has no triangle glyphs.
@@ -641,9 +642,9 @@ local function Refresh()
 		local arrow = sortKey == key and (sortDesc and ARROW_DOWN or ARROW_UP) or ""
 		local label = header.label
 		if key == "name" and View() == "music" then
-			label = "PROFESSION"
+			label = L["PROFESSION"]
 		elseif key == "name" and ItemView() then
-			label = "ITEM"
+			label = L["ITEM"]
 		end
 		header.text:SetText(label .. arrow)
 	end
@@ -890,8 +891,8 @@ local function BuildPicker()
 	picker.videoLabel:SetText(Muted("Video (small window while you cast)"))
 	picker.modeLabel = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	picker.modeLabel:SetText(Muted("Next cast"))
-	picker.resume = Style.Button(picker, 134, 22, "Resume where it stopped")
-	picker.restart = Style.Button(picker, 134, 22, "From the beginning")
+	picker.resume = Style.Button(picker, 134, 22, L["Resume where it stopped"])
+	picker.restart = Style.Button(picker, 134, 22, L["From the beginning"])
 	picker.volLabel = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	picker.volDown = Style.Button(picker, 26, 22, "-")
 	picker.volUp = Style.Button(picker, 26, 22, "+")
@@ -913,7 +914,7 @@ local function BuildPicker()
 	picker.addBox:SetScript("OnEscapePressed", function(self)
 		self:ClearFocus()
 	end)
-	picker.addBtn = Style.Button(picker, 60, 22, "Add")
+	picker.addBtn = Style.Button(picker, 60, 22, L["Add"])
 	picker.addMsg = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	picker.addMsg:SetJustifyH("LEFT")
 	picker.addMsg:SetWidth(276)
@@ -1134,15 +1135,15 @@ local function BuildHeader()
 	subtitle:SetText(Muted("Profit, learning, gear upgrades and loot"))
 
 	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Upgrades | Bags.
-	local musicBtn = Style.Button(frame, 70, 24, "Music")
+	local musicBtn = Style.Button(frame, 70, 24, L["Music"])
 	musicBtn:SetPoint("TOPRIGHT", -44, -14)
-	local bagsBtn = Style.Button(frame, 70, 24, "Bags")
+	local bagsBtn = Style.Button(frame, 70, 24, L["Bags"])
 	bagsBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
-	local upgradesBtn = Style.Button(frame, 86, 24, "Upgrades")
+	local upgradesBtn = Style.Button(frame, 86, 24, L["Upgrades"])
 	upgradesBtn:SetPoint("RIGHT", bagsBtn, "LEFT", -6, 0)
-	local learnBtn = Style.Button(frame, 70, 24, "Learn")
+	local learnBtn = Style.Button(frame, 70, 24, L["Learn"])
 	learnBtn:SetPoint("RIGHT", upgradesBtn, "LEFT", -6, 0)
-	local profitBtn = Style.Button(frame, 70, 24, "Profit")
+	local profitBtn = Style.Button(frame, 70, 24, L["Profit"])
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
 	viewButtons.profit, viewButtons.learn, viewButtons.bags = profitBtn, learnBtn, bagsBtn
 	viewButtons.upgrades, viewButtons.music = upgradesBtn, musicBtn
@@ -1181,33 +1182,33 @@ local function BuildHeader()
 		hint:SetShown((self:GetText() or "") == "")
 	end)
 
-	local unlearned = Style.Check(frame, "Show unlearned", Settings().includeUnlearned, function(v)
+	local unlearned = Style.Check(frame, L["Show unlearned"], Settings().includeUnlearned, function(v)
 		Settings().includeUnlearned, state.offset = v, 0
 		Refresh()
 	end)
 	unlearned:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	local priced = Style.Check(frame, "Hide unpriced", Settings().hideUnpriced, function(v)
+	local priced = Style.Check(frame, L["Hide unpriced"], Settings().hideUnpriced, function(v)
 		Settings().hideUnpriced, state.offset = v, 0
 		Refresh()
 	end)
 	priced:SetPoint("RIGHT", unlearned, "LEFT", -24, 0)
-	local fits = Style.Check(frame, "Fits my skill", Settings().learnFitsSkill, function(v)
+	local fits = Style.Check(frame, L["Fits my skill"], Settings().learnFitsSkill, function(v)
 		Settings().learnFitsSkill, state.offset = v, 0
 		Refresh()
 	end)
 	fits:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	local showKept = Style.Check(frame, "Show kept items", Settings().showKept, function(v)
+	local showKept = Style.Check(frame, L["Show kept items"], Settings().showKept, function(v)
 		Settings().showKept, state.offset = v, 0
 		Refresh()
 	end)
 	showKept:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	local showDismissed = Style.Check(frame, "Show dismissed", Settings().showDismissed, function(v)
+	local showDismissed = Style.Check(frame, L["Show dismissed"], Settings().showDismissed, function(v)
 		Settings().showDismissed, state.offset = v, 0
 		Refresh()
 	end)
 	showDismissed:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	frame.unlearned, frame.priced, frame.fits, frame.showKept = unlearned, priced, fits, showKept
-	local sortBtn = Style.Button(frame, 96, 22, "Sort bags")
+	local sortBtn = Style.Button(frame, 96, 22, L["Sort bags"])
 	sortBtn:SetPoint("RIGHT", showKept, "LEFT", -24, 0)
 	sortBtn:SetScript("OnClick", function()
 		ns.BagSort.Start()
@@ -1224,7 +1225,7 @@ local function BuildHeader()
 	end)
 	frame.sortBtn = sortBtn
 	frame.showDismissed = showDismissed
-	local musicOn = Style.Check(frame, "Music on", ns.db.music.enabled, function(v)
+	local musicOn = Style.Check(frame, L["Music on"], ns.db.music.enabled, function(v)
 		ns.db.music.enabled = v
 		if not v then
 			ns.Music.Stop()
@@ -1233,7 +1234,7 @@ local function BuildHeader()
 	end)
 	musicOn:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	frame.musicOn = musicOn
-	local partyBtn = Style.Button(frame, 96, 22, "Party!")
+	local partyBtn = Style.Button(frame, 96, 22, L["Party!"])
 	partyBtn:SetPoint("RIGHT", musicOn, "LEFT", -24, 0)
 	partyBtn:SetScript("OnClick", function()
 		ns.Music.ToggleParty()

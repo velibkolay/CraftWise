@@ -173,7 +173,19 @@ function ns.IsGathering(professionID)
 end
 
 -- Parent skill line of a cached profession (enUS name lookup), falling back to its ID.
+-- The client's professionID is already the parent skill line (165 for Leatherworking, seen in game),
+-- which works on every client language. The English name map is only a fallback for other IDs.
+local KNOWN_SKILL_LINES = {}
+for _, id in pairs(ns.ProfessionSkillLines or {}) do
+	KNOWN_SKILL_LINES[id] = true
+end
+for id in pairs(ns.GATHERING) do
+	KNOWN_SKILL_LINES[id] = true
+end
 function ns.SkillLineOf(professionID)
+	if KNOWN_SKILL_LINES[professionID] then
+		return professionID
+	end
 	local prof = ns.charDB and ns.charDB.professions[professionID]
 	local byName = prof and prof.name and ns.ProfessionSkillLines and ns.ProfessionSkillLines[prof.name]
 	return byName or professionID
