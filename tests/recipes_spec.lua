@@ -85,3 +85,21 @@ it("skill colour: client colour for learned, red only when a trainer says the sk
 	eq(ns.SkillUpColor({ learned = false }, false), nil)
 	eq(ns.SkillUpColor({ learned = false }), nil)
 end)
+
+it("a recipe learned at the trainer leaves the learn list right away", function()
+	local ns, stub = LoadAddon()
+	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = {
+		[9145] = { info = { name = "Fletcher's Gloves", learned = false }, schematic = stub.Schematic({ { 2318, 4 } }, 7348) },
+		[9146] = { info = { name = "Other", learned = false }, schematic = stub.Schematic({ { 2318, 4 } }, 7349) },
+	} }
+	stub.Fire("TRADE_SKILL_SHOW")
+	local changed = 0
+	ns.Listen("RECIPES_CHANGED", function() changed = changed + 1 end)
+	stub.Fire("NEW_RECIPE_LEARNED", 9145)
+	eq(ns.charDB.professions[165].recipes[9145].learned, true)
+	eq(changed, 1)
+	-- learned spells reported by the spellbook are picked up on trainer updates too
+	IsPlayerSpell = function(id) return id == 9146 end
+	stub.Fire("TRAINER_UPDATE")
+	eq(ns.charDB.professions[165].recipes[9146].learned, true)
+end)

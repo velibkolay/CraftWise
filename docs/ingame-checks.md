@@ -49,3 +49,6 @@ Report Lua errors with BugSack + BugGrabber.
 - Pressing another ability during a cast doesn't stop the music.
 - Listen for gaps or clicks between 2 s chunks; if audible, try `--chunk 4`.
 - Channel is Master: master volume applies, game music keeps playing underneath (turn it down in Sound settings if needed).
+
+## Learning a recipe (#3)
+- Buy a recipe at the trainer with the CraftWise window open: it leaves the Learn view right away (no profession reopen). Which event fired is not logged; if it does not update, report it.

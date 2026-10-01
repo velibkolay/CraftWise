@@ -319,10 +319,58 @@ end
 local function IsSpellKnown(recipeID)
 	if C_SpellBook and C_SpellBook.IsSpellKnown then
 		local ok, known = pcall(C_SpellBook.IsSpellKnown, recipeID)
+		if ok and known then
+			return true
+		end
+	end
+	if IsPlayerSpell then
+		local ok, known = pcall(IsPlayerSpell, recipeID)
 		return ok and known or false
 	end
 	return false
 end
+
+-- Marks cached recipes learned right after training, without reopening the profession window.
+local function MarkLearned(recipeID)
+	for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+		local recipe = prof.recipes[recipeID]
+		if recipe and not recipe.learned then
+			recipe.learned = true
+			return true
+		end
+	end
+	return false
+end
+
+function ns.RefreshLearned(recipeID)
+	local changed = false
+	if recipeID then
+		changed = MarkLearned(recipeID)
+	end
+	for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+		for id, recipe in pairs(prof.recipes) do
+			if not recipe.learned and IsSpellKnown(id) then
+				recipe.learned, changed = true, true
+			end
+		end
+	end
+	if changed then
+		ns.Notify("RECIPES_CHANGED")
+	end
+	return changed
+end
+
+ns.On("NEW_RECIPE_LEARNED", function(_, recipeID)
+	ns.RefreshLearned(recipeID)
+end)
+for _, event in ipairs({ "LEARNED_SPELL_IN_SKILL_LINE", "LEARNED_SPELL_IN_TAB" }) do
+	ns.On(event, function(_, spellID)
+		ns.RefreshLearned(type(spellID) == "number" and spellID or nil)
+	end)
+end
+ns.On("TRAINER_UPDATE", function()
+	ns.RefreshLearned()
+end)
 
 -- Skill-up colour of a learned recipe, as the client reports it: "orange" | "yellow" | "green" |
 -- "grey". Unlearned recipes are "red" when a trainer said the skill is too low, otherwise nil.
