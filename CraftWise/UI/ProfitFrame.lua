@@ -111,8 +111,8 @@ end
 
 local function ItemName(itemID)
 	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
-	if not name and GetItemInfo then
-		name = GetItemInfo(itemID)
+	if not name and C_Item and C_Item.GetItemInfo then
+		name = C_Item.GetItemInfo(itemID)
 	end
 	return name or ("item " .. itemID)
 end

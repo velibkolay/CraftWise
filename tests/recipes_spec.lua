@@ -99,7 +99,7 @@ it("a recipe learned at the trainer leaves the learn list right away", function(
 	eq(ns.charDB.professions[165].recipes[9145].learned, true)
 	eq(changed, 1)
 	-- learned spells reported by the spellbook are picked up on trainer updates too
-	IsPlayerSpell = function(id) return id == 9146 end
+	C_SpellBook = { IsSpellKnown = function(id) return id == 9146 end }
 	stub.Fire("TRAINER_UPDATE")
 	eq(ns.charDB.professions[165].recipes[9146].learned, true)
 end)

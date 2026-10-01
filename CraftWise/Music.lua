@@ -21,17 +21,12 @@ local CHANNEL = "Dialog"
 local VOLUME_CVAR, ENABLE_CVAR = "Sound_DialogVolume", "Sound_EnableDialog"
 
 local function GetCV(name)
-	if C_CVar and C_CVar.GetCVar then
-		return C_CVar.GetCVar(name)
-	end
-	return GetCVar and GetCVar(name)
+	return C_CVar and C_CVar.GetCVar and C_CVar.GetCVar(name)
 end
 
 local function SetCV(name, value)
 	if C_CVar and C_CVar.SetCVar then
 		pcall(C_CVar.SetCVar, name, value)
-	elseif SetCVar then
-		pcall(SetCVar, name, value)
 	end
 end
 local playing -- { profession, song, index, handle, token }
@@ -160,8 +155,6 @@ function Music.ProfessionOfSpell(spellID)
 	if C_Spell and C_Spell.GetSpellInfo then
 		local info = C_Spell.GetSpellInfo(spellID)
 		name = info and info.name
-	elseif GetSpellInfo then
-		name = GetSpellInfo(spellID)
 	end
 	if not name or Secret(name) then
 		return nil
@@ -497,8 +490,9 @@ function Music.ToggleParty()
 	if ns.Video and choice.video then
 		ns.Video.Start(Music.PARTY, nil, true)
 	end
-	if DoEmote then
-		pcall(DoEmote, "DANCE")
+	-- C_ChatInfo.PerformEmote is restricted to hardware events: key binding, slash command, button.
+	if C_ChatInfo and C_ChatInfo.PerformEmote then
+		pcall(C_ChatInfo.PerformEmote, "DANCE")
 	end
 	ns.Notify("MUSIC_CHANGED")
 	return true

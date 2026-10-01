@@ -170,7 +170,7 @@ end)
 it("party: one toggle dances and starts song + video, ignores casts, stops on the key or moving", function()
 	local ns, stub = setup()
 	local emotes = {}
-	DoEmote = function(e) emotes[#emotes + 1] = e end
+	C_ChatInfo = { PerformEmote = function(e) emotes[#emotes + 1] = e return true end }
 	CraftWiseMusicVideos = { Clip = { path = "V\\", sheets = 1, frames = 10, fps = 10, cols = 5, rows = 5, width = 192, height = 190, size = 1024 } }
 	eq(ns.Music.ToggleParty(), false) -- not set up yet
 	ns.Music.SetSong("Party", "Song")

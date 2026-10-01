@@ -319,12 +319,6 @@ end
 local function IsSpellKnown(recipeID)
 	if C_SpellBook and C_SpellBook.IsSpellKnown then
 		local ok, known = pcall(C_SpellBook.IsSpellKnown, recipeID)
-		if ok and known then
-			return true
-		end
-	end
-	if IsPlayerSpell then
-		local ok, known = pcall(IsPlayerSpell, recipeID)
 		return ok and known or false
 	end
 	return false
@@ -363,11 +357,9 @@ end
 ns.On("NEW_RECIPE_LEARNED", function(_, recipeID)
 	ns.RefreshLearned(recipeID)
 end)
-for _, event in ipairs({ "LEARNED_SPELL_IN_SKILL_LINE", "LEARNED_SPELL_IN_TAB" }) do
-	ns.On(event, function(_, spellID)
-		ns.RefreshLearned(type(spellID) == "number" and spellID or nil)
-	end)
-end
+ns.On("LEARNED_SPELL_IN_SKILL_LINE", function(_, spellID)
+	ns.RefreshLearned(type(spellID) == "number" and spellID or nil)
+end)
 ns.On("TRAINER_UPDATE", function()
 	ns.RefreshLearned()
 end)
