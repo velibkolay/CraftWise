@@ -179,6 +179,7 @@ local function PlayChunk(myToken)
 	if playing.index == song.chunks and song.last then
 		length = song.last -- the last chunk is usually shorter
 	end
+	playing.chunkStart, playing.chunkLength = GetTime and GetTime() or nil, length
 	if C_Timer and C_Timer.NewTimer then
 		playing.timer = C_Timer.NewTimer(length, function()
 			if playing and playing.token == myToken then
@@ -223,8 +224,19 @@ function Music.Stop()
 	end
 	local s = Settings()
 	if s and not playing.preview and not Music.IsWhole(playing.song) then
-		-- Resume replays the interrupted chunk from its start; restart forgets the position.
-		s.position[playing.song] = playing.mode ~= "restart" and playing.index or nil
+		-- Resume continues at the chunk boundary nearest to where it stopped (at most half a chunk
+		-- off, instead of always replaying the interrupted chunk); restart forgets the position.
+		local index = playing.index
+		if playing.chunkStart and playing.chunkLength and GetTime then
+			if GetTime() - playing.chunkStart >= playing.chunkLength / 2 then
+				index = index + 1
+				local song = Music.Songs()[playing.song]
+				if song and song.chunks and index > song.chunks then
+					index = 1
+				end
+			end
+		end
+		s.position[playing.song] = playing.mode ~= "restart" and index or nil
 	end
 	playing = nil
 end

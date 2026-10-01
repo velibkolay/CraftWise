@@ -128,3 +128,20 @@ it("rejects missing files and formats WoW can't play", function()
 	name, err = ns.Music.AddFile("")
 	eq(name, nil)
 end)
+
+it("resume rounds to the nearest chunk: past half a chunk it continues with the next one", function()
+	local ns, stub = setup()
+	stub.Fire("UNIT_SPELLCAST_START", "player", "a", 8613) -- chunk 1 at t=1000
+	stub.now = stub.now + 1.5
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "a", 8613)
+	eq(ns.db.music.position.Song, 2) -- 1.5 s of a 2 s chunk heard: next chunk
+	stub.Fire("UNIT_SPELLCAST_START", "player", "b", 8613) -- chunk 2
+	stub.now = stub.now + 0.5
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "b", 8613)
+	eq(ns.db.music.position.Song, 2) -- 0.5 s heard: replay chunk 2
+	stub.Fire("UNIT_SPELLCAST_START", "player", "c", 8613)
+	stub.RunTimers() -- chunk 3 (last)
+	stub.now = stub.now + 1.9
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "c", 8613)
+	eq(ns.db.music.position.Song, 1) -- wraps after the last chunk
+end)
