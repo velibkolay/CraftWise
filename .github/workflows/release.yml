@@ -1,0 +1,70 @@
+# Release (issue #14). Nothing is uploaded on normal pushes.
+# - Tag push (v0.2.0, v0.2.0-beta.1): tests, zip, GitHub release, and CurseForge upload when the
+#   CurseForge setup exists (secret CF_API_KEY, variables CF_PROJECT_ID and CF_GAME_VERSIONS).
+#   -alpha / -beta tags go to the matching CurseForge channel.
+# - Manual run (Actions > Release > Run workflow): tests and a test zip as a build artifact only.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1 zip
+      - name: Tests
+        run: lua5.1 tests/run.lua
+      - name: Version
+        id: v
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev.${GITHUB_SHA::7}"; fi
+          case "$v" in *alpha*) type=alpha;; *beta*) type=beta;; *) type=release;; esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "type=$type" >> "$GITHUB_OUTPUT"
+      - name: Package
+        id: pkg
+        run: echo "zip=$(tools/package.sh '${{ steps.v.outputs.version }}')" >> "$GITHUB_OUTPUT"
+      - name: Release notes
+        run: python3 tools/changelog.py '${{ steps.v.outputs.version }}' > notes.md
+      - name: Test zip (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CraftWise-${{ steps.v.outputs.version }}
+          path: ${{ steps.pkg.outputs.zip }}
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""; [ "${{ steps.v.outputs.type }}" != "release" ] && pre="--prerelease"
+          gh release create "${GITHUB_REF_NAME}" "${{ steps.pkg.outputs.zip }}" --title "CraftWise ${{ steps.v.outputs.version }}" --notes-file notes.md $pre
+      - name: CurseForge upload
+        if: github.ref_type == 'tag'
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          CF_GAME_VERSIONS: ${{ vars.CF_GAME_VERSIONS }}
+        run: |
+          if [ -z "$CF_API_KEY" ] || [ -z "$CF_PROJECT_ID" ] || [ -z "$CF_GAME_VERSIONS" ]; then
+            echo "CurseForge not set up yet (CF_API_KEY / CF_PROJECT_ID / CF_GAME_VERSIONS): skipping upload."
+            exit 0
+          fi
+          python3 - <<'PY' > metadata.json
+          import json, os
+          print(json.dumps({
+              "changelog": open("notes.md").read(),
+              "changelogType": "markdown",
+              "displayName": "CraftWise ${{ steps.v.outputs.version }}",
+              "gameVersions": [int(x) for x in os.environ["CF_GAME_VERSIONS"].split(",")],
+              "releaseType": "${{ steps.v.outputs.type }}",
+          }))
+          PY
+          curl -sSf -H "X-Api-Token: $CF_API_KEY" \
+            -F "metadata=<metadata.json" -F "file=@${{ steps.pkg.outputs.zip }}" \
+            "https://wow.curseforge.com/api/projects/${CF_PROJECT_ID}/upload-file"
