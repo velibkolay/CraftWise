@@ -39,6 +39,9 @@ local SLOT_LABELS = {
 }
 ns.EQUIP_SLOTS, ns.SLOT_LABELS = EQUIP_SLOTS, SLOT_LABELS
 
+-- Forever (Mainline API) has no global GetItemInfo, only C_Item.GetItemInfo.
+local GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+
 local ARMOR_STAT = "RESISTANCE0_NAME" -- GetItemStats key for armour
 
 local function SlotID(name)

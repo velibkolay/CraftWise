@@ -70,6 +70,7 @@ function GetItemInfo(id)
 		item.equipLoc or "", nil, item.sellPrice
 end
 C_Item = { GetItemInfo = GetItemInfo, RequestLoadItemDataByID = noop }
+GetItemInfo = nil -- like the Forever client: only C_Item.GetItemInfo
 
 -- Auctionator: stub.ah[itemID] = copper, stub.ahAge[itemID] = days
 stub.ah, stub.ahAge = {}, {}
