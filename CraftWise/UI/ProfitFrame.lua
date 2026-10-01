@@ -867,6 +867,9 @@ local function BuildPicker()
 	end)
 	close:SetPoint("TOPRIGHT", -6, -6)
 	picker.songs = {}
+	picker.videos = {}
+	picker.videoLabel = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	picker.videoLabel:SetText(Muted("Video (small window while you cast)"))
 	picker.modeLabel = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	picker.modeLabel:SetText(Muted("Next cast"))
 	picker.resume = Style.Button(picker, 134, 22, "Resume where it stopped")
@@ -909,6 +912,9 @@ local function BuildPicker()
 	picker:SetScript("OnHide", function()
 		if ns.Music.PreviewSong() then
 			ns.Music.Stop()
+		end
+		if ns.Video.PreviewName() then
+			ns.Video.Stop()
 		end
 	end)
 end
@@ -998,6 +1004,53 @@ local function RenderPicker(prof)
 		ns.Music.SetMode(prof, "restart")
 		RenderPicker(prof)
 	end)
+	-- Video choice: "No video" and every converted video, with a preview.
+	y = y - 58
+	picker.videoLabel:ClearAllPoints()
+	picker.videoLabel:SetPoint("TOPLEFT", 12, y)
+	y = y - 16
+	local videoOptions = { false }
+	for _, n in ipairs(ns.Video.Names()) do
+		videoOptions[#videoOptions + 1] = n
+	end
+	for i, name in ipairs(videoOptions) do
+		local line = picker.videos[i]
+		if not line then
+			line = { pick = Style.Button(picker, 190, 22), play = Style.Button(picker, 44, 22) }
+			picker.videos[i] = line
+		end
+		line.pick:ClearAllPoints()
+		line.pick:SetPoint("TOPLEFT", 12, y)
+		line.play:ClearAllPoints()
+		line.play:SetPoint("LEFT", line.pick, "RIGHT", 6, 0)
+		line.pick:SetLabel(name and name:gsub("_", " ") or "No video")
+		line.pick:SetSelected((choice.video or false) == name)
+		line.pick:SetScript("OnClick", function()
+			ns.Video.SetVideo(prof, name or nil)
+			RenderPicker(prof)
+		end)
+		line.pick:Show()
+		if name then
+			line.play:SetLabel(ns.Video.PreviewName() == name and "Stop" or "Play")
+			line.play:SetScript("OnClick", function()
+				if ns.Video.PreviewName() == name then
+					ns.Video.Stop()
+				else
+					ns.Video.Preview(name)
+				end
+				RenderPicker(prof)
+			end)
+			line.play:Show()
+		else
+			line.play:Hide()
+		end
+		y = y - 26
+	end
+	for i = #videoOptions + 1, #picker.videos do
+		picker.videos[i].pick:Hide()
+		picker.videos[i].play:Hide()
+	end
+	y = y + 58 - 8
 	picker.addLabel:ClearAllPoints()
 	picker.addLabel:SetPoint("TOPLEFT", 12, y - 58)
 	picker.addBox:ClearAllPoints()

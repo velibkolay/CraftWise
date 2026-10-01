@@ -23,6 +23,7 @@ Crafts.lua
 Bags.lua
 Upgrades.lua
 Music.lua
+Video.lua
 UI\Style.lua
 UI\ProfitFrame.lua
 UI\MinimapButton.lua

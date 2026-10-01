@@ -83,9 +83,10 @@ def write_addon(root: Path) -> list:
         lines.append(f'\t[{lua_string(name)}] = {{ path = "{path}", chunks = {chunks}, length = {length}, last = {last} }},')
     lines.append("}")
     (root / "Songs.lua").write_text("\n".join(lines) + "\n")
+    files = [f for f in ("Songs.lua", "Videos.lua") if (root / f).exists()]  # videos: tools/video_frames.py
     (root / f"{ADDON}.toc").write_text(
         f"## Interface: {INTERFACE}\n## Title: CraftWise Music\n"
-        "## Notes: Your songs for CraftWise's Music tab\n\nSongs.lua\n"
+        "## Notes: Your songs and videos for CraftWise's Music tab\n\n" + "\n".join(files) + "\n"
     )
     return songs
 
