@@ -12,6 +12,26 @@ local Music = {}
 ns.Music = Music
 
 local FADE_MS = 250
+
+-- Volume per profession: PlaySoundFile has no volume argument, so songs play on the Dialog channel
+-- and its volume is set while one plays, then put back (also after a crash, at the next login).
+local CHANNEL = "Dialog"
+local VOLUME_CVAR, ENABLE_CVAR = "Sound_DialogVolume", "Sound_EnableDialog"
+
+local function GetCV(name)
+	if C_CVar and C_CVar.GetCVar then
+		return C_CVar.GetCVar(name)
+	end
+	return GetCVar and GetCVar(name)
+end
+
+local function SetCV(name, value)
+	if C_CVar and C_CVar.SetCVar then
+		pcall(C_CVar.SetCVar, name, value)
+	elseif SetCVar then
+		pcall(SetCVar, name, value)
+	end
+end
 local playing -- { profession, song, index, handle, token }
 local token = 0
 
@@ -160,7 +180,7 @@ local function PlayChunk(myToken)
 	if song and song.whole then
 		-- A whole file plays once from the start: the client can't resume inside it.
 		local s = Settings()
-		local ok, willPlay, handle = pcall(PlaySoundFile, song.file, s and s.channel or "Master")
+		local ok, willPlay, handle = pcall(PlaySoundFile, song.file, CHANNEL)
 		playing.handle = ok and willPlay and handle or nil
 		return
 	end
@@ -172,8 +192,7 @@ local function PlayChunk(myToken)
 		playing.index = 1 -- loop
 	end
 	local file = ("%s%03d.ogg"):format(song.path, playing.index)
-	local s = Settings()
-	local ok, willPlay, handle = pcall(PlaySoundFile, file, s and s.channel or "Master")
+	local ok, willPlay, handle = pcall(PlaySoundFile, file, CHANNEL)
 	playing.handle = ok and willPlay and handle or nil
 	local length = song.length or 2
 	if playing.index == song.chunks and song.last then
@@ -188,6 +207,33 @@ local function PlayChunk(myToken)
 			end
 		end)
 	end
+end
+
+local function ApplyVolume(volume)
+	local s = Settings()
+	if not s then
+		return
+	end
+	if not s.savedVolume then
+		s.savedVolume = { volume = GetCV(VOLUME_CVAR), enable = GetCV(ENABLE_CVAR) }
+	end
+	SetCV(VOLUME_CVAR, tostring(volume or 1))
+	SetCV(ENABLE_CVAR, "1")
+end
+
+function Music.RestoreVolume()
+	local s = Settings()
+	local saved = s and s.savedVolume
+	if not saved then
+		return
+	end
+	if saved.volume then
+		SetCV(VOLUME_CVAR, saved.volume)
+	end
+	if saved.enable then
+		SetCV(ENABLE_CVAR, saved.enable)
+	end
+	s.savedVolume = nil
 end
 
 function Music.Start(professionName, castGUID)
@@ -208,6 +254,7 @@ function Music.Start(professionName, castGUID)
 	end
 	playing = { profession = professionName, song = choice.song, index = index, token = token, mode = choice.mode,
 		castGUID = castGUID }
+	ApplyVolume(choice.volume)
 	PlayChunk(token)
 	return true
 end
@@ -239,16 +286,27 @@ function Music.Stop()
 		s.position[playing.song] = playing.mode ~= "restart" and index or nil
 	end
 	playing = nil
+	-- Put the channel volume back once the fade-out is over, unless something plays again.
+	if C_Timer and C_Timer.After then
+		C_Timer.After(FADE_MS / 1000 + 0.05, function()
+			if not playing then
+				Music.RestoreVolume()
+			end
+		end)
+	else
+		Music.RestoreVolume()
+	end
 end
 
 -- Listen to a song from the start in the picker; doesn't touch the saved position.
-function Music.Preview(songName)
+function Music.Preview(songName, volume)
 	Music.Stop()
 	if not Music.Songs()[songName] then
 		return false
 	end
 	token = token + 1
 	playing = { song = songName, index = 1, token = token, mode = "restart", preview = true }
+	ApplyVolume(volume)
 	PlayChunk(token)
 	return true
 end
@@ -275,6 +333,26 @@ function Music.SetSong(professionName, songName)
 	choice.song = songName
 	if playing and playing.profession == professionName then
 		Music.Stop()
+	end
+	ns.Notify("MUSIC_CHANGED")
+end
+
+-- Volume 0-1 per profession, in steps of 10%.
+function Music.Volume(professionName)
+	local s = Settings()
+	local choice = s and s.professions[professionName]
+	return choice and choice.volume or 1
+end
+
+function Music.SetVolume(professionName, volume)
+	local choice = Choice(professionName)
+	if not choice then
+		return
+	end
+	volume = math.floor(math.max(0, math.min(1, volume)) * 10 + 0.5) / 10
+	choice.volume = volume
+	if playing and (playing.profession == professionName or playing.preview) then
+		SetCV(VOLUME_CVAR, tostring(volume))
 	end
 	ns.Notify("MUSIC_CHANGED")
 end
@@ -355,3 +433,13 @@ for _, event in ipairs({ "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_INTERRUPTED", "U
 	"UNIT_SPELLCAST_CHANNEL_STOP" }) do
 	ns.On(event, OnStop)
 end
+
+ns.Listen("DB_READY", function()
+	Music.RestoreVolume() -- left over if the game closed while a song played
+end)
+ns.On("PLAYER_LOGOUT", function()
+	if playing then
+		Music.Stop()
+	end
+	Music.RestoreVolume()
+end)

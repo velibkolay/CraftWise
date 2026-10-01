@@ -237,4 +237,7 @@ end
 stub.spells = {}
 C_Spell = { GetSpellInfo = function(id) return stub.spells[id] and { name = stub.spells[id] } end }
 
+stub.cvars = { Sound_DialogVolume = "1", Sound_EnableDialog = "1" }
+C_CVar = { GetCVar = function(k) return stub.cvars[k] end, SetCVar = function(k, v) stub.cvars[k] = tostring(v) end }
+
 return stub

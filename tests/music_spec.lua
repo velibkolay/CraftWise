@@ -17,7 +17,7 @@ it("plays chunks while skinning, stops when the cast ends, resumes at the stoppe
 	eq(ns.db.music.professions.Skinning.song, "Song")
 	stub.Fire("UNIT_SPELLCAST_START", "player", "cast1", 8613)
 	eq(last(stub).file, "Interface\\AddOns\\CraftWise_Music\\Song\\001.ogg")
-	eq(last(stub).channel, "Master")
+	eq(last(stub).channel, "Dialog")
 	stub.RunTimers()
 	eq(last(stub).file:sub(-7), "002.ogg")
 	stub.Fire("UNIT_SPELLCAST_STOP", "player", "cast1", 8613)
@@ -144,4 +144,25 @@ it("resume rounds to the nearest chunk: past half a chunk it continues with the 
 	stub.now = stub.now + 1.9
 	stub.Fire("UNIT_SPELLCAST_STOP", "player", "c", 8613)
 	eq(ns.db.music.position.Song, 1) -- wraps after the last chunk
+end)
+
+it("plays at the profession's volume and puts the Dialog volume back afterwards", function()
+	local ns, stub = setup()
+	stub.cvars.Sound_DialogVolume = "0.8"
+	stub.cvars.Sound_EnableDialog = "0"
+	ns.Music.SetVolume("Skinning", 0.33)
+	eq(ns.Music.Volume("Skinning"), 0.3)
+	stub.Fire("UNIT_SPELLCAST_START", "player", "a", 8613)
+	eq(stub.cvars.Sound_DialogVolume, "0.3"); eq(stub.cvars.Sound_EnableDialog, "1")
+	ns.Music.SetVolume("Skinning", 0.5) -- changing it while playing applies at once
+	eq(stub.cvars.Sound_DialogVolume, "0.5")
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "a", 8613)
+	eq(stub.cvars.Sound_DialogVolume, "0.8"); eq(stub.cvars.Sound_EnableDialog, "0")
+	eq(ns.db.music.savedVolume, nil)
+end)
+
+it("restores a volume left over from a crash at login", function()
+	local ns, stub = LoadAddon({ savedDB = { music = { savedVolume = { volume = "0.7", enable = "1" } } } })
+	eq(stub.cvars.Sound_DialogVolume, "0.7")
+	eq(ns.db.music.savedVolume, nil)
 end)
