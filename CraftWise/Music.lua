@@ -5,7 +5,9 @@
 -- Songs live in a separate addon folder the player owns, CraftWise_Music (made by
 -- tools/music_split.py), so CraftWise updates never delete them. It defines:
 --   CraftWiseMusicSongs = { [name] = { path = "Interface\\AddOns\\CraftWise_Music\\name\\", chunks = n,
---     length = seconds per chunk, last = seconds of the last chunk } }
+--     length = seconds per chunk, last = seconds of the last chunk,
+--     full = path of the whole song (.ogg), duration = its seconds } }
+-- Resume plays the chunks; start-over and party play the full file, so they never stutter.
 local _, ns = ...
 
 local Music = {}
@@ -177,11 +179,20 @@ local function PlayChunk(myToken)
 		return
 	end
 	local song = Music.Songs()[playing.song]
-	if song and song.whole then
-		-- A whole file plays once from the start: the client can't resume inside it.
-		local s = Settings()
-		local ok, willPlay, handle = pcall(PlaySoundFile, song.file, CHANNEL)
+	local full = song and (song.whole and song.file or song.full)
+	if full and (song.whole or playing.mode == "restart" or playing.party) then
+		-- Continuous playback from the full file: no chunk gaps. Chunks are only for resume.
+		-- With a known duration it loops; otherwise it plays once.
+		local ok, willPlay, handle = pcall(PlaySoundFile, full, CHANNEL)
 		playing.handle = ok and willPlay and handle or nil
+		playing.full = true
+		if song.duration and C_Timer and C_Timer.NewTimer then
+			playing.timer = C_Timer.NewTimer(song.duration, function()
+				if playing and playing.token == myToken then
+					PlayChunk(myToken)
+				end
+			end)
+		end
 		return
 	end
 	if not song or (song.chunks or 0) < 1 then
@@ -270,7 +281,7 @@ function Music.Stop()
 		pcall(StopSound, playing.handle, FADE_MS)
 	end
 	local s = Settings()
-	if s and not playing.preview and not Music.IsWhole(playing.song) then
+	if s and not playing.preview and not playing.full and not Music.IsWhole(playing.song) then
 		-- Resume continues at the chunk boundary nearest to where it stopped (at most half a chunk
 		-- off, instead of always replaying the interrupted chunk); restart forgets the position.
 		local index = playing.index

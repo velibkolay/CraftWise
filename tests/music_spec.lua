@@ -202,3 +202,24 @@ it("music view lists Party first with a party button", function()
 	assert(first, "party row")
 	first.scripts.OnEnter(first)
 end)
+
+it("start-over and party play the full file (looping), resume plays chunks", function()
+	local ns, stub = setup()
+	CraftWiseMusicSongs.Song.full = "F\\full.ogg"
+	CraftWiseMusicSongs.Song.duration = 30
+	stub.Fire("UNIT_SPELLCAST_START", "player", "a", 8613) -- resume: chunks
+	eq(last(stub).file:sub(-7), "001.ogg")
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "a", 8613)
+	ns.Music.SetMode("Skinning", "restart")
+	stub.Fire("UNIT_SPELLCAST_START", "player", "b", 8613)
+	eq(last(stub).file, "F\\full.ogg")
+	stub.RunTimers() -- after its duration it starts again
+	eq(last(stub).file, "F\\full.ogg")
+	local before = ns.db.music.position.Song
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "b", 8613)
+	eq(ns.db.music.position.Song, before) -- full playback doesn't move the resume position
+	ns.Music.SetSong("Party", "Song")
+	ns.Music.ToggleParty()
+	eq(last(stub).file, "F\\full.ogg")
+	ns.Music.ToggleParty()
+end)
