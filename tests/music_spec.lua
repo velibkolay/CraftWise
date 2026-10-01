@@ -94,4 +94,37 @@ it("music view: clicking a profession opens the song picker with preview and mod
 	picker.songs[1].pick.scripts.OnClick(picker.songs[1].pick)
 	eq(ns.db.music.professions.Skinning.song, nil)
 	eq(ns.db.music.position.Other, nil) -- preview never saves a position
+	picker.addBox:SetText("Jingle.ogg")
+	picker.addBtn.scripts.OnClick(picker.addBtn)
+	eq(ns.db.music.files.Jingle, "Jingle.ogg")
+	eq(ns.db.music.professions.Skinning.song, "Jingle") -- added song is picked
+	assert(picker.addMsg.text:find("Added"))
+end)
+
+it("adds a song file from the Songs folder by name; it plays from the start and can be removed", function()
+	local ns, stub = setup()
+	local name, err = ns.Music.AddFile("  My Song.mp3 ")
+	eq(name, "My Song"); eq(err, nil)
+	eq(stub.sounds[#stub.sounds].stopped, true) -- existence check is silenced at once
+	eq(ns.Music.IsWhole("My Song"), true)
+	ns.Music.SetSong("Skinning", "My Song")
+	stub.Fire("UNIT_SPELLCAST_START", "player", "c", 8613)
+	eq(stub.sounds[#stub.sounds].file, "Interface\\AddOns\\CraftWise_Music\\Songs\\My Song.mp3")
+	eq(#stub.timers, 0) -- whole file: no chunk timer
+	stub.Fire("UNIT_SPELLCAST_STOP", "player", "c", 8613)
+	eq(ns.db.music.position["My Song"], nil)
+	ns.Music.RemoveFile("My Song")
+	eq(ns.db.music.professions.Skinning.song, nil)
+	eq(ns.Music.Songs()["My Song"], nil)
+end)
+
+it("rejects missing files and formats WoW can't play", function()
+	local ns, stub = setup()
+	stub.missingFiles["Interface\\AddOns\\CraftWise_Music\\Songs\\nope.mp3"] = true
+	local name, err = ns.Music.AddFile("nope.mp3")
+	eq(name, nil); assert(err:find("Not found"))
+	name, err = ns.Music.AddFile("song.m4a")
+	eq(name, nil); assert(err:find("mp3"))
+	name, err = ns.Music.AddFile("")
+	eq(name, nil)
 end)

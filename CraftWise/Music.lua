@@ -22,8 +22,72 @@ local function Secret(v)
 	return issecretvalue and issecretvalue(v)
 end
 
+-- Where players drop song files. Files added while the game runs are seen after a restart.
+Music.FOLDER = "Interface\\AddOns\\CraftWise_Music\\Songs\\"
+Music.FOLDER_TEXT = "World of Warcraft/_classic_beta_/Interface/AddOns/CraftWise_Music/Songs"
+
+local function Settings()
+	return ns.db and ns.db.music
+end
+
+-- Chunked songs (tools/music_split.py, can resume) plus whole files added by name (play from the start).
 function Music.Songs()
-	return type(CraftWiseMusicSongs) == "table" and CraftWiseMusicSongs or {}
+	local songs = {}
+	for name, song in pairs(type(CraftWiseMusicSongs) == "table" and CraftWiseMusicSongs or {}) do
+		songs[name] = song
+	end
+	for name, file in pairs(ns.db and ns.db.music and ns.db.music.files or {}) do
+		if not songs[name] then
+			songs[name] = { file = Music.FOLDER .. file, whole = true }
+		end
+	end
+	return songs
+end
+
+-- Add a file from the Songs folder by its name. The client confirms it exists by queueing it;
+-- it is stopped at once. Returns the song name, or nil and the reason.
+function Music.AddFile(fileName)
+	fileName = (fileName or ""):match("^%s*(.-)%s*$"):gsub("[/\\]", "")
+	if fileName == "" then
+		return nil, "Type the file name, e.g. mysong.mp3"
+	end
+	if not (fileName:lower():match("%.mp3$") or fileName:lower():match("%.ogg$")) then
+		return nil, "Only .mp3 and .ogg files play in WoW."
+	end
+	local ok, willPlay, handle = pcall(PlaySoundFile, Music.FOLDER .. fileName, "Master")
+	if ok and handle and StopSound then
+		pcall(StopSound, handle)
+	end
+	if not (ok and willPlay) then
+		return nil, "Not found. Check the name, and restart the game after adding files."
+	end
+	local name = fileName:gsub("%.%w+$", "")
+	local s = Settings()
+	s.files = s.files or {}
+	s.files[name] = fileName
+	ns.Notify("MUSIC_CHANGED")
+	return name
+end
+
+function Music.RemoveFile(name)
+	local s = Settings()
+	if s and s.files and s.files[name] then
+		s.files[name] = nil
+		for _, choice in pairs(s.professions) do
+			if choice.song == name then
+				choice.song = nil
+			end
+		end
+		if playing and playing.song == name then
+			Music.Stop()
+		end
+		ns.Notify("MUSIC_CHANGED")
+	end
+end
+
+function Music.IsWhole(name)
+	local song = Music.Songs()[name]
+	return song and song.whole or false
 end
 
 function Music.SongNames()
@@ -35,9 +99,6 @@ function Music.SongNames()
 	return names
 end
 
-local function Settings()
-	return ns.db and ns.db.music
-end
 
 -- Profession names the character has, from the client.
 function Music.Professions()
@@ -96,6 +157,13 @@ local function PlayChunk(myToken)
 		return
 	end
 	local song = Music.Songs()[playing.song]
+	if song and song.whole then
+		-- A whole file plays once from the start: the client can't resume inside it.
+		local s = Settings()
+		local ok, willPlay, handle = pcall(PlaySoundFile, song.file, s and s.channel or "Master")
+		playing.handle = ok and willPlay and handle or nil
+		return
+	end
 	if not song or (song.chunks or 0) < 1 then
 		playing = nil
 		return
@@ -134,7 +202,7 @@ function Music.Start(professionName, castGUID)
 	Music.Stop()
 	token = token + 1
 	local index = 1
-	if choice.mode ~= "restart" then
+	if choice.mode ~= "restart" and not Music.IsWhole(choice.song) then
 		index = s.position[choice.song] or 1
 	end
 	playing = { profession = professionName, song = choice.song, index = index, token = token, mode = choice.mode,
@@ -154,7 +222,7 @@ function Music.Stop()
 		pcall(StopSound, playing.handle, FADE_MS)
 	end
 	local s = Settings()
-	if s and not playing.preview then
+	if s and not playing.preview and not Music.IsWhole(playing.song) then
 		-- Resume replays the interrupted chunk from its start; restart forgets the position.
 		s.position[playing.song] = playing.mode ~= "restart" and playing.index or nil
 	end

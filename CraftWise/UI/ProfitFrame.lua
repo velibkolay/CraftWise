@@ -259,7 +259,8 @@ local function RenderSummary(ids)
 	if View() == "music" then
 		local songs = #ns.Music.SongNames()
 		if songs == 0 then
-			text = C.warn .. "No songs found.|r " .. Muted("Make the CraftWise_Music folder with tools/music_split.py (see README), then restart the game.")
+			text = C.warn .. "No songs yet.|r " .. Muted("Put .mp3 or .ogg files in ") .. ns.Music.FOLDER_TEXT
+				.. "\n" .. Muted("restart the game, then click a profession and add the file by name.")
 		else
 			text = ("%s%d|r songs  ·  music plays while you cast a profession and stops when the cast ends"):format(C.good, songs)
 				.. "\n" .. Muted("Click a profession to choose its song, preview it, and pick resume or start over.")
@@ -875,6 +876,36 @@ local function BuildPicker()
 	picker.empty:SetPoint("RIGHT", -12, 0)
 	picker.empty:SetJustifyH("LEFT")
 	picker.empty:SetText(Muted("No songs yet. Add them with tools/music_split.py and restart the game."))
+	-- Add a song file by name.
+	picker.addLabel = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	picker.addLabel:SetJustifyH("LEFT")
+	picker.addLabel:SetWidth(276)
+	picker.addLabel:SetText(Muted("Add a song: put an .mp3 or .ogg in") .. "\n|cffffffff" .. ns.Music.FOLDER_TEXT
+		.. "|r\n" .. Muted("restart the game, then type its file name here."))
+	picker.addBox = CreateFrame("EditBox", nil, picker, "InputBoxTemplate")
+	picker.addBox:SetSize(200, 22)
+	picker.addBox:SetAutoFocus(false)
+	picker.addBox:SetScript("OnEscapePressed", function(self)
+		self:ClearFocus()
+	end)
+	picker.addBtn = Style.Button(picker, 60, 22, "Add")
+	picker.addMsg = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	picker.addMsg:SetJustifyH("LEFT")
+	picker.addMsg:SetWidth(276)
+	local function add()
+		local name, err = ns.Music.AddFile(picker.addBox:GetText())
+		if name then
+			picker.addBox:SetText("")
+			picker.addMsg:SetText(C.good .. "Added " .. name .. "|r")
+			ns.Music.SetSong(picker.profession, name)
+		else
+			picker.addMsg:SetText(C.warn .. err .. "|r")
+		end
+		picker.addBox:ClearFocus()
+		picker.render(picker.profession)
+	end
+	picker.addBtn:SetScript("OnClick", add)
+	picker.addBox:SetScript("OnEnterPressed", add)
 	picker:SetScript("OnHide", function()
 		if ns.Music.PreviewSong() then
 			ns.Music.Stop()
@@ -895,15 +926,20 @@ local function RenderPicker(prof)
 		local line = picker.songs[i]
 		if not line then
 			line = {}
-			line.pick = Style.Button(picker, 214, 22)
-			line.play = Style.Button(picker, 50, 22)
+			line.pick = Style.Button(picker, 190, 22)
+			line.play = Style.Button(picker, 44, 22)
+			line.remove = Style.Button(picker, 22, 22, "x")
 			picker.songs[i] = line
 		end
 		line.pick:ClearAllPoints()
 		line.pick:SetPoint("TOPLEFT", 12, y)
 		line.play:ClearAllPoints()
 		line.play:SetPoint("LEFT", line.pick, "RIGHT", 6, 0)
-		line.pick:SetLabel(name and name:gsub("_", " ") or "No music")
+		local label = name and name:gsub("_", " ") or "No music"
+		if name and ns.Music.IsWhole(name) then
+			label = label .. Muted("  from start")
+		end
+		line.pick:SetLabel(label)
 		line.pick:SetSelected((choice.song or false) == name)
 		line.pick:SetScript("OnClick", function()
 			ns.Music.SetSong(prof, name or nil)
@@ -921,14 +957,23 @@ local function RenderPicker(prof)
 				RenderPicker(prof)
 			end)
 			line.play:Show()
+			line.remove:ClearAllPoints()
+			line.remove:SetPoint("LEFT", line.play, "RIGHT", 6, 0)
+			line.remove:SetScript("OnClick", function()
+				ns.Music.RemoveFile(name)
+				RenderPicker(prof)
+			end)
+			line.remove:SetShown(ns.Music.IsWhole(name))
 		else
 			line.play:Hide()
+			line.remove:Hide()
 		end
 		y = y - 26
 	end
 	for i = #options + 1, #picker.songs do
 		picker.songs[i].pick:Hide()
 		picker.songs[i].play:Hide()
+		picker.songs[i].remove:Hide()
 	end
 	picker.empty:SetShown(#names == 0)
 	if #names == 0 then
@@ -940,7 +985,9 @@ local function RenderPicker(prof)
 	picker.resume:SetPoint("TOPLEFT", 12, y - 24)
 	picker.restart:ClearAllPoints()
 	picker.restart:SetPoint("LEFT", picker.resume, "RIGHT", 6, 0)
-	local restart = choice.mode == "restart"
+	local whole = choice.song and ns.Music.IsWhole(choice.song)
+	local restart = choice.mode == "restart" or whole
+	picker.resume:SetLabel(whole and Muted("Resume: split the song") or "Resume where it stopped")
 	picker.resume:SetSelected(not restart)
 	picker.restart:SetSelected(restart)
 	picker.resume:SetScript("OnClick", function()
@@ -951,8 +998,17 @@ local function RenderPicker(prof)
 		ns.Music.SetMode(prof, "restart")
 		RenderPicker(prof)
 	end)
-	picker:SetHeight(-(y - 24) + 34)
+	picker.addLabel:ClearAllPoints()
+	picker.addLabel:SetPoint("TOPLEFT", 12, y - 58)
+	picker.addBox:ClearAllPoints()
+	picker.addBox:SetPoint("TOPLEFT", 18, y - 106)
+	picker.addBtn:ClearAllPoints()
+	picker.addBtn:SetPoint("LEFT", picker.addBox, "RIGHT", 8, 0)
+	picker.addMsg:ClearAllPoints()
+	picker.addMsg:SetPoint("TOPLEFT", 12, y - 134)
+	picker:SetHeight(-(y - 134) + 26)
 	picker.profession = prof
+	picker.render = RenderPicker
 end
 
 local function ShowPicker(row, prof)

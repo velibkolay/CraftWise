@@ -213,7 +213,9 @@ end
 
 -- Sound: stub.sounds = list of { file, channel, handle, stopped }
 stub.sounds = {}
+stub.missingFiles = {}
 function PlaySoundFile(file, channel)
+	if stub.missingFiles[file] then return false, nil end
 	local h = #stub.sounds + 1
 	stub.sounds[h] = { file = file, channel = channel, handle = h }
 	return true, h
