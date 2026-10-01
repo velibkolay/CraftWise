@@ -240,4 +240,22 @@ C_Spell = { GetSpellInfo = function(id) return stub.spells[id] and { name = stub
 stub.cvars = { Sound_DialogVolume = "1", Sound_EnableDialog = "1" }
 C_CVar = { GetCVar = function(k) return stub.cvars[k] end, SetCVar = function(k, v) stub.cvars[k] = tostring(v) end }
 
+-- Bag moves: picking up a slot puts it on the cursor; dropping on a slot swaps (as in the client).
+stub.bagFamily = {}
+C_Container.GetContainerNumFreeSlots = function(bag) return 0, stub.bagFamily[bag] or 0 end
+stub.cursor = nil
+C_Container.PickupContainerItem = function(bag, slot)
+	stub.bags[bag] = stub.bags[bag] or {}
+	if stub.cursor then
+		local from = stub.cursor
+		stub.cursor = nil
+		local a, b = stub.bags[from.bag][from.slot], stub.bags[bag][slot]
+		stub.bags[from.bag][from.slot], stub.bags[bag][slot] = b or false, a
+	else
+		stub.cursor = { bag = bag, slot = slot }
+	end
+end
+function GetCursorInfo() return stub.cursor and "item" or nil end
+function ClearCursor() stub.cursor = nil end
+
 return stub

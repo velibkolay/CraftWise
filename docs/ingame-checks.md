@@ -63,3 +63,9 @@ Report Lua errors with BugSack + BugGrabber.
 ## Party key (#20)
 - Esc > Options > Key Bindings > AddOns > CraftWise: "Party: music, video and dance" listed; bind a key (needs a game restart once for Bindings.xml).
 - Key / `/cw party` / "Party!" button: character dances, Party song + video start. Same key stops; walking stops. Check DoEmote works from an addon in Forever.
+
+## Bag sort (#12)
+- Bags view > "Sort bags": kept items, quest items and reagents first, free slots, items to sell last (best value first). Chat says "Bags sorted (N moves)". Click again: "already in order".
+- Profession bags / quivers untouched. Stacks of the same item are not swapped (they would merge).
+- Entering combat during the sort stops it; holding an item on the cursor stops it.
+- Check: dropping onto an occupied slot swaps the two items (no item left on the cursor).
