@@ -69,3 +69,9 @@ Report Lua errors with BugSack + BugGrabber.
 - Profession bags / quivers untouched. Stacks of the same item are not swapped (they would merge).
 - Entering combat during the sort stops it; holding an item on the cursor stops it.
 - Check: dropping onto an occupied slot swaps the two items (no item left on the cursor).
+
+## Junk (#12)
+- Bags view: shift + right-click marks an item as junk (red "Junk"), again unmarks. Plain right-click keeps (and clears junk).
+- Merchant window: "Sell junk (N)" button left of Blizzard's sell-all-junk button. One click sells every marked stack, ~5 per second; chat prints count and money. Closing the merchant stops it.
+- Loot the same item again: it is junk right away. Sort bags puts junk at the very end.
+- Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.

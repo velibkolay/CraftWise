@@ -75,7 +75,7 @@ local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "req
 	"vendorValue", "ahValue", "deValue", "bestValue", "equippedText", "gain", "songText", "modeText" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
-local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"] }
+local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"], junk = L["Junk"] }
 
 local STATUS_TEXT = {
 	known = L["Known"],
@@ -377,7 +377,9 @@ local function RenderBagRow(row, r)
 	else
 		cells.deValue:SetText(Muted(r.canDisenchant and "?" or "-"))
 	end
-	if r.questItem then
+	if r.junk then
+		cells.bestValue:SetText(C.bad .. L["Junk"] .. "|r" .. Muted("  " .. L["sold with Sell junk"]))
+	elseif r.questItem then
 		cells.bestValue:SetText(C.info .. "Quest item|r")
 	elseif r.kept then
 		cells.bestValue:SetText(C.info .. "Kept|r" .. Muted("  right-click to sell"))
@@ -710,6 +712,10 @@ local function ShowBagTooltip(row, r)
 	end
 	if not r.kept then
 		GameTooltip:AddLine("Right-click: keep this item (leave it out of the advice)", 0.55, 0.55, 0.6)
+	end
+	if not r.questItem then
+		GameTooltip:AddLine(r.junk and "Shift + right-click: no longer junk"
+			or "Shift + right-click: mark as junk (sold with one click at a vendor)", 0.55, 0.55, 0.6)
 	end
 	GameTooltip:Show()
 end
@@ -1349,7 +1355,11 @@ local function BuildRows()
 			end
 			if View() == "bags" then
 				if mouse == "RightButton" and not r.questItem then
-					ns.ToggleKeep(r.itemID)
+					if IsShiftKeyDown() then
+						ns.ToggleJunk(r.itemID)
+					else
+						ns.ToggleKeep(r.itemID)
+					end
 					ShowTooltip(self)
 				end
 			elseif View() == "music" then

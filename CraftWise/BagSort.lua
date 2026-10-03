@@ -41,6 +41,10 @@ function Sort.Slots()
 					entry.keep = row.kept or row.reagent or row.questItem or row.ammo or not row.best or false
 					entry.value = row.bestValue and row.count and row.count > 0 and row.bestValue / row.count or 0
 					entry.name = row.name or ""
+					entry.junk = row.junk or false
+					if entry.junk then
+						entry.keep = false
+					end
 				end
 				slots[#slots + 1] = entry
 			end
@@ -68,6 +72,9 @@ function Sort.Target(slots)
 		return a.count > b.count
 	end)
 	table.sort(sell, function(a, b)
+		if a.junk ~= b.junk then
+			return b.junk -- junk at the very end, ready for "Sell junk"
+		end
 		local va, vb = a.value * a.count, b.value * b.count
 		if va ~= vb then
 			return va > vb

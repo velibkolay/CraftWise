@@ -120,7 +120,10 @@ function ns.BagRows()
 		if C_Item and C_Item.GetItemInfoInstant then
 			row.questItem = select(6, C_Item.GetItemInfoInstant(id)) == 12 -- Quest
 		end
-		row.kept = row.questItem or (ns.db and ns.db.keep[id]) or false
+		-- Junk: marked by the player to sell at a vendor with one click (Junk.lua). Remembered per
+		-- item ID, so new copies are junk too. Quest items can't be junk.
+		row.junk = not row.questItem and ns.db and ns.db.junk and ns.db.junk[id] or false
+		row.kept = not row.junk and (row.questItem or (ns.db and ns.db.keep[id])) or false
 		if row.kept then
 			row.best, row.bestValue, row.margin = nil, nil, nil
 		end
@@ -139,7 +142,9 @@ function ns.BagRows()
 		table.sort(options, function(a, b)
 			return a[2] > b[2]
 		end)
-		if options[1] and not row.kept then
+		if row.junk then
+			row.best, row.bestValue, row.margin = "junk", row.vendorValue, nil
+		elseif options[1] and not row.kept then
 			row.best, row.bestValue = options[1][1], options[1][2]
 			row.margin = options[2] and (options[1][2] - options[2][2]) or nil
 		end
@@ -152,6 +157,22 @@ function ns.ToggleKeep(itemID)
 		return
 	end
 	ns.db.keep[itemID] = not ns.db.keep[itemID] or nil
+	if ns.db.keep[itemID] and ns.db.junk then
+		ns.db.junk[itemID] = nil
+	end
+	ns.Notify("BAGS_CHANGED")
+end
+
+-- Mark an item as junk (or unmark it). Junk and keep exclude each other.
+function ns.ToggleJunk(itemID)
+	if not ns.db then
+		return
+	end
+	ns.db.junk = ns.db.junk or {}
+	ns.db.junk[itemID] = not ns.db.junk[itemID] or nil
+	if ns.db.junk[itemID] then
+		ns.db.keep[itemID] = nil
+	end
 	ns.Notify("BAGS_CHANGED")
 end
 

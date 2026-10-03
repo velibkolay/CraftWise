@@ -23,6 +23,7 @@ Trainer.lua
 Crafts.lua
 Bags.lua
 BagSort.lua
+Junk.lua
 Upgrades.lua
 Music.lua
 Video.lua
