@@ -67,6 +67,22 @@ function ns.GetBuyPrice(itemID)
 	return nil
 end
 
+-- Is selling on the AH worth it over vendoring? Only when it pays at least ahMinCopper and
+-- ahMinPercent more (player settings, default 1 silver and 20%): below that the vendor wins - no
+-- deposit at risk, no trip to the auctioneer. Returns worth, edge (AH minus vendor, copper).
+function ns.AuctionWorthIt(ahNet, vendor)
+	if not ahNet then
+		return false, nil
+	end
+	if not vendor or vendor <= 0 then
+		return true, nil
+	end
+	local edge = ahNet - vendor
+	local s = ns.db and ns.db.settings or {}
+	local minCopper, minPercent = s.ahMinCopper or 100, s.ahMinPercent or 20
+	return edge >= minCopper and ahNet >= vendor * (1 + minPercent / 100), edge
+end
+
 -- Best net value of one unit when selling: { copper, source = "auction"|"vendor", age }
 -- AH value is after the AH cut; selling to a vendor is always possible, so the higher one wins.
 function ns.GetSellValue(itemID)

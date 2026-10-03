@@ -383,6 +383,9 @@ local function RenderBagRow(row, r)
 		cells.bestValue:SetText(C.info .. "Quest item|r")
 	elseif r.kept then
 		cells.bestValue:SetText(C.info .. "Kept|r")
+	elseif r.best and r.ahSmallEdge then
+		local more = r.ahSmallEdge > 0 and ("AH +" .. Money(r.ahSmallEdge) .. ", too little") or "AH no better"
+		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. Muted("  " .. more))
 	elseif r.best then
 		local margin = r.margin and r.margin > 0 and Muted(("  +%s"):format(Money(r.margin))) or ""
 		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. margin)
@@ -700,6 +703,11 @@ local function ShowBagTooltip(row, r)
 			line = line .. (" pays %s more"):format(Money(r.margin))
 		end
 		GameTooltip:AddLine(line, 0.3, 0.82, 0.55)
+		if r.ahSmallEdge then
+			local s = ns.db.settings
+			GameTooltip:AddLine(("The AH pays %s more after the 5%% cut - under your limit (%s and %d%% more), so vendor it: no deposit at risk, no trip to the AH. Change with /cw ahmin <copper> <percent>."):format(
+				Money(math.max(0, r.ahSmallEdge)), Money(s.ahMinCopper or 100), s.ahMinPercent or 20), 0.8, 0.8, 0.8, true)
+		end
 	end
 	if r.reagent then
 		GameTooltip:AddLine("Used by recipes you know - maybe keep it.", 0.54, 0.7, 1)

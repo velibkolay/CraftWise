@@ -100,7 +100,8 @@ function ns.BagRows()
 		if not row.bound then
 			local ah, age = ns.GetAuctionPrice(id)
 			if ah then
-				row.ahValue = ah * (1 - ns.AH_CUT) * n
+				-- Whole copper, rounded down: the cut is taken from the sale total.
+				row.ahValue = math.floor(ah * (1 - ns.AH_CUT) * n)
 				row.ahAge = age
 			end
 		end
@@ -142,11 +143,20 @@ function ns.BagRows()
 		table.sort(options, function(a, b)
 			return a[2] > b[2]
 		end)
+		row.ahSmallEdge = nil
 		if row.junk then
 			row.best, row.bestValue, row.margin = "junk", row.vendorValue, nil
 		elseif options[1] and not row.kept then
 			row.best, row.bestValue = options[1][1], options[1][2]
 			row.margin = options[2] and (options[1][2] - options[2][2]) or nil
+			-- AH only a little above vendor: vendor it, but say how much the AH would pay more.
+			if row.best == "auction" and row.vendorValue then
+				local worth, edge = ns.AuctionWorthIt(row.ahValue, row.vendorValue)
+				if not worth then
+					row.best, row.bestValue, row.margin = "vendor", row.vendorValue, nil
+					row.ahSmallEdge = edge
+				end
+			end
 		end
 	end
 	return order

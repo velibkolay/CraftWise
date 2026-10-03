@@ -58,7 +58,8 @@ local DB_DEFAULTS = {
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
-		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false },
+		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
+		ahMinCopper = 100, ahMinPercent = 20 }, -- Bags: AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,
@@ -101,6 +102,14 @@ SLASH_CRAFTWISE1 = "/cw"
 SLASH_CRAFTWISE2 = "/craftwise"
 SlashCmdList.CRAFTWISE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
+	local minCopper, minPercent = msg:match("^ahmin%s+(%d+)%s+(%d+)$")
+	if minCopper then
+		ns.db.settings.ahMinCopper, ns.db.settings.ahMinPercent = tonumber(minCopper), tonumber(minPercent)
+		ns.Print(("AH is advised only when it pays %s and %d%% more than a vendor."):format(
+			ns.FormatMoney(tonumber(minCopper)), tonumber(minPercent)))
+		ns.Notify("BAGS_CHANGED")
+		return
+	end
 	if msg == "party" then
 		if ns.Music then
 			ns.Music.ToggleParty()

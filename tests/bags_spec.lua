@@ -29,9 +29,9 @@ it("stacks add up across slots and bags", function()
 	local rows = byID(ns.BagRows())
 	eq(rows[100].count, 25)
 	eq(rows[100].vendorValue, 13 * 25)
-	eq(rows[100].ahValue, 50 * 0.95 * 25)
+	eq(rows[100].ahValue, 1187) -- 50 x 0.95 x 25 = 1187.5, rounded down
 	eq(rows[100].best, "auction")
-	eq(rows[100].margin, 50 * 0.95 * 25 - 13 * 25)
+	eq(rows[100].margin, 1187 - 13 * 25)
 end)
 
 it("vendor wins when the AH pays less after the cut", function()
@@ -106,4 +106,28 @@ it("quest items are always kept", function()
 	table.insert(stub.bags[1], { itemID = 500, stackCount = 1, quality = 1 })
 	local q = byID(ns.BagRows())[500]
 	eq(q.questItem, true); eq(q.kept, true); eq(q.best, nil)
+end)
+
+it("AH only a little above vendor: vendor it and say how much the AH would pay more", function()
+	local ns, stub = LoadAddon({ auctionator = true })
+	stub.items[700] = { name = "Light Feather", sellPrice = 7 }
+	stub.items[800] = { name = "Silk Cloth", sellPrice = 38 }
+	stub.ah[700], stub.ah[800] = 8, 200
+	stub.bags[0] = { { itemID = 700, stackCount = 20, quality = 1 }, { itemID = 800, stackCount = 20, quality = 1 } }
+	local rows = byID(ns.BagRows())
+	-- feathers: AH 20 x 8 x 0.95 = 152c vs vendor 140c: +12c, under 1 silver
+	eq(rows[700].ahValue, 152); eq(rows[700].best, "vendor"); eq(rows[700].ahSmallEdge, 12)
+	-- silk: AH 3800c vs vendor 760c: clearly worth it
+	eq(rows[800].best, "auction"); eq(rows[800].ahSmallEdge, nil)
+	SlashCmdList.CRAFTWISE("ahmin 10 5")
+	eq(byID(ns.BagRows())[700].best, "auction")
+	ns.db.settings.view = "bags"
+	SlashCmdList.CRAFTWISE("ahmin 100 20")
+	ns.ToggleProfitFrame()
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.shown ~= false and f.data.itemID == 700 then
+			f.scripts.OnEnter(f)
+			assert(f.cells.bestValue.text:find("too little"), f.cells.bestValue.text)
+		end
+	end
 end)
