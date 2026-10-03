@@ -81,11 +81,16 @@ it("kept items leave the advice and totals, sort last, and can be hidden", funct
 	local shown = {}
 	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then shown[#shown + 1] = f.data end end
 	eq(shown[#shown].itemID, 100) -- kept last
-	-- right-click toggles back
+	-- clicking the row opens Keep / Junk / Normal; Normal sells it again
+	local target
 	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.itemID == 100 and f.shown ~= false then f.scripts.OnClick(f, "RightButton") end
+		if f.data and f.data.itemID == 100 and f.shown ~= false then target = f end
 	end
+	target.scripts.OnClick(target, "LeftButton")
+	eq(CraftWiseItemMenu.buttons.keep.selected, true)
+	CraftWiseItemMenu.buttons.normal.scripts.OnClick(CraftWiseItemMenu.buttons.normal)
 	eq(ns.db.keep[100], nil)
+	eq(CraftWiseItemMenu.shown, false)
 	ns.ToggleKeep(100)
 	ns.db.settings.showKept = false
 	ns.RefreshProfitFrame()

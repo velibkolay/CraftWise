@@ -71,7 +71,8 @@ Report Lua errors with BugSack + BugGrabber.
 - Check: dropping onto an occupied slot swaps the two items (no item left on the cursor).
 
 ## Junk (#12)
-- Bags view: shift + right-click marks an item as junk (red "Junk"), again unmarks. Plain right-click keeps (and clears junk).
+- Bags view: click a row -> menu Keep / Junk / Normal (current one highlighted). Junk shows red "Junk".
+- In the game bags / Bagnon: Alt + right-click an item -> same menu at the cursor; the item is NOT used or equipped (Blizzard's bag button treats any modified click as "modified": no default action for Alt + right). Click elsewhere or Esc closes the menu.
 - Merchant window: "Sell junk (N)" button left of Blizzard's sell-all-junk button. One click sells every marked stack, ~5 per second; chat prints count and money. Closing the merchant stops it.
 - Loot the same item again: it is junk right away. Sort bags puts junk at the very end.
 - Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.

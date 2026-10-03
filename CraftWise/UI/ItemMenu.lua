@@ -1,0 +1,147 @@
+-- Item menu (issue #12): Keep / Junk / Normal for one item, opened by clicking a row in the Bags
+-- view, or with Alt + right-click on an item in the game's bags (Blizzard bags or Bagnon).
+-- Alt + right-click does nothing in the default bags (Alt + left-click is Bagnon's "flash find"
+-- and the default "expand item"), so it doesn't take over a Blizzard action.
+local _, ns = ...
+local Style = ns.Style
+local L = ns.L
+
+local menu
+local OPTIONS = {
+	{ key = "keep", label = "Keep", note = "Left out of the advice and selling" },
+	{ key = "junk", label = "Junk", note = "Sold with \"Sell junk\" at a vendor" },
+	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
+}
+
+local function State(itemID)
+	if ns.db.junk and ns.db.junk[itemID] then
+		return "junk"
+	elseif ns.db.keep[itemID] then
+		return "keep"
+	end
+	return "normal"
+end
+
+function ns.SetItemState(itemID, state)
+	ns.db.junk = ns.db.junk or {}
+	ns.db.keep[itemID] = state == "keep" or nil
+	ns.db.junk[itemID] = state == "junk" or nil
+	ns.Notify("BAGS_CHANGED")
+end
+
+local function IsQuestItem(itemID)
+	return C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID)) == 12
+end
+
+local function Build()
+	menu = CreateFrame("Frame", "CraftWiseItemMenu", UIParent, "BackdropTemplate")
+	menu:SetFrameStrata("DIALOG")
+	menu:SetSize(210, 30 + #OPTIONS * 28)
+	menu:EnableMouse(true)
+	menu:SetClampedToScreen(true)
+	Style.Panel(menu)
+	table.insert(UISpecialFrames, "CraftWiseItemMenu")
+	menu.title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	menu.title:SetPoint("TOPLEFT", 10, -8)
+	menu.title:SetPoint("RIGHT", -10, 0)
+	menu.title:SetJustifyH("LEFT")
+	menu.title:SetWordWrap(false)
+	menu.buttons = {}
+	for i, opt in ipairs(OPTIONS) do
+		local b = Style.Button(menu, 190, 24, L[opt.label])
+		b:SetPoint("TOPLEFT", 10, -28 - (i - 1) * 28)
+		b:SetScript("OnClick", function()
+			if menu.itemID and not (menu.quest and opt.key == "junk") then
+				ns.SetItemState(menu.itemID, opt.key)
+			end
+			menu:Hide()
+		end)
+		b:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine(L[opt.label])
+			GameTooltip:AddLine(menu.quest and opt.key == "junk" and L["Quest items can't be junk"] or L[opt.note],
+				0.8, 0.8, 0.8, true)
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", function(self)
+			GameTooltip:Hide()
+			self:SetSelected(self.current)
+		end)
+		menu.buttons[opt.key] = b
+	end
+	menu:Hide()
+end
+
+-- Opens the menu for an item next to the cursor (or an anchor frame).
+function ns.ShowItemMenu(itemID, anchor)
+	if not (itemID and ns.db) then
+		return
+	end
+	if not menu then
+		Build()
+	end
+	menu.itemID = itemID
+	menu.quest = IsQuestItem(itemID)
+	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
+	menu.title:SetText(name)
+	local state = menu.quest and "keep" or State(itemID)
+	for key, b in pairs(menu.buttons) do
+		b.current = key == state
+		b:SetSelected(b.current)
+		b:SetAlpha(menu.quest and key ~= "keep" and 0.4 or 1)
+	end
+	menu:ClearAllPoints()
+	if anchor then
+		menu:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, 0)
+	else
+		local x, y = GetCursorPosition()
+		local scale = UIParent:GetEffectiveScale() or 1
+		menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 8, y / scale + 8)
+	end
+	menu:Show()
+end
+
+function ns.HideItemMenu()
+	if menu then
+		menu:Hide()
+	end
+end
+
+-- Bag and slot of a bag item button: Blizzard's (GetBagID) or Bagnon's (.bag).
+local function BagSlot(frame)
+	for _ = 1, 3 do
+		if not frame then
+			return nil
+		end
+		local id = frame.GetID and frame:GetID()
+		if frame.GetBagID and id then
+			local ok, bag = pcall(frame.GetBagID, frame)
+			if ok and bag then
+				return bag, id
+			end
+		end
+		if type(frame.bag) == "number" and id then
+			return frame.bag, id
+		end
+		frame = frame.GetParent and frame:GetParent()
+	end
+end
+
+-- Alt + right-click on an item in the bags opens the menu; a click elsewhere closes it.
+ns.On("GLOBAL_MOUSE_DOWN", function(_, button)
+	if menu and menu:IsShown() and not menu:IsMouseOver() then
+		menu:Hide()
+	end
+	if button ~= "RightButton" or not IsAltKeyDown() or not GetMouseFoci then
+		return
+	end
+	local focus = GetMouseFoci()
+	local bag, slot = BagSlot(focus and focus[1])
+	if not bag or bag < 0 or bag > 4 then
+		return
+	end
+	local info = C_Container.GetContainerItemInfo(bag, slot)
+	if info and info.itemID then
+		ns.ShowItemMenu(info.itemID)
+	end
+end)

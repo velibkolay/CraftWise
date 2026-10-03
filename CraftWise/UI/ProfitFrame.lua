@@ -382,7 +382,7 @@ local function RenderBagRow(row, r)
 	elseif r.questItem then
 		cells.bestValue:SetText(C.info .. "Quest item|r")
 	elseif r.kept then
-		cells.bestValue:SetText(C.info .. "Kept|r" .. Muted("  right-click to sell"))
+		cells.bestValue:SetText(C.info .. "Kept|r")
 	elseif r.best then
 		local margin = r.margin and r.margin > 0 and Muted(("  +%s"):format(Money(r.margin))) or ""
 		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. margin)
@@ -693,7 +693,7 @@ local function ShowBagTooltip(row, r)
 	if r.questItem then
 		GameTooltip:AddLine("Quest item - always kept.", 0.54, 0.7, 1)
 	elseif r.kept then
-		GameTooltip:AddLine("Kept - not counted. Right-click to sell it again.", 0.54, 0.7, 1)
+		GameTooltip:AddLine("Kept - not counted.", 0.54, 0.7, 1)
 	elseif r.best then
 		local line = BEST_TEXT[r.best]:upper()
 		if r.margin and r.margin > 0 then
@@ -710,12 +710,8 @@ local function ShowBagTooltip(row, r)
 	if r.ahAge and r.ahAge > 1 then
 		GameTooltip:AddLine(("AH price is %d days old."):format(r.ahAge), 1, 0.6, 0.3)
 	end
-	if not r.kept then
-		GameTooltip:AddLine("Right-click: keep this item (leave it out of the advice)", 0.55, 0.55, 0.6)
-	end
 	if not r.questItem then
-		GameTooltip:AddLine(r.junk and "Shift + right-click: no longer junk"
-			or "Shift + right-click: mark as junk (sold with one click at a vendor)", 0.55, 0.55, 0.6)
+		GameTooltip:AddLine("Click: Keep / Junk / Normal  ·  in your bags: Alt + right-click", 0.55, 0.55, 0.6)
 	end
 	GameTooltip:Show()
 end
@@ -1354,14 +1350,8 @@ local function BuildRows()
 				return
 			end
 			if View() == "bags" then
-				if mouse == "RightButton" and not r.questItem then
-					if IsShiftKeyDown() then
-						ns.ToggleJunk(r.itemID)
-					else
-						ns.ToggleKeep(r.itemID)
-					end
-					ShowTooltip(self)
-				end
+				GameTooltip:Hide()
+				ns.ShowItemMenu(r.itemID, self)
 			elseif View() == "music" then
 				ShowPicker(self, r.name)
 			elseif View() == "upgrades" and mouse == "RightButton" then

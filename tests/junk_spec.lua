@@ -62,7 +62,7 @@ it("sells every marked stack at the merchant with one click, then remembers the 
 	eq(ns.Junk.Sell(), false) -- no merchant
 end)
 
-it("bags view: shift + right-click marks junk, plain right-click keeps", function()
+it("bags view: clicking a row opens Keep / Junk / Normal", function()
 	local ns, stub = setup()
 	ns.db.settings.view = "bags"
 	ns.ToggleProfitFrame()
@@ -70,14 +70,39 @@ it("bags view: shift + right-click marks junk, plain right-click keeps", functio
 	for _, f in ipairs(stub.frames) do
 		if f.data and f.shown ~= false and f.data.itemID == 100 then row = f end
 	end
-	IsShiftKeyDown = function() return true end
-	row.scripts.OnClick(row, "RightButton")
-	eq(ns.db.junk[100], true)
-	IsShiftKeyDown = function() return false end
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.itemID == 100 then row = f end
-	end
 	row.scripts.OnEnter(row)
-	row.scripts.OnClick(row, "RightButton")
+	row.scripts.OnClick(row, "LeftButton")
+	local menu = CraftWiseItemMenu
+	eq(menu.buttons.normal.selected, true)
+	menu.buttons.junk.scripts.OnClick(menu.buttons.junk)
+	eq(ns.db.junk[100], true)
+	ns.ShowItemMenu(100)
+	eq(menu.buttons.junk.selected, true)
+	menu.buttons.keep.scripts.OnClick(menu.buttons.keep)
 	eq(ns.db.keep[100], true); eq(ns.db.junk[100], nil)
+	ns.ShowItemMenu(500) -- quest item: junk not allowed
+	menu.buttons.junk.scripts.OnClick(menu.buttons.junk)
+	eq(ns.db.junk[500], nil)
+end)
+
+it("Alt + right-click on an item in the bags (Blizzard or Bagnon button) opens the menu", function()
+	local ns, stub = setup()
+	IsAltKeyDown = function() return true end
+	local blizzard = CreateFrame("Button")
+	blizzard.GetBagID = function() return 0 end
+	blizzard.GetID = function() return 2 end
+	GetMouseFoci = function() return { blizzard } end
+	stub.Fire("GLOBAL_MOUSE_DOWN", "RightButton")
+	eq(CraftWiseItemMenu.itemID, 400)
+	assert(CraftWiseItemMenu.shown, "menu shown")
+	local bagnon = CreateFrame("Button")
+	bagnon.bag = 0
+	bagnon.GetID = function() return 1 end
+	GetMouseFoci = function() return { bagnon } end
+	CraftWiseItemMenu.IsMouseOver = function() return false end
+	stub.Fire("GLOBAL_MOUSE_DOWN", "RightButton")
+	eq(CraftWiseItemMenu.itemID, 100)
+	IsAltKeyDown = function() return false end
+	stub.Fire("GLOBAL_MOUSE_DOWN", "LeftButton") -- click elsewhere closes it
+	eq(CraftWiseItemMenu.shown, false)
 end)

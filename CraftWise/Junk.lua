@@ -1,4 +1,4 @@
--- Junk (issue #12): items the player marked as junk in the Bags view (shift + right-click) are
+-- Junk (issue #12): items the player marked as junk in the Bags view or with Alt + right-click in the bags are
 -- sold with one click on a "Sell junk" button in the merchant window. Marks are kept per item ID,
 -- so the next copy you loot is junk too. One item per short step, each slot re-checked first.
 local _, ns = ...
@@ -88,7 +88,7 @@ function Junk.Sell()
 	end
 	local slots = Junk.Slots()
 	if #slots == 0 then
-		ns.Print("No junk to sell. Mark items in CraftWise > Bags with shift + right-click.")
+		ns.Print("No junk to sell. Mark items: Alt + right-click in your bags, or click them in CraftWise > Bags.")
 		return false
 	end
 	job = { slots = slots, index = 1, elapsed = STEP, sold = 0, copper = 0 }
@@ -119,7 +119,7 @@ local function CreateButton()
 		GameTooltip:AddLine("CraftWise: sell junk")
 		GameTooltip:AddLine(("%d marked %s, %s"):format(self.count or 0, (self.count or 0) == 1 and "stack" or "stacks",
 			ns.FormatMoney(self.copper or 0)), 1, 1, 1)
-		GameTooltip:AddLine("Mark items in CraftWise > Bags with shift + right-click.", 0.7, 0.7, 0.7, true)
+		GameTooltip:AddLine("Mark items: Alt + right-click in your bags, or click them in CraftWise > Bags.", 0.7, 0.7, 0.7, true)
 		GameTooltip:Show()
 	end)
 	button:SetScript("OnLeave", function(self)

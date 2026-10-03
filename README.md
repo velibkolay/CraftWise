@@ -11,7 +11,7 @@ Type `/cw` to open the profit table. `/cw debug` prints what is cached.
 - Unlearned recipes you've seen at a trainer show the skill they need, the fee and how many crafts it takes to pay off.
 - A missing price is never counted as 0: the row shows `?` instead of a fake profit.
 - **Upgrades**: items from your known recipes that beat what you wear (higher item level, or same level with more armour). Right-click to dismiss a suggestion, "Show dismissed" to bring it back.
-- **Bags**: vendor or AH for every item you carry; right-click keeps an item, shift + right-click marks it as junk (remembered). "Sort bags" orders the real bags; at a vendor "Sell junk" sells everything marked in one click.
+- **Bags**: vendor or AH for every item you carry; click an item (or Alt + right-click it in your bags) to mark it Keep, Junk or Normal (remembered). "Sort bags" orders the real bags; at a vendor "Sell junk" sells everything marked in one click.
 - **Music**: pick a song per profession; it plays while you cast that profession and stops when the cast ends. Put `.mp3`/`.ogg` files in `Interface/AddOns/CraftWise_Music/Songs/`, restart the game, then click a profession in the Music tab and add the file by name (plays from the start each cast). To resume where it stopped, split the song into chunks: `python3 tools/music_split.py "<WoW>/_classic_beta_/Interface/AddOns" song.mp3` (needs ffmpeg). `CraftWise_Music` is your own folder, so CraftWise updates never delete your songs.
 - **Skill-up log**: every craft is recorded with your skill and whether it gave a point, to measure skill-up chances in game (#15). Recipe tooltips show the yellow and grey thresholds.
 

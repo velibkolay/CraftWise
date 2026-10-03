@@ -28,5 +28,6 @@ Upgrades.lua
 Music.lua
 Video.lua
 UI\Style.lua
+UI\ItemMenu.lua
 UI\ProfitFrame.lua
 UI\MinimapButton.lua
