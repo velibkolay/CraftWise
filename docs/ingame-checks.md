@@ -65,7 +65,7 @@ Report Lua errors with BugSack + BugGrabber.
 - Key / `/cw party` / "Party!" button: character dances, Party song + video start. Same key stops; walking stops. Check DoEmote works from an addon in Forever.
 
 ## Bag sort (#12)
-- Bags view > "Sort bags": kept items, quest items and reagents first, free slots, items to sell last (best value first). Chat says "Bags sorted (N moves)". Click again: "already in order".
+- Bags view > "Sort bags": kept items, quest items and reagents first (by item type, then item ID - the same order every time), free slots, items to sell last (best value first, junk at the very end). Right after login it first loads item data ("Loading item info..."); a second click must say "already in order", also after a restart. Chat says "Bags sorted (N moves)". Click again: "already in order".
 - Profession bags / quivers untouched. Stacks of the same item are not swapped (they would merge).
 - Entering combat during the sort stops it; holding an item on the cursor stops it.
 - Check: dropping onto an occupied slot swaps the two items (no item left on the cursor).

@@ -4,7 +4,7 @@ local function setup()
 	stub.items[200] = { name = "Green Sword", sellPrice = 500 }
 	stub.items[400] = { name = "Grey Junk", sellPrice = 7 }
 	stub.items[500] = { name = "Quest Thing" }
-	stub.itemClass[200], stub.itemClass[500] = 2, 12
+	stub.itemClass[100], stub.itemClass[200], stub.itemClass[500] = 7, 2, 12
 	stub.ah[100], stub.ah[200] = 50, 400
 	stub.bags[0] = {
 		{ itemID = 400, stackCount = 3, quality = 0 },
@@ -69,4 +69,24 @@ it("doesn't start in combat, leaves profession bags alone and stops if a slot st
 	stub.now = stub.now + 5
 	ns.BagSort.frame.scripts.OnUpdate()
 	eq(ns.BagSort.Running(), false)
+end)
+
+it("waits for item data after login before sorting, and sorts the same way every time", function()
+	local ns, stub = setup()
+	ns.ToggleKeep(100)
+	local cached = false
+	C_Item.IsItemDataCachedByID = function() return cached end
+	local timers = {}
+	C_Timer.After = function(_, fn) timers[#timers + 1] = fn end
+	assert(ns.BagSort.Start(), "waiting")
+	eq(ns.BagSort.Running(), false) -- nothing moved yet
+	cached = true
+	timers[1]()
+	for _ = 1, 20 do
+		if not ns.BagSort.Running() then break end
+		ns.BagSort.frame.scripts.OnUpdate()
+	end
+	local first = {}
+	for slot = 1, #stub.bags[0] do first[slot] = stub.bags[0][slot] and stub.bags[0][slot].itemID or 0 end
+	eq(ns.BagSort.Start(), false) -- second click: already in order
 end)

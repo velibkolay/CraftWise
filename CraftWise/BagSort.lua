@@ -41,6 +41,10 @@ function Sort.Slots()
 					entry.keep = row.kept or row.reagent or row.questItem or row.ammo or not row.best or false
 					entry.value = row.bestValue and row.count and row.count > 0 and row.bestValue / row.count or 0
 					entry.name = row.name or ""
+					if C_Item and C_Item.GetItemInfoInstant then
+						local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(item.itemID)
+						entry.class, entry.subClass = classID or 99, subClassID or 99
+					end
 					entry.junk = row.junk or false
 					if entry.junk then
 						entry.keep = false
@@ -65,9 +69,16 @@ function Sort.Target(slots)
 			sell[#sell + 1] = s
 		end
 	end
+	-- By item class, then item ID: the same order every time, whether or not item names are loaded.
 	table.sort(keep, function(a, b)
-		if a.name ~= b.name then
-			return a.name < b.name
+		if (a.class or 99) ~= (b.class or 99) then
+			return (a.class or 99) < (b.class or 99)
+		end
+		if (a.subClass or 99) ~= (b.subClass or 99) then
+			return (a.subClass or 99) < (b.subClass or 99)
+		end
+		if a.itemID ~= b.itemID then
+			return a.itemID < b.itemID
 		end
 		return a.count > b.count
 	end)
@@ -164,13 +175,41 @@ local function Step()
 	job.waitingSince = GetTime()
 end
 
-function Sort.Start()
+-- Right after login the client hasn't loaded every item's data (sell price, name), which would
+-- change the advice and so the order. Load them first, then sort.
+local function Uncached()
+	if not (C_Item and C_Item.IsItemDataCachedByID) then
+		return 0
+	end
+	local missing = 0
+	for bag = 0, NUM_BAGS do
+		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+			local item = C_Container.GetContainerItemInfo(bag, slot)
+			if item and item.itemID and not C_Item.IsItemDataCachedByID(item.itemID) then
+				missing = missing + 1
+				C_Item.RequestLoadItemDataByID(item.itemID)
+			end
+		end
+	end
+	return missing
+end
+
+function Sort.Start(retry)
 	if job then
 		return false
 	end
 	if inCombat then
 		ns.Print("Can't sort bags in combat.")
 		return false
+	end
+	if Uncached() > 0 and (retry or 0) < 6 then
+		if not retry then
+			ns.Print("Loading item info, sorting in a moment...")
+		end
+		C_Timer.After(0.5, function()
+			Sort.Start((retry or 0) + 1)
+		end)
+		return true
 	end
 	local swaps = Sort.Plan(Sort.Slots())
 	if #swaps == 0 then
