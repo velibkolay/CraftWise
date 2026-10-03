@@ -119,6 +119,11 @@ it("AH only a little above vendor: vendor it and say how much the AH would pay m
 	eq(rows[700].ahValue, 152); eq(rows[700].best, "vendor"); eq(rows[700].ahSmallEdge, 12)
 	-- silk: AH 3800c vs vendor 760c: clearly worth it
 	eq(rows[800].best, "auction"); eq(rows[800].ahSmallEdge, nil)
+	-- one fish: vendor 2c, AH 16c after the cut: only 14c more, but 8x - the percentage is enough
+	stub.items[900] = { name = "Darkshore Grouper", sellPrice = 2 }
+	stub.ah[900] = 17
+	stub.bags[0][3] = { itemID = 900, stackCount = 1, quality = 1 }
+	eq(byID(ns.BagRows())[900].best, "auction")
 	SlashCmdList.CRAFTWISE("ahmin 10 5")
 	eq(byID(ns.BagRows())[700].best, "auction")
 	ns.db.settings.view = "bags"

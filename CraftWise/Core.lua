@@ -105,8 +105,8 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local minCopper, minPercent = msg:match("^ahmin%s+(%d+)%s+(%d+)$")
 	if minCopper then
 		ns.db.settings.ahMinCopper, ns.db.settings.ahMinPercent = tonumber(minCopper), tonumber(minPercent)
-		ns.Print(("AH is advised only when it pays %s and %d%% more than a vendor."):format(
-			ns.FormatMoney(tonumber(minCopper)), tonumber(minPercent)))
+		ns.Print(("AH is advised when it pays %d%% or %s more than a vendor."):format(
+			tonumber(minPercent), ns.FormatMoney(tonumber(minCopper))))
 		ns.Notify("BAGS_CHANGED")
 		return
 	end

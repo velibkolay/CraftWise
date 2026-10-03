@@ -760,8 +760,8 @@ local function ShowBagTooltip(row, r)
 		GameTooltip:AddLine(line, 0.3, 0.82, 0.55)
 		if r.ahSmallEdge then
 			local s = ns.db.settings
-			GameTooltip:AddLine(("The AH pays %s more after the 5%% cut - under your limit (%s and %d%% more), so vendor it: no deposit at risk, no trip to the AH. Change with /cw ahmin <copper> <percent>."):format(
-				Money(math.max(0, r.ahSmallEdge)), Money(s.ahMinCopper or 100), s.ahMinPercent or 20), 0.8, 0.8, 0.8, true)
+			GameTooltip:AddLine(("The AH pays %s more after the 5%% cut - under your limit (%d%% or %s more), so vendor it: no deposit at risk, no trip to the AH. Change with /cw ahmin <copper> <percent>."):format(
+				Money(math.max(0, r.ahSmallEdge)), s.ahMinPercent or 20, Money(s.ahMinCopper or 100)), 0.8, 0.8, 0.8, true)
 		end
 	end
 	local used = ns.UsedIn(r.itemID)
