@@ -76,7 +76,7 @@ Report Lua errors with BugSack + BugGrabber.
 - Merchant window: "Sell junk (N)" button left of Blizzard's sell-all-junk button. One click sells every marked stack, ~5 per second; chat prints count and money. Closing the merchant stops it.
 - Loot the same item again: it is junk right away. Sort bags puts junk at the very end.
 - Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.
-- AH threshold: an item whose AH value (after cut, rounded down) is neither 20% nor 1 silver above vendor shows "Vendor  AH +Xc, too little"; tooltip explains. `/cw ahmin <copper> <percent>` changes the limit.
+- AH threshold: an item whose AH value (after cut, rounded down) is less than X% above vendor shows "Vendor  AH +Xc, too little"; tooltip explains. "Advise AH from - 20% +" at the top right of the Bags view changes X in 5% steps (also `/cw ahmin <percent>`).
 - First AH sale of a single cheap item: check the mail amount to learn how the 5% cut rounds (single 8c item -> 7c or 8c).
 
 ## Used in (crafting materials)
@@ -84,3 +84,4 @@ Report Lua errors with BugSack + BugGrabber.
 - Tooltip: "Used in N recipes" grouped by profession: known / learn at X / other profession, up to 4 per profession.
 - "My crafting materials" filter: only items used by your professions.
 - Item menu > "Recipes using this": Profit view of that profession, unlearned shown, search = item name (search also matches reagent names now).
+- Junk icon: items marked Junk show the coin icon in the Blizzard bags and in Bagnon (needs a restart once: BagIcons.lua). Unmarking removes it. With Scrap disabled, only CraftWise junk (and Bagnon's own grey-item coin, if "glowPoor" is on) shows it.

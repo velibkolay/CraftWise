@@ -115,19 +115,19 @@ it("AH only a little above vendor: vendor it and say how much the AH would pay m
 	stub.ah[700], stub.ah[800] = 8, 200
 	stub.bags[0] = { { itemID = 700, stackCount = 20, quality = 1 }, { itemID = 800, stackCount = 20, quality = 1 } }
 	local rows = byID(ns.BagRows())
-	-- feathers: AH 20 x 8 x 0.95 = 152c vs vendor 140c: +12c, under 1 silver
+	-- feathers: AH 20 x 8 x 0.95 = 152c vs vendor 140c: +12c, under 20%
 	eq(rows[700].ahValue, 152); eq(rows[700].best, "vendor"); eq(rows[700].ahSmallEdge, 12)
 	-- silk: AH 3800c vs vendor 760c: clearly worth it
 	eq(rows[800].best, "auction"); eq(rows[800].ahSmallEdge, nil)
-	-- one fish: vendor 2c, AH 16c after the cut: only 14c more, but 8x - the percentage is enough
+	-- one fish: vendor 2c, AH 16c after the cut: 8x - well over 20%
 	stub.items[900] = { name = "Darkshore Grouper", sellPrice = 2 }
 	stub.ah[900] = 17
 	stub.bags[0][3] = { itemID = 900, stackCount = 1, quality = 1 }
 	eq(byID(ns.BagRows())[900].best, "auction")
-	SlashCmdList.CRAFTWISE("ahmin 10 5")
+	SlashCmdList.CRAFTWISE("ahmin 5")
 	eq(byID(ns.BagRows())[700].best, "auction")
 	ns.db.settings.view = "bags"
-	SlashCmdList.CRAFTWISE("ahmin 100 20")
+	SlashCmdList.CRAFTWISE("ahmin 20")
 	ns.ToggleProfitFrame()
 	for _, f in ipairs(stub.frames) do
 		if f.data and f.shown ~= false and f.data.itemID == 700 then
@@ -135,4 +135,17 @@ it("AH only a little above vendor: vendor it and say how much the AH would pay m
 			assert(f.cells.bestValue.text:find("too little"), f.cells.bestValue.text)
 		end
 	end
+end)
+
+it("the AH limit is set with - / + in the Bags view", function()
+	local ns, stub = LoadAddon({ auctionator = true })
+	ns.db.settings.view = "bags"
+	ns.ToggleProfitFrame()
+	local f = CraftWiseFrame
+	-- find the limit control through the + button script
+	assert(ns.db.settings.ahMinPercent == 20)
+	for _, w in ipairs(stub.frames) do
+		if w.label and w.label.text == "+" and w.scripts.OnClick then w.scripts.OnClick(w) end
+	end
+	eq(ns.db.settings.ahMinPercent, 25)
 end)

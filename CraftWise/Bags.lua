@@ -191,6 +191,7 @@ function ns.ToggleJunk(itemID)
 		ns.db.keep[itemID] = nil
 	end
 	ns.Notify("BAGS_CHANGED")
+	ns.Notify("JUNK_CHANGED")
 end
 
 ns.On("BAG_UPDATE_DELAYED", function()

@@ -28,6 +28,7 @@ function ns.SetItemState(itemID, state)
 	ns.db.keep[itemID] = state == "keep" or nil
 	ns.db.junk[itemID] = state == "junk" or nil
 	ns.Notify("BAGS_CHANGED")
+	ns.Notify("JUNK_CHANGED")
 end
 
 local function IsQuestItem(itemID)

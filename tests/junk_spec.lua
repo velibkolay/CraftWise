@@ -106,3 +106,35 @@ it("Alt + right-click on an item in the bags (Blizzard or Bagnon button) opens t
 	stub.Fire("GLOBAL_MOUSE_DOWN", "LeftButton") -- click elsewhere closes it
 	eq(CraftWiseItemMenu.shown, false)
 end)
+
+it("shows the junk icon on marked items in Blizzard bags and Bagnon", function()
+	local ns, stub = setup()
+	local hooks = {}
+	hooksecurefunc = function(t, name, fn)
+		if type(t) == "string" then return end
+		hooks[t] = hooks[t] or {}
+		hooks[t][name] = fn
+	end
+	local function button(bag, slot)
+		local b = CreateFrame("Button")
+		b.JunkIcon = CreateFrame("Frame")
+		b.JunkIcon:Hide()
+		b.GetBagID = function() return bag end
+		b.GetID = function() return slot end
+		return b
+	end
+	ContainerFrameCombinedBags = CreateFrame("Frame")
+	ContainerFrameCombinedBags.Update = function() end
+	ContainerFrameCombinedBags.Items = { button(0, 1), button(0, 2) }
+	Bagnon = { Item = { UpdateBorder = function() end }, Frames = { Update = function() end } }
+	stub.Fire("PLAYER_LOGIN")
+	ns.SetItemState(400, "junk")
+	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.shown, true) -- boots
+	eq(ContainerFrameCombinedBags.Items[1].JunkIcon.shown, false) -- linen
+	local item = { JunkIcon = CreateFrame("Frame"), info = { itemID = 400 }, IsCached = function() return false end }
+	item.JunkIcon:Hide()
+	hooks[Bagnon.Item].UpdateBorder(item)
+	eq(item.JunkIcon.shown, true)
+	ns.SetItemState(400, "normal")
+	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.shown, false)
+end)
