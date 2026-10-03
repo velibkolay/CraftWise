@@ -113,6 +113,13 @@ function ns.BagRows()
 		end
 
 		row.reagent = reagents[id] or false
+		-- Recipes that use the item (UsedIn.lua): per profession, yours first.
+		row.usedIn = ns.UsedInSummary and ns.UsedInSummary(id) or {}
+		row.usedCount, row.usedMine = 0, false
+		for _, g in ipairs(row.usedIn) do
+			row.usedCount = row.usedCount + g.count + (g.mine and 1000 or 0) + g.known * 100000
+			row.usedMine = row.usedMine or g.mine
+		end
 		if C_Item and C_Item.GetItemInfoInstant then
 			row.ammo = select(6, C_Item.GetItemInfoInstant(id)) == 6 -- Projectile
 		end

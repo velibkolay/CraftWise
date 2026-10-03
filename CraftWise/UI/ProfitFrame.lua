@@ -25,6 +25,7 @@ local COLUMN_DEFS = {
 	vendorValue = { label = L["VENDOR"], align = "RIGHT" },
 	ahValue = { label = L["AUCTION"], align = "RIGHT" },
 	deValue = { label = L["DISENCHANT"], align = "RIGHT" },
+	usedCount = { label = L["USED IN"], align = "LEFT" },
 	bestValue = { label = L["BEST"], align = "LEFT" },
 	equippedText = { label = L["REPLACES"], align = "LEFT" },
 	gain = { label = L["UPGRADE"], align = "LEFT" },
@@ -51,11 +52,11 @@ local VIEWS = {
 	},
 	-- Bags: what to do with every item you carry.
 	bags = {
-		{ key = "name", width = 270 },
-		{ key = "vendorValue", width = 100 },
-		{ key = "ahValue", width = 100 },
-		{ key = "deValue", width = 100 },
-		{ key = "bestValue", width = 180 },
+		{ key = "name", width = 235 },
+		{ key = "vendorValue", width = 85 },
+		{ key = "ahValue", width = 85 },
+		{ key = "usedCount", width = 205 },
+		{ key = "bestValue", width = 175 },
 	},
 	-- Upgrades: items from your recipes that beat what you wear.
 	upgrades = {
@@ -72,7 +73,7 @@ local VIEWS = {
 	},
 }
 local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
-	"vendorValue", "ahValue", "deValue", "bestValue", "equippedText", "gain", "songText", "modeText" }
+	"vendorValue", "ahValue", "deValue", "usedCount", "bestValue", "equippedText", "gain", "songText", "modeText" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
 local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"], junk = L["Junk"] }
@@ -185,7 +186,7 @@ local function FilteredRows()
 		local hidden = 0
 		for _, r in ipairs(ns.BagRows()) do
 			if query == "" or r.name:lower():find(query, 1, true) then
-				if r.kept and not s.showKept then
+				if (r.kept and not s.showKept) or (s.bagsMatsOnly and not r.usedMine) then
 					hidden = hidden + 1
 				else
 					out[#out + 1] = r
@@ -198,8 +199,17 @@ local function FilteredRows()
 	local all = state.professionID and ns.BuildRows(state.professionID, learnView or s.includeUnlearned) or {}
 	local query = state.query:lower()
 	local out, hidden = {}, 0
+	-- The search matches recipe names and reagent names ("which recipes use Light Leather").
+	local function ReagentMatch(r)
+		for _, line in ipairs(r.reagents or {}) do
+			if ItemName(line.itemID):lower():find(query, 1, true) then
+				return true
+			end
+		end
+		return false
+	end
 	for _, r in ipairs(all) do
-		local keep = query == "" or (r.name or ""):lower():find(query, 1, true)
+		local keep = query == "" or (r.name or ""):lower():find(query, 1, true) or ReagentMatch(r)
 		if keep and learnView then
 			if r.status == "known" then
 				keep = false
@@ -372,6 +382,18 @@ local function RenderBagRow(row, r)
 	local cells = row.cells
 	cells.vendorValue:SetText(r.vendorValue and Money(r.vendorValue) or Muted("-"))
 	cells.ahValue:SetText(r.ahValue and Money(r.ahValue) or Muted(r.bound and "bound" or "-"))
+	-- Used in: up to two professions, the ones you have first. Green = you know a recipe with it,
+	-- white = your profession, grey = another profession.
+	local parts = {}
+	for i, g in ipairs(r.usedIn or {}) do
+		if i > 2 then
+			parts[#parts + 1] = Muted(("+%d"):format(#r.usedIn - 2))
+			break
+		end
+		local color = g.known > 0 and C.good or g.mine and "|cffffffff" or C.muted
+		parts[#parts + 1] = ("%s%s %d|r"):format(color, g.profession, g.count)
+	end
+	cells.usedCount:SetText(#parts > 0 and table.concat(parts, Muted("  ·  ")) or Muted("-"))
 	if r.deValue then
 		cells.deValue:SetText(Money(r.deValue))
 	else
@@ -595,6 +617,7 @@ local function UpdateControls()
 	local upgradesView = View() == "upgrades"
 	frame.showKept:SetShown(bagsView)
 	frame.sortBtn:SetShown(bagsView)
+	frame.matsOnly:SetShown(bagsView)
 	frame.showDismissed:SetShown(upgradesView)
 	frame.musicOn:SetShown(View() == "music")
 	frame.partyBtn:SetShown(View() == "music")
@@ -677,6 +700,38 @@ local function Refresh()
 end
 ns.RefreshProfitFrame = Refresh
 
+-- "Recipes using this": the profession of yours that uses the item most, searched by the item's name,
+-- with unlearned recipes shown (Profit view; the Learn view shows only what you don't know).
+function ns.ShowRecipesUsing(itemID)
+	local counts = {}
+	for _, e in ipairs(ns.UsedIn(itemID)) do
+		if e.professionID then
+			counts[e.professionID] = (counts[e.professionID] or 0) + 1
+		end
+	end
+	local best, most = nil, 0
+	for id, n in pairs(counts) do
+		if n > most then
+			best, most = id, n
+		end
+	end
+	if not best then
+		ns.Print(ItemName(itemID) .. " is not used by your professions.")
+		return false
+	end
+	if not (frame and frame:IsShown()) then
+		ns.ToggleProfitFrame()
+	end
+	Settings().view, Settings().includeUnlearned = "profit", true
+	frame.unlearned:SetChecked(true)
+	state.professionID, state.offset = best, 0
+	state.query = ItemName(itemID)
+	frame.search:SetText(state.query)
+	frame.searchHint:Hide()
+	Refresh()
+	return true
+end
+
 -- Tooltip ------------------------------------------------------------------
 
 local function ShowBagTooltip(row, r)
@@ -709,8 +764,38 @@ local function ShowBagTooltip(row, r)
 				Money(math.max(0, r.ahSmallEdge)), Money(s.ahMinCopper or 100), s.ahMinPercent or 20), 0.8, 0.8, 0.8, true)
 		end
 	end
-	if r.reagent then
-		GameTooltip:AddLine("Used by recipes you know - maybe keep it.", 0.54, 0.7, 1)
+	local used = ns.UsedIn(r.itemID)
+	if #used > 0 then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(("Used in %d %s"):format(#used, #used == 1 and "recipe" or "recipes"), 1, 0.82, 0)
+		local shown, lastProf, perProf = 0, nil, 0
+		for _, e in ipairs(used) do
+			if e.profession ~= lastProf then
+				lastProf, perProf = e.profession, 0
+				if shown < 14 then
+					GameTooltip:AddLine("  " .. e.profession, e.state == "other" and 0.6 or 1, e.state == "other" and 0.6 or 1,
+						e.state == "other" and 0.6 or 1)
+				end
+			end
+			perProf = perProf + 1
+			if shown < 14 and perProf <= 4 then
+				local right
+				if e.state == "known" then
+					right = C.good .. "known|r"
+				elseif e.state == "learnable" then
+					right = e.required and ((e.tooLow and C.warn or C.good) .. "learn at " .. e.required .. "|r") or Muted("learnable")
+				else
+					right = Muted("other profession")
+				end
+				GameTooltip:AddDoubleLine(("    %s  ×%d"):format(e.name, e.quantity), right, 0.9, 0.9, 0.9, 1, 1, 1)
+				shown = shown + 1
+			end
+		end
+		if shown < #used then
+			GameTooltip:AddLine(("    +%d more - click the item: Recipes using this"):format(#used - shown), 0.6, 0.6, 0.6)
+		end
+	else
+		GameTooltip:AddLine("Not used in any recipe.", 0.6, 0.6, 0.6)
 	end
 	if r.ammo then
 		GameTooltip:AddLine("Ammo - keep what you shoot.", 0.54, 0.7, 1)
@@ -1171,6 +1256,7 @@ local function BuildHeader()
 
 	-- Filter row: search on the left, toggles on the right.
 	local search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+	frame.search = search
 	search:SetSize(200, 22)
 	search:SetPoint("TOPLEFT", PAD + 6, -98)
 	search:SetAutoFocus(false)
@@ -1234,6 +1320,12 @@ local function BuildHeader()
 		self:SetSelected(false)
 	end)
 	frame.sortBtn = sortBtn
+	local mats = Style.Check(frame, L["My crafting materials"], Settings().bagsMatsOnly, function(v)
+		Settings().bagsMatsOnly, state.offset = v, 0
+		Refresh()
+	end)
+	mats:SetPoint("RIGHT", sortBtn, "LEFT", -24, 0)
+	frame.matsOnly = mats
 	frame.showDismissed = showDismissed
 	local musicOn = Style.Check(frame, L["Music on"], ns.db.music.enabled, function(v)
 		ns.db.music.enabled = v

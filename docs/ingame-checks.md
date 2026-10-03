@@ -78,3 +78,9 @@ Report Lua errors with BugSack + BugGrabber.
 - Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.
 - AH threshold: an item whose AH value (after cut, rounded down) is less than 1 silver and 20% above vendor shows "Vendor  AH +Xc, too little"; tooltip explains. `/cw ahmin <copper> <percent>` changes the limit.
 - First AH sale of a single cheap item: check the mail amount to learn how the 5% cut rounds (single 8c item -> 7c or 8c).
+
+## Used in (crafting materials)
+- Bags view: "USED IN" column (e.g. "Leatherworking 72 · Tailoring 6"): green = you know a recipe with it, white = your profession, grey = other profession. Disenchant column replaced (values still need #11; "can be disenchanted" stays in the row note).
+- Tooltip: "Used in N recipes" grouped by profession: known / learn at X / other profession, up to 4 per profession.
+- "My crafting materials" filter: only items used by your professions.
+- Item menu > "Recipes using this": Profit view of that profession, unlearned shown, search = item name (search also matches reagent names now).

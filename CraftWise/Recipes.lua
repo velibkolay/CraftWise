@@ -214,6 +214,7 @@ local function BundledName(skillLine, recipeID)
 	end
 	return namesByID[skillLine][recipeID]
 end
+ns.BundledName = BundledName
 
 -- How a recipe is learned. Two sources, both verified:
 --   1. the trainer window, recorded in game (db.trainer)

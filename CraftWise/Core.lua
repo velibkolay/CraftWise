@@ -59,7 +59,7 @@ local DB_DEFAULTS = {
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
 		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
-		ahMinCopper = 100, ahMinPercent = 20 }, -- Bags: AH only when it pays this much more than a vendor
+		ahMinCopper = 100, ahMinPercent = 20, bagsMatsOnly = false }, -- Bags: AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,

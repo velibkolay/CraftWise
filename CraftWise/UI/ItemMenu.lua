@@ -11,6 +11,7 @@ local OPTIONS = {
 	{ key = "keep", label = "Keep", note = "Left out of the advice and selling" },
 	{ key = "junk", label = "Junk", note = "Sold with \"Sell junk\" at a vendor" },
 	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
+	{ key = "recipes", label = "Recipes using this", note = "Opens the Profit view with every recipe of yours that uses it" },
 }
 
 local function State(itemID)
@@ -51,7 +52,11 @@ local function Build()
 		local b = Style.Button(menu, 190, 24, L[opt.label])
 		b:SetPoint("TOPLEFT", 10, -28 - (i - 1) * 28)
 		b:SetScript("OnClick", function()
-			if menu.itemID and not (menu.quest and opt.key == "junk") then
+			if opt.key == "recipes" then
+				if menu.itemID then
+					ns.ShowRecipesUsing(menu.itemID)
+				end
+			elseif menu.itemID and not (menu.quest and opt.key == "junk") then
 				ns.SetItemState(menu.itemID, opt.key)
 			end
 			menu:Hide()
@@ -85,10 +90,18 @@ function ns.ShowItemMenu(itemID, anchor)
 	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
 	menu.title:SetText(name)
 	local state = menu.quest and "keep" or State(itemID)
+	local usedByMe = false
+	for _, e in ipairs(ns.UsedIn(itemID)) do
+		usedByMe = usedByMe or e.professionID ~= nil
+	end
 	for key, b in pairs(menu.buttons) do
 		b.current = key == state
 		b:SetSelected(b.current)
-		b:SetAlpha(menu.quest and key ~= "keep" and 0.4 or 1)
+		if key == "recipes" then
+			b:SetAlpha(usedByMe and 1 or 0.4)
+		else
+			b:SetAlpha(menu.quest and key ~= "keep" and 0.4 or 1)
+		end
 	end
 	menu:ClearAllPoints()
 	if anchor then

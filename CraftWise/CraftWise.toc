@@ -13,6 +13,7 @@
 Core.lua
 Locales\Locale.lua
 Data\Recipes.lua
+UsedIn.lua
 Data\Vendor.lua
 Data\Thresholds.lua
 Money.lua
