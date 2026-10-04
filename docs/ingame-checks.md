@@ -76,7 +76,7 @@ Report Lua errors with BugSack + BugGrabber.
 - Merchant window: "Sell junk (N)" button left of Blizzard's sell-all-junk button. One click sells every marked stack, ~5 per second; chat prints count and money. Closing the merchant stops it.
 - Loot the same item again: it is junk right away. Sort bags puts junk at the very end.
 - Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.
-- AH threshold: an item whose AH value (after cut, rounded down) is less than X% above vendor shows "Vendor  AH +Xc, too little"; tooltip explains. "Advise AH from - 20% +" at the top right of the Bags view changes X in 5% steps (also `/cw ahmin <percent>`).
+- AH rule: Bags view top right "AH rule: +20%, min 10c" opens a panel: "At least this % more" (5% steps) and "And at least this much more" (0, 1c, 2c, 5c, 10c ... 1g); example line updates; "Defaults" resets. Items under the rule show "Vendor  AH +Xc, too little". Also `/cw ahmin <percent> [copper]`.
 - First AH sale of a single cheap item: check the mail amount to learn how the 5% cut rounds (single 8c item -> 7c or 8c).
 
 ## Used in (crafting materials)

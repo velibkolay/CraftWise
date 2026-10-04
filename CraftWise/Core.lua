@@ -59,7 +59,7 @@ local DB_DEFAULTS = {
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
 		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
-		ahMinPercent = 20, bagsMatsOnly = false }, -- Bags: AH only when it pays this much more than a vendor
+		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false }, -- Bags: AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,
@@ -102,10 +102,14 @@ SLASH_CRAFTWISE1 = "/cw"
 SLASH_CRAFTWISE2 = "/craftwise"
 SlashCmdList.CRAFTWISE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
-	local minPercent = msg:match("^ahmin%s+(%d+)$")
+	local minPercent, minCopper = msg:match("^ahmin%s+(%d+)%s*(%d*)$")
 	if minPercent then
 		ns.db.settings.ahMinPercent = tonumber(minPercent)
-		ns.Print(("AH is advised when it pays %d%% more than a vendor."):format(tonumber(minPercent)))
+		if minCopper ~= "" then
+			ns.db.settings.ahMinCopper = tonumber(minCopper)
+		end
+		ns.Print(("AH is advised when it pays %d%% and at least %s more than a vendor."):format(
+			ns.db.settings.ahMinPercent, ns.FormatMoney(ns.db.settings.ahMinCopper or 0)))
 		ns.Notify("BAGS_CHANGED")
 		return
 	end

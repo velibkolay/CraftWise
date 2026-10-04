@@ -619,7 +619,8 @@ local function UpdateControls()
 	frame.sortBtn:SetShown(bagsView)
 	frame.matsOnly:SetShown(bagsView)
 	frame.ahLimit:SetShown(bagsView)
-	frame.ahLimit.value:SetText(("%d%%"):format(Settings().ahMinPercent or 20))
+	frame.ahLimit:SetLabel(("%s: +%d%%, min %s"):format(L["AH rule"], Settings().ahMinPercent or 20,
+		Money(Settings().ahMinCopper or 0)))
 	frame.summary:SetPoint("RIGHT", bagsView and frame.ahLimit or frame, bagsView and "LEFT" or "RIGHT", bagsView and -12 or -PAD, 0)
 	frame.showDismissed:SetShown(upgradesView)
 	frame.musicOn:SetShown(View() == "music")
@@ -763,8 +764,8 @@ local function ShowBagTooltip(row, r)
 		GameTooltip:AddLine(line, 0.3, 0.82, 0.55)
 		if r.ahSmallEdge then
 			local s = ns.db.settings
-			GameTooltip:AddLine(("The AH pays %s more after the 5%% cut - under your %d%% limit, so vendor it: no deposit at risk, no trip to the AH. Change the limit at the top of the Bags view."):format(
-				Money(math.max(0, r.ahSmallEdge)), s.ahMinPercent or 20), 0.8, 0.8, 0.8, true)
+			GameTooltip:AddLine(("The AH pays %s more after the 5%% cut - under your AH rule (+%d%% and at least %s), so vendor it: no deposit at risk, no trip to the AH. Change it with \"AH rule\" at the top of the Bags view."):format(
+				Money(math.max(0, r.ahSmallEdge)), s.ahMinPercent or 20, Money(s.ahMinCopper or 0)), 0.8, 0.8, 0.8, true)
 		end
 	end
 	local used = ns.UsedIn(r.itemID)
@@ -1347,34 +1348,23 @@ local function BuildHeader()
 	end)
 	frame.partyBtn = partyBtn
 
-	-- Bags: how much more the AH must pay than a vendor (percent), adjustable with - / +.
-	local ahLimit = CreateFrame("Frame", nil, frame)
-	ahLimit:SetSize(190, 22)
+	-- Bags: the AH rule (percent and minimum copper above vendor), shown as a button that opens a
+	-- small panel with - / + for both.
+	local ahLimit = Style.Button(frame, 200, 22, "")
 	ahLimit:SetPoint("TOPRIGHT", -PAD, -126)
-	ahLimit.label = ahLimit:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	ahLimit.label:SetPoint("LEFT")
-	ahLimit.label:SetText(Muted(L["Advise AH from"]))
-	ahLimit.down = Style.Button(ahLimit, 22, 20, "-")
-	ahLimit.down:SetPoint("LEFT", ahLimit.label, "RIGHT", 6, 0)
-	ahLimit.value = ahLimit:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	ahLimit.value:SetPoint("LEFT", ahLimit.down, "RIGHT", 4, 0)
-	ahLimit.value:SetWidth(44)
-	ahLimit.up = Style.Button(ahLimit, 22, 20, "+")
-	ahLimit.up:SetPoint("LEFT", ahLimit.value, "RIGHT", 4, 0)
-	local function SetLimit(delta)
-		local v = math.max(0, math.min(500, (Settings().ahMinPercent or 20) + delta))
-		Settings().ahMinPercent = v
-		Refresh()
-	end
-	ahLimit.down:SetScript("OnClick", function() SetLimit(-5) end)
-	ahLimit.up:SetScript("OnClick", function() SetLimit(5) end)
+	ahLimit:SetScript("OnClick", function(self)
+		ns.ToggleAHRule(self)
+	end)
 	ahLimit:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:AddLine(L["Advise AH from"])
-		GameTooltip:AddLine("The AH is advised only when it pays at least this much more than a vendor (after the 5% cut). Below it: vendor - no deposit at risk, no trip to the auctioneer.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(L["AH rule"])
+		GameTooltip:AddLine("When CraftWise advises the AH instead of a vendor. Click to change.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
-	ahLimit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	ahLimit:SetScript("OnLeave", function(self)
+		GameTooltip:Hide()
+		self:SetSelected(false)
+	end)
 	frame.ahLimit = ahLimit
 
 	frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")

@@ -68,8 +68,9 @@ function ns.GetBuyPrice(itemID)
 end
 
 -- Is selling on the AH worth it over vendoring? When it pays at least ahMinPercent more than a
--- vendor (default 20%, set in the Bags view; Veli, 2026-10-04). Below that the vendor wins: no
--- deposit at risk, no trip to the auctioneer. Returns worth, edge (AH minus vendor, copper).
+-- vendor AND at least ahMinCopper more (defaults 20% and 10 copper, set in the Bags view; Veli,
+-- 2026-10-04). Below that the vendor wins: no deposit at risk, no trip to the auctioneer.
+-- Returns worth, edge (AH minus vendor, copper).
 function ns.AuctionWorthIt(ahNet, vendor)
 	if not ahNet then
 		return false, nil
@@ -79,8 +80,8 @@ function ns.AuctionWorthIt(ahNet, vendor)
 	end
 	local edge = ahNet - vendor
 	local s = ns.db and ns.db.settings or {}
-	local minPercent = s.ahMinPercent or 20
-	return edge > 0 and ahNet >= vendor * (1 + minPercent / 100), edge
+	local minPercent, minCopper = s.ahMinPercent or 20, s.ahMinCopper or 0
+	return edge > 0 and edge >= minCopper and ahNet >= vendor * (1 + minPercent / 100), edge
 end
 
 -- Best net value of one unit when selling: { copper, source = "auction"|"vendor", age }

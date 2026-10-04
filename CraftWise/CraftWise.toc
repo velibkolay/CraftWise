@@ -31,5 +31,6 @@ Music.lua
 Video.lua
 UI\Style.lua
 UI\ItemMenu.lua
+UI\AHRule.lua
 UI\ProfitFrame.lua
 UI\MinimapButton.lua

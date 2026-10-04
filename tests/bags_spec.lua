@@ -137,15 +137,32 @@ it("AH only a little above vendor: vendor it and say how much the AH would pay m
 	end
 end)
 
-it("the AH limit is set with - / + in the Bags view", function()
+it("AH rule panel: percent and minimum copper, both with - / +", function()
 	local ns, stub = LoadAddon({ auctionator = true })
+	stub.items[900] = { name = "Darkshore Grouper", sellPrice = 2 }
+	stub.ah[900] = 17
+	stub.bags[0] = { { itemID = 900, stackCount = 1, quality = 1 } }
 	ns.db.settings.view = "bags"
 	ns.ToggleProfitFrame()
-	local f = CraftWiseFrame
-	-- find the limit control through the + button script
-	assert(ns.db.settings.ahMinPercent == 20)
+	local rows = byID(ns.BagRows())
+	eq(rows[900].best, "auction") -- +14c, over 20% and over the 10c minimum
+	ns.ToggleAHRule(CraftWiseFrame)
+	local panel = CraftWiseAHRule
+	assert(panel.shown, "panel open")
+	-- buttons: find by their labels in creation order
+	local minus, plus = {}, {}
 	for _, w in ipairs(stub.frames) do
-		if w.label and w.label.text == "+" and w.scripts.OnClick then w.scripts.OnClick(w) end
+		if w.label and w.label.text == "+" then plus[#plus + 1] = w end
+		if w.label and w.label.text == "-" then minus[#minus + 1] = w end
 	end
+	plus[#plus].scripts.OnClick(plus[#plus]) -- copper: 10c -> 20c
+	eq(ns.db.settings.ahMinCopper, 20)
+	eq(byID(ns.BagRows())[900].best, "vendor") -- 14c is now too little
+	plus[#plus - 1].scripts.OnClick(plus[#plus - 1]) -- percent: 20 -> 25
 	eq(ns.db.settings.ahMinPercent, 25)
+	minus[#minus].scripts.OnClick(minus[#minus]) -- copper back to 10c
+	eq(ns.db.settings.ahMinCopper, 10)
+	eq(ns.StepCopper(0, -1), 0); eq(ns.StepCopper(10, 1), 20); eq(ns.StepCopper(7, -1), 5)
+	SlashCmdList.CRAFTWISE("ahmin 30 0")
+	eq(ns.db.settings.ahMinPercent, 30); eq(ns.db.settings.ahMinCopper, 0)
 end)
