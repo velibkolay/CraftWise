@@ -14,6 +14,7 @@ Core.lua
 Locales\Locale.lua
 Data\Recipes.lua
 UsedIn.lua
+Tooltip.lua
 Data\Vendor.lua
 Data\Thresholds.lua
 Money.lua
@@ -32,5 +33,6 @@ Video.lua
 UI\Style.lua
 UI\ItemMenu.lua
 UI\AHRule.lua
+UI\Settings.lua
 UI\ProfitFrame.lua
 UI\MinimapButton.lua

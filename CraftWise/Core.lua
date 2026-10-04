@@ -55,6 +55,8 @@ local DB_DEFAULTS = {
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
+	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
+	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true } },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
@@ -111,6 +113,10 @@ SlashCmdList.CRAFTWISE = function(msg)
 		ns.Print(("AH is advised when it pays %d%% and at least %s more than a vendor."):format(
 			ns.db.settings.ahMinPercent, ns.FormatMoney(ns.db.settings.ahMinCopper or 0)))
 		ns.Notify("BAGS_CHANGED")
+		return
+	end
+	if msg == "settings" or msg == "config" then
+		ns.ToggleSettings()
 		return
 	end
 	if msg == "party" then

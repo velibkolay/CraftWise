@@ -85,3 +85,8 @@ Report Lua errors with BugSack + BugGrabber.
 - "My crafting materials" filter: only items used by your professions.
 - Item menu > "Recipes using this": Profit view of that profession, unlearned shown, search = item name (search also matches reagent names now).
 - Junk icon: items marked Junk show the coin icon in the Blizzard bags and in Bagnon (needs a restart once: BagIcons.lua). Unmarking removes it. With Scrap disabled, only CraftWise junk (and Bagnon's own grey-item coin, if "glowPoor" is on) shows it.
+
+## Item tooltip section
+- Any item tooltip (bags, Bagnon, links, merchant): a "CraftWise" header (blue) with: Marked (Junk/Keep), Sell xN (Vendor · AH · advice), Used in, Your crafts (skill-ups for items you craft). Not added twice inside the CraftWise window.
+- Gear button (top right of the CraftWise window) or `/cw settings`: on/off, Always / Only with Shift (tooltip redraws when Shift is pressed), each line on/off.
+- Check: TooltipDataProcessor post-call works for bag items in Forever; GameTooltip:RefreshData redraws on Shift.

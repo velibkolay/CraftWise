@@ -704,6 +704,21 @@ local function Refresh()
 end
 ns.RefreshProfitFrame = Refresh
 
+-- Is a frame part of the CraftWise window? (Its own tooltips already show CraftWise details.)
+function ns.InOwnWindow(owner)
+	local f = owner
+	for _ = 1, 6 do
+		if not f then
+			return false
+		end
+		if f == frame then
+			return true
+		end
+		f = f.GetParent and f:GetParent()
+	end
+	return false
+end
+
 -- "Recipes using this": the profession of yours that uses the item most, searched by the item's name,
 -- with unlearned recipes shown (Profit view; the Learn view shows only what you don't know).
 function ns.ShowRecipesUsing(itemID)
@@ -1235,7 +1250,7 @@ local function BuildHeader()
 
 	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Upgrades | Bags.
 	local musicBtn = Style.Button(frame, 70, 24, L["Music"])
-	musicBtn:SetPoint("TOPRIGHT", -44, -14)
+	musicBtn:SetPoint("TOPRIGHT", -66, -14)
 	local bagsBtn = Style.Button(frame, 70, 24, L["Bags"])
 	bagsBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
 	local upgradesBtn = Style.Button(frame, 86, 24, L["Upgrades"])
@@ -1257,6 +1272,24 @@ local function BuildHeader()
 		frame:Hide()
 	end)
 	close:SetPoint("TOPRIGHT", -10, -12)
+	-- Gear: settings (item tooltip section).
+	local gear = CreateFrame("Button", nil, frame)
+	gear:SetSize(18, 18)
+	gear:SetPoint("RIGHT", close, "LEFT", -8, 0)
+	gear.icon = gear:CreateTexture(nil, "ARTWORK")
+	gear.icon:SetAllPoints()
+	gear.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+	gear:SetScript("OnClick", function(self)
+		ns.ToggleSettings(self)
+	end)
+	gear:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Settings"])
+		GameTooltip:Show()
+	end)
+	gear:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
 
 	-- Filter row: search on the left, toggles on the right.
 	local search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
