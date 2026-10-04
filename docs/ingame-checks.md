@@ -79,6 +79,12 @@ Report Lua errors with BugSack + BugGrabber.
 - AH rule: Bags view top right "AH rule: +20%, min 10c" opens a panel: "At least this % more" (5% steps) and "And at least this much more" (0, 1c, 2c, 5c, 10c ... 1g); example line updates; "Defaults" resets. Items under the rule show "Vendor  AH +Xc, too little". Also `/cw ahmin <percent> [copper]`.
 - First AH sale of a single cheap item: check the mail amount to learn how the 5% cut rounds (single 8c item -> 7c or 8c).
 
+## Sell on AH mark (#12)
+- [ ] Middle-click an item in the bags > "Sell on AH": Bags view shows "Auction  marked", tooltip shows "Marked: Sell on AH".
+- [ ] Small auctioneer icon in the top-left corner of the item in Blizzard bags, Bagnon and Baganator (Baganator: Settings > Icons, if the corner is taken).
+- [ ] Sort bags: AH-marked items come first in the selling part, junk last.
+- [ ] Keep or Junk on the same item removes the AH mark; quest items can't be marked.
+
 ## Used in (crafting materials)
 - Bags view: "USED IN" column (e.g. "Leatherworking 72 · Tailoring 6"): green = you know a recipe with it, white = your profession, grey = other profession. Disenchant column replaced (values still need #11; "can be disenchanted" stays in the row note).
 - Tooltip: "Used in N recipes" grouped by profession: known / learn at X / other profession, up to 4 per profession.

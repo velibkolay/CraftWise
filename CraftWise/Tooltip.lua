@@ -4,7 +4,7 @@
 local _, ns = ...
 
 ns.TOOLTIP_LINES = {
-	{ key = "status", label = "Junk / Keep mark" },
+	{ key = "status", label = "Junk / Sell on AH / Keep mark" },
 	{ key = "advice", label = "Vendor or AH advice" },
 	{ key = "usedIn", label = "Used in (recipes)" },
 	{ key = "skillups", label = "Your skill-ups (crafted items)" },
@@ -66,6 +66,8 @@ function ns.AddTooltipLines(tooltip, itemID)
 	if s.lines.status then
 		if ns.db.junk and ns.db.junk[itemID] then
 			lines[#lines + 1] = { "Marked", "|cffff5555Junk|r" }
+		elseif ns.db.sellAH and ns.db.sellAH[itemID] then
+			lines[#lines + 1] = { "Marked", "|cffffd100Sell on AH|r" }
 		elseif ns.db.keep[itemID] then
 			lines[#lines + 1] = { "Marked", "|cff8ab4ffKeep|r" }
 		end

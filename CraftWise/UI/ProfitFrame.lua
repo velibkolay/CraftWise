@@ -401,6 +401,8 @@ local function RenderBagRow(row, r)
 	end
 	if r.junk then
 		cells.bestValue:SetText(C.bad .. L["Junk"] .. "|r" .. Muted("  " .. L["sold with Sell junk"]))
+	elseif r.markedAH then
+		cells.bestValue:SetText(C.good .. L["Auction"] .. "|r" .. Muted("  " .. L["marked"]))
 	elseif r.questItem then
 		cells.bestValue:SetText(C.info .. "Quest item|r")
 	elseif r.kept then

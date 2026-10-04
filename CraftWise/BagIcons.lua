@@ -1,6 +1,31 @@
 -- Junk icon on items you marked as junk, in the game's bags and in Bagnon (issue #12).
 -- Uses the bag button's own JunkIcon (the coin Blizzard shows on grey items in the merchant view).
+-- Items marked "Sell on AH" get a small auctioneer icon in the top-left corner.
 local _, ns = ...
+
+ns.AH_ICON = "Interface\\Minimap\\Tracking\\Auctioneer"
+
+local function IsAH(itemID)
+	return itemID and ns.db and ns.db.sellAH and ns.db.sellAH[itemID] or false
+end
+
+local ahIcons = setmetatable({}, { __mode = "k" }) -- [button] = texture
+ns.AHIcons = ahIcons
+
+local function SetAHIcon(button, show)
+	local t = ahIcons[button]
+	if not t then
+		if not show then
+			return
+		end
+		t = button:CreateTexture(nil, "OVERLAY", nil, 7)
+		t:SetTexture(ns.AH_ICON)
+		t:SetSize(14, 14)
+		t:SetPoint("TOPLEFT", 1, -1)
+		ahIcons[button] = t
+	end
+	t:SetShown(show and true or false)
+end
 
 local function IsJunk(itemID)
 	return itemID and ns.db and ns.db.junk and ns.db.junk[itemID] or false
@@ -18,6 +43,7 @@ local function UpdateButton(button)
 		return
 	end
 	local info = C_Container.GetContainerItemInfo(bag, slot)
+	SetAHIcon(button, IsAH(info and info.itemID))
 	if IsJunk(info and info.itemID) then
 		button.JunkIcon:Show()
 	elseif refresh then
@@ -57,6 +83,7 @@ local function HookBagnon()
 		return nil
 	end
 	hooksecurefunc(Bagnon.Item, "UpdateBorder", function(item)
+		SetAHIcon(item, not (item.IsCached and item:IsCached()) and IsAH(item.info and item.info.itemID))
 		if item.JunkIcon and not (item.IsCached and item:IsCached()) and IsJunk(item.info and item.info.itemID) then
 			item.JunkIcon:Show()
 		end

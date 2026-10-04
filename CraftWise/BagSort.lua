@@ -1,6 +1,6 @@
 -- Physical bag sort (issue #12): moves stacks so the bags match the Bags view advice.
 -- Order: items you keep (quest items, kept, reagents for your recipes) first, then free slots,
--- then items to sell at the end, best value first - so selling is a run of clicks on the last bag.
+-- then items to sell at the end (marked for the AH first, junk last), best value first - so selling is a run of clicks on the last bag.
 -- Only plain bags take part (profession bags and quivers keep their own contents).
 -- One click starts it; each swap waits until the client has unlocked both slots. Combat, an item
 -- on the cursor or a slot that stays locked stops it.
@@ -46,7 +46,8 @@ function Sort.Slots()
 						entry.class, entry.subClass = classID or 99, subClassID or 99
 					end
 					entry.junk = row.junk or false
-					if entry.junk then
+					entry.ah = row.markedAH or false
+					if entry.junk or entry.ah then
 						entry.keep = false
 					end
 				end
@@ -85,6 +86,9 @@ function Sort.Target(slots)
 	table.sort(sell, function(a, b)
 		if a.junk ~= b.junk then
 			return b.junk -- junk at the very end, ready for "Sell junk"
+		end
+		if a.ah ~= b.ah then
+			return a.ah -- marked for the AH first, together for posting
 		end
 		local va, vb = a.value * a.count, b.value * b.count
 		if va ~= vb then

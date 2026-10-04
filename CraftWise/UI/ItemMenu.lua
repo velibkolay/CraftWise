@@ -1,4 +1,4 @@
--- Item menu (issue #12): Keep / Junk / Normal for one item, opened by clicking a row in the Bags
+-- Item menu (issue #12): Keep / Junk / Sell on AH / Normal for one item, opened by clicking a row in the Bags
 -- view, or on an item in the game's bags (Blizzard, Bagnon, Baganator) with the click chosen in
 -- the settings: middle click (default) or Alt + right-click.
 -- Middle click: Blizzard's bag buttons only listen to left and right clicks, and neither Bagnon nor
@@ -11,6 +11,7 @@ local menu
 local OPTIONS = {
 	{ key = "keep", label = "Keep", note = "Left out of the advice and selling" },
 	{ key = "junk", label = "Junk", note = "Sold with \"Sell junk\" at a vendor" },
+	{ key = "auction", label = "Sell on AH", note = "Always advised for the auction house, grouped first in the selling part of a bag sort" },
 	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
 	{ key = "recipes", label = "Recipes using this", note = "Opens the Profit view with every recipe of yours that uses it" },
 }
@@ -18,6 +19,8 @@ local OPTIONS = {
 local function State(itemID)
 	if ns.db.junk and ns.db.junk[itemID] then
 		return "junk"
+	elseif ns.db.sellAH and ns.db.sellAH[itemID] then
+		return "auction"
 	elseif ns.db.keep[itemID] then
 		return "keep"
 	end
@@ -26,8 +29,10 @@ end
 
 function ns.SetItemState(itemID, state)
 	ns.db.junk = ns.db.junk or {}
+	ns.db.sellAH = ns.db.sellAH or {}
 	ns.db.keep[itemID] = state == "keep" or nil
 	ns.db.junk[itemID] = state == "junk" or nil
+	ns.db.sellAH[itemID] = state == "auction" or nil
 	ns.Notify("BAGS_CHANGED")
 	ns.Notify("JUNK_CHANGED")
 end
@@ -58,7 +63,7 @@ local function Build()
 				if menu.itemID then
 					ns.ShowRecipesUsing(menu.itemID)
 				end
-			elseif menu.itemID and not (menu.quest and opt.key == "junk") then
+			elseif menu.itemID and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
 				ns.SetItemState(menu.itemID, opt.key)
 			end
 			menu:Hide()
@@ -66,7 +71,7 @@ local function Build()
 		b:SetScript("OnEnter", function(self)
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			GameTooltip:AddLine(L[opt.label])
-			GameTooltip:AddLine(menu.quest and opt.key == "junk" and L["Quest items can't be junk"] or L[opt.note],
+			GameTooltip:AddLine(menu.quest and (opt.key == "junk" or opt.key == "auction") and L["Quest items can't be sold"] or L[opt.note],
 				0.8, 0.8, 0.8, true)
 			GameTooltip:Show()
 		end)

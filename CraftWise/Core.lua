@@ -51,6 +51,7 @@ local DB_DEFAULTS = {
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor
+	sellAH = {}, -- [itemID] = true: items marked to sell on the auction house
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17

@@ -167,3 +167,70 @@ it("registers a CraftWise junk plugin and sort mode with Baganator", function()
 	eq(ns.BagSort.Running(), false)
 	sort(false, 0)
 end)
+
+it("marks items to sell on the AH: advised as Auction, exclusive with keep/junk, grouped first when sorting", function()
+	local ns, stub = setup()
+	stub.items[600] = { name = "Grouper", sellPrice = 14 }
+	stub.ah[600] = 15 -- AH barely above vendor: the rule alone would say vendor
+	stub.bags[0][5] = { itemID = 600, stackCount = 1, quality = 1 }
+	eq(byID(ns.BagRows())[600].best, "vendor")
+	ns.ShowItemMenu(600)
+	local menu = CraftWiseItemMenu
+	menu.buttons.auction.scripts.OnClick(menu.buttons.auction)
+	eq(ns.db.sellAH[600], true)
+	local row = byID(ns.BagRows())[600]
+	eq(row.markedAH, true); eq(row.best, "auction"); eq(row.bestValue, math.floor(15 * 0.95))
+	ns.ShowItemMenu(600)
+	eq(menu.buttons.auction.selected, true)
+	ns.ToggleJunk(600)
+	eq(ns.db.sellAH[600], nil)
+	ns.SetItemState(600, "auction")
+	eq(ns.db.junk[600], nil)
+	ns.ToggleKeep(600)
+	eq(ns.db.sellAH[600], nil); eq(ns.db.keep[600], true)
+	ns.ShowItemMenu(500) -- quest item can't be marked for the AH
+	menu.buttons.auction.scripts.OnClick(menu.buttons.auction)
+	eq(ns.db.sellAH[500], nil)
+	-- sort: AH-marked items lead the selling part, junk last
+	ns.SetItemState(600, "auction")
+	ns.SetItemState(400, "junk")
+	local target = ns.BagSort.Target(ns.BagSort.Slots())
+	local sells = {}
+	for _, s in ipairs(target) do
+		if s and not s.keep then sells[#sells + 1] = s.itemID end
+	end
+	eq(sells[1], 600); eq(sells[#sells], 400)
+end)
+
+it("shows the AH mark in tooltips, Blizzard bags and as a Baganator corner widget", function()
+	local ns, stub = setup()
+	local widget, refreshed
+	Baganator = { API = {
+		RegisterCornerWidget = function(label, id, onUpdate, onInit, pos, fast)
+			widget = { onUpdate = onUpdate, onInit = onInit, pos = pos, fast = fast }
+		end,
+		RequestItemButtonsRefresh = function() refreshed = true end,
+	} }
+	hooksecurefunc = function() end
+	local b = CreateFrame("Button")
+	b.JunkIcon = CreateFrame("Frame")
+	b.GetBagID = function() return 0 end
+	b.GetID = function() return 1 end
+	ContainerFrameCombinedBags = CreateFrame("Frame")
+	ContainerFrameCombinedBags.Update = function() end
+	ContainerFrameCombinedBags.Items = { b }
+	stub.Fire("PLAYER_LOGIN")
+	ns.SetItemState(100, "auction")
+	eq(refreshed, true)
+	eq(ns.AHIcons[b].shown, true)
+	eq(widget.pos.corner, "top_left"); eq(widget.fast, true)
+	assert(widget.onInit(CreateFrame("Button")))
+	eq(widget.onUpdate(nil, { itemID = 100 }), true)
+	eq(widget.onUpdate(nil, { itemID = 400 }), false)
+	local lines = {}
+	local tip = { AddLine = function() end, AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. "=" .. r end, Show = function() end }
+	ns.AddTooltipLines(tip, 100)
+	assert(table.concat(lines, ";"):find("Marked=.*Sell on AH"), table.concat(lines, ";"))
+	ns.SetItemState(100, "normal")
+	eq(ns.AHIcons[b].shown, false)
+end)
