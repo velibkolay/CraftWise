@@ -27,6 +27,7 @@ Bags.lua
 BagSort.lua
 Junk.lua
 BagIcons.lua
+Baganator.lua
 Upgrades.lua
 Music.lua
 Video.lua

@@ -823,7 +823,8 @@ local function ShowBagTooltip(row, r)
 		GameTooltip:AddLine(("AH price is %d days old."):format(r.ahAge), 1, 0.6, 0.3)
 	end
 	if not r.questItem then
-		GameTooltip:AddLine("Click: Keep / Junk / Normal  ·  in your bags: Alt + right-click", 0.55, 0.55, 0.6)
+		local how = ({ middle = "middle click", altright = "Alt + right-click" })[ns.db.settings.menuClick or "middle"]
+		GameTooltip:AddLine("Click: Keep / Junk / Normal" .. (how and ("  ·  in your bags: " .. how) or ""), 0.55, 0.55, 0.6)
 	end
 	GameTooltip:Show()
 end

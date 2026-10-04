@@ -1,7 +1,8 @@
 -- Item menu (issue #12): Keep / Junk / Normal for one item, opened by clicking a row in the Bags
--- view, or with Alt + right-click on an item in the game's bags (Blizzard bags or Bagnon).
--- Alt + right-click does nothing in the default bags (Alt + left-click is Bagnon's "flash find"
--- and the default "expand item"), so it doesn't take over a Blizzard action.
+-- view, or on an item in the game's bags (Blizzard, Bagnon, Baganator) with the click chosen in
+-- the settings: middle click (default) or Alt + right-click.
+-- Middle click: Blizzard's bag buttons only listen to left and right clicks, and neither Bagnon nor
+-- Baganator uses it, so nothing else happens. Alt + click is "highlight similar items" in Baganator.
 local _, ns = ...
 local Style = ns.Style
 local L = ns.L
@@ -141,12 +142,22 @@ local function BagSlot(frame)
 	end
 end
 
--- Alt + right-click on an item in the bags opens the menu; a click elsewhere closes it.
+-- The chosen click on an item in the bags opens the menu; a click elsewhere closes it.
+local function MenuClick(button)
+	local mode = ns.db and ns.db.settings.menuClick or "middle"
+	if mode == "middle" then
+		return button == "MiddleButton"
+	elseif mode == "altright" then
+		return button == "RightButton" and IsAltKeyDown()
+	end
+	return false
+end
+
 ns.On("GLOBAL_MOUSE_DOWN", function(_, button)
 	if menu and menu:IsShown() and not menu:IsMouseOver() then
 		menu:Hide()
 	end
-	if button ~= "RightButton" or not IsAltKeyDown() or not GetMouseFoci then
+	if not MenuClick(button) or not GetMouseFoci then
 		return
 	end
 	local focus = GetMouseFoci()

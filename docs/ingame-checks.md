@@ -72,7 +72,7 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Junk (#12)
 - Bags view: click a row -> menu Keep / Junk / Normal (current one highlighted). Junk shows red "Junk".
-- In the game bags / Bagnon: Alt + right-click an item -> same menu at the cursor; the item is NOT used or equipped (Blizzard's bag button treats any modified click as "modified": no default action for Alt + right). Click elsewhere or Esc closes the menu.
+- In the game bags / Bagnon / Baganator: middle-click an item (default) -> same menu at the cursor; nothing else happens (bag buttons only listen to left/right). Settings: Middle click / Alt + right / Off. Click elsewhere or Esc closes the menu.
 - Merchant window: "Sell junk (N)" button left of Blizzard's sell-all-junk button. One click sells every marked stack, ~5 per second; chat prints count and money. Closing the merchant stops it.
 - Loot the same item again: it is junk right away. Sort bags puts junk at the very end.
 - Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.
@@ -90,3 +90,7 @@ Report Lua errors with BugSack + BugGrabber.
 - Any item tooltip (bags, Bagnon, links, merchant): a "CraftWise" header (blue) with: Marked (Junk/Keep), Sell xN (Vendor · AH · advice), Used in, Your crafts (skill-ups for items you craft). Not added twice inside the CraftWise window.
 - Gear button (top right of the CraftWise window) or `/cw settings`: on/off, Always / Only with Shift (tooltip redraws when Shift is pressed), each line on/off.
 - Check: TooltipDataProcessor post-call works for bag items in Forever; GameTooltip:RefreshData redraws on Shift.
+
+## Baganator
+- Baganator settings > junk: "CraftWise" listed (auto-selected if no other plugin is active); marked items show Baganator's junk coin; marking/unmarking refreshes at once.
+- Baganator settings > sorting: "CraftWise" mode; Baganator's sort button sorts the backpack like Sort bags (bank untouched).

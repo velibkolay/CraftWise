@@ -61,7 +61,8 @@ local DB_DEFAULTS = {
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
 		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
-		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false }, -- Bags: AH only when it pays this much more than a vendor
+		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
+		menuClick = "middle" }, -- item menu in the bags: "middle" | "altright" | "off" -- Bags: AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,

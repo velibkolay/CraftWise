@@ -85,8 +85,19 @@ it("bags view: clicking a row opens Keep / Junk / Normal", function()
 	eq(ns.db.junk[500], nil)
 end)
 
-it("Alt + right-click on an item in the bags (Blizzard or Bagnon button) opens the menu", function()
+it("the chosen click on an item in the bags (Blizzard/Baganator or Bagnon button) opens the menu", function()
 	local ns, stub = setup()
+	-- default: middle click, no modifier
+	local blizzard0 = CreateFrame("Button")
+	blizzard0.GetBagID = function() return 0 end
+	blizzard0.GetID = function() return 2 end
+	GetMouseFoci = function() return { blizzard0 } end
+	stub.Fire("GLOBAL_MOUSE_DOWN", "MiddleButton")
+	eq(CraftWiseItemMenu.itemID, 400)
+	CraftWiseItemMenu:Hide()
+	stub.Fire("GLOBAL_MOUSE_DOWN", "RightButton") -- plain right-click: the game's own action only
+	eq(CraftWiseItemMenu.shown, false)
+	ns.db.settings.menuClick = "altright"
 	IsAltKeyDown = function() return true end
 	local blizzard = CreateFrame("Button")
 	blizzard.GetBagID = function() return 0 end
@@ -137,4 +148,22 @@ it("shows the junk icon on marked items in Blizzard bags and Bagnon", function()
 	eq(item.JunkIcon.shown, true)
 	ns.SetItemState(400, "normal")
 	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.shown, false)
+end)
+
+it("registers a CraftWise junk plugin and sort mode with Baganator", function()
+	local ns, stub = setup()
+	local junk, sort, refreshed
+	Baganator = { API = {
+		RegisterJunkPlugin = function(label, id, fn) junk = fn end,
+		RegisterContainerSort = function(label, id, fn) sort = fn end,
+		RequestItemButtonsRefresh = function() refreshed = true end,
+		Constants = { ContainerType = { Backpack = 0, Bank = 1 } },
+	} }
+	stub.Fire("PLAYER_LOGIN")
+	ns.SetItemState(400, "junk")
+	eq(junk(0, 2, 400), true); eq(junk(0, 1, 100), false)
+	eq(refreshed, true)
+	sort(false, 1) -- bank: not ours
+	eq(ns.BagSort.Running(), false)
+	sort(false, 0)
 end)

@@ -61,7 +61,28 @@ local function Build(parent)
 		panel.lines[line.key] = check
 	end
 
+	-- Item menu click in the bags.
+	local clickHead = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	local y = -112 - (#ns.TOOLTIP_LINES + 1) * 24 - 4
+	clickHead:SetPoint("TOPLEFT", 12, y)
+	clickHead:SetText(C.muted .. L["Keep / Junk menu in your bags"] .. "|r")
+	panel.clicks = {}
+	local choices = { { "middle", L["Middle click"] }, { "altright", L["Alt + right"] }, { "off", L["Off"] } }
+	for i, c in ipairs(choices) do
+		local b = Style.Button(panel, 88, 22, c[2])
+		b:SetPoint("TOPLEFT", 12 + (i - 1) * 92, y - 18)
+		b:SetScript("OnClick", function()
+			ns.db.settings.menuClick = c[1]
+			panel.render()
+		end)
+		panel.clicks[c[1]] = b
+	end
+	panel:SetHeight(-(y - 18) + 36)
+
 	function panel.render()
+		for key, b in pairs(panel.clicks) do
+			b:SetSelected((ns.db.settings.menuClick or "middle") == key)
+		end
 		local t = T()
 		panel.enabled:SetChecked(t.enabled)
 		panel.always:SetSelected(t.mode ~= "shift")
