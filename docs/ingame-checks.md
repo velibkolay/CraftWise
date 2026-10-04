@@ -81,7 +81,7 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Sell on AH mark (#12)
 - [ ] Middle-click an item in the bags > "Sell on AH": Bags view shows "Auction  marked", tooltip shows "Marked: Sell on AH".
-- [ ] Small auctioneer icon in the top-left corner of the item in Blizzard bags, Bagnon and Baganator (Baganator: Settings > Icons, if the corner is taken).
+- [ ] Junk shows a red X (not the coin), so it differs from the AH icon. Small auctioneer icon in the top-left corner of the item in Blizzard bags, Bagnon and Baganator (Baganator: Settings > Icons, if the corner is taken).
 - [ ] Sort bags: AH-marked items come first in the selling part, junk last.
 - [ ] Keep or Junk on the same item removes the AH mark; quest items can't be marked.
 

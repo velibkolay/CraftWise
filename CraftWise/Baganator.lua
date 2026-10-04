@@ -23,6 +23,10 @@ local function Register()
 		pcall(api.RegisterCornerWidget, "CraftWise: sell on AH", "craftwise_ah", function(frame, details)
 			return details and details.itemID and ns.db and ns.db.sellAH and ns.db.sellAH[details.itemID] or false
 		end, function(itemButton)
+			-- Baganator's junk widget shows this button's JunkIcon: give it CraftWise's red X.
+			if ns.StyleJunkIcon then
+				ns.StyleJunkIcon(itemButton)
+			end
 			local t = itemButton:CreateTexture(nil, "OVERLAY")
 			t:SetTexture(ns.AH_ICON)
 			t:SetSize(14, 14)

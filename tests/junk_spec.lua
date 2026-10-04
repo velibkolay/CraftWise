@@ -141,6 +141,7 @@ it("shows the junk icon on marked items in Blizzard bags and Bagnon", function()
 	stub.Fire("PLAYER_LOGIN")
 	ns.SetItemState(400, "junk")
 	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.shown, true) -- boots
+	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.texture, ns.JUNK_ICON) -- red X, not the coin
 	eq(ContainerFrameCombinedBags.Items[1].JunkIcon.shown, false) -- linen
 	local item = { JunkIcon = CreateFrame("Frame"), info = { itemID = 400 }, IsCached = function() return false end }
 	item.JunkIcon:Hide()

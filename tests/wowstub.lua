@@ -17,6 +17,7 @@ function frameMeta.Show(self) self.shown = true; if self.scripts.OnShow then sel
 function frameMeta.Hide(self) self.shown = false end
 function frameMeta.IsShown(self) return self.shown ~= false end
 function frameMeta.SetShown(self, v) if v then self:Show() else self:Hide() end end
+function frameMeta.SetTexture(self, t) self.texture = t end
 function frameMeta.SetText(self, t) self.text = t end
 function frameMeta.GetText(self) return self.text end
 function frameMeta.GetChecked(self) return self.checked end
