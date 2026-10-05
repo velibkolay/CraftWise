@@ -167,7 +167,7 @@ ns.On("GLOBAL_MOUSE_DOWN", function(_, button)
 	end
 	local focus = GetMouseFoci()
 	local bag, slot = BagSlot(focus and focus[1])
-	if not bag or bag < 0 or bag > 4 then
+	if not bag or bag < 0 or bag > ns.LAST_BAG then
 		return
 	end
 	local info = C_Container.GetContainerItemInfo(bag, slot)

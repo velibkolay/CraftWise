@@ -235,3 +235,24 @@ it("shows the AH mark in tooltips, Blizzard bags and as a Baganator corner widge
 	ns.SetItemState(100, "normal")
 	eq(ns.AHIcons[b].shown, false)
 end)
+
+it("covers the reagent bag (bag 5): listed in the Bags view, menu opens, junk there is sold", function()
+	local ns, stub = setup()
+	stub.items[3730] = { name = "Big Bear Meat", sellPrice = 12 }
+	stub.bags[5] = { { itemID = 3730, stackCount = 1, quality = 1 } }
+	local row
+	for _, r in ipairs(ns.BagRows()) do if r.itemID == 3730 then row = r end end
+	assert(row, "reagent bag item in the Bags view")
+	local b = CreateFrame("Button")
+	b.GetBagID = function() return 5 end
+	b.GetID = function() return 1 end
+	GetMouseFoci = function() return { b } end
+	stub.Fire("GLOBAL_MOUSE_DOWN", "MiddleButton")
+	eq(CraftWiseItemMenu.itemID, 3730)
+	ns.SetItemState(3730, "junk")
+	local found = false
+	for _, s in ipairs(ns.Junk.Slots()) do if s.bag == 5 then found = true end end
+	eq(found, true)
+	-- the sort leaves the reagent bag alone
+	for _, s in ipairs(ns.BagSort.Slots()) do assert(s.bag ~= 5) end
+end)

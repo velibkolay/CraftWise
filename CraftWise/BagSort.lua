@@ -6,7 +6,7 @@
 -- on the cursor or a slot that stays locked stops it.
 local _, ns = ...
 
-local NUM_BAGS = 4
+local NUM_BAGS = 4 -- the reagent bag (5) only takes reagents, so it stays out of the sort
 local LOCK_TIMEOUT = 3 -- seconds a swap may stay locked before giving up
 
 local Sort = {}

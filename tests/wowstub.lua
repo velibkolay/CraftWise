@@ -60,7 +60,7 @@ C_Timer = { After = function(_, fn) fn() end }
 SlashCmdList = {}
 print = print
 time = os.time
-Enum = { CraftingReagentType = { Basic = 1, Modifying = 2 } }
+Enum = { CraftingReagentType = { Basic = 1, Modifying = 2 }, BagIndex = { ReagentBag = 5 } }
 
 -- Items: [itemID] = { name, sellPrice }
 stub.items = {}

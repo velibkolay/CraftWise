@@ -8,6 +8,10 @@ ns.eventFrame = frame
 
 -- Events this client doesn't know are recorded instead of raising an error at load time.
 ns.unknownEvents = {}
+-- Last bag ID the player carries: backpack 0, bags 1-4, reagent bag 5 (Enum.BagIndex.ReagentBag;
+-- Forever has the reagent bag slot, seen 2026-10-06 with Big Bear Meat in it).
+ns.LAST_BAG = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
+
 function ns.On(event, fn)
 	if not handlers[event] then
 		handlers[event] = {}

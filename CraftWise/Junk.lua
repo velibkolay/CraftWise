@@ -14,7 +14,7 @@ local button, merchantOpen = nil, false
 function Junk.Slots()
 	local slots = {}
 	local junk = ns.db and ns.db.junk or {}
-	for bag = 0, 4 do
+	for bag = 0, ns.LAST_BAG do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
 			local item = C_Container.GetContainerItemInfo(bag, slot)
 			if item and item.itemID and junk[item.itemID] and not item.hasNoValue and not item.isLocked then

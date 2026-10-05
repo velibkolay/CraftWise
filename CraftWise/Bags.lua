@@ -3,7 +3,6 @@
 -- ns.DisenchantValue returns nil and disenchantable items are only marked as such.
 local _, ns = ...
 
-local NUM_BAGS = 4 -- backpack (0) + four bag slots
 
 local function ContainerItem(bag, slot)
 	if C_Container and C_Container.GetContainerItemInfo then
@@ -71,7 +70,7 @@ end
 -- One row per item ID in the bags, stacks added up.
 function ns.BagRows()
 	local byItem, order = {}, {}
-	for bag = 0, NUM_BAGS do
+	for bag = 0, ns.LAST_BAG do -- includes the reagent bag
 		for slot = 1, NumSlots(bag) do
 			local info = ContainerItem(bag, slot)
 			if info and info.itemID then
