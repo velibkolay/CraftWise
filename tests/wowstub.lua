@@ -69,7 +69,7 @@ function GetItemInfo(id)
 	local item = stub.items[id]
 	if not item then return nil end
 	return item.name, item.link or ("item:" .. id), item.quality or 1, item.level or 1, item.minLevel or 1, "", "", 20,
-		item.equipLoc or "", nil, item.sellPrice
+		item.equipLoc or "", nil, item.sellPrice, item.classID, item.subClassID, item.bindType
 end
 C_Item = { GetItemInfo = GetItemInfo, RequestLoadItemDataByID = noop }
 GetItemInfo = nil -- like the Forever client: only C_Item.GetItemInfo

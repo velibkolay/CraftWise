@@ -79,6 +79,13 @@ Report Lua errors with BugSack + BugGrabber.
 - AH rule: Bags view top right "AH rule: +20%, min 10c" opens a panel: "At least this % more" (5% steps) and "And at least this much more" (0, 1c, 2c, 5c, 10c ... 1g); example line updates; "Defaults" resets. Items under the rule show "Vendor  AH +Xc, too little". Also `/cw ahmin <percent> [copper]`.
 - First AH sale of a single cheap item: check the mail amount to learn how the 5% cut rounds (single 8c item -> 7c or 8c).
 
+## Level view (#15)
+- New file: full game restart. "Level" button between Learn and Upgrades; profession tabs at the top.
+- Rows: known recipes that still give points (grey hidden), best "per skill-up" first. Chance shows % and where it comes from (orange: always / your crafts x/y / all your crafts x/y).
+- Hover: thresholds, chance source, reagents, sale (AH after cut or vendor), net, crafts per point, per skill-up.
+- Craft a recipe: the view updates (skill and chances) without reopening.
+- Check: the skill in the summary matches the profession window; soulbound outputs use vendor price.
+
 ## Sell on AH mark (#12)
 - [ ] Middle-click an item in the bags > "Sell on AH": Bags view shows "Auction  marked", tooltip shows "Marked: Sell on AH".
 - [ ] Junk shows a red X (not the coin), so it differs from the AH icon. Small auctioneer icon in the top-left corner of the item in Blizzard bags, Bagnon and Baganator (Baganator: Settings > Icons, if the corner is taken).

@@ -137,6 +137,11 @@ for _, event in ipairs({ "SKILL_LINES_CHANGED", "TRADE_SKILL_LIST_UPDATE", "CHAT
 	end)
 end
 
+-- Live skill of a profession as the client reports it (nil until seen).
+function ns.LiveSkill(professionID)
+	return tracked[professionID] or ClientSkills()[professionID]
+end
+
 -- Bundled yellow and grey thresholds (client DB2, Data/Thresholds.lua).
 function ns.RecipeThresholds(recipeID)
 	local t = ns.Thresholds and ns.Thresholds[recipeID]

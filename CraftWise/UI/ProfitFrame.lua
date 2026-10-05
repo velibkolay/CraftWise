@@ -31,6 +31,10 @@ local COLUMN_DEFS = {
 	gain = { label = L["UPGRADE"], align = "LEFT" },
 	songText = { label = L["SONG"], align = "LEFT" },
 	modeText = { label = L["NEXT CAST"], align = "LEFT" },
+	chance = { label = L["CHANCE"], align = "LEFT" },
+	saleValue = { label = L["SALE"], align = "RIGHT" },
+	net = { label = L["NET / CRAFT"], align = "RIGHT" },
+	perPoint = { label = L["PER SKILL-UP"], align = "RIGHT" },
 }
 local VIEWS = {
 	-- Profit: what to craft. The learn columns only show with unlearned recipes.
@@ -49,6 +53,15 @@ local VIEWS = {
 		{ key = "whereText", width = 280 },
 		{ key = "learnCost", width = 95 },
 		{ key = "profit", width = 100 },
+	},
+	-- Level: which known recipe levels the profession for the least money (Leveling.lua).
+	level = {
+		{ key = "name", width = 215 },
+		{ key = "chance", width = 150 },
+		{ key = "cost", width = 90 },
+		{ key = "saleValue", width = 105 },
+		{ key = "net", width = 95 },
+		{ key = "perPoint", width = 115 },
 	},
 	-- Bags: what to do with every item you carry.
 	bags = {
@@ -73,7 +86,8 @@ local VIEWS = {
 	},
 }
 local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
-	"vendorValue", "ahValue", "deValue", "usedCount", "bestValue", "equippedText", "gain", "songText", "modeText" }
+	"vendorValue", "ahValue", "deValue", "usedCount", "bestValue", "equippedText", "gain", "songText", "modeText",
+	"chance", "saleValue", "net", "perPoint" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
 local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"], junk = L["Junk"] }
@@ -141,7 +155,7 @@ end
 
 local function View()
 	local v = Settings().view
-	return (v == "learn" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
+	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
 end
 
 -- Views that list items across all professions (no profession tabs).
@@ -194,6 +208,21 @@ local function FilteredRows()
 			end
 		end
 		return out, hidden
+	end
+	if View() == "level" then
+		local all, skill = {}, nil
+		if state.professionID then
+			all, skill = ns.LevelingRows(state.professionID)
+		end
+		state.levelSkill = skill
+		local query = state.query:lower()
+		local out = {}
+		for _, r in ipairs(all) do
+			if query == "" or (r.name or ""):lower():find(query, 1, true) then
+				out[#out + 1] = r
+			end
+		end
+		return out, 0
 	end
 	local learnView = View() == "learn"
 	local all = state.professionID and ns.BuildRows(state.professionID, learnView or s.includeUnlearned) or {}
@@ -319,6 +348,23 @@ local function RenderSummary(ids)
 		end
 	elseif #ids == 0 then
 		text = C.warn .. "Open a profession window once so CraftWise can read your recipes.|r"
+	elseif View() == "level" then
+		local best
+		for _, r in ipairs(state.data) do
+			if r.perPoint and (not best or r.perPoint < best.perPoint) then
+				best = r
+			end
+		end
+		local prof = ns.charDB.professions[state.professionID]
+		text = ("%s %s%d|r/%d"):format(prof and prof.name or "", C.good, state.levelSkill or 0, prof and prof.maxSkill or 0)
+		if best then
+			local money = best.perPoint <= 0 and (C.good .. "earns " .. Money(-best.perPoint)) or (C.warn .. "costs " .. Money(best.perPoint))
+			text = text .. ("  ·  best: |cffffffff%s|r %s|r per skill-up"):format(best.name or "?", money)
+		else
+			text = text .. "  ·  " .. C.warn .. "no recipe with both a chance and reagent prices yet|r"
+		end
+		text = text .. ("  ·  %d crafts recorded"):format(ns.CraftsRecorded())
+			.. "\n" .. Muted("Per skill-up = (reagents - sale) / chance. Orange always, grey never (hidden), yellow and green from your recorded crafts. Hover a row for the maths.")
 	elseif View() == "learn" then
 		local withSource, fits = 0, 0
 		for _, r in ipairs(state.data) do
@@ -481,6 +527,63 @@ local function RenderMusicRow(row, r)
 	row:Show()
 end
 
+local CHANCE_KIND = {
+	orange = "orange: always",
+	recipe = "your crafts",
+	stage = "all your crafts",
+	color = "all your crafts",
+}
+
+local function RenderLevelRow(row, r)
+	row.icon:SetDesaturated(false)
+	row.icon:SetTexture(r.icon or 134400)
+	local color = SKILL_COLORS[r.skillColor] or "|cffffffff"
+	row.name:SetText(color .. (r.name or ("Recipe " .. r.recipeID)) .. "|r")
+	local notes = {}
+	if r.thresholdYellow then
+		notes[#notes + 1] = ("yellow %d · grey %d"):format(r.thresholdYellow, r.thresholdGrey)
+	end
+	if r.craftsPerPoint then
+		notes[#notes + 1] = ("~%.1f crafts per point"):format(r.craftsPerPoint)
+	end
+	row.status:SetText(Muted(table.concat(notes, "  ·  ")))
+	local cells = row.cells
+	local info = r.chanceInfo or {}
+	if r.chance then
+		local pct = ("%d%%"):format(math.floor(r.chance * 100 + 0.5))
+		local how = info.n and ("%s %d/%d"):format(CHANCE_KIND[info.kind], info.ups, info.n) or CHANCE_KIND[info.kind]
+		cells.chance:SetText(C.good .. pct .. "|r  " .. Muted(how or ""))
+	else
+		cells.chance:SetText(Muted(("no data yet (%d crafts)"):format(info.n or 0)))
+	end
+	if r.costComplete then
+		cells.cost:SetText(Money(r.cost))
+	elseif r.cost and r.cost > 0 then
+		cells.cost:SetText(Money(r.cost) .. C.warn .. " +?|r")
+	else
+		cells.cost:SetText(Muted("-"))
+	end
+	if r.saleSource == "none" then
+		cells.saleValue:SetText(Muted("no item"))
+	elseif r.saleValue then
+		cells.saleValue:SetText(Money(r.saleValue) .. Muted(r.saleSource == "auction" and " AH" or " vendor"))
+	else
+		cells.saleValue:SetText(Muted("no price"))
+	end
+	if r.net then
+		cells.net:SetText((r.net <= 0 and (C.good .. "+" .. Money(-r.net)) or (C.bad .. "-" .. Money(r.net))) .. "|r")
+	else
+		cells.net:SetText(Muted("-"))
+	end
+	if r.perPoint then
+		local money = r.perPoint <= 0 and (C.good .. "+" .. Money(-r.perPoint)) or (C.bad .. "-" .. Money(r.perPoint))
+		cells.perPoint:SetText(money .. "|r")
+	else
+		cells.perPoint:SetText(Muted("-"))
+	end
+	row:Show()
+end
+
 local function RenderRow(row, r, index)
 	row.data = r
 	row.stripe:SetShown(index % 2 == 0)
@@ -489,6 +592,8 @@ local function RenderRow(row, r, index)
 	end
 	if View() == "bags" then
 		return RenderBagRow(row, r)
+	elseif View() == "level" then
+		return RenderLevelRow(row, r)
 	elseif View() == "upgrades" then
 		return RenderUpgradeRow(row, r)
 	end
@@ -599,6 +704,8 @@ local function SortSettings()
 	local s = Settings()
 	if View() == "learn" then
 		return s.learnSortKey or "required", s.learnSortDesc
+	elseif View() == "level" then
+		return s.levelSortKey or "perPoint", s.levelSortDesc or false
 	elseif View() == "bags" then
 		return s.bagSortKey or "bestValue", s.bagSortDesc ~= false
 	elseif View() == "upgrades" then
@@ -629,8 +736,9 @@ local function UpdateControls()
 	frame.partyBtn:SetShown(View() == "music")
 	frame.partyBtn:SetLabel(ns.Music.PartyActive() and "Stop party" or "Party!")
 	frame.partyBtn:SetSelected(ns.Music.PartyActive())
-	frame.priced:SetShown(not learnView and not ItemView())
-	frame.unlearned:SetShown(not learnView and not ItemView())
+	local levelView = View() == "level"
+	frame.priced:SetShown(not learnView and not levelView and not ItemView())
+	frame.unlearned:SetShown(not learnView and not levelView and not ItemView())
 	for _, tab in ipairs(tabs) do
 		if ItemView() then
 			tab:Hide()
@@ -886,6 +994,81 @@ local function ShowUpgradeTooltip(row, r)
 	GameTooltip:Show()
 end
 
+local STAGE_TEXT = { "1st quarter after yellow", "2nd quarter", "3rd quarter", "last quarter before grey" }
+
+local function ShowLevelTooltip(row, r)
+	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+	GameTooltip:AddLine((SKILL_COLORS[r.skillColor] or "|cffffffff") .. (r.name or "?") .. "|r")
+	local skill = state.levelSkill
+	local info = r.chanceInfo or {}
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("Chance of a skill point", 1, 0.82, 0)
+	if r.thresholdYellow then
+		GameTooltip:AddDoubleLine("  Your skill · yellow · grey", ("%s · %d · %d"):format(skill or "?", r.thresholdYellow, r.thresholdGrey),
+			0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if info.kind == "orange" then
+		GameTooltip:AddLine("  Orange: every craft gives a point (100%).", 0.9, 0.9, 0.9, true)
+	elseif info.kind == "recipe" then
+		GameTooltip:AddLine(("  Your %d crafts of this recipe in the %s: %d points = %d%%."):format(info.n, STAGE_TEXT[info.stage],
+			info.ups, math.floor(r.chance * 100 + 0.5)), 0.9, 0.9, 0.9, true)
+	elseif info.kind == "stage" then
+		GameTooltip:AddLine(("  Your %d crafts of all recipes in the %s (between their yellow and grey skill): %d points = %d%%."):format(
+			info.n, STAGE_TEXT[info.stage], info.ups, math.floor(r.chance * 100 + 0.5)), 0.9, 0.9, 0.9, true)
+		GameTooltip:AddLine(("  This recipe gets its own rate after %d crafts in this stage."):format(ns.Leveling.MIN_CRAFTS), 0.55, 0.55, 0.6, true)
+	elseif info.kind == "color" then
+		GameTooltip:AddLine(("  No yellow/grey thresholds for this recipe: your %d %s crafts gave %d points = %d%%."):format(
+			info.n, info.color == 1 and "yellow" or "green", info.ups, math.floor(r.chance * 100 + 0.5)), 0.9, 0.9, 0.9, true)
+	else
+		GameTooltip:AddLine(("  Not enough crafts recorded yet (%d, need %d). Craft it a few times and it gets a rate."):format(
+			info.n or 0, ns.Leveling.MIN_CRAFTS), 1, 0.6, 0.3, true)
+	end
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("One craft", 1, 0.82, 0)
+	for _, line in ipairs(r.reagents or {}) do
+		local left = ("  %d × %s"):format(line.quantity, ItemName(line.itemID))
+		if line.total then
+			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), Muted(line.source == "vendor" and "vendor" or "AH")), 1, 1, 1, 1, 1, 1)
+		else
+			GameTooltip:AddDoubleLine(left, "no price", 1, 1, 1, 1, 0.4, 0.4)
+		end
+	end
+	local d = r.saleDetails or {}
+	if r.saleSource == "auction" then
+		GameTooltip:AddDoubleLine("  Sale: AH after 5% cut", ("%s  %s"):format(Money(r.saleValue), Muted("(" .. Money(d.ahGross or 0) .. " - 5%)")), 1, 1, 1, 0.3, 0.82, 0.55)
+		if d.vendor then
+			GameTooltip:AddDoubleLine("  (vendor would pay)", Money(d.vendor), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
+		end
+	elseif r.saleSource == "vendor" then
+		GameTooltip:AddDoubleLine("  Sale: vendor", Money(r.saleValue), 1, 1, 1, 0.3, 0.82, 0.55)
+		if d.ahNet then
+			GameTooltip:AddLine(("  AH after cut: %s - under your AH rule, so vendor."):format(Money(d.ahNet)), 0.6, 0.6, 0.6, true)
+		end
+	elseif r.saleSource == "none" then
+		GameTooltip:AddLine("  No item made: sale 0.", 0.8, 0.8, 0.8)
+	else
+		GameTooltip:AddLine("  Sale price unknown: counted as 0.", 1, 0.6, 0.3)
+	end
+	if r.net then
+		GameTooltip:AddDoubleLine("  Net per craft (reagents - sale)", (r.net <= 0 and C.good .. "+" .. Money(-r.net) or C.bad .. "-" .. Money(r.net)) .. "|r",
+			1, 0.82, 0, 1, 1, 1)
+	else
+		GameTooltip:AddLine("  Reagent price missing - can't rank this recipe.", 1, 0.6, 0.3, true)
+	end
+	if r.perPoint then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddDoubleLine("Crafts per point (1 / chance)", ("%.1f"):format(r.craftsPerPoint), 1, 0.82, 0, 1, 1, 1)
+		GameTooltip:AddDoubleLine("Per skill-up (net / chance)", (r.perPoint <= 0 and C.good .. "earns " .. Money(-r.perPoint)
+			or C.bad .. "costs " .. Money(r.perPoint)) .. "|r", 1, 0.82, 0, 1, 1, 1)
+		if r.perPoint < 0 and r.craftsPerPoint > 2 then
+			GameTooltip:AddLine(("Makes money, but ~%.0f items per point to sell: check the AH can take them."):format(r.craftsPerPoint), 0.55, 0.55, 0.6, true)
+		end
+	end
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("The chance shown is for your current skill; it drops as you level.", 0.55, 0.55, 0.6, true)
+	GameTooltip:Show()
+end
+
 local function ShowTooltip(row)
 	local r = row.data
 	if not r then
@@ -895,6 +1078,8 @@ local function ShowTooltip(row)
 		return ShowBagTooltip(row, r)
 	elseif View() == "upgrades" then
 		return ShowUpgradeTooltip(row, r)
+	elseif View() == "level" then
+		return ShowLevelTooltip(row, r)
 	elseif View() == "music" then
 		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 		GameTooltip:AddLine(r.name)
@@ -1249,7 +1434,7 @@ local function BuildHeader()
 	title:SetText("|cffffffffCraftWise|r")
 	local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
-	subtitle:SetText(Muted("Profit, learning, gear upgrades and loot"))
+	subtitle:SetText(Muted("Profit, learning, leveling, gear and loot"))
 
 	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Upgrades | Bags.
 	local musicBtn = Style.Button(frame, 70, 24, L["Music"])
@@ -1258,12 +1443,14 @@ local function BuildHeader()
 	bagsBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
 	local upgradesBtn = Style.Button(frame, 86, 24, L["Upgrades"])
 	upgradesBtn:SetPoint("RIGHT", bagsBtn, "LEFT", -6, 0)
-	local learnBtn = Style.Button(frame, 70, 24, L["Learn"])
-	learnBtn:SetPoint("RIGHT", upgradesBtn, "LEFT", -6, 0)
-	local profitBtn = Style.Button(frame, 70, 24, L["Profit"])
+	local levelBtn = Style.Button(frame, 64, 24, L["Level"])
+	levelBtn:SetPoint("RIGHT", upgradesBtn, "LEFT", -6, 0)
+	local learnBtn = Style.Button(frame, 64, 24, L["Learn"])
+	learnBtn:SetPoint("RIGHT", levelBtn, "LEFT", -6, 0)
+	local profitBtn = Style.Button(frame, 64, 24, L["Profit"])
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
 	viewButtons.profit, viewButtons.learn, viewButtons.bags = profitBtn, learnBtn, bagsBtn
-	viewButtons.upgrades, viewButtons.music = upgradesBtn, musicBtn
+	viewButtons.upgrades, viewButtons.music, viewButtons.level = upgradesBtn, musicBtn, levelBtn
 	for key, button in pairs(viewButtons) do
 		button:SetScript("OnClick", function()
 			Settings().view, state.offset = key, 0
@@ -1424,6 +1611,13 @@ local function BuildColumns()
 			local ascending = key == "name" or key == "whereText" or key == "required"
 			if View() == "music" then
 				return
+			elseif View() == "level" then
+				if (s.levelSortKey or "perPoint") == key then
+					s.levelSortDesc = not s.levelSortDesc
+				else
+					-- money columns: best first (lowest cost / per point); chance and sale: highest first
+					s.levelSortKey, s.levelSortDesc = key, key == "chance" or key == "saleValue"
+				end
 			elseif View() == "upgrades" then
 				if (s.upgradeSortKey or "gain") == key then
 					s.upgradeSortDesc = not (s.upgradeSortDesc ~= false)
@@ -1604,6 +1798,16 @@ end
 
 ns.Listen("RECIPES_CHANGED", Refresh)
 ns.Listen("PRICES_CHANGED", Refresh)
+ns.Listen("SKILLUPS_CHANGED", function()
+	if frame and frame:IsShown() and View() == "level" then
+		Refresh()
+	end
+end)
+ns.On("SKILL_LINES_CHANGED", function()
+	if frame and frame:IsShown() and View() == "level" then
+		Refresh()
+	end
+end)
 ns.Listen("BAGS_CHANGED", function()
 	if frame and frame:IsShown() and ItemView() then
 		Refresh()

@@ -29,6 +29,7 @@ Junk.lua
 BagIcons.lua
 Baganator.lua
 Upgrades.lua
+Leveling.lua
 Music.lua
 Video.lua
 UI\Style.lua
