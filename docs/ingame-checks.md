@@ -81,7 +81,7 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Level view (#15)
 - New file: full game restart. "Level" button between Learn and Upgrades; profession tabs at the top.
-- Rows: known recipes that still give points (grey hidden), best "per skill-up" first. Chance shows % and where it comes from (orange: always / your crafts x/y / all your crafts x/y).
+- Rows: known recipes that still give points (grey hidden), best "per skill-up" first. Chance shows % and where it comes from (orange: always / your crafts x/y / all your crafts x/y / ~% estimate from the community formula when fewer than 5 crafts are recorded for that stage).
 - Hover: thresholds, chance source, reagents, sale (AH after cut or vendor), net, crafts per point, per skill-up.
 - Craft a recipe: the view updates (skill and chances) without reopening.
 - Check: the skill in the summary matches the profession window; soulbound outputs use vendor price.

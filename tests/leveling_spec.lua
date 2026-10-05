@@ -53,7 +53,9 @@ it("estimates the chance: orange always, grey never, else own crafts, then all c
 	eq(info.kind, "grey"); eq(p, 0)
 	p, info = ns.Leveling.Chance(99999, 0, 100)
 	eq(info.kind, "orange"); eq(p, 1)
-	p, info = ns.Leveling.Chance(3763, 2, 110) -- 4th quarter: nothing recorded there
+	p, info = ns.Leveling.Chance(3763, 2, 110) -- 4th quarter: nothing recorded there -> formula estimate
+	eq(info.kind, "formula"); eq(p, (115 - 110) / (115 - 85))
+	p, info = ns.Leveling.Chance(99997, nil, 100) -- no thresholds, no colour: nothing to go on
 	eq(p, nil); eq(info.kind, "nodata")
 	p, info = ns.Leveling.Chance(99998, 1, 100) -- no thresholds, 6 yellow crafts recorded
 	eq(info.kind, "color"); eq(p, 5 / 6)
@@ -98,5 +100,16 @@ it("shows the Level view sorted best first, with the maths in the tooltip", func
 		if f.scripts.OnClick and not f.data and not f.scripts.OnDragStart and f.label then f.scripts.OnClick(f) end
 	end
 	ns.db.settings.levelSortKey, ns.db.settings.levelSortDesc = nil, nil
+	ns.db.settings.view = "level"
+	-- nothing recorded: yellow/green rows fall back to the formula estimate, tooltips still render
+	ns.db.skillups = {}
 	ns.RefreshProfitFrame()
+	local estimates = 0
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.shown ~= false and f.data.recipeID then
+			f.scripts.OnEnter(f)
+			if f.data.chanceInfo and f.data.chanceInfo.kind == "formula" then estimates = estimates + 1 end
+		end
+	end
+	eq(estimates, 2)
 end)

@@ -62,6 +62,16 @@ Leveling.Pools = Pools
 --   recipe: your own crafts of this recipe at the same stage (at least MIN_CRAFTS)
 --   stage:  all your crafts of any recipe at the same stage
 --   color:  all your crafts at the same client colour (recipes without thresholds)
+--   formula: none of the above has enough crafts: community formula (grey - skill) / (grey - yellow)
+--            (SkillUp Forever, Skillet; not official). Shown as an estimate, chosen by Veli
+--            2026-10-05 so every recipe gets a %; your own crafts replace it once recorded.
+function Leveling.Formula(skill, yellow, grey)
+	if not (skill and yellow and grey) or grey <= yellow or skill < yellow or skill >= grey then
+		return nil
+	end
+	return (grey - skill) / (grey - yellow)
+end
+
 function Leveling.Chance(recipeID, difficulty, skill, pools)
 	pools = pools or Pools()
 	local yellow, grey = ns.RecipeThresholds(recipeID)
@@ -80,7 +90,8 @@ function Leveling.Chance(recipeID, difficulty, skill, pools)
 		if all and all.n >= Leveling.MIN_CRAFTS then
 			return all.ups / all.n, { kind = "stage", n = all.n, ups = all.ups, stage = stage }
 		end
-		return nil, { kind = "nodata", n = all and all.n or 0, stage = stage }
+		return Leveling.Formula(skill, yellow, grey), { kind = "formula", n = all and all.n or 0, stage = stage,
+			skill = skill, yellow = yellow, grey = grey }
 	end
 	if difficulty == 0 then
 		return 1, { kind = "orange" }

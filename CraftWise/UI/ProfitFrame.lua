@@ -364,7 +364,7 @@ local function RenderSummary(ids)
 			text = text .. "  ·  " .. C.warn .. "no recipe with both a chance and reagent prices yet|r"
 		end
 		text = text .. ("  ·  %d crafts recorded"):format(ns.CraftsRecorded())
-			.. "\n" .. Muted("Per skill-up = (reagents - sale) / chance. Orange always, grey never (hidden), yellow and green from your recorded crafts. Hover a row for the maths.")
+			.. "\n" .. Muted("Per skill-up = (reagents - sale) / chance. Orange always, grey never (hidden), yellow and green from your recorded crafts (~ = formula estimate until you have some). Hover a row for the maths.")
 	elseif View() == "learn" then
 		local withSource, fits = 0, 0
 		for _, r in ipairs(state.data) do
@@ -549,7 +549,9 @@ local function RenderLevelRow(row, r)
 	row.status:SetText(Muted(table.concat(notes, "  ·  ")))
 	local cells = row.cells
 	local info = r.chanceInfo or {}
-	if r.chance then
+	if r.chance and info.kind == "formula" then
+		cells.chance:SetText(C.warn .. ("~%d%%"):format(math.floor(r.chance * 100 + 0.5)) .. "|r  " .. Muted("estimate"))
+	elseif r.chance then
 		local pct = ("%d%%"):format(math.floor(r.chance * 100 + 0.5))
 		local how = info.n and ("%s %d/%d"):format(CHANCE_KIND[info.kind], info.ups, info.n) or CHANCE_KIND[info.kind]
 		cells.chance:SetText(C.good .. pct .. "|r  " .. Muted(how or ""))
@@ -1019,9 +1021,21 @@ local function ShowLevelTooltip(row, r)
 	elseif info.kind == "color" then
 		GameTooltip:AddLine(("  No yellow/grey thresholds for this recipe: your %d %s crafts gave %d points = %d%%."):format(
 			info.n, info.color == 1 and "yellow" or "green", info.ups, math.floor(r.chance * 100 + 0.5)), 0.9, 0.9, 0.9, true)
+	elseif info.kind == "formula" then
+		GameTooltip:AddLine(("  Estimate: (grey - skill) / (grey - yellow) = (%d - %d) / (%d - %d) = %d%%."):format(
+			info.grey, info.skill, info.grey, info.yellow, math.floor(r.chance * 100 + 0.5)), 1, 0.6, 0.3, true)
+		GameTooltip:AddLine("  Community formula (SkillUp Forever, Skillet), not official. Your own crafts replace it: "
+			.. ("%d crafts of any recipe in this stage so far, %d needed."):format(info.n or 0, ns.Leveling.MIN_CRAFTS), 0.55, 0.55, 0.6, true)
 	else
-		GameTooltip:AddLine(("  Not enough crafts recorded yet (%d, need %d). Craft it a few times and it gets a rate."):format(
+		GameTooltip:AddLine(("  Not enough crafts recorded yet (%d, need %d), and no yellow/grey thresholds for an estimate."):format(
 			info.n or 0, ns.Leveling.MIN_CRAFTS), 1, 0.6, 0.3, true)
+	end
+	-- The formula next to a measured rate, as a reference.
+	if info.kind == "recipe" or info.kind == "stage" then
+		local est = ns.Leveling.Formula(skill, r.thresholdYellow, r.thresholdGrey)
+		if est then
+			GameTooltip:AddLine(("  For reference, the community formula says %d%%."):format(math.floor(est * 100 + 0.5)), 0.55, 0.55, 0.6, true)
+		end
 	end
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine("One craft", 1, 0.82, 0)
