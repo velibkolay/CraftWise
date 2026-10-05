@@ -55,6 +55,16 @@ local function Pools()
 end
 Leveling.Pools = Pools
 
+-- Pools for many lookups in a row (the profession window asks once per visible recipe).
+local cached
+function Leveling.CachedPools()
+	cached = cached or Pools()
+	return cached
+end
+ns.Listen("SKILLUPS_CHANGED", function()
+	cached = nil
+end)
+
 -- Chance of a skill point from one craft, and where it comes from.
 -- Returns p (0..1 or nil), info = { kind, n, ups, stage }
 --   orange: below the recipe's yellow threshold (or client says orange) -> always a point

@@ -86,6 +86,12 @@ Report Lua errors with BugSack + BugGrabber.
 - Craft a recipe: the view updates (skill and chances) without reopening.
 - Check: the skill in the summary matches the profession window; soulbound outputs use vendor price.
 
+## Chance in the profession window (#15)
+- New file: full restart. Open a crafting profession: learned yellow/green/orange recipes show a % at the right of the row (green = measured / orange 100%, light orange "~" = formula estimate). Grey and unlearned rows show nothing.
+- Hover a recipe: "CraftWise: skill-up chance" line with where it comes from.
+- Craft: the % updates after the skill-up settles. Long recipe names don't run under the %.
+- Check: no Lua errors / taint when crafting from the window, scrolling, switching professions.
+
 ## Sell on AH mark (#12)
 - [ ] Middle-click an item in the bags > "Sell on AH": Bags view shows "Auction  marked", tooltip shows "Marked: Sell on AH".
 - [ ] Junk shows a red X (not the coin), so it differs from the AH icon. Small auctioneer icon in the top-left corner of the item in Blizzard bags, Bagnon and Baganator (Baganator: Settings > Icons, if the corner is taken).

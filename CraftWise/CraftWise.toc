@@ -34,6 +34,7 @@ Music.lua
 Video.lua
 UI\Style.lua
 UI\ItemMenu.lua
+UI\RecipeChance.lua
 UI\AHRule.lua
 UI\Settings.lua
 UI\ProfitFrame.lua

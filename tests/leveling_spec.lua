@@ -113,3 +113,46 @@ it("shows the Level view sorted best first, with the maths in the tooltip", func
 	end
 	eq(estimates, 2)
 end)
+
+it("shows the chance next to each recipe in the game's profession window", function()
+	local ns, stub = setup()
+	local callbacks, events = {}, {}
+	local function row(info)
+		local b = CreateFrame("Button")
+		b.Label = CreateFrame("Frame"); b.Label.GetWidth = function() return 300 end
+		b.Label.SetWidth = function(self, w) self.width = w end
+		b.GetWidth = function() return 280 end
+		b.SkillUps = CreateFrame("Frame"); b.SkillUps.GetWidth = function() return 26 end
+		b.Count = CreateFrame("Frame"); b.Count:Hide()
+		local node = { GetData = function() return { recipeInfo = info } end }
+		b.GetElementData = function() return node end
+		return b, node
+	end
+	local murloc, murlocNode = row({ recipeID = 6702, learned = true, relativeDifficulty = 1, name = "Murloc Scale Belt" })
+	local gloves, glovesNode = row({ recipeID = 3756, learned = true, relativeDifficulty = 3, name = "Old Gloves" })
+	local scroll = {
+		RegisterCallback = function(_, event, fn, owner) callbacks[#callbacks + 1] = { fn = fn, owner = owner } end,
+		ForEachFrame = function(_, fn) fn(murloc, murlocNode); fn(gloves, glovesNode) end,
+	}
+	ScrollBoxListMixin = { Event = { OnInitializedFrame = "OnInitializedFrame" } }
+	ScrollUtil = { AddInitializedFrameCallback = function(box, fn, owner) box:RegisterCallback("x", fn, owner) end }
+	EventRegistry = { RegisterCallback = function(_, name, fn, owner) events[name] = function(...) fn(owner, ...) end end }
+	ProfessionsFrame = { CraftingPage = { RecipeList = { ScrollBox = scroll } } }
+	C_TradeSkillUI.GetBaseProfessionInfo = function() return { professionID = 165, professionName = "Leatherworking", skillLevel = 100 } end
+	stub.Fire("ADDON_LOADED", "Blizzard_Professions")
+	eq(ns.RecipeChanceLabels[murloc].text, "|cff4fd18c83%|r") -- own crafts 5/6
+	eq(ns.RecipeChanceLabels[gloves], nil) -- grey: nothing
+	-- a row initialised later (scrolling) gets it too
+	local fine, fineNode = row({ recipeID = 3763, learned = true, relativeDifficulty = 2, name = "Fine Leather Belt" })
+	callbacks[1].fn(callbacks[1].owner, fine, fineNode)
+	eq(ns.RecipeChanceLabels[fine].text, "|cff4fd18c50%|r") -- all crafts at this stage 3/6
+	-- no records: formula estimate with ~
+	ns.db.skillups = {}
+	ns.Notify("SKILLUPS_CHANGED")
+	eq(ns.RecipeChanceLabels[murloc].text, "|cffffb347~83%|r") -- (125 - 100) / (125 - 95)
+	-- hover adds the source line
+	local lines = {}
+	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. "=" .. r end
+	events["Professions.RecipeListOnEnter"](murloc, murlocNode:GetData())
+	assert(table.concat(lines, ";"):find("skill%-up chance=.*~83%%"), table.concat(lines, ";"))
+end)
