@@ -37,5 +37,13 @@ UI\ItemMenu.lua
 UI\RecipeChance.lua
 UI\AHRule.lua
 UI\Settings.lua
-UI\ProfitFrame.lua
+UI\ProfitFrame\State.lua
+UI\ProfitFrame\Data.lua
+UI\ProfitFrame\Rows.lua
+UI\ProfitFrame\Tooltips.lua
+UI\ProfitFrame\SongPicker.lua
+UI\ProfitFrame\Layout.lua
+UI\ProfitFrame\Refresh.lua
+UI\ProfitFrame\Frame.lua
+UI\ProfitFrame\Events.lua
 UI\MinimapButton.lua
