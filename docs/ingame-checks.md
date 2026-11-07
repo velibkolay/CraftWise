@@ -7,17 +7,17 @@ Things the headless tests cannot prove. Run after installing to `World of Warcra
 2. Auction house: Auctionator tab, **Full Scan**.
 
 ## Recipe capture (#1, #3)
-- [ ] Open a profession window. `/cw debug` shows the profession with a recipe count that includes unlearned recipes.
+- [ ] Open a profession window. `/craftwise debug` shows the profession with a recipe count that includes unlearned recipes.
 - [ ] Count matches the window with the "Unlearned" filter on. If it only counts learned recipes, `GetAllRecipeIDs` respects the filter: report it.
-- [ ] `/cw`: unlearned recipes show reagents (tooltip). If they show "Reagents unknown", `GetRecipeSchematic` returns nothing for unlearned recipes.
+- [ ] `/craftwise`: unlearned recipes show reagents (tooltip). If they show "Reagents unknown", `GetRecipeSchematic` returns nothing for unlearned recipes.
 
 ## Prices (#2)
 - [ ] Rows show cost and sells-for after the Auctionator scan.
-- [ ] Visit a trade goods vendor (thread, dye) and reopen `/cw`: those reagents show "vendor" in the tooltip.
+- [ ] Visit a trade goods vendor (thread, dye) and reopen `/craftwise`: those reagents show "vendor" in the tooltip.
 - [ ] Without Auctionator: orange warning line, no Lua error.
 
 ## Trainer (#3)
-- [ ] Open the profession window first (recipe names are matched against it), then your profession trainer, then `/cw`: trainer recipes show Trainable / Trainable at N, a learn cost and break-even.
+- [ ] Open the profession window first (recipe names are matched against it), then your profession trainer, then `/craftwise`: trainer recipes show Trainable / Trainable at N, a learn cost and break-even.
 
 ## UI (#5)
 - [ ] Window drags, closes with Esc and the X button.
@@ -29,7 +29,7 @@ Things the headless tests cannot prove. Run after installing to `World of Warcra
 Report Lua errors with BugSack + BugGrabber.
 
 ## Skill-up recorder (#15)
-- Craft a few recipes (orange and yellow). `/cw debug` shows "skill-up log: N crafts recorded" = number of crafts.
+- Craft a few recipes (orange and yellow). `/craftwise debug` shows "skill-up log: N crafts recorded" = number of crafts.
 - Recipe tooltip shows `Skill-ups  yellow X  grey Y` and `Your crafts  a skill-ups in b crafts`.
 - Orange crafts must all count as skill-ups. After `/reload`, `CraftWiseDB.skillups[recipeID][skill]` holds `{ n, ups, d }`.
 - Batch crafting (craft all): every craft counted once.
@@ -62,7 +62,7 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Party key (#20)
 - Esc > Options > Key Bindings > AddOns > CraftWise: "Party: music, video and dance" listed; bind a key (needs a game restart once for Bindings.xml).
-- Key / `/cw party` / "Party!" button: character dances, Party song + video start. Same key stops; walking stops. Check DoEmote works from an addon in Forever.
+- Key / `/craftwise party` / "Party!" button: character dances, Party song + video start. Same key stops; walking stops. Check DoEmote works from an addon in Forever.
 
 ## Bag sort (#12)
 - Bags view > "Sort bags": kept items, quest items and reagents first (by item type, then item ID - the same order every time), free slots, items to sell last (best value first, junk at the very end). Right after login it first loads item data ("Loading item info..."); a second click must say "already in order", also after a restart. Chat says "Bags sorted (N moves)". Click again: "already in order".
@@ -76,7 +76,7 @@ Report Lua errors with BugSack + BugGrabber.
 - Merchant window: "Sell junk (N)" button left of Blizzard's sell-all-junk button. One click sells every marked stack, ~5 per second; chat prints count and money. Closing the merchant stops it.
 - Loot the same item again: it is junk right away. Sort bags puts junk at the very end.
 - Check: button position on the Forever merchant frame; UseContainerItem sells (doesn't equip/use) while the merchant is open.
-- AH rule: Bags view top right "AH rule: +20%, min 10c" opens a panel: "At least this % more" (5% steps) and "And at least this much more" (0, 1c, 2c, 5c, 10c ... 1g); example line updates; "Defaults" resets. Items under the rule show "Vendor  AH +Xc, too little". Also `/cw ahmin <percent> [copper]`.
+- AH rule: Bags view top right "AH rule: +20%, min 10c" opens a panel: "At least this % more" (5% steps) and "And at least this much more" (0, 1c, 2c, 5c, 10c ... 1g); example line updates; "Defaults" resets. Items under the rule show "Vendor  AH +Xc, too little". Also `/craftwise ahmin <percent> [copper]`.
 - First AH sale of a single cheap item: check the mail amount to learn how the 5% cut rounds (single 8c item -> 7c or 8c).
 
 ## Level view (#15)
@@ -107,19 +107,19 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Item tooltip section
 - Any item tooltip (bags, Bagnon, links, merchant): a "CraftWise" header (blue) with: Marked (Junk/Keep), Sell xN (Vendor · AH · advice), Used in, Your crafts (skill-ups for items you craft). Not added twice inside the CraftWise window.
-- Gear button (top right of the CraftWise window) or `/cw settings`: on/off, Always / Only with Shift (tooltip redraws when Shift is pressed), each line on/off.
+- Gear button (top right of the CraftWise window) or `/craftwise settings`: on/off, Always / Only with Shift (tooltip redraws when Shift is pressed), each line on/off.
 - Check: TooltipDataProcessor post-call works for bag items in Forever; GameTooltip:RefreshData redraws on Shift.
 
 ## Market recorder (#26 phase 1)
-New file and new SavedVariables: full game restart. Nothing changes in the profit numbers yet; `/cw market <itemID or link>` is the only output. Saved data is `CraftWiseMarketDB` in `WTF/Account/<account>/SavedVariables/CraftWise.lua` (copy it only with the game closed).
+New file and new SavedVariables: full game restart. Nothing changes in the profit numbers yet; `/craftwise market <itemID or link>` is the only output. Saved data is `CraftWiseMarketDB` in `WTF/Account/<account>/SavedVariables/CraftWise.lua` (copy it only with the game closed).
 
 House detection:
-- [ ] At the AH in Orgrimmar and Thunder Bluff, search an item you carry: `/cw market <id>` lists it under "Horde AH".
+- [ ] At the AH in Orgrimmar and Thunder Bluff, search an item you carry: `/craftwise market <id>` lists it under "Horde AH".
 - [ ] Same at Booty Bay, Gadgetzan and Everlook: it lists under that town, and the Horde AH line is unchanged. If it lands under "Horde AH", the zone text differs from `NEUTRAL_ZONES` in `Market.lua`: run `/dump GetRealZoneText(), GetSubZoneText()` there and report it.
 - [ ] `/dump GetRealmName()` still returns the ruleset name ("PvP"), and `CraftWiseMarketDB.houses` has `PvP|H` and `PvP|N:BootyBay` style keys.
 
 What can be seen from other addons' scans:
-- [ ] Auctionator Full Scan: `/cw market <id>` for a reagent shows "cheapest: 3 @ ... · 25 @ ..." and `CraftWiseMarketDB.scans[<house>]` ends with `kind = "full"`, `source = "auctionator"`. This proves a second addon receives `REPLICATE_ITEM_LIST_UPDATE` and can read the list.
+- [ ] Auctionator Full Scan: `/craftwise market <id>` for a reagent shows "cheapest: 3 @ ... · 25 @ ..." and `CraftWiseMarketDB.scans[<house>]` ends with `kind = "full"`, `source = "auctionator"`. This proves a second addon receives `REPLICATE_ITEM_LIST_UPDATE` and can read the list.
 - [ ] The game doesn't stutter during or after the scan. The scan log's `items` is about the number of scope items on sale.
 - [ ] Close the AH during a full scan: no new `kind = "full"` entry and no "disappeared" count from it.
 - [ ] One scan is one log entry (the event doesn't fire twice in a way that stores it twice).
@@ -127,8 +127,8 @@ What can be seen from other addons' scans:
 - [ ] Blizzard browse list: only `last` changes (no tiers line change) for items in scope.
 
 Prices:
-- [ ] A stack of gear or other non-commodity with quantity above 1: compare the Blizzard list with `/cw market`. `buyoutAmount` is treated as per unit in searches, and the full scan divides by stack. Both must give the same unit price. If not, report it: searches would then need dividing too.
-- [ ] Random-suffix gear ("of the Bear"): `/cw market <link>` lists `item <id>:<suffix>`, and two suffixes of one item stay apart. Check the same key from a search and from a full scan.
+- [ ] A stack of gear or other non-commodity with quantity above 1: compare the Blizzard list with `/craftwise market`. `buyoutAmount` is treated as per unit in searches, and the full scan divides by stack. Both must give the same unit price. If not, report it: searches would then need dividing too.
+- [ ] Random-suffix gear ("of the Bear"): `/craftwise market <link>` lists `item <id>:<suffix>`, and two suffixes of one item stay apart. Check the same key from a search and from a full scan.
 - [ ] Gear not yet in the item cache right after login, full scan: it appears after the scan (links load within 5 s) or stays out, never under a wrong key.
 
 Scope:
@@ -138,7 +138,7 @@ Scope:
 - [ ] Loot during combat raises no Lua error (chat payloads can be secret values on 12.x).
 
 History and size:
-- [ ] Three days after the first scan, `/cw market` shows `typical: ...` instead of "too little history". Today's scans count once the AH has closed.
+- [ ] Three days after the first scan, `/craftwise market` shows `typical: ...` instead of "too little history". Today's scans count once the AH has closed.
 - [ ] Check an item with many small listings (a popular herb): the typical is near where most units sit, not at the 8th tier.
 - [ ] After a week of use: size of `CraftWise.lua`, and login and `/reload` time compared with before. The test budget is 5 MB at the expected load.
 - [ ] Open and close the AH several times: no stutter on close. Right after login a prune runs over about 3 seconds (20 entries per frame).

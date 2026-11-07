@@ -879,7 +879,7 @@ it("recording leaves Auctionator prices and profit basis alone", function()
 	eq(ns.GetBuyPrice(5).copper, 777)
 end)
 
---------------------------------------------------------------------------------------------- /cw market
+--------------------------------------------------------------------------------------------- /craftwise market
 
 local function Printed(fn)
 	local lines, realPrint = {}, print
@@ -890,7 +890,7 @@ local function Printed(fn)
 	return table.concat(lines, "\n")
 end
 
-it("/cw market prints every house with depth, typical and last seen", function()
+it("/craftwise market prints every house with depth, typical and last seen", function()
 	local _, stub = Market()
 	InScope({ 5 })
 	OpenAH(stub)
@@ -908,7 +908,7 @@ it("/cw market prints every house with depth, typical and last seen", function()
 	assert(text:find(HORDE, 1, true) == nil, "shows the label, not the key")
 end)
 
-it("/cw market takes a link (lower-cased by the slash handler) and finds suffix variants", function()
+it("/craftwise market takes a link (lower-cased by the slash handler) and finds suffix variants", function()
 	local _, stub = Market()
 	OpenAH(stub)
 	stub.itemSearch["9:1205"] = { rows = { { buyoutAmount = 500, quantity = 1 } }, total = 1 }
@@ -922,7 +922,7 @@ it("/cw market takes a link (lower-cased by the slash handler) and finds suffix 
 	assert(text:find("item 9:1205:", 1, true), text)
 end)
 
-it("/cw market: no data, unknown item, usage, disappeared label", function()
+it("/craftwise market: no data, unknown item, usage, disappeared label", function()
 	local _, stub = Market()
 	InScope({ 5 })
 	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5") end)

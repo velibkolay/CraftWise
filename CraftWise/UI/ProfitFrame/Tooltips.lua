@@ -240,7 +240,7 @@ local function ShowTooltip(row)
 		GameTooltip:AddLine(r.name)
 		if r.party then
 			GameTooltip:AddLine("One key: your character dances, the Party song and video start. Press again or move to stop.", 0.8, 0.8, 0.8, true)
-			GameTooltip:AddLine("Key: Esc > Options > Key Bindings > AddOns > CraftWise. Macro: /cw party", 0.8, 0.8, 0.8, true)
+			GameTooltip:AddLine("Key: Esc > Options > Key Bindings > AddOns > CraftWise. Macro: /craftwise party", 0.8, 0.8, 0.8, true)
 		else
 			GameTooltip:AddLine("Plays while you cast " .. r.name .. " and stops when the cast ends.", 0.8, 0.8, 0.8, true)
 		end

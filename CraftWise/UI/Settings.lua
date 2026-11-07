@@ -1,4 +1,4 @@
--- Settings panel: opened with the gear button in the CraftWise window or /cw settings.
+-- Settings panel: opened with the gear button in the CraftWise window or /craftwise settings.
 -- Item tooltip section: on/off, always or only with Shift, and each line on/off.
 local _, ns = ...
 local Style = ns.Style

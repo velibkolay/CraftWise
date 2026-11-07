@@ -2,7 +2,7 @@
 
 WoW: Forever addon: crafting profit for every recipe you know **or can learn**.
 
-Type `/cw` to open the profit table. `/cw debug` prints what is cached. `/cw market <itemID or link>` prints the prices recorded per auction house.
+Type `/craftwise` to open the profit table. `/craftwise debug` prints what is cached. `/craftwise market <itemID or link>` prints the prices recorded per auction house.
 
 ## What it does (MVP)
 - Reads every recipe of a profession (learned and unlearned) when you open the profession window, and caches it per character.
@@ -10,7 +10,7 @@ Type `/cw` to open the profit table. `/cw debug` prints what is cached. `/cw mar
 - Sells-for is the AH price after the 5% cut, or the vendor sell price when that is higher.
 - Unlearned recipes you've seen at a trainer show the skill they need, the fee and how many crafts it takes to pay off.
 - A missing price is never counted as 0: the row shows `?` instead of a fake profit.
-- **Item tooltips**: a CraftWise section (mark, vendor/AH advice, used in, your skill-ups); each line, Always / Only with Shift, and the whole section can be switched in the settings (gear button or `/cw settings`).
+- **Item tooltips**: a CraftWise section (mark, vendor/AH advice, used in, your skill-ups); each line, Always / Only with Shift, and the whole section can be switched in the settings (gear button or `/craftwise settings`).
 - **Level**: which known recipe levels the profession for the least money. Per skill-up = (reagents - sale) / chance; sale is the AH price after the 5% cut or the vendor price (AH rule), chance is orange 100%, grey 0%, yellow/green measured from your own recorded crafts.
 - **Upgrades**: items from your known recipes that beat what you wear (higher item level, or same level with more armour). Right-click to dismiss a suggestion, "Show dismissed" to bring it back.
 - **Bags**: vendor or AH for every item you carry, and which recipes use it ("Used in" column, filter, "Recipes using this"); click an item (or middle-click it in your bags) to mark it Keep, Junk or Normal (remembered). "Sort bags" orders the real bags; at a vendor "Sell junk" sells everything marked in one click.
