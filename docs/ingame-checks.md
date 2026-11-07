@@ -110,6 +110,39 @@ Report Lua errors with BugSack + BugGrabber.
 - Gear button (top right of the CraftWise window) or `/cw settings`: on/off, Always / Only with Shift (tooltip redraws when Shift is pressed), each line on/off.
 - Check: TooltipDataProcessor post-call works for bag items in Forever; GameTooltip:RefreshData redraws on Shift.
 
+## Market recorder (#26 phase 1)
+New file and new SavedVariables: full game restart. Nothing changes in the profit numbers yet; `/cw market <itemID or link>` is the only output. Saved data is `CraftWiseMarketDB` in `WTF/Account/<account>/SavedVariables/CraftWise.lua` (copy it only with the game closed).
+
+House detection:
+- [ ] At the AH in Orgrimmar and Thunder Bluff, search an item you carry: `/cw market <id>` lists it under "Horde AH".
+- [ ] Same at Booty Bay, Gadgetzan and Everlook: it lists under that town, and the Horde AH line is unchanged. If it lands under "Horde AH", the zone text differs from `NEUTRAL_ZONES` in `Market.lua`: run `/dump GetRealZoneText(), GetSubZoneText()` there and report it.
+- [ ] `/dump GetRealmName()` still returns the ruleset name ("PvP"), and `CraftWiseMarketDB.houses` has `PvP|H` and `PvP|N:BootyBay` style keys.
+
+What can be seen from other addons' scans:
+- [ ] Auctionator Full Scan: `/cw market <id>` for a reagent shows "cheapest: 3 @ ... · 25 @ ..." and `CraftWiseMarketDB.scans[<house>]` ends with `kind = "full"`, `source = "auctionator"`. This proves a second addon receives `REPLICATE_ITEM_LIST_UPDATE` and can read the list.
+- [ ] The game doesn't stutter during or after the scan. The scan log's `items` is about the number of scope items on sale.
+- [ ] Close the AH during a full scan: no new `kind = "full"` entry and no "disappeared" count from it.
+- [ ] One scan is one log entry (the event doesn't fire twice in a way that stores it twice).
+- [ ] Auctionator shopping search and Blizzard's own search, for a commodity and for gear: one new point each, not one per event.
+- [ ] Blizzard browse list: only `last` changes (no tiers line change) for items in scope.
+
+Prices:
+- [ ] A stack of gear or other non-commodity with quantity above 1: compare the Blizzard list with `/cw market`. `buyoutAmount` is treated as per unit in searches, and the full scan divides by stack. Both must give the same unit price. If not, report it: searches would then need dividing too.
+- [ ] Random-suffix gear ("of the Bear"): `/cw market <link>` lists `item <id>:<suffix>`, and two suffixes of one item stay apart. Check the same key from a search and from a full scan.
+- [ ] Gear not yet in the item cache right after login, full scan: it appears after the scan (links load within 5 s) or stays out, never under a wrong key.
+
+Scope:
+- [ ] Loot something new, buy from a vendor, take something from the bank: `CraftWiseMarketDB.scope.items[id]` is true after `/reload`.
+- [ ] Bank: `Enum.BagIndex` covers the bank on this client (bank items enter the scope when the window opens).
+- [ ] Items from your professions, known or not, are in scope after login. Engineering and Mining items too, without an alt logged in.
+- [ ] Loot during combat raises no Lua error (chat payloads can be secret values on 12.x).
+
+History and size:
+- [ ] Three days after the first scan, `/cw market` shows `typical: ...` instead of "too little history". Today's scans count once the AH has closed.
+- [ ] Check an item with many small listings (a popular herb): the typical is near where most units sit, not at the 8th tier.
+- [ ] After a week of use: size of `CraftWise.lua`, and login and `/reload` time compared with before. The test budget is 5 MB at the expected load.
+- [ ] Open and close the AH several times: no stutter on close. Right after login a prune runs over about 3 seconds (20 entries per frame).
+
 ## Baganator
 - Baganator settings > junk: "CraftWise" listed (auto-selected if no other plugin is active); marked items show Baganator's junk coin; marking/unmarking refreshes at once.
 - Baganator settings > sorting: "CraftWise" mode; Baganator's sort button sorts the backpack like Sort bags (bank untouched).
