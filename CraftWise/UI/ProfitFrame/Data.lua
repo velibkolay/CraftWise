@@ -93,6 +93,7 @@ local function FilteredRows()
 			if learnView then
 				r.where = ns.RecipeWhere(r.recipeID)
 				r.whereText = r.where[1] and r.where[1].text or nil
+				r.whereLabel = r.where[1] and r.where[1].origin == "seen" and r.where[1].label or nil
 			end
 			out[#out + 1] = r
 		end

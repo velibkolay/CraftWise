@@ -24,6 +24,7 @@ Market.lua
 Profit.lua
 Recipes.lua
 Trainer.lua
+SourceRecorder.lua
 Crafts.lua
 Bags.lua
 BagSort.lua

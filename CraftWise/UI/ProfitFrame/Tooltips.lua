@@ -283,7 +283,8 @@ local function ShowTooltip(row)
 			for i = 1, math.min(6, #where) do
 				local w = where[i]
 				local color = w.own == false and C.info or ""
-				GameTooltip:AddLine("  " .. color .. w.text .. (w.own == false and (" (" .. (w.faction == "H" and "Horde" or "Alliance") .. ")|r") or ""), 0.9, 0.9, 0.9, true)
+				GameTooltip:AddLine("  " .. color .. w.text .. (w.own == false and (" (" .. (w.faction == "H" and "Horde" or "Alliance") .. ")|r") or "")
+					.. (w.label and Muted("  [" .. w.label .. "]") or ""), 0.9, 0.9, 0.9, true)
 			end
 			if #where > 6 then
 				GameTooltip:AddLine(("  +%d more"):format(#where - 6), 0.6, 0.6, 0.6)

@@ -239,7 +239,11 @@ local function Trainer(recipeID)
 	end
 end
 
+-- Bundled data merged with what you saw in game (SourceRecorder.lua): recorded > manual entry > QuestieDB.
 local function SourceEntry(recipeID)
+	if ns.Sources then
+		return ns.Sources.Merged(recipeID)
+	end
 	return ns.SourceData and ns.SourceData[recipeID]
 end
 
@@ -275,7 +279,7 @@ function ns.LearnCost(recipeID)
 		return nil
 	end
 	for _, v in ipairs(data.vendors or {}) do
-		if v.price and not v.currency then
+		if v.price and not v.currency and not v.costs then
 			return v.price, "vendor"
 		end
 	end
@@ -292,7 +296,9 @@ end
 function ns.RecipeWhere(recipeID)
 	local lines = {}
 	if Trainer(recipeID) then
-		lines[#lines + 1] = { kind = "trainer", text = "Trainer" }
+		local seen = ns.db and ns.db.trainer[recipeID]
+		lines[#lines + 1] = { kind = "trainer", text = "Trainer", origin = seen and "seen" or "static",
+			label = seen and "seen by you" or "bundled data" }
 	end
 	local data = SourceEntry(recipeID)
 	if data then
@@ -301,9 +307,17 @@ function ns.RecipeWhere(recipeID)
 		local own, other = {}, {}
 		for _, v in ipairs(data.vendors or {}) do
 			local cost = v.currency and ("%s %s"):format(v.price or "?", v.currency) or (v.price and ns.FormatMoney(v.price))
+			if v.costs then
+				local parts = { v.price and ns.FormatMoney(v.price) or nil }
+				for _, c in ipairs(v.costs) do
+					parts[#parts + 1] = ("%d %s"):format(c.amount, c.name)
+				end
+				cost = table.concat(parts, " + ")
+			end
 			local text = ("Vendor: %s%s%s"):format(v.name or "?", v.zone and (" (" .. v.zone .. ")") or "", cost and (" - " .. cost) or "")
 			local isOwn = not v.faction or mine == nil or v.faction == mine
-			table.insert(isOwn and own or other, { kind = "vendor", text = text, faction = v.faction, own = isOwn })
+			table.insert(isOwn and own or other, { kind = "vendor", text = text, faction = v.faction, own = isOwn,
+				origin = v.seen and "seen" or "static", label = ns.Sources and ns.Sources.Label(v) or "bundled data" })
 		end
 		for _, e in ipairs(own) do
 			lines[#lines + 1] = e
@@ -313,18 +327,21 @@ function ns.RecipeWhere(recipeID)
 		end
 		for _, d in ipairs(data.drops or {}) do
 			local chance = d.chance and (" %.1f%%"):format(d.chance) or ""
-			lines[#lines + 1] = { kind = "drop", text = ("Drop: %s%s%s"):format(d.name or "?", d.zone and (" (" .. d.zone .. ")") or "", chance) }
+			local name = d.name or (d.key and d.key:gsub(":", " #")) or "?"
+			lines[#lines + 1] = { kind = "drop", text = ("Drop: %s%s%s"):format(name, d.zone and (" (" .. d.zone .. ")") or "", chance),
+				origin = d.seen and "seen" or "static", label = ns.Sources and ns.Sources.Label(d) or "bundled data" }
 		end
 		if data.world then
-			lines[#lines + 1] = { kind = "drop", text = "World drop" }
+			lines[#lines + 1] = { kind = "drop", text = "World drop", origin = "static", label = data.src or "bundled data" }
 		end
 		for _, q in ipairs(data.quests or {}) do
-			lines[#lines + 1] = { kind = "quest", text = "Quest: " .. (q.name or "?") }
+			lines[#lines + 1] = { kind = "quest", text = "Quest: " .. (q.name or "?"), origin = q.seen and "seen" or "static",
+				label = ns.Sources and ns.Sources.Label(q) or "bundled data" }
 		end
 		if data.item then
 			local ah = ns.GetAuctionPrice(data.item)
 			if ah then
-				lines[#lines + 1] = { kind = "auction", text = "AH: " .. ns.FormatMoney(ah) }
+				lines[#lines + 1] = { kind = "auction", text = "AH: " .. ns.FormatMoney(ah), origin = "auction", label = "Auctionator" }
 			end
 		end
 	end
