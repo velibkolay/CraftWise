@@ -121,6 +121,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 		ns.Notify("BAGS_CHANGED")
 		return
 	end
+	local marketArg = msg:match("^market%s*(.*)$")
+	if marketArg and ns.Market then
+		ns.Market.Slash(marketArg)
+		return
+	end
 	if msg == "settings" or msg == "config" then
 		ns.ToggleSettings()
 		return

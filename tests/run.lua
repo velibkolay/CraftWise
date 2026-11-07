@@ -36,6 +36,7 @@ function LoadAddon(opts)
 		end
 	end
 	if opts and opts.savedDB then CraftWiseDB = opts.savedDB end
+	if opts and opts.savedMarket then CraftWiseMarketDB = opts.savedMarket end
 	stub.Fire("ADDON_LOADED", "CraftWise")
 	return ns, stub
 end
@@ -60,7 +61,7 @@ end
 baseline = {}
 for k in pairs(_G) do baseline[k] = true end
 
-local specs = { "profit_spec", "prices_spec", "recipes_spec", "trainer_spec", "money_spec", "ui_spec", "data_spec", "bags_spec", "crafts_spec", "upgrades_spec", "music_spec", "video_spec", "bagsort_spec", "junk_spec", "usedin_spec", "tooltip_spec", "leveling_spec", "api_audit_spec" }
+local specs = { "profit_spec", "prices_spec", "recipes_spec", "trainer_spec", "money_spec", "ui_spec", "data_spec", "bags_spec", "crafts_spec", "upgrades_spec", "music_spec", "video_spec", "bagsort_spec", "junk_spec", "usedin_spec", "tooltip_spec", "leveling_spec", "market_spec", "api_audit_spec" }
 for _, spec in ipairs(specs) do
 	print(spec)
 	dofile("tests/" .. spec .. ".lua")

@@ -259,4 +259,41 @@ end
 function GetCursorInfo() return stub.cursor and "item" or nil end
 function ClearCursor() stub.cursor = nil end
 
+-- Where the player stands (house detection).
+stub.faction, stub.realm, stub.zone, stub.subzone, stub.locale = "Horde", "PvP", "Orgrimmar", "", "enUS"
+function UnitFactionGroup() return stub.faction end
+function GetRealmName() return stub.realm end
+function GetRealZoneText() return stub.zone end
+function GetSubZoneText() return stub.subzone end
+function GetLocale() return stub.locale end
+function UnitGUID() return "Player-1-SELF" end
+
+-- Auction house. stub.replicate = { { itemID, count, buyout, link, owner } } (the client's list is
+-- 0-based). stub.commodity[itemID] = { rows = { { unitPrice, quantity, owners } }, total, full }.
+-- stub.itemSearch[itemID or "itemID:suffix"] = { rows = { { buyoutAmount, quantity } }, total, full }.
+stub.replicate, stub.commodity, stub.itemSearch, stub.browse = {}, {}, {}, {}
+stub.missingItems = {}
+C_Item.DoesItemExistByID = function(id) return not stub.missingItems[id] end
+local function SearchOf(key)
+	local suffix = key.itemSuffix
+	return stub.itemSearch[(suffix and suffix ~= 0) and (key.itemID .. ":" .. suffix) or key.itemID] or { rows = {} }
+end
+C_AuctionHouse = {
+	GetNumReplicateItems = function() return #stub.replicate end,
+	GetReplicateItemInfo = function(i)
+		local r = stub.replicate[i + 1]
+		return nil, nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, r.owner, r.owner, 0, r.itemID, r.link ~= nil
+	end,
+	GetReplicateItemLink = function(i) return stub.replicate[i + 1].link end,
+	GetNumCommoditySearchResults = function(id) return #(stub.commodity[id] or { rows = {} }).rows end,
+	GetCommoditySearchResultInfo = function(id, i) return stub.commodity[id].rows[i] end,
+	GetCommoditySearchResultsQuantity = function(id) return (stub.commodity[id] or {}).total or 0 end,
+	HasFullCommoditySearchResults = function(id) return (stub.commodity[id] or {}).full ~= false end,
+	GetNumItemSearchResults = function(key) return #SearchOf(key).rows end,
+	GetItemSearchResultInfo = function(key, i) return SearchOf(key).rows[i] end,
+	GetItemSearchResultsQuantity = function(key) return SearchOf(key).total or 0 end,
+	HasFullItemSearchResults = function(key) return SearchOf(key).full ~= false end,
+	GetBrowseResults = function() return stub.browse end,
+}
+
 return stub

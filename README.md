@@ -2,7 +2,7 @@
 
 WoW: Forever addon: crafting profit for every recipe you know **or can learn**.
 
-Type `/cw` to open the profit table. `/cw debug` prints what is cached.
+Type `/cw` to open the profit table. `/cw debug` prints what is cached. `/cw market <itemID or link>` prints the prices recorded per auction house.
 
 ## What it does (MVP)
 - Reads every recipe of a profession (learned and unlearned) when you open the profession window, and caches it per character.
