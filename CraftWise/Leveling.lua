@@ -3,8 +3,9 @@
 -- For every learned recipe at your current skill:
 --   chance p      chance that one craft gives a skill point (see Chance below)
 --   cost C        reagents at the cheapest buy price (vendor or AH), as in the Profit view
---   sale S        what the crafted item brings: AH price after the 5% cut when the AH rule says
---                 the AH is worth it (and the item isn't soulbound), otherwise the vendor price
+--   sale S        what the crafted item brings: AH price (profit house and basis, #26) after that
+--                 house's cut when the AH rule says the AH is worth it (and the item isn't
+--                 soulbound), otherwise the vendor price. No AH sale where the cut is unverified.
 --   net           C - S per craft (negative = the craft makes money)
 --   crafts/point  1 / p
 --   per point     net / p = expected money spent (or earned, when negative) per skill point
@@ -131,9 +132,12 @@ function Leveling.Sale(output)
 	local q = output.quantity or 1
 	local each = ns.GetVendorSellPrice(output.itemID)
 	local vendor = each and each > 0 and math.floor(each * q) or nil
-	local ah = not Soulbound(output.itemID) and ns.GetAuctionPrice(output.itemID) or nil
-	local ahNet = ah and math.floor(ah * (1 - ns.AH_CUT) * q) or nil
-	local details = { vendor = vendor, ahNet = ahNet, ahGross = ah and math.floor(ah * q) or nil }
+	local quote = not Soulbound(output.itemID) and ns.AuctionQuote(output.itemID) or nil
+	local ah = quote and quote.copper
+	local cut = quote and ns.AuctionCut(quote)
+	local ahNet = ah and cut and math.floor(ah * (1 - cut) * q) or nil
+	local details = { vendor = vendor, ahNet = ahNet, ahGross = ah and math.floor(ah * q) or nil, cut = cut,
+		label = quote and quote.label, cutUnverified = ah and not cut or nil }
 	if ahNet and (not vendor or ns.AuctionWorthIt(ahNet, vendor)) then
 		return ahNet, "auction", details
 	elseif vendor then

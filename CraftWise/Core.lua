@@ -62,13 +62,16 @@ local DB_DEFAULTS = {
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
-	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true } },
+	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true } },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
 		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
 		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
-		menuClick = "middle" }, -- item menu in the bags: "middle" | "altright" | "off" -- Bags: AH only when it pays this much more than a vendor
+		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
+		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |
+		-- "BootyBay" | "Gadgetzan" | "Everlook".
+		priceBasis = "typical", priceHouse = "faction" }, -- ahMin*: Bags, AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,

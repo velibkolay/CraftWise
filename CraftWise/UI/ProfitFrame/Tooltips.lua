@@ -6,6 +6,60 @@ local BEST_TEXT, SKILL_COLORS = PF.BEST_TEXT, PF.SKILL_COLORS
 local state = PF.state
 local Money, Muted, ItemName, StatusLine, View = PF.Money, PF.Muted, PF.ItemName, PF.StatusLine, PF.View
 
+local WARN = C.warn
+
+-- Where a price came from: "vendor", or the auction label ("typical · Horde AH",
+-- "Auctionator (house unknown)"), plus a thin-market mark.
+local function PriceLabel(line)
+	if line.source == "vendor" then
+		return Muted("vendor")
+	end
+	return Muted(line.label or "AH") .. (line.thin and (" " .. WARN .. "thin|r") or "")
+end
+
+local function SellText(r)
+	if not r.sellsFor then
+		return ns.Market.NO_DATA
+	end
+	if r.sellSource == "vendor" then
+		return ("%s  %s"):format(Money(r.sellsFor), Muted("vendor"))
+	end
+	local how = r.cutUnverified and (WARN .. "gross, cut unverified|r")
+		or Muted(("after %g%% cut"):format((r.sellCut or 0) * 100))
+	return ("%s  %s  %s"):format(Money(r.sellsFor), how, PriceLabel({ label = r.sellLabel, thin = r.sellThin }))
+end
+
+local function AddLines(lines, r, g, b)
+	for _, l in ipairs(lines) do
+		GameTooltip:AddDoubleLine(l[1], l[2], r or 0.8, g or 0.8, b or 0.8, 1, 1, 1)
+	end
+end
+
+-- Market per item (#26 phase 2): each reagent at the profit house with the best house for one craft's
+-- quantity, then the crafted item in detail with the best house to sell and the other houses.
+local function AddMarketSection(r)
+	local buy = {}
+	for _, line in ipairs(r.reagents or {}) do
+		for _, l in ipairs(ns.MarketLines(line.itemID, { mode = "buy", need = line.quantity, name = ItemName(line.itemID) })) do
+			buy[#buy + 1] = l
+		end
+	end
+	local sell = r.outputItemID and ns.MarketLines(r.outputItemID, { mode = "sell" }) or {}
+	if #buy == 0 and #sell == 0 then
+		return
+	end
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("Auction houses  " .. Muted("prices: " .. PF.PriceBasisText()), 1, 0.82, 0)
+	if #buy > 0 then
+		GameTooltip:AddLine("Reagents, one craft", 0.9, 0.9, 0.9)
+		AddLines(buy)
+	end
+	if #sell > 0 then
+		GameTooltip:AddLine("Crafted item", 0.9, 0.9, 0.9)
+		AddLines(sell)
+	end
+end
+
 local function ShowBagTooltip(row, r)
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	if GameTooltip.SetItemByID then
@@ -183,14 +237,18 @@ local function ShowLevelTooltip(row, r)
 	for _, line in ipairs(r.reagents or {}) do
 		local left = ("  %d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
-			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), Muted(line.source == "vendor" and "vendor" or "AH")), 1, 1, 1, 1, 1, 1)
+			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), PriceLabel(line)), 1, 1, 1, 1, 1, 1)
 		else
 			GameTooltip:AddDoubleLine(left, "no price", 1, 1, 1, 1, 0.4, 0.4)
 		end
 	end
 	local d = r.saleDetails or {}
 	if r.saleSource == "auction" then
-		GameTooltip:AddDoubleLine("  Sale: AH after 5% cut", ("%s  %s"):format(Money(r.saleValue), Muted("(" .. Money(d.ahGross or 0) .. " - 5%)")), 1, 1, 1, 0.3, 0.82, 0.55)
+		local pct = ("%g%%"):format((d.cut or 0) * 100)
+		GameTooltip:AddDoubleLine("  Sale: AH after " .. pct .. " cut", ("%s  %s"):format(Money(r.saleValue), Muted("(" .. Money(d.ahGross or 0) .. " - " .. pct .. ")")), 1, 1, 1, 0.3, 0.82, 0.55)
+		if d.label then
+			GameTooltip:AddLine("    " .. d.label, 0.55, 0.55, 0.6)
+		end
 		if d.vendor then
 			GameTooltip:AddDoubleLine("  (vendor would pay)", Money(d.vendor), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
 		end
@@ -203,6 +261,10 @@ local function ShowLevelTooltip(row, r)
 		GameTooltip:AddLine("  No item made: sale 0.", 0.8, 0.8, 0.8)
 	else
 		GameTooltip:AddLine("  Sale price unknown: counted as 0.", 1, 0.6, 0.3)
+	end
+	if d.cutUnverified then
+		GameTooltip:AddLine(("  AH %s gross (%s): cut unverified there, so not counted."):format(Money(d.ahGross or 0), d.label or "?"),
+			1, 0.6, 0.3, true)
 	end
 	if r.net then
 		GameTooltip:AddDoubleLine("  Net per craft (reagents - sale)", (r.net <= 0 and C.good .. "+" .. Money(-r.net) or C.bad .. "-" .. Money(r.net)) .. "|r",
@@ -303,17 +365,19 @@ local function ShowTooltip(row)
 	for _, line in ipairs(r.reagents) do
 		local left = ("%d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
-			local src = line.source == "vendor" and "vendor" or "AH"
-			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), Muted(src)), 1, 1, 1, 1, 1, 1)
+			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), PriceLabel(line)), 1, 1, 1, 1, 1, 1)
 		else
-			GameTooltip:AddDoubleLine(left, "no price", 1, 1, 1, 1, 0.4, 0.4)
+			GameTooltip:AddDoubleLine(left, ns.Market.NO_DATA, 1, 1, 1, 1, 0.4, 0.4)
 		end
 	end
 	if r.outputItemID then
 		GameTooltip:AddLine(" ")
-		local sells = r.sellsFor and ("%s  %s"):format(Money(r.sellsFor), Muted(r.sellSource == "vendor" and "vendor" or "AH, after 5% cut")) or "no price"
-		GameTooltip:AddDoubleLine("Sells for", sells, 1, 0.82, 0, 1, 1, 1)
+		GameTooltip:AddDoubleLine("Sells for", SellText(r), 1, 0.82, 0, 1, 1, 1)
+		if r.cutUnverified then
+			GameTooltip:AddLine("The AH cut at this house isn't measured yet, so no profit is shown (it is never assumed).", 1, 0.6, 0.3, true)
+		end
 	end
+	AddMarketSection(r)
 	if r.oldestAge and r.oldestAge > 1 then
 		GameTooltip:AddLine(("Oldest price is %d days old."):format(r.oldestAge), 1, 0.6, 0.3)
 	end

@@ -114,27 +114,33 @@ local function RenderSummary(ids)
 		if state.hidden > 0 then
 			text = text .. Muted(("  ·  %d hidden by filters"):format(state.hidden))
 		end
-	elseif not ns.HasAuctionator() then
-		text = C.warn .. "Auctionator not found.|r " .. Muted("Only vendor prices are used. Install Auctionator and run a Full Scan at the auction house.")
+	elseif not ns.HasAuctionator() and not ns.Market.HasAnyData() then
+		text = C.warn .. "No auction prices yet.|r " .. Muted("Only vendor prices are used. Search or run a scan at an auction house (Auctionator's Full Scan works too).")
 	else
-		local profitable, priced, unpriced = 0, 0, 0
+		local profitable, priced, unpriced, uncut = 0, 0, 0, 0
 		for _, r in ipairs(state.data) do
 			if r.profit then
 				priced = priced + 1
 				if r.profit > 0 then
 					profitable = profitable + 1
 				end
+			elseif r.cutUnverified then
+				uncut = uncut + 1
 			elseif not r.noItemOutput then
 				unpriced = unpriced + 1
 			end
 		end
 		text = ("%s%d|r of %d priced recipes make a profit"):format(C.good, profitable, priced)
+		if uncut > 0 then
+			text = text .. ("  ·  %s%d|r %s"):format(C.warn, uncut, Muted("sell where the AH cut is unverified"))
+		end
 		if unpriced > 0 then
 			text = text .. Muted(("  ·  %d without a price (reagent or item not on the AH)"):format(unpriced))
 		end
 		if state.hidden > 0 then
 			text = text .. Muted(("  ·  %d hidden by filters"):format(state.hidden))
 		end
+		text = text .. "\n" .. Muted("Auction prices: " .. PF.PriceBasisText() .. ", else " .. ns.AUCTIONATOR_LABEL .. ". Change them in Settings: gear button.")
 	end
 	PF.frame.summary:SetText(text)
 end
@@ -335,7 +341,7 @@ local function RenderRow(row, r, index)
 	row.icon:SetTexture(r.icon or 134400)
 	local color = SKILL_COLORS[r.skillColor] or "|cffffffff"
 	row.name:SetText(color .. (r.name or ("Recipe " .. r.recipeID)) .. "|r")
-	row.status:SetText(StatusLine(r))
+	row.status:SetText(StatusLine(r) .. (r.thin and ("  " .. C.warn .. "thin market|r") or ""))
 
 	local cells = row.cells
 	if r.costComplete then
@@ -354,6 +360,8 @@ local function RenderRow(row, r, index)
 
 	if r.profit then
 		cells.profit:SetText((r.profit >= 0 and C.good .. "+" or C.bad) .. Money(r.profit) .. "|r")
+	elseif r.cutUnverified then
+		cells.profit:SetText(C.warn .. "cut unverified|r")
 	else
 		cells.profit:SetText(Muted("-"))
 	end

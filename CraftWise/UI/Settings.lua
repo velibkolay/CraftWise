@@ -1,5 +1,6 @@
 -- Settings panel: opened with the gear button in the CraftWise window or /craftwise settings.
 -- Item tooltip section: on/off, always or only with Shift, and each line on/off.
+-- Profit prices (#26 phase 2): price basis and the auction house profit uses.
 local _, ns = ...
 local Style = ns.Style
 local C = Style.colors
@@ -14,7 +15,7 @@ end
 local function Build(parent)
 	panel = CreateFrame("Frame", "CraftWiseSettings", parent or UIParent, "BackdropTemplate")
 	panel:SetFrameStrata("DIALOG")
-	panel:SetSize(300, 240)
+	panel:SetSize(316, 240)
 	panel:EnableMouse(true)
 	Style.Panel(panel)
 	table.insert(UISpecialFrames, "CraftWiseSettings")
@@ -77,7 +78,42 @@ local function Build(parent)
 		end)
 		panel.clicks[c[1]] = b
 	end
-	panel:SetHeight(-(y - 18) + 36)
+
+	-- Profit prices: basis and house. A neutral house is selectable once something was recorded there.
+	y = y - 52
+	local priceHead = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	priceHead:SetPoint("TOPLEFT", 12, y)
+	priceHead:SetText(C.muted .. L["Profit prices"] .. "|r")
+	panel.basis = {}
+	for i, c in ipairs({ { "typical", L["Typical"] }, { "current", L["Current lowest"] } }) do
+		local b = Style.Button(panel, 142, 22, c[2])
+		b:SetPoint("TOPLEFT", 12 + (i - 1) * 150, y - 18)
+		b:SetScript("OnClick", function()
+			ns.db.settings.priceBasis = c[1]
+			panel.render()
+			ns.Notify("PRICES_CHANGED")
+		end)
+		panel.basis[c[1]] = b
+	end
+	panel.houses = {}
+	for i, choice in ipairs(ns.Market.CHOICES) do
+		local b = Style.Button(panel, 70, 22, "")
+		b:SetPoint("TOPLEFT", 12 + (i - 1) * 74, y - 46)
+		b:SetScript("OnClick", function()
+			if choice ~= "faction" and not ns.Market.HasData((ns.Market.HouseFor(choice))) then
+				return -- "no data": nothing recorded at that house yet
+			end
+			ns.db.settings.priceHouse = choice
+			panel.render()
+			ns.Notify("PRICES_CHANGED")
+		end)
+		panel.houses[choice] = b
+	end
+	panel.houseHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	panel.houseHint:SetPoint("TOPLEFT", 12, y - 74)
+	panel.houseHint:SetWidth(292)
+	panel.houseHint:SetJustifyH("LEFT")
+	panel:SetHeight(-(y - 74) + 44)
 
 	function panel.render()
 		for key, b in pairs(panel.clicks) do
@@ -93,6 +129,27 @@ local function Build(parent)
 		end
 		panel.always:SetAlpha(t.enabled and 1 or 0.4)
 		panel.shift:SetAlpha(t.enabled and 1 or 0.4)
+		local basis, house = ns.PriceSettings()
+		for key, b in pairs(panel.basis) do
+			b:SetSelected(key == basis)
+		end
+		local missing = {}
+		for _, choice in ipairs(ns.Market.CHOICES) do
+			local b = panel.houses[choice]
+			local key, label = ns.Market.HouseFor(choice)
+			local has = key and ns.Market.HasData(key)
+			b:SetLabel(label or L["Own faction"])
+			b:SetSelected(choice == house)
+			b:SetAlpha((has or choice == "faction") and 1 or 0.4)
+			if not has then
+				missing[#missing + 1] = label or L["Own faction"]
+			end
+		end
+		local hint = L["Auction house for profit."]
+		if #missing > 0 then
+			hint = hint .. " " .. L["No data yet:"] .. " " .. table.concat(missing, ", ")
+		end
+		panel.houseHint:SetText(C.muted .. hint .. "|r")
 	end
 	panel:Hide()
 end
