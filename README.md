@@ -14,15 +14,15 @@ Type `/cw` to open the profit table. `/cw debug` prints what is cached.
 - **Level**: which known recipe levels the profession for the least money. Per skill-up = (reagents - sale) / chance; sale is the AH price after the 5% cut or the vendor price (AH rule), chance is orange 100%, grey 0%, yellow/green measured from your own recorded crafts.
 - **Upgrades**: items from your known recipes that beat what you wear (higher item level, or same level with more armour). Right-click to dismiss a suggestion, "Show dismissed" to bring it back.
 - **Bags**: vendor or AH for every item you carry, and which recipes use it ("Used in" column, filter, "Recipes using this"); click an item (or middle-click it in your bags) to mark it Keep, Junk or Normal (remembered). "Sort bags" orders the real bags; at a vendor "Sell junk" sells everything marked in one click.
-- **Music**: pick a song per profession; it plays while you cast that profession and stops when the cast ends. Put `.mp3`/`.ogg` files in `Interface/AddOns/CraftWise_Music/Songs/`, restart the game, then click a profession in the Music tab and add the file by name (plays from the start each cast). To resume where it stopped, split the song into chunks: `python3 tools/music_split.py "<WoW>/_classic_beta_/Interface/AddOns" song.mp3` (needs ffmpeg). `CraftWise_Music` is your own folder, so CraftWise updates never delete your songs.
+- **Music**: pick a song per profession; it plays while you cast that profession and stops when the cast ends. Put `.mp3`/`.ogg` files in `Interface/AddOns/CraftWise_Music/Songs/`, restart the game, then click a profession in the Music tab and add the file by name (plays from the start each cast). To resume where it stopped, split the song into chunks: `python3 tools/music_split.py "<WoW>/_forever_/Interface/AddOns" song.mp3` (needs ffmpeg). `CraftWise_Music` is your own folder, so CraftWise updates never delete your songs.
 - **Skill-up log**: every craft is recorded with your skill and whether it gave a point, to measure skill-up chances in game (#15). Recipe tooltips show the yellow and grey thresholds.
 
 ## Bundled data
-`CraftWise/Data/Recipes.lua` and `Data/Vendor.lua` come unchanged from [cjber/skillup-forever](https://github.com/cjber/skillup-forever) (GPL-3.0). Both are generated from the WoW: Forever client's own DB2 tables (via wago.tools): recipe reagents and outputs, item sell prices, and vendor buy prices (the list of vendor-sold reagents is from LibPeriodicTable, LGPL-2.1). Prices seen at a merchant in game always win.
+`CraftWise/Data/Recipes.lua` and `Data/Vendor.lua` are generated from the WoW: Forever client's own DB2 tables (via wago.tools) by `tools/gen_recipes.py` and `tools/gen_vendor.py`, adapted from [cjber/skillup-forever](https://github.com/cjber/skillup-forever) (GPL-3.0): recipe reagents and outputs, item sell prices, and vendor buy prices (the list of vendor-sold reagents is from LibPeriodicTable, LGPL-2.1). Prices seen at a merchant in game always win.
 
-`Data/Thresholds.lua` holds only the yellow and grey skill-up thresholds from the client's `SkillLineAbility` table (same source, as extracted by skillup-forever). Orange and green are left out (baseline / derived).
+`Data/Thresholds.lua` (`tools/gen_thresholds.py`, same source) holds the yellow and grey skill-up thresholds from the client's `SkillLineAbility` table. Orange and green are left out (reconciled against Classic data / derived). It also holds that table's `MinSkillLineRank` where it is above 1, which is only a handful of recipes: every other recipe has a placeholder there.
 
-Recipe sources and required skill to learn are **not** bundled until reliable Forever data is available (#11). Until then only first-hand data is used: recipe colours from the client and trainer fees recorded when you open a trainer.
+Recipe sources and a reliable required skill to learn are **not** bundled until verified Forever data is available (#11). Until then only first-hand data is used: recipe colours from the client and trainer fees recorded when you open a trainer.
 
 ## License
 GPL-3.0, see [LICENSE](LICENSE).
@@ -30,8 +30,8 @@ GPL-3.0, see [LICENSE](LICENSE).
 ## Requirements
 - [Auctionator](https://www.curseforge.com/wow/addons/auctionator) (optional but needed for AH prices). Run a full scan at the auction house.
 
-## Install (beta)
-Copy the `CraftWise/` folder to `World of Warcraft/_classic_beta_/Interface/AddOns/`.
+## Install
+Copy the `CraftWise/` folder to `World of Warcraft/_forever_/Interface/AddOns/`.
 
 ## Development
 ```sh

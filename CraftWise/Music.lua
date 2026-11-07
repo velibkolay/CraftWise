@@ -41,7 +41,7 @@ end
 
 -- Where players drop song files. Files added while the game runs are seen after a restart.
 Music.FOLDER = "Interface\\AddOns\\CraftWise_Music\\Songs\\"
-Music.FOLDER_TEXT = "World of Warcraft/_classic_beta_/Interface/AddOns/CraftWise_Music/Songs"
+Music.FOLDER_TEXT = "World of Warcraft/_forever_/Interface/AddOns/CraftWise_Music/Songs"
 
 local function Settings()
 	return ns.db and ns.db.music

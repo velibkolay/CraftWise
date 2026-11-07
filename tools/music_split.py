@@ -5,7 +5,7 @@ WoW can't start a sound in the middle, so each song is cut into short .ogg chunk
 CraftWise plays one after another; "resume" continues from the chunk where it stopped.
 
 Usage:
-    python3 tools/music_split.py "<WoW>/_classic_beta_/Interface/AddOns" CraftWise_Music/Songs/*.mp3 [--chunk 2]
+    python3 tools/music_split.py "<WoW>/_forever_/Interface/AddOns" CraftWise_Music/Songs/*.mp3 [--chunk 2]
 
 A split song keeps the file name, so it replaces the same song added by name in game.
 

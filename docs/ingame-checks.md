@@ -1,6 +1,6 @@
 # In-game checks
 
-Things the headless tests cannot prove. Run after installing, in the Forever beta.
+Things the headless tests cannot prove. Run after installing to `World of Warcraft/_forever_/Interface/AddOns/`, on the live Forever client.
 
 ## Setup
 1. Install CraftWise and Auctionator, `/reload`.
