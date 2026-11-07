@@ -1080,7 +1080,7 @@ function M.Disappeared(itemKey, house)
 end
 
 ----------------------------------------------------------------------------------------------------
--- /cw market <itemID or link>
+-- /craftwise market <itemID or link>
 ----------------------------------------------------------------------------------------------------
 
 local function FormatAge(seconds)
@@ -1126,7 +1126,7 @@ function M.Slash(arg)
 	arg = arg or ""
 	local itemID = tonumber(arg:match("item:(%d+)") or arg:match("^%s*(%d+)%s*$"))
 	if not itemID then
-		ns.Print("usage: /cw market <itemID or item link>")
+		ns.Print("usage: /craftwise market <itemID or item link>")
 		return
 	end
 	local keys = {}
