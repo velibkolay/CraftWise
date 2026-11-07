@@ -8,10 +8,160 @@ ns.TOOLTIP_LINES = {
 	{ key = "advice", label = "Vendor or AH advice" },
 	{ key = "usedIn", label = "Used in (recipes)" },
 	{ key = "skillups", label = "Your skill-ups (crafted items)" },
+	{ key = "market", label = "Auction prices per house" },
 }
 
 local ACCENT = "|cff4fb3ff"
 local MUTED = "|cff8c95a6"
+local WARN = "|cffffc24d"
+
+----------------------------------------------------------------------------------------------------
+-- Auction prices per house (#26 phase 2), shared by item tooltips and the CraftWise window.
+-- Every price comes with its depth (Veli on #26: a cheap price at a thin house says little).
+----------------------------------------------------------------------------------------------------
+
+local function Money(copper)
+	return ns.FormatMoney(copper)
+end
+
+function ns.TypicalText(typical)
+	if typical.status == "ok" then
+		return ("typical %s (%d days)"):format(Money(typical.price), typical.days)
+	elseif typical.status == ns.Market.TOO_LITTLE_HISTORY then
+		return ("%s (%d of %d days)"):format(ns.Market.TOO_LITTLE_HISTORY, typical.days, ns.Market.MIN_HISTORY_DAYS)
+	end
+	return ns.Market.NO_DATA
+end
+
+function ns.ThinText(s)
+	if s.thinWhy == "stack" then
+		return ("cheapest tier %d, under one stack (%d)"):format(s.depth[1].qty, s.stack)
+	end
+	return ("cheapest tier %d of %d%s within +10%%"):format(s.depth[1].qty, s.near, s.nearPartial and "+" or "")
+end
+
+-- min, units, listings or price levels, last seen.
+local function CurrentText(s, itemID, now)
+	local c = s.current
+	local parts = { "min " .. Money(c.min), ("%d units"):format(c.qty or 0) }
+	local kind = c.listings and ns.Market.ListingsLabel(itemID)
+	if kind then
+		parts[#parts + 1] = ("%d %s"):format(c.listings, kind)
+	end
+	parts[#parts + 1] = "seen " .. ns.Market.FormatAge(now - c.t) .. " ago"
+	if not c.listed then
+		parts[#parts + 1] = WARN .. "none in the latest full scan|r"
+	end
+	return table.concat(parts, " · ")
+end
+
+-- One line of figures for a house: min, cheapest tiers, typical, age, thin.
+function ns.MarketShortText(s, now)
+	local c = s.current
+	if not c then
+		return ns.Market.NO_DATA
+	end
+	local parts = { "min " .. Money(c.min) .. (c.listed and "" or " (none listed now)") }
+	if s.depth then
+		parts[#parts + 1] = ns.Market.DepthText(s.depth, 2, Money)
+	end
+	parts[#parts + 1] = s.typical.status == "ok" and ("typ " .. Money(s.typical.price)) or ns.Market.TOO_LITTLE_HISTORY
+	parts[#parts + 1] = ns.Market.FormatAge(now - c.t) .. " ago"
+	local text = table.concat(parts, " · ")
+	if s.thin then
+		text = text .. " · " .. WARN .. "thin|r"
+	end
+	return text
+end
+
+local function BuyText(best, cheapest, need)
+	if best and need > 1 then
+		return ("%s  %d for %s (%s each)"):format(best.label, need, Money(best.cost), Money(best.unit))
+	elseif best then
+		local depth = best.atPrice and ("%d at that price"):format(best.atPrice) or ("%d units listed"):format(best.qty or 0)
+		return ("%s  %s (%s)"):format(best.label, Money(best.unit), depth)
+	elseif cheapest then
+		return ("no house shows %d units; lowest %s at %s (%d there)"):format(need, Money(cheapest.unit), cheapest.label, cheapest.qty or 0)
+	end
+	return "none listed"
+end
+
+local function SellText(best)
+	local basis = ns.BASIS_TEXT[best.basis] .. (best.fallback and (", " .. best.fallback) or "")
+	local listed = ("%d listed there"):format(best.qty)
+	if best.cutUnverified then
+		return ("%s  %s gross (%s) · cut unverified · %s"):format(best.label, Money(best.gross), basis, listed)
+	end
+	local text = ("%s  %s net (%s, %s - %g%% measured cut) · %s"):format(best.label, Money(best.net), basis,
+		Money(best.gross), best.cut * 100, listed)
+	if (best.unverifiedLeft or 0) > 0 then
+		text = text .. (" · %d with cut unverified not compared"):format(best.unverifiedLeft)
+	end
+	return text
+end
+
+-- { left, right } lines. opts.mode:
+--   "full" (item tooltip): the profit house in detail, best to buy (one unit), best to sell, other houses
+--   "sell" (crafted item): the profit house in detail, best to sell, other houses
+--   "buy"  (reagent): the profit house in one line, best to buy opts.need units (one craft)
+-- Only houses this character can use. Nothing when none of them has data.
+function ns.MarketLines(itemID, opts)
+	opts = opts or {}
+	local M = ns.Market
+	local mode = opts.mode or "full"
+	local lines = {}
+	local houses = M and M.UsableHouses(itemID) or {}
+	if #houses == 0 then
+		return lines
+	end
+	local function add(left, right)
+		lines[#lines + 1] = { left, right }
+	end
+	local now = time()
+	local basis = ns.PriceSettings()
+	local selected, selectedLabel = ns.ProfitHouse()
+	local s = selected and M.Snapshot(itemID, selected)
+	local need = math.max(1, opts.need or 1)
+
+	if mode == "buy" then
+		add("  " .. (opts.name or ("item " .. itemID)), (selectedLabel or "?") .. ": " .. (s and ns.MarketShortText(s, now) or M.NO_DATA))
+		local best, cheapest = M.BestToBuy(itemID, need)
+		add(("    best for %d"):format(need), BuyText(best, cheapest, need))
+		return lines
+	end
+
+	if not (s and s.current) then
+		add(selectedLabel or "Profit house", M.NO_DATA)
+	else
+		add(selectedLabel, ns.TypicalText(s.typical))
+		add("  Current", CurrentText(s, itemID, now))
+		if s.depth then
+			local stale = s.depth.t < s.current.t - 60 and (" (%s ago)"):format(M.FormatAge(now - s.depth.t)) or ""
+			add("  Cheapest", M.DepthText(s.depth, 3, Money) .. stale)
+			add("  Within +10% of min", ("%d%s units"):format(s.near, s.nearPartial and "+" or ""))
+		end
+		if s.lo then
+			add("  Last 7 days", ("%s to %s"):format(Money(s.lo), Money(s.hi)))
+		end
+		if s.thin then
+			add("  " .. WARN .. "Thin market|r", ns.ThinText(s))
+		end
+	end
+	if mode == "full" then
+		local best, cheapest = M.BestToBuy(itemID, 1)
+		add("Best to buy", BuyText(best, cheapest, 1))
+	end
+	local sell = M.BestToSell(itemID, basis)
+	if sell then
+		add("Best to sell", SellText(sell))
+	end
+	for _, house in ipairs(houses) do
+		if house.key ~= selected then
+			add("  " .. house.label, ns.MarketShortText(M.Snapshot(itemID, house.key), now))
+		end
+	end
+	return lines
+end
 
 local function Settings()
 	return ns.db and ns.db.tooltip
@@ -104,6 +254,11 @@ function ns.AddTooltipLines(tooltip, itemID)
 		local text = SkillUpLine(itemID)
 		if text then
 			lines[#lines + 1] = { "Your crafts", text }
+		end
+	end
+	if s.lines.market then
+		for _, line in ipairs(ns.MarketLines(itemID, { mode = "full" })) do
+			lines[#lines + 1] = line
 		end
 	end
 	if #lines == 0 then

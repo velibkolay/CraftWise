@@ -1,5 +1,5 @@
 -- Price history per auction house (issue #26, phase 1): recorder, storage, house detection, pruning.
--- Only prices this account saw in game. Nothing here feeds Prices.lua or Profit.lua yet (phase 2).
+-- Only prices this account saw in game. Phase 2 reads it for profit (Prices.lua) and the tooltips.
 --
 -- Why CraftWise records by itself: Auctionator keeps one bucket per realm, so a Booty Bay scan
 -- overwrites the prices of the faction house (evidence on #26).
@@ -704,6 +704,9 @@ local function FlushSearches()
 	for _, read in pairs(list) do
 		read()
 	end
+	if next(list) then
+		ns.Notify("PRICES_CHANGED")
+	end
 end
 
 -- Searching for an item is interacting with it, so it joins the scope. One search fires several
@@ -815,6 +818,7 @@ local function FinishScan(scan)
 	end
 	lastScan = { count = scan.count, t = scan.t }
 	LogScan(scan.house, "full", scan.recorded, scan.source)
+	ns.Notify("PRICES_CHANGED")
 	if not currentHouse then
 		M.Prune()
 	end
@@ -1080,10 +1084,304 @@ function M.Disappeared(itemKey, house)
 end
 
 ----------------------------------------------------------------------------------------------------
+-- Display (phase 2): price per basis and house, depth figures, thin-market flag, best house.
+-- Veli's rule on #26: a cheap price at a thin house doesn't mean the item sells there or that enough
+-- is there to buy, so every price comes with its depth.
+----------------------------------------------------------------------------------------------------
+
+M.NEAR_MIN_SHARE = 0.10 -- "units within +10% of min"
+M.THIN_SHARE = 0.10 -- thin when the cheapest tier holds less than this share of those units
+M.MIN_HISTORY_DAYS = MIN_HISTORY_DAYS
+M.CHOICES = { "faction", "BootyBay", "Gadgetzan", "Everlook" } -- the profit house setting
+
+-- Lowest and highest price seen in the last 7 days: daily aggregates plus raw points and the latest
+-- browse price not aggregated yet. The high end is the dearest stored tier (phase 1's `hi`), not
+-- the dearest minimum. nil when nothing was seen.
+function M.Range(itemKey, house)
+	local entry = db and GetEntry(itemKey, house)
+	if not entry then
+		return nil
+	end
+	local first = DayNumber(time()) - TYPICAL_DAYS + 1
+	local lo, hi
+	local function see(price)
+		if price then
+			lo = (not lo or price < lo) and price or lo
+			hi = (not hi or price > hi) and price or hi
+		end
+	end
+	for day, d in pairs(entry.days) do
+		if day >= first then
+			see(d.lo)
+			see(d.hi)
+		end
+	end
+	for _, point in ipairs(entry.raw) do
+		if DayNumber(point.t) >= first then
+			for i = 1, #point.tiers, 2 do
+				see(point.tiers[i])
+			end
+		end
+	end
+	if entry.last and DayNumber(entry.last.t) >= first then
+		see(entry.last.min)
+	end
+	return lo, hi
+end
+
+-- Units listed at up to min + 10% in a depth list (pure). The second value is true when the stored
+-- tiers end inside that range while more units exist: the real count is at least the first value.
+function M.NearMin(depth)
+	local first = depth and depth[1]
+	if not first then
+		return nil
+	end
+	local limit = first.price * (1 + M.NEAR_MIN_SHARE)
+	local units, stored = 0, 0
+	for _, tier in ipairs(depth) do
+		stored = stored + tier.qty
+		if tier.price <= limit then
+			units = units + tier.qty
+		end
+	end
+	return units, depth[#depth].price <= limit and (depth.total or stored) > stored
+end
+
+-- Thin market (spec on #26), the one definition every view uses (pure): the cheapest tier holds less
+-- than one stack, or less than 10% of the units within +10% of min. `stack` is the item's stack size,
+-- nil when the client hasn't said (then only the share test runs). Returns thin, reason
+-- ("stack" | "share"). A partial +10% count is a lower bound, so a share verdict from it still holds.
+function M.IsThin(depth, stack)
+	local first = depth and depth[1]
+	if not first then
+		return false
+	end
+	if stack and first.qty < stack then
+		return true, "stack"
+	end
+	if first.qty < M.NearMin(depth) * M.THIN_SHARE then
+		return true, "share"
+	end
+	return false
+end
+
+-- Cheapest way to buy `need` units from a depth list (pure): { cost, unit (average, rounded up),
+-- top (dearest tier used), need }, or nil when the stored tiers don't hold that many.
+function M.FillBatch(depth, need)
+	need = math.max(1, need or 1)
+	local left, cost = need, 0
+	for _, tier in ipairs(depth or {}) do
+		local take = math.min(left, tier.qty)
+		cost = cost + take * tier.price
+		left = left - take
+		if left == 0 then
+			return { cost = cost, unit = math.ceil(cost / need), top = tier.price, need = need }
+		end
+	end
+	return nil
+end
+
+-- "3 @ 2s50 · 25 @ 10s" for the cheapest n tiers (pure; money formats copper).
+function M.DepthText(depth, n, money)
+	local parts = {}
+	for i = 1, math.min(n or #depth, #depth) do
+		parts[i] = ("%d @ %s"):format(depth[i].qty, money(depth[i].price))
+	end
+	return table.concat(parts, " · ")
+end
+
+function M.StackSize(itemKey)
+	local itemID = ItemIDOfKey(itemKey)
+	local size = itemID and C_Item.GetItemMaxStackSizeByID and C_Item.GetItemMaxStackSizeByID(itemID)
+	return type(size) == "number" and size > 0 and size or nil
+end
+
+-- What a listings count means: commodities (stackable) list one row per price level (in-game check
+-- on PR #32), other items one row per auction. nil when the stack size isn't known yet.
+function M.ListingsLabel(itemKey)
+	local stack = M.StackSize(itemKey)
+	if not stack then
+		return nil
+	end
+	return stack > 1 and "price levels" or "listings"
+end
+
+-- The house a profit setting means for this character: key and label, nil when realm or faction
+-- can't be read. choice: "faction" (own faction house) | "BootyBay" | "Gadgetzan" | "Everlook".
+function M.HouseFor(choice)
+	local realm = GetRealmName()
+	if not (realm and realm ~= "") then
+		return nil
+	end
+	if NEUTRAL_LABELS[choice] then
+		return realm .. "|N:" .. choice, NEUTRAL_LABELS[choice], "neutral"
+	end
+	local faction = UnitFactionGroup("player")
+	if faction ~= "Horde" and faction ~= "Alliance" then
+		return nil
+	end
+	return realm .. "|" .. faction:sub(1, 1), faction .. " AH", "faction"
+end
+
+function M.HouseLabel(houseKey)
+	local house = db and db.houses[houseKey]
+	return house and house.label or tostring(houseKey)
+end
+
+-- Has anything been recorded at this house (any scan, search or browse)?
+function M.HasData(houseKey)
+	return db ~= nil and db.scans[houseKey] ~= nil and db.scans[houseKey][1] ~= nil
+end
+
+function M.HasAnyData()
+	if not db then
+		return false
+	end
+	for _, list in pairs(db.scans) do
+		if list[1] then
+			return true
+		end
+	end
+	return false
+end
+
+-- The cut measured at a house from own sales (phase 3), nil until then. Never assumed (decision 6).
+function M.MeasuredCut(houseKey)
+	local house = db and db.houses[houseKey]
+	local cut = house and house.cut
+	if cut and (cut.samples or 0) > 0 and cut.rate then
+		return cut.rate
+	end
+	return nil
+end
+
+-- The price at one house by basis ("typical" | "current"): { copper, basis, fallback, days, t }.
+-- Typical with too little history falls back to the current lowest, marked by `fallback`. The current
+-- lowest only counts while the item is listed. nil, why (M.NO_DATA | M.TOO_LITTLE_HISTORY | "not listed").
+function M.Quote(itemKey, house, basis)
+	local current = M.Current(itemKey, house)
+	local listed = current and current.listed and current.min
+	if basis ~= "current" then
+		local typical = M.Typical(itemKey, house)
+		if typical.status == "ok" then
+			return { copper = typical.price, basis = "typical", days = typical.days, t = current and current.t }
+		end
+		if listed then
+			return { copper = current.min, basis = "current", fallback = M.TOO_LITTLE_HISTORY, days = typical.days, t = current.t }
+		end
+		return nil, current and "not listed" or typical.status
+	end
+	if listed then
+		return { copper = current.min, basis = "current", t = current.t }
+	end
+	return nil, current and "not listed" or M.NO_DATA
+end
+
+-- Houses this character can use for an item: its own faction house and the neutral houses of its
+-- realm, faction house first. Records of the other faction or another realm (alts) are left out.
+function M.UsableHouses(itemKey)
+	local own = M.HouseFor("faction")
+	local realm = GetRealmName()
+	local out = {}
+	for _, house in ipairs(M.Houses(itemKey)) do
+		if house.key == own or (realm and house.key:sub(1, #realm + 3) == realm .. "|N:") then
+			out[#out + 1] = house
+		end
+	end
+	return out
+end
+
+-- Everything the tooltip shows for one house.
+function M.Snapshot(itemKey, house)
+	local s = { key = house, label = M.HouseLabel(house), stack = M.StackSize(itemKey) }
+	s.typical = M.Typical(itemKey, house)
+	s.current = M.Current(itemKey, house)
+	local depth = M.Depth(itemKey, house)
+	if depth and depth[1] then
+		s.depth = depth
+		s.near, s.nearPartial = M.NearMin(depth)
+		s.thin, s.thinWhy = M.IsThin(depth, s.stack)
+	end
+	s.lo, s.hi = M.Range(itemKey, house)
+	return s
+end
+
+-- Where to buy: the house where `need` units (one craft batch) cost least, from its cheapest tiers.
+-- need 1 (no recipe context) uses each house's latest lowest price. Returns
+-- { key, label, cost, unit, top, need, atPrice, qty }, or nil plus the cheapest house that can't fill
+-- the batch. atPrice: units at that lowest price when the latest tiers show it; qty: units listed.
+function M.BestToBuy(itemKey, need)
+	need = math.max(1, need or 1)
+	local best, cheapest
+	for _, house in ipairs(M.UsableHouses(itemKey)) do
+		local current = M.Current(itemKey, house.key)
+		if current and current.listed and current.min then
+			local fill
+			if need == 1 then
+				local depth = M.Depth(itemKey, house.key)
+				local first = depth and depth[1]
+				fill = { cost = current.min, unit = current.min, top = current.min, need = 1,
+					atPrice = first and first.price == current.min and first.qty or nil, qty = current.qty }
+			else
+				fill = M.FillBatch(M.Depth(itemKey, house.key), need)
+			end
+			if fill and (not best or fill.cost < best.cost) then
+				fill.key, fill.label = house.key, house.label
+				best = fill
+			end
+			if not cheapest or current.min < cheapest.unit then
+				cheapest = { key = house.key, label = house.label, unit = current.min, qty = current.qty }
+			end
+		end
+	end
+	if best then
+		return best
+	end
+	return nil, cheapest
+end
+
+-- Where to sell: the highest net after a measured cut. Houses whose cut isn't measured can't be
+-- netted; when no house has one, the highest gross price wins and is marked cutUnverified.
+-- Returns { key, label, gross, net, cut, basis, fallback, qty (units listed there now),
+-- cutUnverified, unverifiedLeft } or nil.
+function M.BestToSell(itemKey, basis)
+	local known, unknown = nil, nil
+	local unverified = 0
+	for _, house in ipairs(M.UsableHouses(itemKey)) do
+		local quote = M.Quote(itemKey, house.key, basis)
+		if quote then
+			local cut = M.MeasuredCut(house.key)
+			local current = M.Current(itemKey, house.key)
+			local pick = { key = house.key, label = house.label, gross = quote.copper, basis = quote.basis,
+				fallback = quote.fallback, qty = current and current.listed and current.qty or 0 }
+			if cut then
+				pick.cut, pick.net = cut, math.floor(quote.copper * (1 - cut))
+				if not known or pick.net > known.net then
+					known = pick
+				end
+			else
+				unverified = unverified + 1
+				if not unknown or pick.gross > unknown.gross then
+					unknown = pick
+				end
+			end
+		end
+	end
+	if known then
+		known.unverifiedLeft = unverified -- houses not compared because their cut is unknown
+		return known
+	end
+	if unknown then
+		unknown.cutUnverified = true
+	end
+	return unknown
+end
+
+----------------------------------------------------------------------------------------------------
 -- /craftwise market <itemID or link>
 ----------------------------------------------------------------------------------------------------
 
-local function FormatAge(seconds)
+function M.FormatAge(seconds)
 	if seconds < 3600 then
 		return ("%dm"):format(math.floor(seconds / 60))
 	elseif seconds < 2 * DAY_SECONDS then
@@ -1097,7 +1395,7 @@ local function PrintHouse(itemKey, house)
 	local current = M.Current(itemKey, house.key)
 	if current then
 		ns.Print(("%s: last %s, %d units%s, seen %s ago%s"):format(house.label, ns.FormatMoney(current.min), current.qty,
-			current.listings and (", %d listings"):format(current.listings) or "", FormatAge(now - current.t),
+			current.listings and (", %d %s"):format(current.listings, M.ListingsLabel(itemKey) or "listings") or "", M.FormatAge(now - current.t),
 			current.listed and "" or ", none in the latest full scan"))
 	else
 		ns.Print(house.label .. ": " .. M.NO_DATA)

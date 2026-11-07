@@ -153,6 +153,13 @@ local function StatusLine(r)
 	return color .. table.concat(parts, " · ") .. "|r"
 end
 
+-- "typical · Horde AH": what auction prices in the window are based on (#26 phase 2).
+local function PriceBasisText()
+	local basis = ns.PriceSettings()
+	local _, label = ns.ProfitHouse()
+	return ns.BASIS_TEXT[basis] .. " · " .. (label or "own faction AH")
+end
+
 local function View()
 	local v = Settings().view
 	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
@@ -172,5 +179,5 @@ ns.PF = {
 	ARROW_DOWN = ARROW_DOWN, ARROW_UP = ARROW_UP,
 	rows = rows, tabs = tabs, viewButtons = viewButtons, state = state,
 	Settings = Settings, Money = Money, Muted = Muted, ItemName = ItemName, StatusLine = StatusLine,
-	View = View, ItemView = ItemView,
+	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText,
 }

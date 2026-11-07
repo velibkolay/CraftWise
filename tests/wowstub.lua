@@ -194,6 +194,7 @@ C_Item.GetItemInfoInstant = function(id)
 	return id, nil, nil, item and item.equipLoc or "", item and item.icon, stub.itemClass[id]
 end
 C_Item.GetItemNameByID = function(id) return stub.items[id] and stub.items[id].name end
+C_Item.GetItemMaxStackSizeByID = function(id) return stub.items[id] and stub.items[id].stack end
 
 -- Time and the player's profession list (skill per skill line).
 stub.now = 1000

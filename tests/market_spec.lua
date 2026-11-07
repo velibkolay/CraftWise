@@ -868,7 +868,7 @@ it("Current, Depth and Houses for unknown items", function()
 	eq(M.Disappeared(1, HORDE), 0)
 end)
 
-it("recording leaves Auctionator prices and profit basis alone", function()
+it("recording leaves Auctionator's price alone; profit reads the recording (phase 2)", function()
 	local M, stub, ns = Market({ auctionator = true })
 	InScope({ 5 })
 	stub.ah[5] = 777
@@ -876,7 +876,7 @@ it("recording leaves Auctionator prices and profit basis alone", function()
 	CommoditySearch(stub, 5, { { unitPrice = 100, quantity = 3 } }, 3)
 	eq(M.Current(5, HORDE).min, 100)
 	eq(ns.GetAuctionPrice(5), 777)
-	eq(ns.GetBuyPrice(5).copper, 777)
+	eq(ns.GetBuyPrice(5).copper, 100)
 end)
 
 --------------------------------------------------------------------------------------------- /craftwise market

@@ -14,7 +14,7 @@ Things the headless tests cannot prove. Run after installing to `World of Warcra
 ## Prices (#2)
 - [ ] Rows show cost and sells-for after the Auctionator scan.
 - [ ] Visit a trade goods vendor (thread, dye) and reopen `/craftwise`: those reagents show "vendor" in the tooltip.
-- [ ] Without Auctionator: orange warning line, no Lua error.
+- [ ] Without Auctionator and before any AH visit: orange "No auction prices yet" line, no Lua error. With CraftWise's own recorded prices it goes away even without Auctionator.
 
 ## Trainer (#3)
 - [ ] Open the profession window first (recipe names are matched against it), then your profession trainer, then `/craftwise`: trainer recipes show Trainable / Trainable at N, a learn cost and break-even.
@@ -142,6 +142,26 @@ History and size:
 - [ ] Check an item with many small listings (a popular herb): the typical is near where most units sit, not at the 8th tier.
 - [ ] After a week of use: size of `CraftWise.lua`, and login and `/reload` time compared with before. The test budget is 5 MB at the expected load.
 - [ ] Open and close the AH several times: no stutter on close. Right after login a prune runs over about 3 seconds (20 entries per frame).
+
+## Market display (#26 phase 2)
+`/reload` is enough (no new file). Needs a few recorded scans first (phase 1 above).
+
+Settings (gear button or `/craftwise settings`), "Profit prices":
+- [ ] Basis Typical / Current lowest and the four house buttons render without overlapping; the first house button says "Horde AH". Houses with nothing recorded are greyed, don't select, and are listed after "No data yet:".
+- [ ] Switching basis or house updates the open CraftWise window at once; the second summary line says "Auction prices: typical · Horde AH, else Auctionator (house unknown)" with the chosen basis and house.
+
+Profit view:
+- [ ] Row tooltip, Reagents: each AH price is labelled "typical · Horde AH", "current lowest, too little history · Horde AH" (until 3 days of history) or "Auctionator (house unknown)" for items CraftWise hasn't recorded.
+- [ ] Row tooltip, "Auction houses" section: one line per reagent at the profit house with "best for N" (N = one craft), then the crafted item with its figures, Best to sell and the other houses.
+- [ ] Select Booty Bay: crafted items sold at the AH show "cut unverified" in the PROFIT column and "gross, cut unverified" in the tooltip; the summary counts them separately. Back on Horde AH, profit after 5% returns.
+- [ ] "thin market" (orange) appears in a row's status line when a reagent or the crafted item has a thin cheapest tier at the profit house. Compare with the AH list: the cheapest tier holds under one stack or under 10% of the units within +10% of min.
+- [ ] Level view: the sale line names the house and cut ("AH after 5% cut" plus the label); at Booty Bay it says the AH sale is not counted because the cut is unverified.
+
+Item tooltip (bags, links):
+- [ ] Line "Auction prices per house" (on by default, can be turned off in Settings): profit house with typical or "too little history (n of 3 days)", Current (min, units, price levels for commodities / listings for gear, seen ... ago), Cheapest tiers, Within +10% of min, Last 7 days, thin warning, Best to buy, Best to sell (gross, cut unverified) and each other house in one line.
+- [ ] `C_Item.GetItemMaxStackSizeByID` returns the stack size for a reagent (e.g. Light Leather) so "price levels" and the stack part of the thin rule show. Right after login, items not cached yet show no count until hovered again.
+- [ ] Items never seen at an AH add no market lines. Alliance AH data from an Alliance alt never shows on a Horde character.
+- [ ] Memory: open the CraftWise window on a big profession, then `/run UpdateAddOnMemoryUsage() print(GetAddOnMemoryUsage("CraftWise"))` before and after. Reading prices unpacks the entries it touches until the next prune (AH close or login).
 
 ## Baganator
 - Baganator settings > junk: "CraftWise" listed (auto-selected if no other plugin is active); marked items show Baganator's junk coin; marking/unmarking refreshes at once.

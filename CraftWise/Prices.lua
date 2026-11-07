@@ -1,10 +1,14 @@
--- Price sources for the MVP:
---   buy side (reagents): cheapest of merchant price (recorded at vendors) and Auctionator
---   sell side (outputs): Auctionator price after the AH cut, or the vendor sell price
--- Own AH scan (C_AuctionHouse.ReplicateItems) is tracked in issue #6.
+-- Price sources:
+--   buy side (reagents): cheapest of merchant price (recorded at vendors) and the auction price
+--   sell side (outputs): auction price after the AH cut, or the vendor sell price
+-- Auction price (#26 phase 2): CraftWise's own price history at the house and basis chosen in
+-- Settings (Market.lua), then Auctionator's price as a labelled fallback (it can't tell houses apart).
 local addonName, ns = ...
 
-ns.AH_CUT = 0.05
+ns.AH_CUT = 0.05 -- faction house cut the addon has always used; neutral houses wait for a measured cut
+
+ns.BASIS_TEXT = { typical = "typical", current = "current lowest" }
+ns.AUCTIONATOR_LABEL = "Auctionator (house unknown)"
 
 local function AuctionatorAPI()
 	local api = Auctionator and Auctionator.API and Auctionator.API.v1
@@ -33,6 +37,69 @@ function ns.GetAuctionPrice(itemID)
 	return copper, age
 end
 
+-- Profit price settings: basis "typical" | "current", house choice (Market.CHOICES).
+function ns.PriceSettings()
+	local s = ns.db and ns.db.settings or {}
+	return s.priceBasis == "current" and "current" or "typical", s.priceHouse or "faction"
+end
+
+-- The house profit uses: key, label, kind ("faction" | "neutral"); nil when it can't be told.
+function ns.ProfitHouse()
+	local _, choice = ns.PriceSettings()
+	return ns.Market.HouseFor(choice)
+end
+
+-- Short label of a quote: "typical · Horde AH", "current lowest, too little history · Booty Bay".
+local function QuoteLabel(quote)
+	local basis = ns.BASIS_TEXT[quote.basis]
+	if quote.fallback then
+		basis = basis .. ", " .. quote.fallback
+	end
+	return basis .. " · " .. quote.houseLabel
+end
+
+-- One unit at auction, in the fallback order of #26 phase 2:
+--   1. Market price at the profit house by the chosen basis (typical with too little history falls
+--      back to the current lowest there, labelled);
+--   2. Auctionator's price, labelled "Auctionator (house unknown)";
+--   3. nil ("no price data").
+-- Returns { copper, source = "market"|"auctionator", basis, fallback, house, houseLabel, houseKind,
+-- label, age (days), thin, thinWhy }.
+function ns.AuctionQuote(itemID)
+	local basis = ns.PriceSettings()
+	local house, houseLabel, kind = ns.ProfitHouse()
+	if house then
+		local quote = ns.Market.Quote(itemID, house, basis)
+		if quote then
+			quote.source, quote.house, quote.houseLabel, quote.houseKind = "market", house, houseLabel, kind
+			quote.label = QuoteLabel(quote)
+			quote.age = quote.t and math.floor((time() - quote.t) / 86400) or nil
+			local depth = ns.Market.Depth(itemID, house)
+			quote.thin, quote.thinWhy = ns.Market.IsThin(depth, ns.Market.StackSize(itemID))
+			return quote
+		end
+	end
+	local ah, age = ns.GetAuctionPrice(itemID)
+	if ah then
+		return { copper = ah, source = "auctionator", age = age, label = ns.AUCTIONATOR_LABEL }
+	end
+	return nil
+end
+
+-- Cut taken from a sale at the quote's house: the one measured there (phase 3), else 5% at the own
+-- faction house (as the addon always did). A neutral house has none until it is measured: nil means
+-- "cut unverified" (decision 6 on #26). Auctionator's price keeps the 5% it always had.
+function ns.AuctionCut(quote)
+	if quote.source ~= "market" then
+		return ns.AH_CUT
+	end
+	local measured = ns.Market.MeasuredCut(quote.house)
+	if measured then
+		return measured
+	end
+	return quote.houseKind == "faction" and ns.AH_CUT or nil
+end
+
 -- Seen at a merchant beats the bundled list (Data/Vendor.lua), which is the base price.
 function ns.GetVendorBuyPrice(itemID)
 	local price = (ns.db and ns.db.vendor[itemID]) or (ns.VendorPrices and ns.VendorPrices[itemID])
@@ -55,14 +122,14 @@ function ns.GetVendorSellPrice(itemID)
 	return sell
 end
 
--- Cheapest way to obtain one unit: { copper, source = "vendor"|"auction", age }
+-- Cheapest way to obtain one unit: { copper, source = "vendor"|"auction", age, label, thin }
 function ns.GetBuyPrice(itemID)
 	local vendor = ns.GetVendorBuyPrice(itemID)
-	local ah, age = ns.GetAuctionPrice(itemID)
-	if vendor and (not ah or vendor <= ah) then
-		return { copper = vendor, source = "vendor" }
+	local ah = ns.AuctionQuote(itemID)
+	if vendor and (not ah or vendor <= ah.copper) then
+		return { copper = vendor, source = "vendor", label = "vendor" }
 	elseif ah then
-		return { copper = ah, source = "auction", age = age }
+		return { copper = ah.copper, source = "auction", age = ah.age, label = ah.label, thin = ah.thin, quote = ah }
 	end
 	return nil
 end
@@ -84,16 +151,29 @@ function ns.AuctionWorthIt(ahNet, vendor)
 	return edge > 0 and edge >= minCopper and ahNet >= vendor * (1 + minPercent / 100), edge
 end
 
--- Best net value of one unit when selling: { copper, source = "auction"|"vendor", age }
--- AH value is after the AH cut; selling to a vendor is always possible, so the higher one wins.
+-- Best net value of one unit when selling: { copper, source = "auction"|"vendor", age, gross, cut,
+-- label, thin, cutUnverified }. AH value is after the house's cut; selling to a vendor is always
+-- possible, so the higher one wins. Without a known cut the AH value stays gross and is marked
+-- cutUnverified (it can't be netted); a vendor paying more than that gross still wins.
 function ns.GetSellValue(itemID)
-	local ah, age = ns.GetAuctionPrice(itemID)
-	local net = ah and ah * (1 - ns.AH_CUT)
+	local ah = ns.AuctionQuote(itemID)
 	local vendor = ns.GetVendorSellPrice(itemID)
-	if net and (not vendor or vendor == 0 or net >= vendor) then
-		return { copper = net, source = "auction", age = age, gross = ah }
-	elseif vendor and vendor > 0 then
-		return { copper = vendor, source = "vendor" }
+	local hasVendor = vendor and vendor > 0
+	if ah then
+		local cut = ns.AuctionCut(ah)
+		local value = { source = "auction", age = ah.age, gross = ah.copper, cut = cut, label = ah.label, thin = ah.thin, quote = ah }
+		if cut then
+			value.copper = ah.copper * (1 - cut)
+			if not hasVendor or value.copper >= vendor then
+				return value
+			end
+		elseif not hasVendor or ah.copper > vendor then
+			value.copper, value.cutUnverified = ah.copper, true
+			return value
+		end
+	end
+	if hasVendor then
+		return { copper = vendor, source = "vendor", label = "vendor" }
 	end
 	return nil
 end

@@ -6,16 +6,17 @@ ns.Profit = Profit
 
 -- recipe: { reagents = { { itemID, quantity } }, output = { itemID, quantity } | nil,
 --           learned = bool, learnCost = copper | nil }
--- prices: { buy = fn(itemID) -> { copper, source, age } | nil,
---           sell = fn(itemID) -> { copper, source, age } | nil }
+-- prices: { buy = fn(itemID) -> { copper, source, age, label, thin } | nil,
+--           sell = fn(itemID) -> { copper, source, age, label, thin, gross, cut, cutUnverified } | nil }
 -- Returns a result table. A missing price never counts as 0: the result is marked incomplete.
+-- A sale whose AH cut is unverified (#26) has a gross value only, so no profit is computed from it.
 function Profit.Evaluate(recipe, prices)
 	local result = {
 		cost = 0,
 		complete = true,
 		costComplete = true, -- every reagent priced
 		missing = {}, -- itemIDs without any price
-		reagents = {}, -- per reagent: { itemID, quantity, unit, total, source, age }
+		reagents = {}, -- per reagent: { itemID, quantity, unit, total, source, age, label, thin }
 		oldestAge = nil,
 	}
 
@@ -29,7 +30,8 @@ function Profit.Evaluate(recipe, prices)
 		local price = prices.buy(r.itemID)
 		local line = { itemID = r.itemID, quantity = r.quantity }
 		if price then
-			line.unit, line.source, line.age = price.copper, price.source, price.age
+			line.unit, line.source, line.age, line.label, line.thin = price.copper, price.source, price.age, price.label, price.thin
+			result.thin = result.thin or price.thin or nil
 			line.total = price.copper * r.quantity
 			result.cost = result.cost + line.total
 			noteAge(price.age)
@@ -50,6 +52,10 @@ function Profit.Evaluate(recipe, prices)
 		if value then
 			result.sellsFor = value.copper * recipe.output.quantity
 			result.sellSource = value.source
+			result.sellLabel, result.sellThin, result.sellCut = value.label, value.thin, value.cut
+			result.sellGross = value.gross and value.gross * recipe.output.quantity
+			result.cutUnverified = value.cutUnverified or nil
+			result.thin = result.thin or value.thin or nil
 			noteAge(value.age)
 		else
 			result.complete = false
@@ -59,7 +65,7 @@ function Profit.Evaluate(recipe, prices)
 		result.noItemOutput = true -- enchants and similar: no market value
 	end
 
-	if result.sellsFor and result.complete then
+	if result.sellsFor and result.complete and not result.cutUnverified then
 		result.profit = result.sellsFor - result.cost
 	end
 
