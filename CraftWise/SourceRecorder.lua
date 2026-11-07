@@ -265,8 +265,45 @@ local function SourceName(guid)
 	end
 end
 
+-- Fallback source for a loot window whose slots GetLootSourceInfo does not describe (the function is
+-- UNVERIFIED in Forever, see docs/ingame-checks.md): the unit under the cursor or targeted when LOOT_READY
+-- fired, if it is a dead creature or an object. Taken at LOOT_READY, before anything is looted.
+local readyGUID
+
+local function FallbackGUID()
+	for _, unit in ipairs({ "mouseover", "target" }) do
+		local guid = Text(UnitGUID and UnitGUID(unit))
+		local kind = ParseGUID(guid)
+		if kind == "GameObject" or (kind == "Creature" and UnitIsDead and UnitIsDead(unit) == true) then
+			return guid
+		end
+	end
+end
+
+ns.On("LOOT_READY", function()
+	readyGUID = FallbackGUID()
+end)
+ns.On("LOOT_CLOSED", function()
+	readyGUID = nil
+end)
+
+-- Source GUIDs of one loot slot: GetLootSourceInfo (guid, quantity, guid, quantity, ...), else the fallback.
+local function SlotSources(slot)
+	local sources = GetLootSourceInfo and { GetLootSourceInfo(slot) } or {}
+	local guids = {}
+	for i = 1, #sources, 2 do
+		guids[#guids + 1] = sources[i]
+	end
+	if #guids == 0 and readyGUID then
+		guids[1] = readyGUID
+	end
+	return guids
+end
+
+-- Records every recipe item in the open loot window with its source. Called on LOOT_OPENED, and by Loot.lua
+-- before it loots (fast auto-loot, issue #41), so a recipe is recorded even when the window empties at once.
 function S.RecordLoot()
-	if not (Sources() and GetNumLootItems and GetLootSlotLink and GetLootSourceInfo) then
+	if not (Sources() and GetNumLootItems and GetLootSlotLink) then
 		return 0
 	end
 	local zone, sub = Where()
@@ -274,9 +311,8 @@ function S.RecordLoot()
 	for slot = 1, GetNumLootItems() do
 		local itemID = ItemIDOf(GetLootSlotLink(slot))
 		if IsRecipeItem(itemID) then
-			local sources = { GetLootSourceInfo(slot) }
-			for i = 1, #sources, 2 do
-				local guid = Text(sources[i])
+			for _, source in ipairs(SlotSources(slot)) do
+				local guid = Text(source)
 				local kind, id = ParseGUID(guid)
 				if kind and not counted[guid .. ":" .. itemID] then
 					counted[guid .. ":" .. itemID] = true

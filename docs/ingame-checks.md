@@ -198,3 +198,16 @@ Needs a full game restart after the update (new file in the TOC). Data is `Craft
 - [ ] Open Cooking, then Leatherworking, then switch back and forth a few times (also with the window open while switching): Leatherworking's Level view shows only Leatherworking recipes, Cooking's only Cooking recipes, and no "?" tab appears.
 - [ ] First Aid (if learned): the tab keeps its recipes after opening and closing the window; nothing moves to another tab.
 - [ ] Level view tooltip of a yellow/green recipe: "crafts of all recipes of this profession in the ..." counts only crafts from that profession (craft a few Cooking items and check a Leatherworking row's n does not change).
+
+## Fast auto-loot (#41)
+Needs a full game restart (new file in the TOC). Settings, "Fast auto-loot" (default on).
+- [ ] Solo mob with auto-loot on in the game options: right-click the corpse, everything is taken at once, no loot window.
+- [ ] Recipe drop: `sources[<item>].loot["Creature:<id>"]` is recorded even though the window never shows. `/dump GetLootSourceInfo(1)` at a hand-opened window tells whether the function exists (see Source recorder).
+- [ ] Source fallback: if `GetLootSourceInfo` is nil, the same record appears with the corpse as source (dead mouseover or target at `LOOT_READY`). Report if the creature ID is wrong.
+- [ ] Hold the auto-loot toggle key (Shift by default): the window stays open and nothing is taken. With auto-loot off in the options, the same key makes CraftWise loot.
+- [ ] `/dump C_CVar.GetCVarBool("autoLootDefault"), IsModifiedClick("AUTOLOOTTOGGLE")` return a boolean each (the rule uses them).
+- [ ] Full bags: coins are taken, items stay in the window, one message "Bags are full. Left in the loot window: ...". Also try with only a partial stack of the dropped item left in the bags (CraftWise leaves it when no slot is free).
+- [ ] A bind-on-pickup item asks Blizzard's confirmation; nothing is confirmed for you.
+- [ ] Group (loot method group/need before greed): rolls and locked slots are untouched. Master loot: CraftWise does nothing. `Enum.LootMethod.Masterlooter` exists (UNVERIFIED name): `/dump Enum.LootMethod`.
+- [ ] Fishing and chests loot too.
+- [ ] SpeedyAutoLoot enabled: CraftWise prints its one-time note and does not loot; Settings shows the checkbox dimmed. Without it, no double looting.
