@@ -25,7 +25,8 @@ local function SellText(r)
 		return ("%s  %s"):format(Money(r.sellsFor), Muted("vendor"))
 	end
 	local how = r.cutUnverified and (WARN .. "gross, cut unverified|r")
-		or Muted(("after %g%% cut"):format((r.sellCut or 0) * 100))
+		or r.sellCutDiffers and (WARN .. (r.sellCutText or "?") .. "|r")
+		or Muted(r.sellCutText or ("after %g%% cut"):format((r.sellCut or 0) * 100))
 	return ("%s  %s  %s"):format(Money(r.sellsFor), how, PriceLabel({ label = r.sellLabel, thin = r.sellThin }))
 end
 
@@ -70,9 +71,19 @@ local function ShowBagTooltip(row, r)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine("CraftWise", C.accent[1], C.accent[2], C.accent[3])
 	GameTooltip:AddDoubleLine(("Vendor (x%d)"):format(r.count), r.vendorValue and Money(r.vendorValue) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
-	GameTooltip:AddDoubleLine("Auction, after 5% cut", r.ahValue and Money(r.ahValue) or (r.bound and "soulbound" or "no price"), 0.8, 0.8, 0.8, 1, 1, 1)
+	if r.ahCutUnverified then
+		GameTooltip:AddDoubleLine("Auction", WARN .. ("%s gross, cut unverified|r"):format(Money(r.ahGross or 0)), 0.8, 0.8, 0.8, 1, 1, 1)
+	else
+		GameTooltip:AddDoubleLine("Auction, after cut", r.ahValue and Money(r.ahValue) or (r.bound and "soulbound" or ns.Market.NO_DATA), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if r.ahLabel then
+		GameTooltip:AddLine("  " .. r.ahLabel .. " · " .. (r.ahCutDiffers and WARN or "") .. (r.ahCutText or "") .. (r.ahCutDiffers and "|r" or ""), 0.55, 0.55, 0.6)
+	end
 	if r.canDisenchant then
 		GameTooltip:AddDoubleLine("Disenchant", r.deValue and Money(r.deValue) or "needs disenchant data", 0.8, 0.8, 0.8, 1, 1, 1)
+		if r.deValue and r.deDetails then
+			GameTooltip:AddLine("  " .. table.concat(r.deDetails.labels, ", ") .. " · " .. table.concat(r.deDetails.cutTexts, ", "), 0.55, 0.55, 0.6)
+		end
 	end
 	if r.questItem then
 		GameTooltip:AddLine("Quest item - always kept.", 0.54, 0.7, 1)
@@ -86,8 +97,8 @@ local function ShowBagTooltip(row, r)
 		GameTooltip:AddLine(line, 0.3, 0.82, 0.55)
 		if r.ahSmallEdge then
 			local s = ns.db.settings
-			GameTooltip:AddLine(("The AH pays %s more after the 5%% cut - under your AH rule (+%d%% and at least %s), so vendor it: no deposit at risk, no trip to the AH. Change it with \"AH rule\" at the top of the Bags view."):format(
-				Money(math.max(0, r.ahSmallEdge)), s.ahMinPercent or 20, Money(s.ahMinCopper or 0)), 0.8, 0.8, 0.8, true)
+			GameTooltip:AddLine(("The AH pays %s more after the cut (%s) - under your AH rule (+%d%% and at least %s), so vendor it: no deposit at risk, no trip to the AH. Change it with \"AH rule\" at the top of the Bags view."):format(
+				Money(math.max(0, r.ahSmallEdge)), r.ahCutText or "cut", s.ahMinPercent or 20, Money(s.ahMinCopper or 0)), 0.8, 0.8, 0.8, true)
 		end
 	end
 	local used = ns.UsedIn(r.itemID)
@@ -247,7 +258,7 @@ local function ShowLevelTooltip(row, r)
 		local pct = ("%g%%"):format((d.cut or 0) * 100)
 		GameTooltip:AddDoubleLine("  Sale: AH after " .. pct .. " cut", ("%s  %s"):format(Money(r.saleValue), Muted("(" .. Money(d.ahGross or 0) .. " - " .. pct .. ")")), 1, 1, 1, 0.3, 0.82, 0.55)
 		if d.label then
-			GameTooltip:AddLine("    " .. d.label, 0.55, 0.55, 0.6)
+			GameTooltip:AddLine("    " .. d.label .. " · " .. (d.cutDiffers and WARN or "") .. (d.cutText or "") .. (d.cutDiffers and "|r" or ""), 0.55, 0.55, 0.6)
 		end
 		if d.vendor then
 			GameTooltip:AddDoubleLine("  (vendor would pay)", Money(d.vendor), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
@@ -338,6 +349,9 @@ local function ShowTooltip(row)
 		if r.learnCost then
 			local how = r.learnSource == "vendor" and "vendor" or r.learnSource == "auction" and "AH" or "trainer"
 			GameTooltip:AddDoubleLine("To learn", ("%s (%s)"):format(Money(r.learnCost), how), 0.8, 0.8, 0.8, 1, 1, 1)
+			if r.learnLabel then
+				GameTooltip:AddLine("  " .. r.learnLabel, 0.55, 0.55, 0.6)
+			end
 		end
 		local where = r.where or ns.RecipeWhere(r.recipeID)
 		if #where > 0 then

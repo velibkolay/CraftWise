@@ -134,10 +134,14 @@ function Leveling.Sale(output)
 	local vendor = each and each > 0 and math.floor(each * q) or nil
 	local quote = not Soulbound(output.itemID) and ns.AuctionQuote(output.itemID) or nil
 	local ah = quote and quote.copper
-	local cut = quote and ns.AuctionCut(quote)
+	local cut, cutInfo = nil, nil
+	if quote then
+		cut, cutInfo = ns.AuctionCut(quote)
+	end
 	local ahNet = ah and cut and math.floor(ah * (1 - cut) * q) or nil
 	local details = { vendor = vendor, ahNet = ahNet, ahGross = ah and math.floor(ah * q) or nil, cut = cut,
-		label = quote and quote.label, cutUnverified = ah and not cut or nil }
+		label = quote and quote.label, cutUnverified = ah and not cut or nil,
+		cutText = cutInfo and cutInfo.text, cutDiffers = cutInfo and cutInfo.differs }
 	if ahNet and (not vendor or ns.AuctionWorthIt(ahNet, vendor)) then
 		return ahNet, "auction", details
 	elseif vendor then

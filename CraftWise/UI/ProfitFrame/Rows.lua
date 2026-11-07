@@ -165,7 +165,7 @@ local function RenderBagRow(row, r)
 	row.status:SetText(Muted(table.concat(notes, " · ")))
 	local cells = row.cells
 	cells.vendorValue:SetText(r.vendorValue and Money(r.vendorValue) or Muted("-"))
-	cells.ahValue:SetText(r.ahValue and Money(r.ahValue) or Muted(r.bound and "bound" or "-"))
+	cells.ahValue:SetText(r.ahValue and Money(r.ahValue) or Muted(r.bound and "bound" or r.ahCutUnverified and "cut ?" or "-"))
 	-- Used in: up to two professions, the ones you have first. Green = you know a recipe with it,
 	-- white = your profession, grey = another profession.
 	local parts = {}

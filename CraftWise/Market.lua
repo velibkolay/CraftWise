@@ -1250,7 +1250,7 @@ function M.MeasuredCut(houseKey)
 	local house = db and db.houses[houseKey]
 	local cut = house and house.cut
 	if cut and (cut.samples or 0) > 0 and cut.rate then
-		return cut.rate
+		return cut.rate, cut.samples
 	end
 	return nil
 end

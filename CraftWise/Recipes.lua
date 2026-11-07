@@ -268,7 +268,8 @@ function ns.RecipeStatus(prof, recipeID, recipe)
 end
 
 -- Cost to learn: trainer fee, else vendor price (gold), else the recipe item's AH price.
--- Returns copper and "trainer" | "vendor" | "auction", or nil.
+-- Returns copper and "trainer" | "vendor" | "auction", or nil. For "auction" a third value: the price
+-- label at the profit house and basis (#40), e.g. "typical · Horde AH".
 function ns.LearnCost(recipeID)
 	local fee = Trainer(recipeID)
 	if fee then
@@ -284,9 +285,9 @@ function ns.LearnCost(recipeID)
 		end
 	end
 	if data.item then
-		local ah = ns.GetAuctionPrice(data.item)
-		if ah then
-			return ah, "auction"
+		local quote = ns.AuctionQuote(data.item)
+		if quote then
+			return quote.copper, "auction", quote.label
 		end
 	end
 end
@@ -339,9 +340,9 @@ function ns.RecipeWhere(recipeID)
 				label = ns.Sources and ns.Sources.Label(q) or "bundled data" }
 		end
 		if data.item then
-			local ah = ns.GetAuctionPrice(data.item)
-			if ah then
-				lines[#lines + 1] = { kind = "auction", text = "AH: " .. ns.FormatMoney(ah), origin = "auction", label = "Auctionator" }
+			local quote = ns.AuctionQuote(data.item)
+			if quote then
+				lines[#lines + 1] = { kind = "auction", text = "AH: " .. ns.FormatMoney(quote.copper), origin = "auction", label = quote.label }
 			end
 		end
 	end
@@ -408,9 +409,9 @@ end
 
 local function MakeRow(prof, recipeID, recipe, prices)
 	local status, required, tooLow = ns.RecipeStatus(prof, recipeID, recipe)
-	local learnCost, learnSource
+	local learnCost, learnSource, learnLabel
 	if not recipe.learned then
-		learnCost, learnSource = ns.LearnCost(recipeID)
+		learnCost, learnSource, learnLabel = ns.LearnCost(recipeID)
 	end
 	local result = ns.Profit.Evaluate({
 		reagents = recipe.reagents,
@@ -424,7 +425,7 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.status = status
 	result.required = required
 	result.tooLow = tooLow
-	result.learnSource = learnSource
+	result.learnSource, result.learnLabel = learnSource, learnLabel
 	result.source = recipe.source
 	result.difficulty = recipe.difficulty
 	result.skillColor = ns.SkillUpColor(recipe, tooLow)

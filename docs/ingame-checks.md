@@ -163,6 +163,18 @@ Item tooltip (bags, links):
 - [ ] Items never seen at an AH add no market lines. Alliance AH data from an Alliance alt never shows on a Horde character.
 - [ ] Memory: open the CraftWise window on a big profession, then `/run UpdateAddOnMemoryUsage() print(GetAddOnMemoryUsage("CraftWise"))` before and after. Reading prices unpacks the entries it touches until the next prune (AH close or login).
 
+## Profit house for every AH value, cut source (#40)
+`/reload` is enough (no new file). Needs recorded prices for a few items (see Market display above).
+
+- [ ] Bags view, AUCTION column: with Settings "Auction house for profit" = Horde AH and basis Typical, the value matches the profit view's price for the same item after 5%. Switch basis to Current lowest: the column changes at once. Row tooltip: "Auction, after cut" and a line like "typical · Horde AH · 5% cut (confirmed)".
+- [ ] Select Booty Bay: Bags items priced there show "cut ?" in the AUCTION column (not counted, vendor advised); the row tooltip says "<gross> gross, cut unverified". Items CraftWise never saw show the Auctionator value labelled "Auctionator (house unknown)" with "5% cut (house unknown)"; items with nothing show "-".
+- [ ] Item tooltip (bags, links): "Sell: Vendor X · AH Y" is followed by a line "AH price | typical · Horde AH · 5% cut (confirmed)", or "no price data". At Booty Bay: "AH ?" with "gross ... · cut unverified". The advice (Vendor / Auction) follows the AH rule on the net price at that house.
+- [ ] AH rule panel: change the percent or copper, then compare two items near the threshold: the advice flips on the profit house's net price, not Auctionator's.
+- [ ] Learn view, a recipe sold on the AH (no trainer or vendor): "To learn" shows the AH price and a second line with its label ("typical · Horde AH"); "Where to get it" lists "AH: ..." with the same label instead of "Auctionator". Switch house or basis: the price follows.
+- [ ] Profit row tooltip "Sells for" and the Level view sale line show "5% cut (confirmed)" in grey, no orange.
+- [ ] Disenchant value: still hidden until the disenchant data exists (#11); when it does, the Bags row tooltip lists each material's price label and cut text.
+- [ ] Phase 3 (#26) once a cut is measured: "N% cut measured (n sales)" replaces "(confirmed)"; a measurement that differs from 5% shows both ("..., differs from 5% confirmed") in orange.
+
 ## Baganator
 - Baganator settings > junk: "CraftWise" listed (auto-selected if no other plugin is active); marked items show Baganator's junk coin; marking/unmarking refreshes at once.
 - Baganator settings > sorting: "CraftWise" mode; Baganator's sort button sorts the backpack like Sort bags (bank untouched).
