@@ -14,6 +14,22 @@ it("bundled data loads and has the expected tables", function()
 	eq(ns.ProfessionSkillLines["Leatherworking"], 165)
 end)
 
+it("required skills hold only real client values, not the placeholder 1 (#23)", function()
+	local ns = LoadAddon({ data = true })
+	eq(ns.RequiredSkills[2665], 75) -- Coarse Sharpening Stone
+	eq(ns.RequiredSkills[2149], nil) -- Handstitched Leather Boots: placeholder in the client
+	for recipeID, skill in pairs(ns.RequiredSkills) do
+		assert(skill > 1, "placeholder for " .. recipeID)
+		assert(ns.Thresholds[recipeID], "no thresholds for " .. recipeID)
+	end
+end)
+
+it("recipes the game retired stay out of the bundled data (#23)", function()
+	local ns = LoadAddon({ data = true })
+	eq(ns.RecipeData[1226206], nil) -- Tinkerbox
+	eq(ns.Thresholds[1226206], nil)
+end)
+
 it("vendor reagent priced from bundled list without visiting a merchant", function()
 	local ns = LoadAddon({ data = true })
 	eq(ns.GetVendorBuyPrice(2320), 10) -- Coarse Thread

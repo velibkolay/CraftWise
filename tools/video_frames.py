@@ -6,7 +6,7 @@ rate, packed on 1024x1024 TGA sprite sheets that CraftWise flips through. No sou
 the song separately in the Music tab.
 
 Usage:
-    python3 tools/video_frames.py "<WoW>/_classic_beta_/Interface/AddOns" CraftWise_Music/Videos/clip.mp4
+    python3 tools/video_frames.py "<WoW>/_forever_/Interface/AddOns" CraftWise_Music/Videos/clip.mp4
         [--size 192] [--fps 10] [--max-seconds 30]
 
 Writes <AddOns>/CraftWise_Music/Videos/<name>/001.tga ... and CraftWise_Music/Videos.lua.
