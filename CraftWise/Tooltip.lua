@@ -167,20 +167,23 @@ local function Settings()
 	return ns.db and ns.db.tooltip
 end
 
--- Vendor and AH value of `count` items and the advice by the AH rule (as in the Bags view).
+-- Vendor and AH value of `count` items and the advice by the AH rule (as in the Bags view). The AH
+-- value is at the profit house and basis (#40); the 4th result says which: ns.AuctionSale's table
+-- (label, cutText, gross, cutUnverified) or nil without a price. A cut that isn't verified leaves
+-- ahNet nil, so the vendor is advised.
 function ns.ItemAdvice(itemID, count)
 	count = count or 1
 	local each = ns.GetVendorSellPrice(itemID)
 	local vendor = each and each > 0 and each * count or nil
-	local ah = ns.GetAuctionPrice(itemID)
-	local ahNet = ah and math.floor(ah * (1 - ns.AH_CUT) * count) or nil
+	local sale = ns.AuctionSale(itemID, count)
+	local ahNet = sale and sale.net or nil
 	local best
 	if ahNet and (not vendor or ns.AuctionWorthIt(ahNet, vendor)) then
 		best = "auction"
 	elseif vendor then
 		best = "vendor"
 	end
-	return vendor, ahNet, best
+	return vendor, ahNet, best, sale
 end
 
 local function BagCount(itemID)
@@ -224,14 +227,22 @@ function ns.AddTooltipLines(tooltip, itemID)
 	end
 	if s.lines.advice then
 		local count = BagCount(itemID)
-		local vendor, ahNet, best = ns.ItemAdvice(itemID, count)
-		if vendor or ahNet then
+		local vendor, ahNet, best, sale = ns.ItemAdvice(itemID, count)
+		if vendor or sale then
 			local parts = {}
 			parts[#parts + 1] = "Vendor " .. (vendor and ns.FormatMoney(vendor) or "-")
-			parts[#parts + 1] = "AH " .. (ahNet and ns.FormatMoney(ahNet) or "-")
+			parts[#parts + 1] = "AH " .. (ahNet and ns.FormatMoney(ahNet) or sale and sale.cutUnverified and "?" or "-")
 			local left = count > 1 and ("Sell x%d"):format(count) or "Sell"
 			local advice = best == "auction" and "|cff4fd18cAuction|r" or best == "vendor" and "|cff4fd18cVendor|r" or ""
 			lines[#lines + 1] = { left, table.concat(parts, MUTED .. "  ·  |r") .. "  " .. advice }
+			-- Which price the AH figure is, and which cut was taken off it.
+			if sale then
+				local cutText = sale.cutDiffers and ("|cffffc24d" .. sale.cutText .. "|r") or (MUTED .. sale.cutText .. "|r")
+				local gross = sale.cutUnverified and (" · gross " .. ns.FormatMoney(sale.gross)) or ""
+				lines[#lines + 1] = { "  AH price", MUTED .. sale.label .. "|r" .. gross .. MUTED .. " · |r" .. cutText }
+			else
+				lines[#lines + 1] = { "  AH price", MUTED .. ns.Market.NO_DATA .. "|r" }
+			end
 		end
 	end
 	if s.lines.usedIn and ns.UsedInSummary then

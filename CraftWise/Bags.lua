@@ -29,7 +29,9 @@ local function CanDisenchant(itemID, quality)
 	return classID == 2 or classID == 4 -- Weapon, Armor
 end
 
--- Expected disenchant value of one item: sum of chance x quantity x material price.
+-- Expected disenchant value of one item: sum of chance x quantity x material price, each material at
+-- the profit house and basis after that house's cut (as it would be sold; #40). Returns value and a
+-- details table { labels, cutTexts, cutDiffers }; nil when a material has no price or an unverified cut.
 -- Needs ns.DisenchantData (verified Forever table, #11). nil until it exists.
 function ns.DisenchantValue(itemID, quality)
 	local table_ = ns.DisenchantData
@@ -41,15 +43,22 @@ function ns.DisenchantValue(itemID, quality)
 	if not rows then
 		return nil
 	end
-	local total = 0
+	local total, details, seen = 0, { labels = {}, cutTexts = {} }, {}
 	for _, r in ipairs(rows) do
-		local price = ns.GetAuctionPrice(r.itemID)
-		if not price then
-			return nil -- a material without a price would understate the value
+		local sale = ns.AuctionSale(r.itemID, 1)
+		if not (sale and sale.cut) then
+			return nil -- a material without a price or a cut would understate the value
 		end
-		total = total + price * r.chance * r.quantity
+		total = total + sale.quote.copper * (1 - sale.cut) * r.chance * r.quantity
+		details.cutDiffers = details.cutDiffers or sale.cutDiffers
+		for kind, text in pairs({ labels = sale.label, cutTexts = sale.cutText }) do
+			if not seen[kind .. text] then
+				seen[kind .. text] = true
+				table.insert(details[kind], text)
+			end
+		end
 	end
-	return total
+	return total, details
 end
 
 -- Item IDs used as reagents by recipes the character knows.
@@ -97,18 +106,23 @@ function ns.BagRows()
 		row.vendorValue = sell and sell > 0 and sell * n or nil
 
 		if not row.bound then
-			local ah, age = ns.GetAuctionPrice(id)
-			if ah then
-				-- Whole copper, rounded down: the cut is taken from the sale total.
-				row.ahValue = math.floor(ah * (1 - ns.AH_CUT) * n)
-				row.ahAge = age
+			-- Profit house and basis (#40); whole copper, rounded down: the cut is taken from the sale total.
+			local sale = ns.AuctionSale(id, n)
+			if sale then
+				row.ahValue = sale.net -- nil while the house's cut is unverified: not counted
+				row.ahGross = sale.gross
+				row.ahAge = sale.age
+				row.ahLabel, row.ahThin = sale.label, sale.thin
+				row.ahCut, row.ahCutText, row.ahCutDiffers = sale.cut, sale.cutText, sale.cutDiffers
+				row.ahCutUnverified = sale.cutUnverified
 			end
 		end
 
 		row.canDisenchant = CanDisenchant(id, row.quality)
 		if row.canDisenchant then
-			local de = ns.DisenchantValue(id, row.quality)
+			local de, details = ns.DisenchantValue(id, row.quality)
 			row.deValue = de and de * n or nil
+			row.deDetails = details
 		end
 
 		row.reagent = reagents[id] or false

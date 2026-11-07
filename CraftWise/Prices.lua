@@ -86,18 +86,67 @@ function ns.AuctionQuote(itemID)
 	return nil
 end
 
--- Cut taken from a sale at the quote's house: the one measured there (phase 3), else 5% at the own
--- faction house (as the addon always did). A neutral house has none until it is measured: nil means
--- "cut unverified" (decision 6 on #26). Auctionator's price keeps the 5% it always had.
-function ns.AuctionCut(quote)
+-- Where a cut comes from (#40), shown wherever the cut is applied:
+--   "measured"   Veli's own sales at that house (phase 3 of #26): "5% cut measured (12 sales)"
+--   "confirmed"  entered by Veli in game: the own faction house takes 5% (2026-11-07): "5% cut (confirmed)"
+--   "unverified" neutral houses until measured or confirmed: no cut, no profit: "cut unverified"
+--   "unknown"    Auctionator's price, house not known: keeps the 5% it always had: "5% cut (house unknown)"
+-- A measurement wins over a confirmed value; when they differ both are shown and `differs` is set.
+ns.CONFIRMED_CUTS = { faction = ns.AH_CUT } -- by house kind; add a house kind here when Veli confirms it
+ns.CUT_EPSILON = 0.0005
+
+local function Pct(rate)
+	return ("%g%%"):format(math.floor(rate * 1000 + 0.5) / 10)
+end
+
+-- { cut (nil when unverified), source, text, differs, measured, samples, confirmed }
+function ns.CutInfo(quote)
 	if quote.source ~= "market" then
-		return ns.AH_CUT
+		return { cut = ns.AH_CUT, source = "unknown", text = Pct(ns.AH_CUT) .. " cut (house unknown)" }
 	end
-	local measured = ns.Market.MeasuredCut(quote.house)
+	local confirmed = ns.CONFIRMED_CUTS[quote.houseKind]
+	local measured, samples = ns.Market.MeasuredCut(quote.house)
 	if measured then
-		return measured
+		local info = { cut = measured, source = "measured", measured = measured, samples = samples or 0, confirmed = confirmed }
+		info.text = ("%s cut measured (%d %s)"):format(Pct(measured), info.samples, info.samples == 1 and "sale" or "sales")
+		if confirmed and math.abs(measured - confirmed) > ns.CUT_EPSILON then
+			info.differs = true
+			info.text = ("%s, differs from %s confirmed"):format(info.text, Pct(confirmed))
+		end
+		return info
 	end
-	return quote.houseKind == "faction" and ns.AH_CUT or nil
+	if confirmed then
+		return { cut = confirmed, source = "confirmed", confirmed = confirmed, text = Pct(confirmed) .. " cut (confirmed)" }
+	end
+	return { source = "unverified", text = "cut unverified" }
+end
+
+-- Cut taken from a sale at the quote's house (nil = cut unverified, decision 6 on #26), then its
+-- source info.
+function ns.AuctionCut(quote)
+	local info = ns.CutInfo(quote)
+	return info.cut, info
+end
+
+-- What `count` units bring at auction at the profit house and basis, after the cut:
+-- { quote, label, gross (total), net (total, nil when the cut is unverified), cut, cutInfo, cutText,
+-- cutUnverified, thin, age } or nil ("no price data"). Whole copper, rounded down: the cut is taken
+-- from the sale total.
+function ns.AuctionSale(itemID, count)
+	local quote = ns.AuctionQuote(itemID)
+	if not quote then
+		return nil
+	end
+	count = count or 1
+	local cut, info = ns.AuctionCut(quote)
+	local sale = { quote = quote, label = quote.label, gross = math.floor(quote.copper * count), cut = cut,
+		cutInfo = info, cutText = info.text, cutDiffers = info.differs, thin = quote.thin, age = quote.age }
+	if cut then
+		sale.net = math.floor(quote.copper * (1 - cut) * count)
+	else
+		sale.cutUnverified = true
+	end
+	return sale
 end
 
 -- Seen at a merchant beats the bundled list (Data/Vendor.lua), which is the base price.
@@ -160,8 +209,9 @@ function ns.GetSellValue(itemID)
 	local vendor = ns.GetVendorSellPrice(itemID)
 	local hasVendor = vendor and vendor > 0
 	if ah then
-		local cut = ns.AuctionCut(ah)
-		local value = { source = "auction", age = ah.age, gross = ah.copper, cut = cut, label = ah.label, thin = ah.thin, quote = ah }
+		local cut, info = ns.AuctionCut(ah)
+		local value = { source = "auction", age = ah.age, gross = ah.copper, cut = cut, label = ah.label, thin = ah.thin, quote = ah,
+			cutText = info.text, cutSource = info.source, cutDiffers = info.differs }
 		if cut then
 			value.copper = ah.copper * (1 - cut)
 			if not hasVendor or value.copper >= vendor then

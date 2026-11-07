@@ -53,6 +53,7 @@ function Profit.Evaluate(recipe, prices)
 			result.sellsFor = value.copper * recipe.output.quantity
 			result.sellSource = value.source
 			result.sellLabel, result.sellThin, result.sellCut = value.label, value.thin, value.cut
+			result.sellCutText, result.sellCutDiffers = value.cutText, value.cutDiffers
 			result.sellGross = value.gross and value.gross * recipe.output.quantity
 			result.cutUnverified = value.cutUnverified or nil
 			result.thin = result.thin or value.thin or nil
