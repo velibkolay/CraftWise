@@ -367,7 +367,7 @@ local function RenderRow(row, r, index)
 	end
 	if r.whereText then
 		local more = #r.where > 1 and Muted(("  +%d"):format(#r.where - 1)) or ""
-		cells.whereText:SetText(r.whereText .. more)
+		cells.whereText:SetText(r.whereText .. (r.whereLabel and Muted("  " .. r.whereLabel) or "") .. more)
 	else
 		cells.whereText:SetText(Muted("Not known yet"))
 	end

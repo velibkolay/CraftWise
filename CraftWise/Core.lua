@@ -52,6 +52,7 @@ end
 local DB_DEFAULTS = {
 	version = 1,
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
+	sources = {}, -- [recipe itemID] = { vendors, loot, quests } seen in game (SourceRecorder.lua, issue #37)
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor

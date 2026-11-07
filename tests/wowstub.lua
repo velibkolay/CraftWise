@@ -132,8 +132,31 @@ function GetMerchantNumItems() return #stub.merchant end
 function GetMerchantItemID(i) return stub.merchant[i].itemID end
 function GetMerchantItemInfo(i)
 	local m = stub.merchant[i]
-	return "item", nil, m.price, m.stack or 1, -1, true, true, m.extended
+	return "item", nil, m.price, m.stack or 1, m.available or -1, true, true, m.extended
 end
+-- m.costs = { { amount, link, currencyName } } for extended costs
+function GetMerchantItemCostInfo(i) return #(stub.merchant[i].costs or {}) end
+function GetMerchantItemCostItem(i, n)
+	local c = stub.merchant[i].costs[n]
+	return "tex", c[1], c[2], c[3]
+end
+
+-- Loot window: stub.loot = { { link, sources = { guid, qty, ... } } }
+stub.loot = {}
+function GetNumLootItems() return #stub.loot end
+function GetLootSlotLink(i) return stub.loot[i].link end
+function GetLootSourceInfo(i) return unpack(stub.loot[i].sources or {}) end
+
+-- Quest window: stub.quest = { id, title, choices = { link }, rewards = { link } }
+stub.quest = { id = 0, choices = {}, rewards = {} }
+function GetQuestID() return stub.quest.id end
+function GetTitleText() return stub.quest.title end
+function GetNumQuestChoices() return #stub.quest.choices end
+function GetNumQuestRewards() return #stub.quest.rewards end
+function GetQuestItemLink(kind, i) return (kind == "choice" and stub.quest.choices or stub.quest.rewards)[i] end
+
+stub.names = {} -- unit token -> name
+function UnitName(unit) return stub.names[unit] end
 
 -- Trainer: stub.trainer = { { name, kind, fee, required, tooltipID } }; the list honours the type filter
 stub.trainer = {}
@@ -166,6 +189,7 @@ C_Container = {
 -- classID by itemID: stub.itemClass[id] = 2 weapon / 4 armor / 7 trade goods
 stub.itemClass = {}
 C_Item.GetItemInfoInstant = function(id)
+	if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) end
 	local item = stub.items[id]
 	return id, nil, nil, item and item.equipLoc or "", item and item.icon, stub.itemClass[id]
 end
@@ -266,7 +290,8 @@ function GetRealmName() return stub.realm end
 function GetRealZoneText() return stub.zone end
 function GetSubZoneText() return stub.subzone end
 function GetLocale() return stub.locale end
-function UnitGUID() return "Player-1-SELF" end
+stub.guids = {} -- unit token -> GUID
+function UnitGUID(unit) return stub.guids[unit] or "Player-1-SELF" end
 
 -- Auction house. stub.replicate = { { itemID, count, buyout, link, owner } } (the client's list is
 -- 0-based). stub.commodity[itemID] = { rows = { { unitPrice, quantity, owners } }, total, full }.

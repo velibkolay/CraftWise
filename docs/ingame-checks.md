@@ -146,3 +146,16 @@ History and size:
 ## Baganator
 - Baganator settings > junk: "CraftWise" listed (auto-selected if no other plugin is active); marked items show Baganator's junk coin; marking/unmarking refreshes at once.
 - Baganator settings > sorting: "CraftWise" mode; Baganator's sort button sorts the backpack like Sort bags (bank untouched).
+
+## Source recorder (#37)
+Needs a full game restart after the update (new file in the TOC). Data is `CraftWiseDB.sources[<recipe item ID>]` in `CraftWise.lua`.
+- [ ] Recipe vendor (e.g. a cooking or leatherworking supply vendor): open the merchant. `sources[<item>].vendors[<npcID>]` has the NPC name, zone, subzone, price and (if the item is limited) `limited`. The Learn view shows the line with "seen by you just now"; the "Source not known yet" status for that recipe is gone.
+- [ ] Same vendor again with a changed price (or reopen): one entry, `t` updated, no duplicate.
+- [ ] `faction` on the vendor and the quest NPC: set only when `UnitFactionGroup("npc")` / `("questnpc")` returns Horde or Alliance for an NPC. If it is nil for NPCs, that is fine; if it returns your own faction for a neutral NPC, report it (wrong data).
+- [ ] Vendor selling for tokens/currency or items: `costs` lists name and amount.
+- [ ] Looted recipe: kill a mob that drops a recipe, open the loot window. `loot["Creature:<id>"]` has `n = 1`, zone, and the name (target or mouseover). Close and reopen the same corpse: `n` stays 1. Another corpse: `n = 2`. No drop chance anywhere.
+- [ ] **`GetLootSourceInfo` exists in Forever and returns the corpse GUID** (`/dump GetLootSourceInfo(1)` with a loot window open). If it is nil, nothing is recorded; report it.
+- [ ] A recipe from a chest or object: `loot["GameObject:<id>"]` is recorded, name stays empty (no unit to read it from) and the Learn view shows "Drop: GameObject #<id>".
+- [ ] Quest reward: open a quest (and then the turn-in) with a recipe as reward or choice. `quests[<questID>]` has the title, zone, `choice = true` for a choice; one entry for both dialogs.
+- [ ] Looting during combat raises no Lua error (GUIDs can be secret values).
+- [ ] Hover the recipe in the Learn view: every line in "Where to get it" ends with `[seen by you 2h ago]` or `[bundled data]`/`[QuestieDB]`.

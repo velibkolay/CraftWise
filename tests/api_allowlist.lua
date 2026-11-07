@@ -14,6 +14,18 @@ return {
 		GetInventoryItemID = UI .. "Mainline/PaperDollFrame.lua; " .. GAME .. " (Upgrades view)",
 		GetInventoryItemLink = UI .. "Mainline/ContainerFrame.lua",
 		GetInventorySlotInfo = UI .. "SecureAuraHeader.lua; " .. GAME .. " (Upgrades view)",
+		GetMerchantItemCostInfo = UI .. "Mainline/MerchantFrame.lua (MerchantFrame_UpdateAltCurrency)",
+		GetMerchantItemCostItem = UI .. "Mainline/MerchantFrame.lua (returns texture, value, link, currencyName)",
+		GetNumLootItems = UI .. "Mainline/LootFrame.lua",
+		GetLootSlotLink = UI .. "Mainline/LootFrame.lua",
+		-- Not called by Blizzard's Forever UI and not in its API docs. Long-standing client API (all clients);
+		-- not yet seen working in Forever: see docs/ingame-checks.md "Source recorder". If absent, nothing is recorded.
+		GetLootSourceInfo = "UNVERIFIED in Forever, first in-game check in docs/ingame-checks.md (Source recorder)",
+		GetQuestID = UI .. "Mainline/QuestFrame.lua",
+		GetQuestItemLink = UI .. "Mainline/QuestInfo.lua",
+		GetNumQuestChoices = UI .. "Mainline/QuestInfo.lua",
+		GetNumQuestRewards = UI .. "Mainline/QuestInfo.lua",
+		GetTitleText = UI .. "Mainline/QuestFrame.lua",
 		GetMerchantItemID = UI .. "Vanilla/MerchantFrame.lua; " .. GAME .. " (vendor prices recorded)",
 		GetMerchantItemInfo = UI .. "Vanilla/MerchantFrame.lua",
 		GetMerchantNumItems = UI .. "Vanilla/MerchantFrame.lua; " .. GAME,
