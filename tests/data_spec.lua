@@ -24,6 +24,28 @@ it("required skills hold only real client values, not the placeholder 1 (#23)", 
 	end
 end)
 
+it("source data holds only the client's skill and recipe item, per known recipe (#11)", function()
+	local ns = LoadAddon({ data = true })
+	local count = 0
+	for recipeID, source in pairs(ns.SourceData) do
+		count = count + 1
+		eq(type(recipeID), "number")
+		assert(ns.RecipeData[recipeID], "no RecipeData for " .. recipeID)
+		eq(type(source.skill), "number", "skill of " .. recipeID)
+		eq(type(source.item), "number", "item of " .. recipeID)
+		assert(source.skill > 1, "placeholder or missing skill for " .. recipeID)
+		assert(source.item > 0, "no recipe item for " .. recipeID)
+		for field in pairs(source) do
+			assert(field == "skill" or field == "item", "unverified field " .. field .. " for " .. recipeID)
+		end
+	end
+	assert(count > 1000, "expected over a thousand item-taught recipes, got " .. count)
+	-- Checked against ItemSparse in 1.60.1.70790
+	eq(ns.SourceData[2158].skill, 65); eq(ns.SourceData[2158].item, 2406) -- Fine Leather Boots <- Pattern: Fine Leather Boots
+	eq(ns.SourceData[2333].skill, 140); eq(ns.SourceData[2333].item, 3396) -- Elixir of Lesser Agility <- Recipe: Elixir of Lesser Agility
+	eq(ns.SourceData[2149], nil) -- Handstitched Leather Boots: a trainer recipe, no item teaches it
+end)
+
 it("recipes the game retired stay out of the bundled data (#23)", function()
 	local ns = LoadAddon({ data = true })
 	eq(ns.RecipeData[1226206], nil) -- Tinkerbox
