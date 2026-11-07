@@ -1,5 +1,5 @@
 -- Minimap button (drag to move around the minimap) and the addon compartment entry.
--- Left-click toggles the profit window; right-click hides the button (/cw minimap brings it back).
+-- Left-click toggles the profit window; right-click hides the button (/craftwise minimap brings it back).
 local _, ns = ...
 
 local ICON = "Interface\\Icons\\INV_Misc_Coin_02"
@@ -33,7 +33,7 @@ local function Tooltip(owner)
 	GameTooltip:AddLine("CraftWise", 1, 1, 1)
 	GameTooltip:AddLine("Left-click: profit table", 0.8, 0.8, 0.8)
 	GameTooltip:AddLine("Drag: move button", 0.8, 0.8, 0.8)
-	GameTooltip:AddLine("Right-click: hide button (/cw minimap)", 0.8, 0.8, 0.8)
+	GameTooltip:AddLine("Right-click: hide button (/craftwise minimap)", 0.8, 0.8, 0.8)
 	GameTooltip:Show()
 end
 
@@ -65,7 +65,7 @@ local function Build()
 		if mouse == "RightButton" then
 			Settings().hide = true
 			button:Hide()
-			ns.Print("minimap button hidden - /cw minimap shows it again")
+			ns.Print("minimap button hidden - /craftwise minimap shows it again")
 		else
 			ns.ToggleProfitFrame()
 		end

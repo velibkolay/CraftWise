@@ -498,7 +498,7 @@ function Music.ToggleParty()
 	return true
 end
 
--- Key binding (Bindings.xml) and macro: /cw party
+-- Key binding (Bindings.xml) and macro: /craftwise party
 _G.BINDING_HEADER_CRAFTWISE = "CraftWise"
 _G.BINDING_NAME_CRAFTWISE_PARTY = "Party: music, video and dance"
 function CraftWise_PartyToggle()

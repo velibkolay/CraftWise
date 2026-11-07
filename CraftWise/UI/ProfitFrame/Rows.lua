@@ -242,7 +242,7 @@ local function RenderMusicRow(row, r)
 	row.name:SetText("|cffffffff" .. r.name .. "|r")
 	if r.party then
 		row.status:SetText(Muted(ns.Music.PartyActive() and (C.good .. "on|r  ·  press the key again or move to stop")
-			or "key: Key Bindings > AddOns > CraftWise, or /cw party"))
+			or "key: Key Bindings > AddOns > CraftWise, or /craftwise party"))
 	else
 		row.status:SetText(r.skill and Muted(("%d/%d"):format(r.skill, r.maxSkill or 0)) or "")
 	end

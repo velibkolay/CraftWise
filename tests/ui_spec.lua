@@ -42,7 +42,7 @@ it("tooltips render for known, trainer, vendor and bundled-only rows", function(
 	end
 end)
 
-it("minimap button toggles the window, hides on right-click, /cw minimap restores", function()
+it("minimap button toggles the window, hides on right-click, /craftwise minimap restores", function()
 	local ns, stub = LoadAddon()
 	local btn
 	for _, f in ipairs(stub.frames) do if f.scripts.OnDragStart and f.scripts.OnClick and f.scripts.OnEnter then btn = f end end
@@ -58,6 +58,16 @@ it("minimap button toggles the window, hides on right-click, /cw minimap restore
 	SlashCmdList.CRAFTWISE("minimap")
 	eq(ns.db.minimap.hide, false); eq(btn:IsShown(), true)
 	CraftWise_OnAddonCompartmentClick()
+end)
+
+it("the slash command is /craftwise, with no /cw alias (#34: /cw hijacks whispers)", function()
+	LoadAddon()
+	eq(SLASH_CRAFTWISE1, "/craftwise")
+	local i = 1
+	while _G["SLASH_CRAFTWISE" .. i] do
+		assert(_G["SLASH_CRAFTWISE" .. i] ~= "/cw", "SLASH_CRAFTWISE" .. i .. " must not be /cw")
+		i = i + 1
+	end
 end)
 
 it("search filters rows by name", function()

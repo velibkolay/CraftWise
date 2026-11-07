@@ -106,8 +106,7 @@ function ns.Print(msg)
 	print("|cff4fb3ffCraftWise|r: " .. tostring(msg))
 end
 
-SLASH_CRAFTWISE1 = "/cw"
-SLASH_CRAFTWISE2 = "/craftwise"
+SLASH_CRAFTWISE1 = "/craftwise"
 SlashCmdList.CRAFTWISE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
 	local minPercent, minCopper = msg:match("^ahmin%s+(%d+)%s*(%d*)$")
