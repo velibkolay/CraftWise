@@ -193,13 +193,28 @@ function ns.CostBasis(view)
 	return bases and bases[view or "profit"] == "paid" and "paid" or "ah"
 end
 
--- One unit at what you paid: { copper, source = "paid", label, units } when the paid cost of every
--- unit held is known; otherwise the AH basis price, marked paidFallback with the reason (paidNote).
+-- One unit at what you paid: { copper, source = "paid", label, units, noCraft } from the ledger. When
+-- some held units have no recorded price, it is the average of the logged ones, marked paidPartial
+-- with "N of M units" (decision 2 on #47). Without any paid cost: the AH basis price, marked
+-- paidFallback with the reason (paidNote). noCraft: a paid cost is the cost of what you hold, so
+-- craft-or-buy doesn't replace it (decision 1 on #47).
+local function Units(n)
+	return math.floor(n + 0.5)
+end
+
 function ns.GetPaidBuyPrice(itemID)
 	local paid = ns.Ledger and ns.Ledger.PaidCost(itemID)
-	if paid and paid.complete then
-		return { copper = paid.copper, source = "paid", label = ("paid cost, %d held"):format(math.floor(paid.units + 0.5)),
-			units = paid.units }
+	if paid then
+		local price = { copper = paid.copper, source = "paid", units = paid.units, noCraft = true }
+		if paid.partial then
+			price.paidPartial = true
+			price.label = ("paid cost, %d of %d units"):format(Units(paid.known), Units(paid.units))
+			price.paidNote = ("average of the %d units you bought; %d held have no recorded price"):format(
+				Units(paid.known), Units(paid.units - paid.known))
+		else
+			price.label = ("paid cost, %d held"):format(Units(paid.units))
+		end
+		return price
 	end
 	local price = ns.GetBuyPrice(itemID)
 	if not price then
@@ -210,8 +225,7 @@ function ns.GetPaidBuyPrice(itemID)
 		out[k] = v
 	end
 	out.paidFallback = true
-	out.paidNote = paid and ("paid cost unknown: %d of %d held not bought by you"):format(
-		math.floor(paid.units - paid.known + 0.5), math.floor(paid.units + 0.5)) or "no paid cost"
+	out.paidNote = "no paid cost"
 	return out
 end
 

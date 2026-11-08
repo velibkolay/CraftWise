@@ -18,8 +18,9 @@
 -- held = units in bags and bank when last counted; transit = bought units not counted yet (AH
 -- purchases are delivered later); known = units with a recorded price, cost = what they cost.
 -- Units that leave (crafted, sold, mailed) take the average with them, so the average stays. Units
--- that arrive without a logged purchase (loot, mail, units from before the log) have no price: as
--- long as any are held, the paid cost is unknown. Never estimated.
+-- that arrive without a logged purchase (loot, mail, units from before the log) have no price: while
+-- any are held, the paid cost is the average of the logged units only, flagged partial with known
+-- and units ("4 of 6 units", decision 2 on #47). Never extrapolated to the other units.
 --
 -- Vendor trades are read from bag and money changes while a merchant is open, so every way of
 -- buying (right-click, drag to a bag, split stack) and selling (right-click, drag, Sell junk) counts.
@@ -149,21 +150,19 @@ function L.SyncAll(force)
 	end
 end
 
--- Paid cost of one unit: { copper, known, units, complete } or nil when nothing was bought.
--- complete is false while units without a recorded price are held (copper is then nil).
+-- Paid cost of one unit: { copper, known, units, complete, partial } or nil when nothing logged is
+-- held. copper is the average of the logged units; partial (= not complete) while units without a
+-- recorded price are held too: then it covers `known` of the `units` held.
 function L.PaidCost(itemID, charKey)
 	local c = store and store.chars[charKey or L.CharKey() or ""]
 	local p = c and c.pos and c.pos[itemID]
-	if not p or p.known <= 0 then
+	if not p or p.known <= 1e-6 then
 		return nil
 	end
 	local units = (p.held or 0) + (p.transit or 0)
 	local known = math.min(p.known, units)
-	local result = { known = known, units = units, complete = known >= units - 1e-6 }
-	if result.complete then
-		result.copper = p.cost / p.known
-	end
-	return result
+	local complete = known >= units - 1e-6
+	return { copper = p.cost / p.known, known = known, units = units, complete = complete, partial = not complete }
 end
 
 ----------------------------------------------------------------------------------------------------

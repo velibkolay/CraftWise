@@ -143,7 +143,7 @@ local function Build(parent)
 	panel.basisHint:SetPoint("TOPLEFT", 12, basisY - 18 - #ns.COST_BASIS_VIEWS * 26)
 	panel.basisHint:SetWidth(292)
 	panel.basisHint:SetJustifyH("LEFT")
-	panel.basisHint:SetText(C.muted .. L["Paid cost: what you paid for the units you hold (/craftwise ledger); a reagent without one uses AH. Intermediates you can craft cost the cheaper of crafting and buying."] .. "|r")
+	panel.basisHint:SetText(C.muted .. L["Paid cost: what you paid for the units you hold (/craftwise ledger); a reagent without one uses AH. Intermediates you can craft cost the cheaper of crafting and buying, unless they have a paid cost."] .. "|r")
 
 	-- Fast auto-loot (Loot.lua, #41).
 	local lootY = basisY - 18 - #ns.COST_BASIS_VIEWS * 26 - 52

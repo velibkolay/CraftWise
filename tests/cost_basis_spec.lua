@@ -3,7 +3,7 @@
 -- 1 Cured Light Hide; Cured Light Hide (3816) = 1 Light Hide, 1 Salt.
 local LL, THREAD, CLH, HIDE, SALT, PANTS = 2318, 2321, 4231, 783, 4289, 7282
 
-local function has(text, s) assert(text:find(s, 1, true), ("missing %q in:\n%s"):format(s, text)) end
+local function has(text, s) if not text:find(s, 1, true) then error("missing [" .. s .. "] in:\n" .. text, 2) end end
 local function plain(s)
 	return (s:gsub("|TInterface\\MoneyFrame\\UI%-(%a)%a*Icon:[^|]*|t", function(u) return u:lower() end):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
 end
@@ -165,6 +165,7 @@ it("paid cost basis per view: recorded paid cost is used, other reagents fall ba
 	eq(ns.Ledger.PaidCost(HIDE).copper, 90)
 	ns.db.settings.costBasis.profit = "paid"
 	local row = Row(ns, "profit", 9068)
+	-- Cured Light Hide has no paid cost: craft-or-buy, crafted from paid Light Hide + Salt at AH/vendor
 	local clh = Line(row, CLH)
 	eq(clh.unit, 140); eq(clh.crafted, true); eq(clh.paidFallback, true) -- Salt has no paid cost
 	eq(Line(row, THREAD).paidFallback, true); eq(Line(row, THREAD).paidNote, "no paid cost")
@@ -174,21 +175,46 @@ it("paid cost basis per view: recorded paid cost is used, other reagents fall ba
 	eq(hide.source, "paid"); eq(hide.unit, 90); eq(hide.label, "paid cost, 10 held"); eq(hide.paidFallback, nil)
 	-- other views keep their own basis
 	eq(Line(Row(ns, "level", 9068), CLH).unit, 155)
-	-- a paid cost for Cured Light Hide itself below the craft cost: bought at what you paid
-	stub.counts[CLH] = 2
-	ns.Ledger.Record("ahbuy", CLH, 2, 240, "PvP|H", 0)
-	clh = Line(Row(ns, "profit", 9068), CLH)
-	eq(clh.unit, 120); eq(clh.crafted, false); eq(clh.source, "paid"); eq(clh.craftUnit, 140)
 	local t = TooltipOf(ns, stub, "Light Leather Pants")
 	has(t, "Reagents | reagents: paid cost, else AH")
-	has(t, "1 × Cured Light Hide | 1s 20c  bought: paid cost, 2 held")
-	has(t, "each: crafted 1s 40c · bought 1s 20c paid cost, 2 held")
+	has(t, "1 × Cured Light Hide | 1s 40c  crafted\n")
+	has(t, "each: crafted 1s 40c · bought 2s Auctionator (house unknown) · some of its reagents have no paid cost (AH)")
 	has(t, "1 × Fine Thread | 1s  vendor no paid cost")
-	-- units held that weren't bought by you: unknown, so AH, with the reason
+end)
+
+it("an intermediate with a paid cost uses it, even when crafting is cheaper (decision 1 on #47)", function()
+	local ns, stub = Leatherworking()
+	ns.db.settings.costBasis.profit = "paid"
+	stub.counts[HIDE] = 10
+	ns.Ledger.Record("vbuy", HIDE, 10, 900, "Tanner", 0)
+	stub.counts[CLH] = 2
+	ns.Ledger.Record("ahbuy", CLH, 2, 360, "PvP|H", 0) -- 1s80 each, crafting would be 1s40
+	local clh = Line(Row(ns, "profit", 9068), CLH)
+	eq(clh.unit, 180); eq(clh.source, "paid"); eq(clh.crafted, nil); eq(clh.craftUnit, nil); eq(clh.paidFallback, nil)
+	local t = TooltipOf(ns, stub, "Light Leather Pants")
+	has(t, "1 × Cured Light Hide | 1s 80c  paid cost, 2 held")
+	assert(not t:find("each: crafted", 1, true), "no craft-or-buy line for a paid intermediate:\n" .. t)
+	-- the AH basis still crafts it
+	ns.db.settings.costBasis.profit = "ah"
+	eq(Line(Row(ns, "profit", 9068), CLH).unit, 155)
+end)
+
+it("a partial paid cost (some held units predate the log) is the logged average, shown as N of M units", function()
+	local ns, stub = Leatherworking()
+	ns.db.settings.costBasis.profit = "paid"
+	stub.counts[HIDE] = 2 -- held before the log
+	ns.Ledger.Record("vbuy", HIDE, 10, 900, "Tanner", 2)
 	stub.counts[HIDE] = 12
 	stub.Fire("BAG_UPDATE_DELAYED")
-	hide = Line(Row(ns, "profit", 3816), HIDE)
-	eq(hide.unit, 105); eq(hide.paidFallback, true); eq(hide.paidNote, "paid cost unknown: 2 of 12 held not bought by you")
+	local paid = ns.Ledger.PaidCost(HIDE)
+	eq(paid.partial, true); eq(paid.known, 10); eq(paid.units, 12); eq(paid.copper, 90)
+	local hide = Line(Row(ns, "profit", 3816), HIDE)
+	eq(hide.unit, 90); eq(hide.source, "paid"); eq(hide.paidPartial, true); eq(hide.paidFallback, nil)
+	eq(hide.label, "paid cost, 10 of 12 units")
+	eq(hide.paidNote, "average of the 10 units you bought; 2 held have no recorded price")
+	local t = TooltipOf(ns, stub, "Cured Light Hide")
+	has(t, "1 × Light Hide | 90c  paid cost, 10 of 12 units")
+	has(t, "average of the 10 units you bought; 2 held have no recorded price")
 end)
 
 it("Settings switch the basis per view and the window header shows it", function()

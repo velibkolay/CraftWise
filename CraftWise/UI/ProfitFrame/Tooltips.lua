@@ -22,14 +22,14 @@ local function PriceLabel(line)
 	if line.crafted == false then
 		text = Muted("bought: ") .. text
 	end
-	if line.paidFallback then
+	if line.paidFallback and line.source ~= "crafted" then -- a crafted line says it in its detail line
 		text = text .. " " .. WARN .. "no paid cost|r"
 	end
 	return text
 end
 
--- Second line under a reagent (#47): both unit values when a known recipe makes it, and why the
--- paid cost wasn't used. nil when there is nothing to add.
+-- Second line under a reagent (#47): both unit values when a known recipe makes it, why the paid
+-- cost wasn't used, or what a partial paid cost covers. nil when there is nothing to add.
 local function ReagentDetail(line)
 	local parts = {}
 	if line.crafted ~= nil then
@@ -37,7 +37,7 @@ local function ReagentDetail(line)
 			or ns.Market.NO_DATA
 		parts[#parts + 1] = ("each: crafted %s · bought %s"):format(Money(line.craftUnit), bought)
 	end
-	if line.paidFallback and line.paidNote then
+	if (line.paidFallback or line.paidPartial) and line.paidNote then
 		parts[#parts + 1] = line.paidNote
 	end
 	if #parts == 0 then

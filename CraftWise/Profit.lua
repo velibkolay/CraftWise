@@ -42,9 +42,13 @@ end
 -- an item already being priced up the chain is never crafted again (cycle guard). The result says
 -- which won: crafted = true ("crafted") or false ("bought"), with both unit values (craftUnit,
 -- buyUnit, buyLabel); crafted is nil when no known recipe makes the item. nil = no price at all.
+-- A buy price marked noCraft is used as is, without looking at recipes.
 function Profit.UnitCost(itemID, prices, depth, visiting)
 	depth, visiting = depth or 0, visiting or {}
 	local bought = prices.buy(itemID)
+	if bought and bought.noCraft then
+		return bought -- a price that stands as is (paid cost of what you hold, #47 decision 1)
+	end
 	local craft
 	if prices.recipesFor and depth < Profit.MAX_DEPTH and not visiting[itemID] then
 		visiting[itemID] = true
@@ -59,7 +63,8 @@ function Profit.UnitCost(itemID, prices, depth, visiting)
 	if craft and (not bought or craft.copper < bought.copper) then
 		return { copper = craft.copper, source = "crafted", label = "crafted", crafted = true, craftUnit = craft.copper,
 			buyUnit = bought and bought.copper, buyLabel = bought and bought.label, buySource = bought and bought.source,
-			age = craft.age, thin = craft.thin, paidFallback = craft.paidFallback }
+			age = craft.age, thin = craft.thin, paidFallback = craft.paidFallback,
+			paidNote = craft.paidFallback and "some of its reagents have no paid cost (AH)" or nil }
 	end
 	if not bought then
 		return nil
@@ -112,7 +117,7 @@ function Profit.Evaluate(recipe, prices)
 			line.unit, line.source, line.age, line.label, line.thin = price.copper, price.source, price.age, price.label, price.thin
 			line.crafted, line.craftUnit, line.buyUnit = price.crafted, price.craftUnit, price.buyUnit
 			line.buyLabel, line.buySource = price.buyLabel, price.buySource
-			line.paidFallback, line.paidNote = price.paidFallback, price.paidNote
+			line.paidFallback, line.paidNote, line.paidPartial = price.paidFallback, price.paidNote, price.paidPartial
 			if price.paidFallback then
 				result.paidFallbacks = (result.paidFallbacks or 0) + 1
 			end
