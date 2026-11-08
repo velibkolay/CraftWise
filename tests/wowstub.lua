@@ -249,6 +249,8 @@ end
 stub.counts = {}
 C_Item.GetItemCount = function(id) return stub.counts[id] or 0 end
 stub.cantUse = {}
+stub.noProficiency = {} -- [itemID] = true: C_PlayerInfo.CanUseItem says no (armour or weapon type)
+C_PlayerInfo = { CanUseItem = function(id) return not stub.noProficiency[id] end }
 C_TooltipInfo.GetItemByID = function(id)
 	return { lines = { { leftText = "x", leftColor = stub.cantUse[id] and { r = 1, g = 0.1, b = 0.1 } or { r = 1, g = 1, b = 1 } } } }
 end
