@@ -71,7 +71,8 @@ local DB_DEFAULTS = {
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |
 		-- "BootyBay" | "Gadgetzan" | "Everlook".
-		priceBasis = "typical", priceHouse = "faction" }, -- ahMin*: Bags, AH only when it pays this much more than a vendor
+		priceBasis = "typical", priceHouse = "faction",
+		ledgerView = "reset" }, -- /craftwise ledger: "reset" (since last reset) | "today" | "login" (#46) -- ahMin*: Bags, AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,
@@ -127,6 +128,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local marketArg = msg:match("^market%s*(.*)$")
 	if marketArg and ns.Market then
 		ns.Market.Slash(marketArg)
+		return
+	end
+	local ledgerArg = msg:match("^ledger%s*(.*)$")
+	if ledgerArg and ns.Ledger then
+		ns.Ledger.Slash(ledgerArg)
 		return
 	end
 	if msg == "settings" or msg == "config" then

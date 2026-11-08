@@ -60,6 +60,20 @@ C_Timer = { After = function(_, fn) fn() end }
 SlashCmdList = {}
 print = print
 time = os.time
+date = os.date
+-- hooksecurefunc([table,] name, hook): the hook runs after the original with the same arguments.
+function hooksecurefunc(t, name, hook)
+	if type(t) == "string" then t, name, hook = _G, t, name end
+	local orig = t[name]
+	t[name] = function(...)
+		local r = { orig(...) }
+		hook(...)
+		return unpack(r)
+	end
+end
+-- Money: stub.money (copper).
+stub.money = 0
+function GetMoney() return stub.money end
 Enum = { CraftingReagentType = { Basic = 1, Modifying = 2 }, BagIndex = { ReagentBag = 5 } }
 
 -- Items: [itemID] = { name, sellPrice }
@@ -128,6 +142,8 @@ end
 
 -- Merchant: stub.merchant = { { itemID, price, stack, extended } }
 stub.merchant = {}
+stub.buyback = 0 -- entries on the merchant's buyback tab
+function GetNumBuybackItems() return stub.buyback end
 function GetMerchantNumItems() return #stub.merchant end
 function GetMerchantItemID(i) return stub.merchant[i].itemID end
 function GetMerchantItemInfo(i)
@@ -320,6 +336,12 @@ C_AuctionHouse = {
 	GetItemSearchResultsQuantity = function(key) return SearchOf(key).total or 0 end,
 	HasFullItemSearchResults = function(key) return SearchOf(key).full ~= false end,
 	GetBrowseResults = function() return stub.browse end,
+	-- Purchases (restricted in game). stub.auctions[auctionID] = AuctionInfo.
+	StartCommoditiesPurchase = noop,
+	ConfirmCommoditiesPurchase = noop,
+	PlaceBid = noop,
+	GetAuctionInfoByID = function(id) return stub.auctions[id] end,
 }
+stub.auctions = {}
 
 return stub

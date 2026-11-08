@@ -228,3 +228,17 @@ New files (`Holdings.lua`, `Balance.lua`): **full game restart** needed, `/reloa
 - Mail: items in letters count (`GetInboxItem`); taking an item out of a letter moves it to the bags count without doubling.
 - Account bank tabs, when the client has them, show as "Not counted: account bank (not read)".
 - The result is cached until the bags change (`BAG_UPDATE_DELAYED`), the bank or mailbox is scanned, or recipes change: loot an item while hovering, hover again, the counts follow. Hovering the same items repeatedly should not stutter.
+
+## Ledger (#46)
+Needs a full game restart (new file `Ledger.lua` in the TOC). Saved in `CraftWiseMarketDB.ledger` (`entries`, `chars["<realm>-<name>"]`).
+- [ ] Vendor, right-click buy (e.g. 5 Salt): one `entries` row `k = "vbuy"`, `q = 5`, `m` = the merchant's price, `w` = the merchant's name. Same with a split stack (Shift-click, enter 3) and with a drag from the merchant onto a bag slot (that path calls no `BuyMerchantItem`).
+- [ ] Vendor sale by right-click and by dragging an item onto the merchant: one `k = "vsell"` row each, `m` = the money received. "Sell junk" with several stacks: one row per item, and their sum equals the money change.
+- [ ] Buyback: sell something, buy it back from the buyback tab: one `k = "buyback"` row; `/craftwise ledger` shows the item with sold 0 and received 0. `/dump GetNumBuybackItems()` returns a number at a merchant (legacy function, allowlisted from Blizzard's MerchantFrame.lua).
+- [ ] Repair All (and repairing a single item): no row; `/craftwise ledger` lists the repair under "not from logged trades".
+- [ ] A slow server: buy at a vendor with high latency; the row still appears (money and bag events are paired within 1.5 s). Report any purchase that was missed.
+- [ ] AH commodity (e.g. 10 Light Hide): one `k = "ahbuy"` row, `q = 10`, `m` = the total shown in Blizzard's buy dialog, `w` = the house key (e.g. `<realm>|H`). Let a purchase fail (price changed): no row. Same with Auctionator's buy screen (it calls the same functions).
+- [ ] AH item buyout (gear or a recipe): one row with `q` from the auction and `m` = the buyout. A bid without buyout: no row.
+- [ ] Where AH purchases land (bags at once, or the mailbox): either way `/dump CraftWiseMarketDB.ledger.chars["<realm>-<name>"].pos[<itemID>]` shows `transit` back at 0 once the units are in the bags, and `known` = the units bought.
+- [ ] `pos[<itemID>].held` matches bags + bank right after login, with the bank closed (`C_Item.GetItemCount(id, true, false, true)` must count the bank from the cache). If it drops at login and comes back when the bank opens, report it: the paid cost would turn unknown.
+- [ ] `/craftwise ledger login`, `/craftwise ledger today` (per-day rows), `/craftwise ledger all` (since last reset), `/craftwise ledger reset`: start money, spent/received per item, net. With only trades in the session the line says "net matches the money change"; a quest reward or loot money shows as "not from logged trades". `/craftwise ledger` alone repeats the last view.
+- [ ] `/reload` keeps "since login"; a relog starts it again. A session over midnight: the new day's start money is the money held at midnight (taken at the first money change after it).

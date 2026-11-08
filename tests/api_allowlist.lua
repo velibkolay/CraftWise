@@ -31,6 +31,7 @@ return {
 		GetNumQuestChoices = UI .. "Mainline/QuestInfo.lua",
 		GetNumQuestRewards = UI .. "Mainline/QuestInfo.lua",
 		GetTitleText = UI .. "Mainline/QuestFrame.lua",
+		GetNumBuybackItems = UI .. "Mainline/MerchantFrame.lua (MerchantFrame_UpdateMerchantInfo, MerchantFrame_UpdateBuybackInfo)",
 		GetMerchantItemID = UI .. "Vanilla/MerchantFrame.lua; " .. GAME .. " (vendor prices recorded)",
 		GetMerchantItemInfo = UI .. "Vanilla/MerchantFrame.lua",
 		GetMerchantNumItems = UI .. "Vanilla/MerchantFrame.lua; " .. GAME,
