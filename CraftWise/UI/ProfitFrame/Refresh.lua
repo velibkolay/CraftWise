@@ -51,6 +51,8 @@ local function Refresh()
 			label = L["PROFESSION"]
 		elseif key == "name" and ItemView() then
 			label = L["ITEM"]
+		elseif key == "cost" and View() == "upgrades" then
+			label = L["TOTAL COST"]
 		end
 		header.text:SetText(label .. arrow)
 	end
@@ -70,7 +72,7 @@ local function Refresh()
 	if View() == "learn" then
 		empty = "No recipes match. Clear the search or untick \"Fits my skill\"."
 	elseif View() == "upgrades" then
-		empty = "No upgrades from the recipes you know. Open your professions once so CraftWise knows them."
+		empty = "No upgrades from recipes you know or can learn now. Open your professions once so CraftWise knows them."
 	end
 	PF.frame.empty:SetText(empty)
 	PF.frame.empty:SetShown((#ids > 0 or ItemView()) and #state.data == 0)

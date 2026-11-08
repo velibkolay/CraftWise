@@ -93,3 +93,145 @@ it("upgrades view renders; right-click dismisses and restores a suggestion", fun
 	eq(ns.db.dismissed[2001], nil)
 	stub.Fire("PLAYER_EQUIPMENT_CHANGED")
 end)
+
+it("main stats inline: primary stats and stamina, for the item and the equipped one", function()
+	local ns, stub = setup()
+	eq(ns.Upgrades.MainStatsText({ ITEM_MOD_STAMINA_SHORT = 2, ITEM_MOD_AGILITY_SHORT = 3, RESISTANCE0_NAME = 9 }), "+3 AGI +2 STA")
+	eq(ns.Upgrades.MainStatsText({ RESISTANCE0_NAME = 9 }), "")
+	eq(ns.Upgrades.MainStatsText(nil), nil)
+	stub.items[1001].stats.ITEM_MOD_STRENGTH_SHORT = 1
+	local row = byItem(ns.UpgradeRows())[2001]
+	eq(row.mainStats, "+1 STA"); eq(row.currentStats, "+1 STR")
+	eq(byItem(ns.UpgradeRows())[2003].currentStats, nil) -- empty slot
+end)
+
+it("rows show the total cost to obtain, never a profit", function()
+	local ns, stub = setup()
+	stub.items[2318].sellPrice = 5
+	ns.db.vendor[2318] = 10
+	local row = byItem(ns.UpgradeRows())[2001]
+	eq(row.cost, 20); eq(row.costComplete, true); eq(row.learnFirst, false); eq(row.section, "craft")
+	eq(row.profit, nil); eq(row.sellsFor, nil)
+end)
+
+it("items the client hasn't loaded yet are requested, not guessed", function()
+	local ns, stub = setup()
+	local requested = {}
+	C_Item.RequestLoadItemDataByID = function(id) requested[id] = true end
+	stub.items[2010] = nil
+	stub.profession.recipes[10] = { info = { name = "Unknown Boots", learned = true }, schematic = stub.Schematic({ { 2318, 1 } }, 2010) }
+	C_Item.GetItemInfoInstant = function(id) return id, nil, nil, id == 2010 and "INVTYPE_FEET" or (stub.items[id] and stub.items[id].equipLoc or ""), nil end
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(byItem(ns.UpgradeRows())[2010], nil)
+	eq(requested[2010], true)
+	local notified = false
+	ns.Listen("UPGRADES_CHANGED", function() notified = true end)
+	stub.items[2010] = { name = "Unknown Boots", level = 12, equipLoc = "INVTYPE_FEET" }
+	stub.Fire("GET_ITEM_INFO_RECEIVED", 2010, true)
+	eq(notified, true)
+	eq(byItem(ns.UpgradeRows())[2010].emptySlot, true)
+end)
+
+it("leaves out items the client says this class can't wear", function()
+	local ns, stub = setup()
+	stub.noProficiency[2001] = true
+	eq(byItem(ns.UpgradeRows())[2001], nil)
+end)
+
+-- Learnable recipes (#16 scope extension, decision 2026-11-09).
+local function learnSetup(opts)
+	local ns, stub = LoadAddon(opts)
+	stub.items[1001] = { name = "Old Cloak", level = 10, equipLoc = "INVTYPE_CLOAK", stats = { RESISTANCE0_NAME = 10 } }
+	stub.items[2318] = { name = "Light Leather" }
+	stub.equipped.BACKSLOT = 1001
+	local slots = { [4001] = "INVTYPE_HEAD", [4002] = "INVTYPE_CHEST", [4003] = "INVTYPE_LEGS", [4004] = "INVTYPE_FEET",
+		[4005] = "INVTYPE_HAND", [4006] = "INVTYPE_WRIST", [4007] = "INVTYPE_WAIST", [4008] = "INVTYPE_SHOULDER" }
+	for id, loc in pairs(slots) do
+		stub.items[id] = { name = "Gear " .. id, level = 12, equipLoc = loc }
+	end
+	local recipes = {}
+	for i = 1, 8 do
+		recipes[100 + i] = { info = { name = "Recipe " .. i, learned = false }, schematic = stub.Schematic({ { 2318, 1 } }, 4000 + i) }
+	end
+	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = recipes }
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.db.vendor[2318] = 10
+	return ns, stub
+end
+
+it("learnable from a trainer: marked learn first, cost = reagents + trainer fee", function()
+	local ns = learnSetup()
+	ns.db.trainer[101] = { fee = 500, required = 80 }
+	local row = byItem(ns.UpgradeRows())[4001]
+	eq(row.learnFirst, true); eq(row.learnKind, "trainer"); eq(row.learnText, "Trainer")
+	eq(row.learnCost, 500); eq(row.reagentCost, 10); eq(row.cost, 510); eq(row.costComplete, true)
+end)
+
+it("learnable from a vendor of your faction, not from the other faction's", function()
+	local ns = learnSetup()
+	ns.SourceData = {
+		[102] = { skill = 90, vendors = { { name = "Tamar", zone = "Orgrimmar", faction = "H", price = 1200 } } },
+		[103] = { skill = 90, vendors = { { name = "Alliance Guy", zone = "Stormwind", faction = "A", price = 1200 } } },
+	}
+	local rows = byItem(ns.UpgradeRows())
+	eq(rows[4002].learnKind, "vendor"); eq(rows[4002].cost, 1210)
+	eq(rows[4002].learnText, "Vendor: Tamar (Orgrimmar) - " .. ns.FormatMoney(1200))
+	eq(rows[4003], nil)
+end)
+
+it("learnable as a drop (cost incomplete without a price) or from the AH", function()
+	local ns, stub = learnSetup({ auctionator = true })
+	ns.SourceData = {
+		[104] = { skill = 60, item = 5004, drops = { { name = "Kobold", zone = "Elwynn" } } },
+		[105] = { skill = 60, item = 5005 },
+	}
+	stub.ah[5005] = 3000
+	local rows = byItem(ns.UpgradeRows())
+	eq(rows[4004].learnKind, "drop"); eq(rows[4004].learnCost, nil); eq(rows[4004].costComplete, false)
+	eq(rows[4004].cost, 10)
+	eq(rows[4005].learnKind, "auction"); eq(rows[4005].learnCost, 3000); eq(rows[4005].cost, 3010)
+end)
+
+it("leaves out recipes above your skill, with an unknown requirement, quest-only or without a source", function()
+	local ns = learnSetup()
+	ns.db.trainer[101] = { fee = 500, required = 120 } -- skill 100
+	ns.SourceData = {
+		[102] = { vendors = { { name = "Tamar", faction = "H", price = 1200 } } }, -- requirement unknown
+		[106] = { skill = 50, quests = { { name = "Some Quest" } } },
+	}
+	local rows = byItem(ns.UpgradeRows())
+	eq(rows[4001], nil); eq(rows[4002], nil); eq(rows[4006], nil)
+	eq(rows[4007], nil) -- no source at all
+end)
+
+it("a known recipe wins over a learnable one for the same item; cheaper learnable wins otherwise", function()
+	local ns, stub = learnSetup()
+	stub.profession.recipes[201] = { info = { name = "Known Head", learned = true }, schematic = stub.Schematic({ { 2318, 3 } }, 4001) }
+	stub.profession.recipes[202] = { info = { name = "Pricey Chest", learned = false }, schematic = stub.Schematic({ { 2318, 1 } }, 4002) }
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.db.trainer[101] = { fee = 1, required = 1 }
+	ns.db.trainer[102] = { fee = 100, required = 1 }
+	ns.db.trainer[202] = { fee = 900, required = 1 }
+	local rows = byItem(ns.UpgradeRows())
+	eq(rows[4001].learnFirst, false); eq(rows[4001].recipeID, 201); eq(rows[4001].cost, 30)
+	eq(rows[4002].recipeID, 102); eq(rows[4002].cost, 110)
+end)
+
+it("upgrades view shows learn-first rows and the total cost header", function()
+	local ns, stub = learnSetup()
+	ns.db.trainer[101] = { fee = 500, required = 80 }
+	ns.db.settings.view = "upgrades"
+	ns.ToggleProfitFrame()
+	local row
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.shown ~= false and f.data.itemID == 4001 then row = f end
+	end
+	assert(row.status.text:find("learn first", 1, true), row.status.text)
+	assert(row.status.text:find("Trainer", 1, true))
+	row.scripts.OnEnter(row)
+	local header
+	for _, f in ipairs(stub.frames) do
+		if f.label and f.text and f.text.text and f.text.text:find("TOTAL COST", 1, true) then header = f end
+	end
+	assert(header, "TOTAL COST header")
+end)

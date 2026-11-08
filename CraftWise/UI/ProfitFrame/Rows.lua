@@ -59,20 +59,23 @@ local function RenderSummary(ids)
 				.. "\n" .. Muted("Click a profession to choose its song, preview it, and pick resume or start over.")
 		end
 	elseif View() == "upgrades" then
-		local ready, dismissed = 0, state.hidden
+		local ready, learn, dismissed = 0, 0, state.hidden
 		for _, r in ipairs(state.data) do
 			if r.dismissed then
 				dismissed = dismissed + 1
+			elseif r.learnFirst then
+				learn = learn + 1
 			elseif r.haveReagents then
 				ready = ready + 1
 			end
 		end
-		text = ("%d upgrades from your recipes  ·  %s%d|r you can craft right now"):format(#state.data - (dismissed - state.hidden), C.good, ready)
-			.. Muted("  ·  " .. BasisNote("upgrades"))
+		local shown = #state.data - (dismissed - state.hidden)
+		text = ("|cffffffffCraftable|r  ·  %d upgrades  ·  %d from known recipes, %s%d|r learn first  ·  %s%d|r you can craft right now"):format(
+			shown, shown - learn, C.warn, learn, C.good, ready) .. Muted("  ·  " .. BasisNote("upgrades"))
 		if dismissed > 0 then
 			text = text .. Muted(("  ·  %d dismissed"):format(dismissed))
 		end
-		text = text .. "\n" .. Muted("Upgrade = higher item level, or same item level with more armour. Hover for the stat changes.")
+		text = text .. "\n" .. Muted("Upgrade = higher item level, or same item level with more armour. Cost = reagents + learning. Hover for the stat changes.")
 	elseif View() == "bags" then
 		local vendor, auction, best, deable, kept = 0, 0, 0, 0, 0
 		for _, r in ipairs(state.data) do
@@ -228,8 +231,15 @@ local function RenderUpgradeRow(row, r)
 	row.icon:SetDesaturated(r.dismissed)
 	row.name:SetText((r.dismissed and C.muted or (QUALITY_COLORS[r.quality] or "|cffffffff")) .. r.name .. "|r")
 	local notes = { r.slotLabel, ("ilvl %d"):format(r.level or 0) }
+	if r.mainStats and r.mainStats ~= "" then
+		notes[#notes + 1] = "|cffffffff" .. r.mainStats .. "|r" .. C.muted
+	elseif r.mainStats == nil then
+		notes[#notes + 1] = "stats ?"
+	end
 	if r.dismissed then
 		notes[#notes + 1] = C.info .. "dismissed|r" .. C.muted
+	elseif r.learnFirst then
+		notes[#notes + 1] = C.warn .. "learn first|r" .. C.muted .. (r.learnText and (" (" .. r.learnText .. ")") or "")
 	elseif r.haveReagents then
 		notes[#notes + 1] = C.good .. "reagents in bags|r" .. C.muted
 	end
@@ -238,7 +248,8 @@ local function RenderUpgradeRow(row, r)
 	if r.emptySlot then
 		cells.equippedText:SetText(Muted("empty slot"))
 	else
-		cells.equippedText:SetText((QUALITY_COLORS[r.current.quality] or "") .. (r.equippedText or "?") .. "|r")
+		local stats = r.currentStats and r.currentStats ~= "" and Muted("  " .. r.currentStats) or ""
+		cells.equippedText:SetText((QUALITY_COLORS[r.current.quality] or "") .. (r.equippedText or "?") .. "|r" .. stats)
 	end
 	local parts = {}
 	if r.emptySlot then

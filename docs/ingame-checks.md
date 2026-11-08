@@ -42,6 +42,16 @@ Report Lua errors with BugSack + BugGrabber.
 - Check: `C_Item.GetItemStats` returns armour under `RESISTANCE0_NAME` in the Forever client (else the armour gain shows 0).
 - Check: ranged items (bow/gun) compare against the ranged slot.
 
+### Craftable section: learnable recipes, total cost, main stats (#16 scope extension)
+`/reload` is enough (no new file).
+- Summary starts with "Craftable" and counts rows from known recipes and rows to "learn first".
+- A recipe you don't know, whose item would upgrade a slot, shows with "learn first (Trainer)" / "(Vendor: Name (Zone) - price)" / "(Drop: ...)" / "(AH: price)" when its required skill is known and met. Recipes above your skill, with an unknown requirement, sold only by the other faction's vendor, quest-only, or without any source are not listed.
+- TOTAL COST column = reagents + learn cost (trainer fee, vendor price or the recipe item's AH price at the profit house). A drop recipe without an AH price shows "+?". No profit anywhere in the view.
+- Hover: "Main stats  +3 AGI +2 STA  vs  +1 STR", "Learn first (skill N)" with the sources, "Cost to obtain" with reagents, learn and total.
+- Check: `C_Item.GetItemStats` uses the keys `ITEM_MOD_STRENGTH_SHORT`, `ITEM_MOD_AGILITY_SHORT`, `ITEM_MOD_INTELLECT_SHORT`, `ITEM_MOD_SPIRIT_SHORT`, `ITEM_MOD_STAMINA_SHORT` in the Forever client (else the inline stats stay empty). Spirit is shown because it is a base attribute in Forever; say if it should go.
+- Check: `C_PlayerInfo.CanUseItem(itemID)` returns false for armour/weapon types the class can't use (e.g. plate on a hunter) and true otherwise, also for items not cached yet. If it returns false for usable items, every row disappears: report it.
+- Items the client hasn't loaded are requested and appear about half a second later (GET_ITEM_INFO_RECEIVED).
+
 ## Music (#17)
 - `CraftWise_Music` made with `tools/music_split.py`, game restarted: Music tab shows the songs count.
 - Click a profession: a picker lists "No music" and every song with Play/Stop preview, plus Resume / From the beginning. Escape or X closes it and stops the preview.

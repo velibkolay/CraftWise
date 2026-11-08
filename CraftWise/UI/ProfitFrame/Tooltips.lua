@@ -266,6 +266,12 @@ local function ShowUpgradeTooltip(row, r)
 			GameTooltip:AddLine("Item stats not loaded yet - hover again.", 0.55, 0.55, 0.6)
 		end
 	end
+	if r.mainStats or r.currentStats then
+		GameTooltip:AddDoubleLine("Main stats", ("%s  vs  %s"):format(
+			r.mainStats == nil and "?" or r.mainStats == "" and "none" or r.mainStats,
+			r.emptySlot and "empty" or r.currentStats == nil and "?" or r.currentStats == "" and "none" or r.currentStats),
+			0.8, 0.8, 0.8, 1, 1, 1)
+	end
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddDoubleLine("Recipe", (SKILL_COLORS[r.skillColor] or "") .. (r.recipeName or "?") .. "|r", 1, 0.82, 0, 1, 1, 1)
 	for _, line in ipairs(r.reagents or {}) do
@@ -274,6 +280,27 @@ local function ShowUpgradeTooltip(row, r)
 		GameTooltip:AddDoubleLine(("  %d × %s"):format(line.quantity, ItemName(line.itemID)),
 			color .. ("have %d|r"):format(have), 1, 1, 1, 1, 1, 1)
 	end
+	if r.learnFirst then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(("Learn first%s"):format(r.required and (" (skill %d)"):format(r.required) or ""), 1, 0.6, 0.3)
+		for i, line in ipairs(ns.RecipeWhere(r.recipeID)) do
+			if i > 4 then
+				break
+			end
+			GameTooltip:AddDoubleLine("  " .. line.text, line.label or "", 1, 1, 1, 0.55, 0.55, 0.6)
+		end
+	end
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("Cost to obtain", 1, 0.82, 0)
+	local reagents = r.reagentComplete and Money(r.reagentCost or 0)
+		or ((r.reagentCost or 0) > 0 and (Money(r.reagentCost) .. C.warn .. " +?|r") or (C.warn .. "no price|r"))
+	GameTooltip:AddDoubleLine("  Reagents", reagents, 0.8, 0.8, 0.8, 1, 1, 1)
+	if r.learnFirst then
+		local how = ({ trainer = "trainer", vendor = "vendor" })[r.learnSource] or r.learnLabel or ""
+		GameTooltip:AddDoubleLine("  Learn" .. (how ~= "" and (" (" .. how .. ")") or ""),
+			r.learnCost and Money(r.learnCost) or (C.warn .. "no price|r"), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	GameTooltip:AddDoubleLine("  Total", Money(r.cost or 0) .. (r.costComplete and "" or (C.warn .. " +?|r")), 0.8, 0.8, 0.8, 1, 1, 1)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine(r.dismissed and "Right-click: suggest this item again" or "Right-click: don't suggest this item",
 		0.55, 0.55, 0.6)
