@@ -228,6 +228,28 @@ function ns.GetSellValue(itemID)
 	return nil
 end
 
+-- Both ways to sell `quantity` units, for display (#48). Same values ns.GetSellValue compares, so
+-- the chosen one matches "Sells for" to the copper.
+-- { chosen = "vendor"|"auction"|nil (what ns.GetSellValue picks),
+--   vendor = copper (nil: sell price not loaded yet; 0: vendors don't buy it),
+--   auction = { gross, net (nil when the cut is unverified), cut, cutText, label, thin, cutUnverified } | nil }
+function ns.SaleOptions(itemID, quantity)
+	quantity = quantity or 1
+	local options = {}
+	local vendor = ns.GetVendorSellPrice(itemID)
+	options.vendor = vendor and vendor * quantity
+	local quote = ns.AuctionQuote(itemID)
+	if quote then
+		local cut, info = ns.AuctionCut(quote)
+		options.auction = { gross = quote.copper * quantity, cut = cut, cutText = info.text, cutDiffers = info.differs,
+			label = quote.label, thin = quote.thin, cutUnverified = not cut or nil,
+			net = cut and quote.copper * (1 - cut) * quantity or nil }
+	end
+	local chosen = ns.GetSellValue(itemID)
+	options.chosen = chosen and chosen.source
+	return options
+end
+
 -- Record merchant prices so vendor reagents (thread, vials, dyes, flux) cost what vendors ask.
 local function MerchantItem(index)
 	if C_MerchantFrame and C_MerchantFrame.GetItemInfo then

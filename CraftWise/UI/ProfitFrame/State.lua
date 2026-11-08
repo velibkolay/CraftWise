@@ -41,9 +41,9 @@ local COLUMN_DEFS = {
 local VIEWS = {
 	-- Profit: what to craft. The learn columns only show with unlearned recipes.
 	profit = {
-		{ key = "name", width = 290 },
+		{ key = "name", width = 260 },
 		{ key = "cost", width = 100 },
-		{ key = "sellsFor", width = 100 },
+		{ key = "sellsFor", width = 130 },
 		{ key = "profit", width = 100 },
 		{ key = "learnCost", width = 95, learn = true },
 		{ key = "breakEven", width = 75, learn = true },
@@ -160,6 +160,17 @@ local function PriceBasisText()
 	return ns.BASIS_TEXT[basis] .. " · " .. (label or "own faction AH")
 end
 
+-- Short tag for where "Sells for" comes from (#48): "vendor", "AH", or "AH gross" when the house's
+-- cut is unverified (no net value); nil without a sale value.
+local function SaleTag(source, cutUnverified)
+	if source == "vendor" then
+		return "vendor"
+	elseif source == "auction" then
+		return cutUnverified and "AH gross" or "AH"
+	end
+	return nil
+end
+
 local function View()
 	local v = Settings().view
 	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
@@ -179,5 +190,5 @@ ns.PF = {
 	ARROW_DOWN = ARROW_DOWN, ARROW_UP = ARROW_UP,
 	rows = rows, tabs = tabs, viewButtons = viewButtons, state = state,
 	Settings = Settings, Money = Money, Muted = Muted, ItemName = ItemName, StatusLine = StatusLine,
-	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText,
+	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag,
 }

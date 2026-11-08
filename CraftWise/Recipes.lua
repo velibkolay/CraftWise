@@ -536,6 +536,7 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.skillColor = ns.SkillUpColor(recipe, tooLow)
 	result.noItemOutput = recipe.noItemOutput or result.noItemOutput
 	result.outputItemID = recipe.output and recipe.output.itemID
+	result.outputQuantity = recipe.output and recipe.output.quantity
 	result.bundledOnly = recipe.bundledOnly
 	return result
 end

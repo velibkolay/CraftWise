@@ -211,3 +211,9 @@ Needs a full game restart (new file in the TOC). Settings, "Fast auto-loot" (def
 - [ ] Group (loot method group/need before greed): rolls and locked slots are untouched. Master loot: CraftWise does nothing. `Enum.LootMethod.Masterlooter` exists (UNVERIFIED name): `/dump Enum.LootMethod`.
 - [ ] Fishing and chests loot too.
 - [ ] SpeedyAutoLoot enabled: CraftWise prints its one-time note and does not loot; Settings shows the checkbox dimmed. Without it, no double looting.
+
+## Sale options in the profit view (#48)
+`/reload` is enough (no new file).
+- Profit view: the "Sells for" cell shows the value plus `vendor` or `AH` (orange `AH gross` where the house's cut is unverified). Light Leather Pants with a vendor price above the AH net shows `5s 99c  vendor`.
+- Hover a row: under "Sells for" two lines, "Vendor  5s 99c (no cut)" and "AH net  x (gross y, 5% cut (confirmed), typical · Horde AH)"; the one "Sells for" uses is green with "(used)". Items without AH data say "no price data"; items vendors don't buy say so.
+- The cell fits in its column with gold amounts (e.g. `12g 34s 56c  AH`); if it is cut off, report the width.

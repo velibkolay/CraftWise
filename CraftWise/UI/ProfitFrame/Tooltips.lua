@@ -17,17 +17,49 @@ local function PriceLabel(line)
 	return Muted(line.label or "AH") .. (line.thin and (" " .. WARN .. "thin|r") or "")
 end
 
+-- "Sells for" line: the chosen value and its tag (#48).
 local function SellText(r)
 	if not r.sellsFor then
 		return ns.Market.NO_DATA
 	end
-	if r.sellSource == "vendor" then
-		return ("%s  %s"):format(Money(r.sellsFor), Muted("vendor"))
+	local tag = PF.SaleTag(r.sellSource, r.cutUnverified)
+	return ("%s  %s"):format(Money(r.sellsFor), r.cutUnverified and (WARN .. tag .. "|r") or Muted(tag or ""))
+end
+
+-- Both sale options under "Sells for", the one "Sells for" uses marked (#48):
+--   Vendor   5s99 (no cut)
+--   AH net   x (gross y, 5% cut (confirmed), typical · Horde AH)   or   AH  gross y, cut unverified, Booty Bay
+-- Returns { { left, right, chosen } } for the recipe's output quantity.
+local function SaleOptionLines(r)
+	if not r.outputItemID then
+		return {}
 	end
-	local how = r.cutUnverified and (WARN .. "gross, cut unverified|r")
-		or r.sellCutDiffers and (WARN .. (r.sellCutText or "?") .. "|r")
-		or Muted(r.sellCutText or ("after %g%% cut"):format((r.sellCut or 0) * 100))
-	return ("%s  %s  %s"):format(Money(r.sellsFor), how, PriceLabel({ label = r.sellLabel, thin = r.sellThin }))
+	local o = ns.SaleOptions(r.outputItemID, r.outputQuantity or 1)
+	local lines = {}
+	local vendor
+	if o.vendor == nil then
+		vendor = Muted("sell price not loaded yet")
+	elseif o.vendor <= 0 then
+		vendor = Muted("vendors don't buy it")
+	else
+		vendor = Money(o.vendor) .. " " .. Muted("(no cut)")
+	end
+	lines[1] = { "Vendor", vendor, r.sellSource == "vendor" }
+	local a = o.auction
+	if not a then
+		lines[2] = { "AH net", Muted(ns.Market.NO_DATA), false }
+	elseif a.cutUnverified then
+		lines[2] = { "AH", WARN .. ("gross %s, cut unverified|r"):format(Money(a.gross)) .. Muted(", " .. (a.label or "?"))
+			.. (a.thin and (" " .. WARN .. "thin|r") or ""), r.sellSource == "auction" }
+	else
+		local cut = a.cutDiffers and (WARN .. (a.cutText or "?") .. "|r") or (a.cutText or "?")
+		lines[2] = { "AH net", Money(a.net) .. " " .. Muted("(gross " .. Money(a.gross) .. ", ") .. cut .. Muted(", " .. (a.label or "?") .. ")")
+			.. (a.thin and (" " .. WARN .. "thin|r") or ""), r.sellSource == "auction" }
+	end
+	for _, l in ipairs(lines) do
+		l[1] = l[3] and (C.good .. "  " .. l[1] .. " (used)|r") or Muted("  " .. l[1])
+	end
+	return lines
 end
 
 local function AddLines(lines, r, g, b)
@@ -387,6 +419,9 @@ local function ShowTooltip(row)
 	if r.outputItemID then
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddDoubleLine("Sells for", SellText(r), 1, 0.82, 0, 1, 1, 1)
+		for _, l in ipairs(SaleOptionLines(r)) do
+			GameTooltip:AddDoubleLine(l[1], l[2], 0.8, 0.8, 0.8, 1, 1, 1)
+		end
 		if r.cutUnverified then
 			GameTooltip:AddLine("The AH cut at this house isn't measured yet, so no profit is shown (it is never assumed).", 1, 0.6, 0.3, true)
 		end
@@ -404,4 +439,4 @@ local function ShowTooltip(row)
 	GameTooltip:Show()
 end
 
-PF.ShowTooltip = ShowTooltip
+PF.ShowTooltip, PF.SaleOptionLines = ShowTooltip, SaleOptionLines
