@@ -30,8 +30,10 @@ function Leveling.Stage(skill, yellow, grey)
 	return math.max(1, math.min(Leveling.BINS, stage))
 end
 
--- Recorded crafts pooled three ways: per recipe and stage, per stage (all recipes), per client
--- colour (yellow 1 / green 2) for recipes without thresholds.
+-- Recorded crafts pooled three ways: per recipe and stage, per stage (all recipes of the same
+-- profession), per client colour (yellow 1 / green 2) of the same profession for recipes without
+-- thresholds. Pools never mix professions (#44): a Cooking craft says nothing about the chance of a
+-- Leatherworking one. A recipe whose profession is unknown joins only its own per-recipe pool.
 local function Pools()
 	local byRecipeStage, byStage, byColor = {}, {}, {}
 	local function add(t, key, n, ups)
@@ -41,14 +43,17 @@ local function Pools()
 	end
 	for recipeID, bySkill in pairs(ns.db and ns.db.skillups or {}) do
 		local yellow, grey = ns.RecipeThresholds(recipeID)
+		local line = ns.RecipeLine(recipeID)
 		for skill, e in pairs(bySkill) do
 			local stage = Leveling.Stage(skill, yellow, grey)
 			if stage then
 				add(byRecipeStage, recipeID .. ":" .. stage, e.n, e.ups)
-				add(byStage, stage, e.n, e.ups)
+				if line then
+					add(byStage, line .. ":" .. stage, e.n, e.ups)
+				end
 			end
-			if e.d == 1 or e.d == 2 then
-				add(byColor, e.d, e.n, e.ups)
+			if line and (e.d == 1 or e.d == 2) then
+				add(byColor, line .. ":" .. e.d, e.n, e.ups)
 			end
 		end
 	end
@@ -65,14 +70,17 @@ end
 ns.Listen("SKILLUPS_CHANGED", function()
 	cached = nil
 end)
+ns.Listen("RECIPES_CHANGED", function()
+	cached = nil -- which profession a recipe belongs to may have changed
+end)
 
 -- Chance of a skill point from one craft, and where it comes from.
 -- Returns p (0..1 or nil), info = { kind, n, ups, stage }
 --   orange: below the recipe's yellow threshold (or client says orange) -> always a point
 --   grey:   at or above the grey threshold (or client says grey) -> never
 --   recipe: your own crafts of this recipe at the same stage (at least MIN_CRAFTS)
---   stage:  all your crafts of any recipe at the same stage
---   color:  all your crafts at the same client colour (recipes without thresholds)
+--   stage:  all your crafts of any recipe of the same profession at the same stage
+--   color:  all your crafts of the same profession at the same client colour (recipes without thresholds)
 --   formula: none of the above has enough crafts: community formula (grey - skill) / (grey - yellow)
 --            (SkillUp Forever, Skillet; not official). Shown as an estimate, chosen by Veli
 --            2026-10-05 so every recipe gets a %; your own crafts replace it once recorded.
@@ -86,6 +94,7 @@ end
 function Leveling.Chance(recipeID, difficulty, skill, pools)
 	pools = pools or Pools()
 	local yellow, grey = ns.RecipeThresholds(recipeID)
+	local line = ns.RecipeLine(recipeID)
 	if yellow and skill then
 		if skill >= grey then
 			return 0, { kind = "grey" }
@@ -97,7 +106,7 @@ function Leveling.Chance(recipeID, difficulty, skill, pools)
 		if own and own.n >= Leveling.MIN_CRAFTS then
 			return own.ups / own.n, { kind = "recipe", n = own.n, ups = own.ups, stage = stage }
 		end
-		local all = pools.stage[stage]
+		local all = line and pools.stage[line .. ":" .. stage]
 		if all and all.n >= Leveling.MIN_CRAFTS then
 			return all.ups / all.n, { kind = "stage", n = all.n, ups = all.ups, stage = stage }
 		end
@@ -109,7 +118,7 @@ function Leveling.Chance(recipeID, difficulty, skill, pools)
 	elseif difficulty == 3 then
 		return 0, { kind = "grey" }
 	elseif difficulty == 1 or difficulty == 2 then
-		local c = pools.color[difficulty]
+		local c = line and pools.color[line .. ":" .. difficulty]
 		if c and c.n >= Leveling.MIN_CRAFTS then
 			return c.ups / c.n, { kind = "color", n = c.n, ups = c.ups, color = difficulty }
 		end
