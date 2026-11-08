@@ -23,7 +23,8 @@ local function FilteredRows()
 	if View() == "upgrades" then
 		local query = state.query:lower()
 		local out, hidden = {}, 0
-		for _, r in ipairs(ns.UpgradeRows()) do
+		local list = PF.UpgradeSection() == "ah" and ns.UpgradeSearch.Rows() or ns.UpgradeRows()
+		for _, r in ipairs(list) do
 			if query == "" or r.name:lower():find(query, 1, true) then
 				if r.dismissed and not s.showDismissed then
 					hidden = hidden + 1

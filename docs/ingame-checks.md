@@ -52,6 +52,19 @@ Report Lua errors with BugSack + BugGrabber.
 - Check: `C_PlayerInfo.CanUseItem(itemID)` returns false for armour/weapon types the class can't use (e.g. plate on a hunter) and true otherwise, also for items not cached yet. If it returns false for usable items, every row disappears: report it.
 - Items the client hasn't loaded are requested and appear about half a second later (GET_ITEM_INFO_RECEIVED).
 
+### General / AH section (#50)
+New file `UpgradeSearch.lua`: **full game restart** needed, `/reload` is not enough.
+- Upgrades view: "Craftable" / "General / AH" buttons next to the search box. General / AH shows a "Search AH" button on the right (dimmed while the AH is closed; clicking it then only prints "Open the auction house first").
+- At an auctioneer, click Search AH once. The summary counts "Searching the AH: n/15 <slot>..." through Head, Neck, Shoulder, Back, Chest (incl. robes), Wrist, Hands, Waist, Legs, Feet, Ring, Trinket, Off hand (shields, held in off-hand), Weapon (one-hand, two-hand, main/off hand), Ranged (bow, gun, crossbow, wand, thrown). It ends with "AH gear search done." Nothing more is sent after that, and nothing is sent without the click.
+- Check: no error and no "action blocked" for the searches after the first (they are sent from AUCTION_HOUSE_BROWSE_RESULTS_UPDATED / AUCTION_HOUSE_THROTTLED_SYSTEM_READY, not from the click). If the client blocks them, report it: the search would have to become one click per slot.
+- Check: the server honours `itemClassFilters` with `classID` + `inventoryType` and no `subClassID` (e.g. the Back search returns cloaks only). It doesn't matter for correctness, because rows are filtered by equip slot anyway, but without it the results are mostly other gear.
+- Check: `maxLevel` = your level keeps out items you can't wear yet. Sort "Level" descending puts the highest item levels first. Up to 3 extra result pages per slot are requested (`RequestMoreBrowseResults`).
+- Check: `itemKey.itemLevel` in browse results is the item level (rows show "ilvl N"), and random-enchant items ("of the Monkey") come with a non-zero `itemSuffix` (row says "random enchant"; its inline stats are left out because only the base item's stats are known).
+- Rows: item, slot, ilvl, main stats, "N listed · 2h ago", REPLACES with the equipped item and its stats, gain, TOTAL COST = lowest buyout at the profit house. Plate on a class that can't wear it, or lower item level than what you wear, is not listed. Searched at a neutral house while the profit house is your faction's: "not seen at Horde AH".
+- `/craftwise market <itemID>` on an AH gear item found this way shows only "last" (no cheapest tiers, no typical). In `CraftWiseMarketDB.scans` the run shows as kind "gear".
+- Closing the AH mid-search stops it: "AH gear search stopped ... (n of 15 slots searched)", with the rows found so far kept. The summary says "(stopped)".
+- Right-click dismisses / restores, as in Craftable. While our search runs, Blizzard's browse list shows our results; that is expected.
+
 ## Music (#17)
 - `CraftWise_Music` made with `tools/music_split.py`, game restarted: Music tab shows the songs count.
 - Click a profession: a picker lists "No music" and every song with Play/Stop preview, plus Resume / From the beginning. Escape or X closes it and stops the preview.

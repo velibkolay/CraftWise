@@ -762,6 +762,37 @@ local function RecordBrowse(results)
 	end
 end
 
+-- Gear found by the Upgrades view's AH search (#50, decision 1): items outside the scope get their
+-- browse price as `last` only, no history (no raw points, no days). In-scope rows are already recorded
+-- by RecordBrowse. Returns how many were stored.
+function M.RecordGear(results)
+	if not (db and currentHouse and results) then
+		return 0
+	end
+	local now, recorded = time(), 0
+	for _, row in ipairs(results) do
+		local key = row.itemKey
+		local itemID = key and key.itemID
+		if itemID and not M.InScope(itemID) and (row.totalQuantity or 0) > 0 and (row.minPrice or 0) > 0 then
+			local entry = GetEntry(M.ItemKey(itemID, key.itemSuffix), currentHouse, true)
+			local last = entry.last
+			if not (last and now - last.t < DEDUPE_SECONDS and last.min == row.minPrice and last.qty == row.totalQuantity) then
+				entry.last = { t = now, min = row.minPrice, qty = row.totalQuantity }
+				recorded = recorded + 1
+			end
+		end
+	end
+	if recorded > 0 then
+		LogScan(currentHouse, "gear", recorded, "upgrades")
+	end
+	return recorded
+end
+
+-- The house the open auction house belongs to, nil when closed or not known.
+function M.CurrentHouse()
+	return currentHouse
+end
+
 local function OnBrowseUpdated()
 	if db and currentHouse then
 		RecordBrowse(C_AuctionHouse.GetBrowseResults())

@@ -58,6 +58,31 @@ local function RenderSummary(ids)
 			text = ("%s%d|r songs  ·  music plays while you cast a profession and stops when the cast ends"):format(C.good, songs)
 				.. "\n" .. Muted("Click a profession to choose its song, preview it, and pick resume or start over.")
 		end
+	elseif View() == "upgrades" and PF.UpgradeSection() == "ah" then
+		local dismissed = state.hidden
+		for _, r in ipairs(state.data) do
+			if r.dismissed then
+				dismissed = dismissed + 1
+			end
+		end
+		local _, houseLabel = ns.ProfitHouse()
+		text = ("|cffffffffGeneral / AH|r  ·  %d upgrades you can buy"):format(#state.data - (dismissed - state.hidden))
+		if dismissed > 0 then
+			text = text .. Muted(("  ·  %d dismissed"):format(dismissed))
+		end
+		local index, total, label = ns.UpgradeSearch.Progress()
+		local last = ns.UpgradeSearch.LastRun()
+		local line
+		if index then
+			line = C.info .. ("Searching the AH: %d/%d %s..."):format(index, total, label or "") .. "|r"
+		elseif last then
+			line = Muted(("Last search: %s, %s ago, %d of %d slots%s%s."):format(last.houseLabel or "?", ns.Market.FormatAge(last.age or 0),
+				last.searched or 0, last.slots or 0, last.complete and "" or " (stopped)",
+				#last.failed > 0 and (", no answer: " .. table.concat(last.failed, ", ")) or ""))
+		else
+			line = Muted("Open the auction house and click Search AH: one search per slot, gear you can wear now.")
+		end
+		text = text .. "\n" .. line .. Muted("  Price = lowest buyout at " .. (houseLabel or "your profit house") .. ".")
 	elseif View() == "upgrades" then
 		local ready, learn, dismissed = 0, 0, state.hidden
 		for _, r in ipairs(state.data) do
@@ -236,8 +261,17 @@ local function RenderUpgradeRow(row, r)
 	elseif r.mainStats == nil then
 		notes[#notes + 1] = "stats ?"
 	end
+	if r.suffix then
+		notes[#notes + 1] = "random enchant"
+	end
 	if r.dismissed then
 		notes[#notes + 1] = C.info .. "dismissed|r" .. C.muted
+	elseif r.section == "ah" then
+		if r.notAtHouse then
+			notes[#notes + 1] = C.warn .. "not seen at " .. (r.houseLabel or "the profit house") .. "|r" .. C.muted
+		else
+			notes[#notes + 1] = ("%d listed · %s ago"):format(r.qty or 0, ns.Market.FormatAge(r.priceAge or 0))
+		end
 	elseif r.learnFirst then
 		notes[#notes + 1] = C.warn .. "learn first|r" .. C.muted .. (r.learnText and (" (" .. r.learnText .. ")") or "")
 	elseif r.haveReagents then

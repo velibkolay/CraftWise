@@ -36,6 +36,7 @@ Junk.lua
 BagIcons.lua
 Baganator.lua
 Upgrades.lua
+UpgradeSearch.lua
 Leveling.lua
 Music.lua
 Video.lua
