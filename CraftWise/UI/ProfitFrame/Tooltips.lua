@@ -62,6 +62,22 @@ local function SaleOptionLines(r)
 	return lines
 end
 
+-- Reagents held vs needed, the limiting one and a buy list (#49).
+local function AddBalance(reagents)
+	local lines = ns.BalanceLines(reagents)
+	if #lines == 0 then
+		return
+	end
+	GameTooltip:AddLine(" ")
+	for _, l in ipairs(lines) do
+		if l[2] == "" then
+			GameTooltip:AddLine(l[1], 0.9, 0.9, 0.9, true)
+		else
+			GameTooltip:AddDoubleLine(l[1], l[2], 0.9, 0.9, 0.9, 1, 1, 1)
+		end
+	end
+end
+
 local function AddLines(lines, r, g, b)
 	for _, l in ipairs(lines) do
 		GameTooltip:AddDoubleLine(l[1], l[2], r or 0.8, g or 0.8, b or 0.8, 1, 1, 1)
@@ -324,6 +340,7 @@ local function ShowLevelTooltip(row, r)
 			GameTooltip:AddLine(("Makes money, but ~%.0f items per point to sell: check the AH can take them."):format(r.craftsPerPoint), 0.55, 0.55, 0.6, true)
 		end
 	end
+	AddBalance(r.reagents)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine("The chance shown is for your current skill; it drops as you level.", 0.55, 0.55, 0.6, true)
 	GameTooltip:Show()
@@ -416,6 +433,7 @@ local function ShowTooltip(row)
 			GameTooltip:AddDoubleLine(left, ns.Market.NO_DATA, 1, 1, 1, 1, 0.4, 0.4)
 		end
 	end
+	AddBalance(r.reagents)
 	if r.outputItemID then
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddDoubleLine("Sells for", SellText(r), 1, 0.82, 0, 1, 1, 1)

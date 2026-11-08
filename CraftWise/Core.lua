@@ -62,7 +62,7 @@ local DB_DEFAULTS = {
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
-	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true } },
+	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true } },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,

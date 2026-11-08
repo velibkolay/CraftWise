@@ -25,6 +25,8 @@ return {
 		LootSlot = UI .. "Mainline/LootFrame.lua (item OnClick)",
 		IsModifiedClick = UI .. "Mainline/ContainerFrame.lua (IsModifiedClick(\"AUTOLOOTTOGGLE\")); Blizzard_SettingsDefinitions_Frame/Controls.lua registers the AUTOLOOTTOGGLE modifier",
 		GetQuestID = UI .. "Mainline/QuestFrame.lua",
+		GetInboxNumItems = UI .. "Blizzard_MailFrame/MailFrame.lua (InboxFrame_Update: numItems, totalItems)",
+		GetInboxItem = UI .. "Blizzard_MailFrame/MailFrame.lua (OpenMail_Update: name, itemID, texture, count, quality, canUse, isCurrency)",
 		GetQuestItemLink = UI .. "Mainline/QuestInfo.lua",
 		GetNumQuestChoices = UI .. "Mainline/QuestInfo.lua",
 		GetNumQuestRewards = UI .. "Mainline/QuestInfo.lua",

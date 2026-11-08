@@ -217,3 +217,12 @@ Needs a full game restart (new file in the TOC). Settings, "Fast auto-loot" (def
 - Profit view: the "Sells for" cell shows the value plus `vendor` or `AH` (orange `AH gross` where the house's cut is unverified). Light Leather Pants with a vendor price above the AH net shows `5s 99c  vendor`.
 - Hover a row: under "Sells for" two lines, "Vendor  5s 99c (no cut)" and "AH net  x (gross y, 5% cut (confirmed), typical · Horde AH)"; the one "Sells for" uses is green with "(used)". Items without AH data say "no price data"; items vendors don't buy say so.
 - The cell fits in its column with gold amounts (e.g. `12g 34s 56c  AH`); if it is cut off, report the width.
+
+## Reagent balance and buy list (#49)
+New files (`Holdings.lua`, `Balance.lua`): **full game restart** needed, `/reload` is not enough.
+- Profit view, hover Light Leather Pants with 60 Cured Light Hide and leather for 8 pants: "Your reagents" lists each reagent with "hold N  X crafts", "Crafts possible 8", the orange line "Light Leather limits you to 8 crafts; you hold Cured Light Hide for 60.", then "To buy for 60 crafts" with quantity, cost and vendor / AH (house) per reagent, and a total.
+- Ruined Leather Scraps in the bags count toward Light Leather ("made from what you hold"), Light Hide + Salt toward Cured Light Hide, only when you know those recipes.
+- Same section in the Level view tooltip.
+- Track the recipe in the profession window, then hover Cured Light Hide or Light Leather in the bags: "Tracked  Light Leather Pants" with the same lines. Settings > tooltip lines has "Tracked recipe: reagents you hold" to turn it off.
+- Counted places: open the bank once, then the mailbox; the tooltip line "Counted" lists bank and mail with their age. Check that the bank count matches what is in the bank: CraftWise reads the containers named `CharacterBankTab_N` (or `Bank` / `BankBag_N`) in `Enum.BagIndex`. If the bank shows up as counted but items in it are missing, report `/dump Enum.BagIndex`.
+- Mail: items in letters count (`GetInboxItem`); taking an item out of a letter moves it to the bags count without doubling.

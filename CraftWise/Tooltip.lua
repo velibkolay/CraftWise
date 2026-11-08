@@ -9,6 +9,7 @@ ns.TOOLTIP_LINES = {
 	{ key = "usedIn", label = "Used in (recipes)" },
 	{ key = "skillups", label = "Your skill-ups (crafted items)" },
 	{ key = "market", label = "Auction prices per house" },
+	{ key = "tracked", label = "Tracked recipe: reagents you hold" },
 }
 
 local ACCENT = "|cff4fb3ff"
@@ -207,6 +208,41 @@ local function SkillUpLine(itemID)
 	end
 end
 
+-- Tracked recipes (profession window "Track") that use or make this item: the reagent balance of
+-- each (#49), so hovering Cured Light Hide in the bags says how many pants the leather allows.
+function ns.TrackedBalanceLines(itemID)
+	local out = {}
+	if not (C_TradeSkillUI and C_TradeSkillUI.GetRecipesTracked and ns.charDB) then
+		return out
+	end
+	local ok, tracked = pcall(C_TradeSkillUI.GetRecipesTracked, false)
+	if not ok or type(tracked) ~= "table" then
+		return out
+	end
+	for _, recipeID in ipairs(tracked) do
+		local recipe
+		for _, prof in pairs(ns.charDB.professions) do
+			recipe = recipe or prof.recipes[recipeID]
+		end
+		local reagents = recipe and recipe.reagents or ns.BundledRecipe(recipeID)
+		local output = recipe and recipe.output
+		local uses = output and output.itemID == itemID
+		for _, r in ipairs(reagents or {}) do
+			uses = uses or r.itemID == itemID
+		end
+		if uses then
+			local lines = ns.BalanceLines(reagents)
+			if #lines > 0 then
+				out[#out + 1] = { "Tracked", "|cffffffff" .. (recipe and recipe.name or ("Recipe " .. recipeID)) .. "|r" }
+				for _, l in ipairs(lines) do
+					out[#out + 1] = l
+				end
+			end
+		end
+	end
+	return out
+end
+
 function ns.AddTooltipLines(tooltip, itemID)
 	local s = Settings()
 	if not (s and s.enabled and itemID and ns.db) then
@@ -265,6 +301,11 @@ function ns.AddTooltipLines(tooltip, itemID)
 		local text = SkillUpLine(itemID)
 		if text then
 			lines[#lines + 1] = { "Your crafts", text }
+		end
+	end
+	if s.lines.tracked then
+		for _, line in ipairs(ns.TrackedBalanceLines(itemID)) do
+			lines[#lines + 1] = line
 		end
 	end
 	if s.lines.market then

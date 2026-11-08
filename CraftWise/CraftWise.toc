@@ -28,6 +28,8 @@ SourceRecorder.lua
 Loot.lua
 Crafts.lua
 Bags.lua
+Holdings.lua
+Balance.lua
 BagSort.lua
 Junk.lua
 BagIcons.lua
