@@ -104,7 +104,7 @@ end
 local function ProfessionIDs()
 	local ids = {}
 	for id, prof in pairs(ns.charDB.professions) do
-		if next(prof.recipes) and not ns.IsGathering(id) then
+		if prof.name and next(prof.recipes) and not ns.IsGathering(id) then
 			ids[#ids + 1] = id
 		end
 	end

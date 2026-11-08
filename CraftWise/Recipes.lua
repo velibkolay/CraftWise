@@ -83,6 +83,26 @@ function ns.ScanProfession()
 	if not ids or #ids == 0 then
 		return nil
 	end
+	-- The window can announce a new profession before its recipe list follows (#44). Recipes whose
+	-- bundled skill line is another profession's are never filed here; a list that has only foreign
+	-- recipes means base profession and list disagree, so nothing is scanned (the next event retries).
+	local line = ns.SkillLineOf(base.professionID, base.professionName)
+	local mine, matched, foreign = {}, 0, 0
+	for _, recipeID in ipairs(ids) do
+		local recipeLine = ns.RecipeSkillLine(recipeID)
+		if recipeLine == nil then
+			mine[#mine + 1] = recipeID
+		elseif recipeLine == line then
+			mine[#mine + 1] = recipeID
+			matched = matched + 1
+		else
+			foreign = foreign + 1
+		end
+	end
+	if foreign > 0 and matched == 0 then
+		return nil, "mismatch"
+	end
+	ids = mine
 	local profs = ns.charDB.professions
 	local prof = profs[base.professionID] or { recipes = {} }
 	profs[base.professionID] = prof
@@ -120,7 +140,7 @@ function ns.ScanProfession()
 end
 
 -- The window fires list updates in bursts; scan once per burst.
-local pending = false
+local pending, retried = false, false
 local function RequestScan()
 	if pending then
 		return
@@ -128,7 +148,17 @@ local function RequestScan()
 	pending = true
 	local function run()
 		pending = false
-		ns.ScanProfession()
+		local _, why = ns.ScanProfession()
+		if why == "mismatch" and not retried and C_Timer and C_Timer.After then
+			retried = true -- one retry for a window that was still switching; later events retry too
+			pending = true
+			C_Timer.After(1, function()
+				pending = false
+				ns.ScanProfession()
+			end)
+		elseif why ~= "mismatch" then
+			retried = false
+		end
 	end
 	if C_Timer and C_Timer.After then
 		C_Timer.After(0.3, run)
@@ -182,14 +212,89 @@ end
 for id in pairs(ns.GATHERING) do
 	KNOWN_SKILL_LINES[id] = true
 end
-function ns.SkillLineOf(professionID)
+-- One profession can sit under two skill line IDs: the First Aid recipe items require line 2942, the
+-- recipes themselves sit in 129 (#31, #25). Both are First Aid.
+local LINE_ALIASES = { [2942] = 129 }
+function ns.SkillLineOf(professionID, name)
 	if KNOWN_SKILL_LINES[professionID] then
 		return professionID
 	end
+	if LINE_ALIASES[professionID] then
+		return LINE_ALIASES[professionID]
+	end
 	local prof = ns.charDB and ns.charDB.professions[professionID]
-	local byName = prof and prof.name and ns.ProfessionSkillLines and ns.ProfessionSkillLines[prof.name]
+	name = name or (prof and prof.name)
+	local byName = name and ns.ProfessionSkillLines and ns.ProfessionSkillLines[name]
 	return byName or professionID
 end
+
+-- Skill line of a recipe from the bundled client data (nil when the data doesn't know the recipe).
+function ns.RecipeSkillLine(recipeID)
+	local data = ns.RecipeData and ns.RecipeData[recipeID]
+	local line = data and data.skillLine
+	return line and (LINE_ALIASES[line] or line) or nil
+end
+
+-- Does this recipe belong to this cached profession? Unknown recipes pass: nothing is guessed.
+function ns.RecipeBelongs(professionID, recipeID)
+	local line = ns.RecipeSkillLine(recipeID)
+	return line == nil or line == ns.SkillLineOf(professionID)
+end
+
+-- Skill line of a recipe: bundled data first, else the cached profession that lists it.
+function ns.RecipeLine(recipeID)
+	local line = ns.RecipeSkillLine(recipeID)
+	if line then
+		return line
+	end
+	for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+		if prof.recipes[recipeID] then
+			return ns.SkillLineOf(professionID)
+		end
+	end
+end
+
+-- Login clean-up (#44): a recipe filed under a profession it doesn't belong to moves to the cached
+-- profession that owns it (kept there if that one already has it), otherwise it is dropped. Entries
+-- with no name and no recipes (the "?" 0/0 tab) go. Recorded crafts (db.skillups) are not touched.
+function ns.CleanProfessions()
+	local profs = ns.charDB and ns.charDB.professions
+	if not profs then
+		return 0
+	end
+	local moves, changed = {}, 0
+	for professionID, prof in pairs(profs) do
+		for recipeID in pairs(prof.recipes or {}) do
+			if not ns.RecipeBelongs(professionID, recipeID) then
+				moves[#moves + 1] = { from = professionID, recipeID = recipeID }
+			end
+		end
+	end
+	for _, m in ipairs(moves) do
+		local recipe = profs[m.from].recipes[m.recipeID]
+		profs[m.from].recipes[m.recipeID] = nil
+		local line = ns.RecipeSkillLine(m.recipeID)
+		for targetID, target in pairs(profs) do
+			if targetID ~= m.from and ns.SkillLineOf(targetID) == line then
+				target.recipes = target.recipes or {}
+				target.recipes[m.recipeID] = target.recipes[m.recipeID] or recipe
+				break
+			end
+		end
+		changed = changed + 1
+	end
+	for professionID, prof in pairs(profs) do
+		if not prof.name and next(prof.recipes or {}) == nil then
+			profs[professionID] = nil
+			changed = changed + 1
+		end
+	end
+	if changed > 0 then
+		ns.Notify("RECIPES_CHANGED")
+	end
+	return changed
+end
+ns.Listen("DB_READY", ns.CleanProfessions)
 
 -- Reagents and output from bundled data. Output false in the data means "no item" (enchants).
 function ns.BundledRecipe(recipeID)
@@ -446,7 +551,7 @@ function ns.BuildRows(professionID, includeUnlearned)
 	local prices = { buy = ns.GetBuyPrice, sell = ns.GetSellValue }
 	local rows = {}
 	for recipeID, recipe in pairs(prof.recipes) do
-		if recipe.learned or includeUnlearned then
+		if (recipe.learned or includeUnlearned) and ns.RecipeBelongs(professionID, recipeID) then
 			if not recipe.reagents then
 				local reagents, output, noItem = ns.BundledRecipe(recipeID)
 				if reagents then

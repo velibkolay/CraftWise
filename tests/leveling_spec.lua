@@ -17,6 +17,8 @@ local function setup()
 		[99999] = r("Bound Thing", 1, 5003, 0), -- no thresholds, client says orange
 	} }
 	ns.Thresholds = { [6702] = { 95, 125 }, [3763] = { 85, 115 }, [3756] = { 70, 100 }, [3759] = { 80, 110 } }
+	-- profession of each recipe (3759 is a Leatherworking recipe you have not cached)
+	ns.RecipeData = { [6702] = { skillLine = 165 }, [3763] = { skillLine = 165 }, [3756] = { skillLine = 165 }, [3759] = { skillLine = 165 }, [99998] = { skillLine = 165 } }
 	stub.Fire("TRADE_SKILL_SHOW")
 	stub.Fire("SKILL_LINES_CHANGED")
 	ns.db.vendor[2318] = 10
@@ -155,4 +157,27 @@ it("shows the chance next to each recipe in the game's profession window", funct
 	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. "=" .. r end
 	events["Professions.RecipeListOnEnter"](murloc, murlocNode:GetData())
 	assert(table.concat(lines, ";"):find("skill%-up chance=.*~83%%"), table.concat(lines, ";"))
+end)
+
+-- Issue #44: the stage and colour pools are per profession.
+it("pools crafts per profession: Cooking crafts don't change a Leatherworking chance", function()
+	local ns = setup()
+	ns.RecipeData[5555], ns.RecipeData[5556] = { skillLine = 185 }, { skillLine = 185 }
+	ns.Thresholds[5555] = { 85, 115 } -- same stage as Fine Leather Belt at 100
+	ns.Thresholds[5556] = { 85, 115 }
+	ns.db.skillups[5555] = { [100] = { n = 40, ups = 40, d = 2 } } -- 100% in Cooking at the same stage
+	ns.db.skillups[5556] = { [100] = { n = 40, ups = 40, d = 2 } }
+	ns.Notify("SKILLUPS_CHANGED")
+	local p, info = ns.Leveling.Chance(3763, 2, 100, ns.Leveling.Pools())
+	eq(info.kind, "stage"); eq(info.n, 6); eq(p, 0.5) -- Leatherworking only: 3 of 6
+	local pc, infoC = ns.Leveling.Chance(5555, 2, 100, ns.Leveling.Pools())
+	eq(infoC.kind, "recipe"); eq(pc, 1) -- Cooking's own rate
+	-- colour pool is per profession too
+	ns.db.skillups[99998] = { [100] = { n = 6, ups = 3, d = 2 } }
+	ns.RecipeData[99998] = { skillLine = 185 }
+	ns.RecipeData[99997] = { skillLine = 165 }
+	local _, infoL = ns.Leveling.Chance(99997, 2, 100, ns.Leveling.Pools())
+	eq(infoL.kind, "color"); eq(infoL.n, 6) -- Leatherworking's 6 green crafts, not 12 with Cooking's
+	local pk, infoK = ns.Leveling.Chance(99996, 2, 100, ns.Leveling.Pools())
+	eq(infoK.kind, "nodata") -- profession unknown: no pooling at all
 end)

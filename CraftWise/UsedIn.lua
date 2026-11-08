@@ -21,8 +21,10 @@ local function Build()
 	for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
 		local skillLine = ns.SkillLineOf(professionID)
 		for recipeID, recipe in pairs(prof.recipes) do
-			for _, r in ipairs(recipe.reagents or {}) do
-				add(r.itemID, recipeID, skillLine, r.quantity)
+			if ns.RecipeBelongs(professionID, recipeID) then
+				for _, r in ipairs(recipe.reagents or {}) do
+					add(r.itemID, recipeID, skillLine, r.quantity)
+				end
 			end
 		end
 	end

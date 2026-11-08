@@ -113,3 +113,141 @@ it("profession IDs are used as skill lines directly, so non-English clients work
 	eq(ns.IsGathering(393), true)
 	eq(ns.L["Profit"], "Profit") -- untranslated text falls back to English
 end)
+
+-- Issue #44: recipes filed under the wrong profession, and the "?" tab.
+local function cooking(stub)
+	stub.profession = { id = 185, name = "Cooking", skill = 77, max = 150, recipes = {
+		[2538] = { info = { name = "Charred Wolf Meat", learned = true, relativeDifficulty = 2 }, schematic = stub.Schematic({ { 2672, 1 } }, 2679) },
+		[2540] = { info = { name = "Roasted Kodo Meat", learned = true, relativeDifficulty = 1 }, schematic = stub.Schematic({ { 5469, 1 } }, 5472) },
+	} }
+end
+
+local function bundled(ns)
+	ns.RecipeData = {
+		[2149] = { skillLine = 165 }, [3760] = { skillLine = 165 }, [7000] = { skillLine = 165 }, [7001] = { skillLine = 165 },
+		[2538] = { skillLine = 185 }, [2540] = { skillLine = 185 },
+		[3275] = { skillLine = 129 }, -- First Aid
+	}
+end
+
+it("a scan whose recipe list belongs to another profession than the open one files nothing", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	leatherworking(stub)
+	stub.Fire("TRADE_SKILL_SHOW")
+	cooking(stub)
+	local base = C_TradeSkillUI.GetBaseProfessionInfo
+	-- the window still says Leatherworking while the list is already Cooking's
+	C_TradeSkillUI.GetBaseProfessionInfo = function() return { professionID = 165, professionName = "Leatherworking", skillLevel = 77, maxSkillLevel = 150 } end
+	local prof, why = ns.ScanProfession()
+	eq(prof, nil); eq(why, "mismatch")
+	eq(ns.charDB.professions[165].recipes[2538], nil)
+	eq(ns.charDB.professions[165].skill, 100) -- skill untouched too
+	C_TradeSkillUI.GetBaseProfessionInfo = base
+	stub.Fire("TRADE_SKILL_LIST_UPDATE") -- next event: list and base agree again
+	eq(ns.charDB.professions[185].recipes[2540].learned, true)
+	eq(ns.charDB.professions[165].recipes[2540], nil)
+end)
+
+it("a mismatching first scan creates no profession entry (no '?' tab)", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	cooking(stub)
+	C_TradeSkillUI.GetBaseProfessionInfo = function() return { professionID = 165, professionName = "Leatherworking" } end
+	ns.ScanProfession()
+	eq(next(ns.charDB.professions), nil)
+end)
+
+it("a mixed list only files the recipes of the open profession", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	leatherworking(stub)
+	stub.profession.recipes[2540] = { info = { name = "Roasted Kodo Meat", learned = true }, schematic = stub.Schematic({ { 5469, 1 } }, 5472) }
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.charDB.professions[165].recipes[2540], nil)
+	eq(ns.charDB.professions[165].recipes[2149].learned, true)
+end)
+
+it("recipes the bundled data doesn't know are still filed (nothing is guessed)", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	leatherworking(stub)
+	stub.profession.recipes[880001] = { info = { name = "Unknown To Data", learned = true }, schematic = stub.Schematic({ { 1, 1 } }, 2) }
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.charDB.professions[165].recipes[880001].learned, true)
+end)
+
+it("First Aid under either skill line ID is one profession", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	eq(ns.SkillLineOf(2942), 129); eq(ns.SkillLineOf(129), 129)
+	ns.RecipeData[3276] = { skillLine = 2942 }
+	eq(ns.RecipeSkillLine(3276), 129)
+	for _, id in ipairs({ 129, 2942 }) do
+		eq(ns.RecipeBelongs(id, 3275), true); eq(ns.RecipeBelongs(id, 3276), true); eq(ns.RecipeBelongs(id, 2149), false)
+	end
+	stub.profession = { id = 2942, name = "First Aid", skill = 10, max = 75, recipes = {
+		[3275] = { info = { name = "Linen Bandage", learned = true }, schematic = stub.Schematic({ { 2589, 1 } }, 1251) },
+	} }
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.charDB.professions[2942].recipes[3275].learned, true)
+end)
+
+it("BuildRows skips misfiled recipes already in the cache", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	leatherworking(stub)
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.charDB.professions[165].recipes[2540] = { name = "Roasted Kodo Meat", learned = true, reagents = { { itemID = 5469, quantity = 1 } } }
+	local ids = {}
+	for _, r in ipairs(ns.BuildRows(165, true)) do ids[r.recipeID] = true end
+	eq(ids[2540], nil); eq(ids[2149], true)
+	for _, r in ipairs(ns.LevelingRows(165)) do eq(r.recipeID == 2540, false) end
+end)
+
+it("login clean-up moves misfiled recipes to their cached profession, drops the rest, removes '?' entries, keeps crafts", function()
+	local ns, stub = LoadAddon()
+	bundled(ns)
+	ns.charDB.professions = {
+		[165] = { name = "Leatherworking", skill = 77, maxSkill = 150, recipes = {
+			[2149] = { name = "Boots", learned = true },
+			[2538] = { name = "Charred Wolf Meat", learned = true },
+			[2540] = { name = "Roasted Kodo Meat", learned = true, difficulty = 1 },
+			[3275] = { name = "Linen Bandage", learned = true }, -- First Aid is not cached: dropped
+		} },
+		[185] = { name = "Cooking", skill = 50, maxSkill = 75, recipes = { [2538] = { name = "Charred Wolf Meat", learned = true, difficulty = 3 } } },
+		[999] = { recipes = {} }, -- nameless and empty: the "?" 0/0 tab
+		[998] = { name = "Kept Empty", recipes = {} }, -- named: stays
+	}
+	ns.db.skillups = { [2540] = { [60] = { n = 3, ups = 1, d = 1 } } }
+	local notified = 0
+	ns.Listen("RECIPES_CHANGED", function() notified = notified + 1 end)
+	ns.CleanProfessions()
+	local p = ns.charDB.professions
+	eq(p[165].recipes[2538], nil); eq(p[165].recipes[2540], nil); eq(p[165].recipes[3275], nil)
+	eq(p[165].recipes[2149].learned, true)
+	eq(p[185].recipes[2540].difficulty, 1) -- moved
+	eq(p[185].recipes[2538].difficulty, 3) -- the cooking cache's own entry wins
+	eq(p[999], nil); eq(p[998].name, "Kept Empty")
+	eq(ns.db.skillups[2540][60].n, 3) -- recorded crafts survive
+	eq(notified, 1)
+	eq(ns.CleanProfessions(), 0) -- idempotent
+end)
+
+it("clean-up runs once the saved data is loaded", function()
+	local ns = LoadAddon()
+	ns.charDB.professions[7] = { recipes = {} }
+	ns.Notify("DB_READY")
+	eq(ns.charDB.professions[7], nil)
+end)
+
+it("the profession tab list ignores nameless entries", function()
+	local ns, stub = LoadAddon()
+	leatherworking(stub)
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.charDB.professions[999] = { recipes = { [1] = { learned = true } } }
+	ns.db.settings.view = "profit"
+	ns.ToggleProfitFrame()
+	local ids = ns.PF.ProfessionIDs()
+	eq(#ids, 1); eq(ids[1], 165)
+end)

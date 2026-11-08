@@ -81,7 +81,7 @@ Report Lua errors with BugSack + BugGrabber.
 
 ## Level view (#15)
 - New file: full game restart. "Level" button between Learn and Upgrades; profession tabs at the top.
-- Rows: known recipes that still give points (grey hidden), best "per skill-up" first. Chance shows % and where it comes from (orange: always / your crafts x/y / all your crafts x/y / ~% estimate from the community formula when fewer than 5 crafts are recorded for that stage).
+- Rows: known recipes that still give points (grey hidden), best "per skill-up" first. Chance shows % and where it comes from (orange: always / your crafts x/y / all your crafts of this profession x/y / ~% estimate from the community formula when fewer than 5 crafts are recorded for that stage).
 - Hover: thresholds, chance source, reagents, sale (AH after cut or vendor), net, crafts per point, per skill-up.
 - Craft a recipe: the view updates (skill and chances) without reopening.
 - Check: the skill in the summary matches the profession window; soulbound outputs use vendor price.
@@ -191,3 +191,10 @@ Needs a full game restart after the update (new file in the TOC). Data is `Craft
 - [ ] Quest reward: open a quest (and then the turn-in) with a recipe as reward or choice. `quests[<questID>]` has the title, zone, `choice = true` for a choice; one entry for both dialogs.
 - [ ] Looting during combat raises no Lua error (GUIDs can be secret values).
 - [ ] Hover the recipe in the Learn view: every line in "Where to get it" ends with `[seen by you 2h ago]` or `[bundled data]`/`[QuestieDB]`.
+
+## Profession filing (#44)
+`/reload` is enough (no new file). Back up `WTF/.../CraftWise.lua` first if the "?" tab or Cooking-under-Leatherworking is currently there, to see the clean-up work on real data.
+- [ ] After `/reload`: the "?" 0/0 tab is gone, and Leatherworking's Level, Profit and Learn views list no Cooking recipes (Roasted Kodo Meat, Coyote Steak, Longjaw Mud Snapper). `/craftwise debug` shows sane recipe counts per profession.
+- [ ] Open Cooking, then Leatherworking, then switch back and forth a few times (also with the window open while switching): Leatherworking's Level view shows only Leatherworking recipes, Cooking's only Cooking recipes, and no "?" tab appears.
+- [ ] First Aid (if learned): the tab keeps its recipes after opening and closing the window; nothing moves to another tab.
+- [ ] Level view tooltip of a yellow/green recipe: "crafts of all recipes of this profession in the ..." counts only crafts from that profession (craft a few Cooking items and check a Leatherworking row's n does not change).

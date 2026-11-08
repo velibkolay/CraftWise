@@ -221,7 +221,7 @@ local function ShowLevelTooltip(row, r)
 		GameTooltip:AddLine(("  Your %d crafts of this recipe in the %s: %d points = %d%%."):format(info.n, STAGE_TEXT[info.stage],
 			info.ups, math.floor(r.chance * 100 + 0.5)), 0.9, 0.9, 0.9, true)
 	elseif info.kind == "stage" then
-		GameTooltip:AddLine(("  Your %d crafts of all recipes in the %s (between their yellow and grey skill): %d points = %d%%."):format(
+		GameTooltip:AddLine(("  Your %d crafts of all recipes of this profession in the %s (between their yellow and grey skill): %d points = %d%%."):format(
 			info.n, STAGE_TEXT[info.stage], info.ups, math.floor(r.chance * 100 + 0.5)), 0.9, 0.9, 0.9, true)
 		GameTooltip:AddLine(("  This recipe gets its own rate after %d crafts in this stage."):format(ns.Leveling.MIN_CRAFTS), 0.55, 0.55, 0.6, true)
 	elseif info.kind == "color" then
@@ -231,7 +231,7 @@ local function ShowLevelTooltip(row, r)
 		GameTooltip:AddLine(("  Estimate: (grey - skill) / (grey - yellow) = (%d - %d) / (%d - %d) = %d%%."):format(
 			info.grey, info.skill, info.grey, info.yellow, math.floor(r.chance * 100 + 0.5)), 1, 0.6, 0.3, true)
 		GameTooltip:AddLine("  Community formula (SkillUp Forever, Skillet), not official. Your own crafts replace it: "
-			.. ("%d crafts of any recipe in this stage so far, %d needed."):format(info.n or 0, ns.Leveling.MIN_CRAFTS), 0.55, 0.55, 0.6, true)
+			.. ("%d crafts of any recipe of this profession in this stage so far, %d needed."):format(info.n or 0, ns.Leveling.MIN_CRAFTS), 0.55, 0.55, 0.6, true)
 	else
 		GameTooltip:AddLine(("  Not enough crafts recorded yet (%d, need %d), and no yellow/grey thresholds for an estimate."):format(
 			info.n or 0, ns.Leveling.MIN_CRAFTS), 1, 0.6, 0.3, true)
