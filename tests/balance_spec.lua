@@ -185,6 +185,7 @@ it("nothing held: no balance lines; missing prices make the total incomplete", f
 	stub.bags[0], stub.bags[5] = {}, {}
 	eq(#ns.BalanceLines(PANTS_REAGENTS), 0)
 	stub.bags[0] = { { itemID = CURED, stackCount = 30 } }
+	stub.Fire("BAG_UPDATE_DELAYED")
 	ns.db.vendor[THREAD] = nil
 	local lines, b = ns.BalanceLines(PANTS_REAGENTS)
 	eq(b.complete, false)
@@ -235,4 +236,59 @@ it("profit and level tooltips and the tracked recipe's item tooltip show the bal
 	tip.lines = {}
 	ns.AddTooltipLines(tip, CURED)
 	assert(not table.concat(tip.lines, "\n"):find("Tracked", 1, true), "the line can be turned off")
+end)
+
+it("cache: hovering again doesn't recompute; bags, bank, mail and recipe changes do", function()
+	local ns, stub = Load()
+	SetupPants(ns, stub)
+	local calls = 0
+	local analyze = ns.Balance.Analyze
+	ns.Balance.Analyze = function(...) calls = calls + 1; return analyze(...) end
+	C_TradeSkillUI.GetRecipesTracked = function() return { 9068 } end
+	local function hover(itemID)
+		local tip = { lines = {} }
+		function tip:AddLine(t) table.insert(self.lines, Plain(t)) end
+		function tip:AddDoubleLine(l, r) table.insert(self.lines, Plain(l) .. " | " .. Plain(r)) end
+		function tip:Show() end
+		ns.AddTooltipLines(tip, itemID)
+		return table.concat(tip.lines, "\n")
+	end
+	has(hover(CURED), "Crafts possible | 0")
+	hover(CURED); hover(LEATHER); ns.BalanceLines(PANTS_REAGENTS)
+	eq(calls, 1, "same recipe, nothing changed: one analysis")
+	ns.BalanceLines(PANTS_REAGENTS, 12)
+	eq(calls, 2, "another target is another entry")
+	stub.bags[0][3] = { itemID = CURED, stackCount = 5 }
+	hover(CURED)
+	eq(calls, 2, "no bag event yet: still cached")
+	stub.Fire("BAG_UPDATE_DELAYED")
+	has(hover(CURED), "Crafts possible | 5")
+	eq(calls, 3)
+	stub.Fire("MAIL_SHOW")
+	has(hover(CURED), "Crafts possible | 5")
+	eq(calls, 4, "mail scan invalidates")
+	stub.Fire("BANKFRAME_OPENED"); stub.Fire("BANKFRAME_CLOSED")
+	has(hover(CURED), "Crafts possible | 8")
+	eq(calls, 5, "bank scan invalidates")
+	ns.Notify("RECIPES_CHANGED")
+	hover(CURED)
+	eq(calls, 6, "recipe changes invalidate")
+	-- Prices are read fresh even from a cached analysis.
+	ns.db.vendor[THREAD] = 200
+	has(hover(CURED), "25 × Fine Thread | 50s  vendor")
+	eq(calls, 6)
+	ns.Balance.Analyze = analyze
+end)
+
+it("account bank tabs are listed as not counted", function()
+	local ns, stub = Load()
+	SetupPants(ns, stub)
+	stub.Fire("BANKFRAME_OPENED"); stub.Fire("BANKFRAME_CLOSED"); stub.Fire("MAIL_SHOW")
+	eq(select(2, ns.Holdings.PlacesText()), nil)
+	Enum.BagIndex.AccountBankTab_1 = 15
+	stub.bags[15] = { { itemID = CURED, stackCount = 99 } }
+	local counted, missing = ns.Holdings.PlacesText()
+	eq(missing, "account bank (not read)")
+	eq(ns.Holdings.Counter()(CURED), 60, "account bank items are not counted")
+	has(LinesText(ns.BalanceLines(PANTS_REAGENTS)), "Not counted: account bank (not read)")
 end)

@@ -9,6 +9,13 @@ local _, ns = ...
 local Holdings = {}
 ns.Holdings = Holdings
 
+-- Bumped whenever a counted place may have changed (bags, bank scan, mail scan): callers that cache
+-- results built from the holdings compare it (Balance.lua).
+Holdings.version = 0
+local function Changed()
+	Holdings.version = Holdings.version + 1
+end
+
 -- Attachments per mail: Blizzard's Forever MailFrame.lua (ATTACHMENTS_MAX_RECEIVE = 16).
 local MAIL_ATTACHMENTS = 16
 
@@ -54,6 +61,17 @@ function Holdings.BankBags()
 	return bags
 end
 
+-- The client has account bank tabs (Enum.BagIndex.AccountBankTab_n). CraftWise doesn't read them;
+-- the tooltip lists them as not counted.
+function Holdings.HasAccountBank()
+	for name in pairs(Enum and Enum.BagIndex or {}) do
+		if name:match("^AccountBankTab_%d+$") then
+			return true
+		end
+	end
+	return false
+end
+
 local bankOpen = false
 
 function Holdings.ScanBank()
@@ -66,6 +84,7 @@ function Holdings.ScanBank()
 		AddContainer(counts, bag)
 	end
 	store.bank = { t = time(), items = counts }
+	Changed()
 end
 
 function Holdings.ScanMail()
@@ -84,6 +103,7 @@ function Holdings.ScanMail()
 		end
 	end
 	store.mail = { t = time(), items = counts, mails = mails }
+	Changed()
 end
 
 ns.On("BANKFRAME_OPENED", function()
@@ -101,6 +121,7 @@ ns.On("BAG_UPDATE", function()
 		Holdings.ScanBank()
 	end
 end)
+ns.On("BAG_UPDATE_DELAYED", Changed)
 ns.On("MAIL_SHOW", function()
 	Holdings.ScanMail()
 end)
@@ -142,6 +163,9 @@ function Holdings.PlacesText(now)
 		else
 			missing[#missing + 1] = p.key == "bank" and "bank (open it once)" or "mail (open your mailbox once)"
 		end
+	end
+	if Holdings.HasAccountBank() then
+		missing[#missing + 1] = "account bank (not read)"
 	end
 	return table.concat(counted, ", "), #missing > 0 and table.concat(missing, ", ") or nil
 end

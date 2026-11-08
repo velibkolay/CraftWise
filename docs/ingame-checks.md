@@ -226,3 +226,5 @@ New files (`Holdings.lua`, `Balance.lua`): **full game restart** needed, `/reloa
 - Track the recipe in the profession window, then hover Cured Light Hide or Light Leather in the bags: "Tracked  Light Leather Pants" with the same lines. Settings > tooltip lines has "Tracked recipe: reagents you hold" to turn it off.
 - Counted places: open the bank once, then the mailbox; the tooltip line "Counted" lists bank and mail with their age. Check that the bank count matches what is in the bank: CraftWise reads the containers named `CharacterBankTab_N` (or `Bank` / `BankBag_N`) in `Enum.BagIndex`. If the bank shows up as counted but items in it are missing, report `/dump Enum.BagIndex`.
 - Mail: items in letters count (`GetInboxItem`); taking an item out of a letter moves it to the bags count without doubling.
+- Account bank tabs, when the client has them, show as "Not counted: account bank (not read)".
+- The result is cached until the bags change (`BAG_UPDATE_DELAYED`), the bank or mailbox is scanned, or recipes change: loot an item while hovering, hover again, the counts follow. Hovering the same items repeatedly should not stutter.

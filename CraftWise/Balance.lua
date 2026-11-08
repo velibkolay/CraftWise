@@ -170,8 +170,10 @@ end
 -- Recipes this character knows, by the item they make: [itemID] = { { recipeID, reagents, output } }.
 -- Rebuilt when the recipe cache changes.
 local makersIndex
+local recipesVersion = 0
 ns.Listen("RECIPES_CHANGED", function()
 	makersIndex = nil
+	recipesVersion = recipesVersion + 1
 end)
 
 function Balance.Makers()
@@ -242,21 +244,52 @@ end
 
 -- Everything the tooltip shows for one recipe's reagents: Balance.Analyze plus the counted places
 -- and a priced buy list { { itemID, quantity, quote, short } } with total (nil parts = complete false).
-function ns.ReagentBalance(reagents, target)
+-- Analyses are cached per recipe (reagent list) and target until a counted place or the known
+-- recipes change (Holdings.version: bags, bank scan, mail scan; RECIPES_CHANGED), so hovering the
+-- same items again doesn't simulate every craft again. Prices and the places text are read fresh.
+local cache, cacheStamp = {}, nil
+
+local function CacheKey(reagents, target)
+	local parts = { tostring(target or "") }
+	for _, r in ipairs(reagents) do
+		parts[#parts + 1] = r.itemID .. "x" .. r.quantity
+	end
+	return table.concat(parts, ",")
+end
+
+function Balance.Cached(reagents, target)
+	local stamp = ns.Holdings.version .. ":" .. recipesVersion
+	if stamp ~= cacheStamp then
+		cache, cacheStamp = {}, stamp
+	end
+	local key = CacheKey(reagents, target)
+	local hit = cache[key]
+	if hit then
+		return hit
+	end
 	local count = ns.Holdings.Counter()
 	local makers = Balance.Makers()
-	local result = Balance.Analyze(reagents, count, function(itemID)
+	hit = Balance.Analyze(reagents, count, function(itemID)
 		return makers[itemID]
 	end, target)
+	cache[key] = hit
+	return hit
+end
+
+function ns.ReagentBalance(reagents, target)
+	local analysis = Balance.Cached(reagents, target)
+	local result = setmetatable({ buy = {} }, { __index = analysis })
 	result.counted, result.notCounted = ns.Holdings.PlacesText()
 	result.total, result.complete = 0, true
-	for _, line in ipairs(result.buy) do
+	for i, b in ipairs(analysis.buy) do
+		local line = { itemID = b.itemID, quantity = b.quantity }
 		line.quote, line.short = ns.BuyQuote(line.itemID, line.quantity)
 		if line.quote then
 			result.total = result.total + line.quote.cost
 		else
 			result.complete = false
 		end
+		result.buy[i] = line
 	end
 	return result
 end
