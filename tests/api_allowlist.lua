@@ -21,6 +21,9 @@ return {
 		-- Not called by Blizzard's Forever UI and not in its API docs. Long-standing client API (all clients);
 		-- not yet seen working in Forever: see docs/ingame-checks.md "Source recorder". If absent, nothing is recorded.
 		GetLootSourceInfo = "UNVERIFIED in Forever, first in-game check in docs/ingame-checks.md (Source recorder)",
+		GetLootSlotInfo = UI .. "Mainline/LootFrame.lua (LootFrameMixin:Open; returns texture, item, quantity, currencyID, quality, locked, isQuestItem, questID, isActive, isCoin)",
+		LootSlot = UI .. "Mainline/LootFrame.lua (item OnClick)",
+		IsModifiedClick = UI .. "Mainline/ContainerFrame.lua (IsModifiedClick(\"AUTOLOOTTOGGLE\")); Blizzard_SettingsDefinitions_Frame/Controls.lua registers the AUTOLOOTTOGGLE modifier",
 		GetQuestID = UI .. "Mainline/QuestFrame.lua",
 		GetQuestItemLink = UI .. "Mainline/QuestInfo.lua",
 		GetNumQuestChoices = UI .. "Mainline/QuestInfo.lua",

@@ -113,7 +113,19 @@ local function Build(parent)
 	panel.houseHint:SetPoint("TOPLEFT", 12, y - 74)
 	panel.houseHint:SetWidth(292)
 	panel.houseHint:SetJustifyH("LEFT")
-	panel:SetHeight(-(y - 74) + 44)
+
+	-- Fast auto-loot (Loot.lua, #41).
+	local lootY = y - 100
+	panel.fastLoot = Style.Check(panel, L["Fast auto-loot"], ns.Loot.Enabled(), function(v)
+		ns.Loot.SetEnabled(v)
+		panel.render()
+	end)
+	panel.fastLoot:SetPoint("TOPLEFT", 12, lootY)
+	panel.lootHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	panel.lootHint:SetPoint("TOPLEFT", 12, lootY - 22)
+	panel.lootHint:SetWidth(292)
+	panel.lootHint:SetJustifyH("LEFT")
+	panel:SetHeight(-lootY + 62)
 
 	function panel.render()
 		for key, b in pairs(panel.clicks) do
@@ -150,6 +162,11 @@ local function Build(parent)
 			hint = hint .. " " .. L["No data yet:"] .. " " .. table.concat(missing, ", ")
 		end
 		panel.houseHint:SetText(C.muted .. hint .. "|r")
+		panel.fastLoot:SetChecked(ns.Loot.Enabled())
+		local other = ns.Loot.Conflict()
+		panel.fastLoot:SetAlpha(other and 0.4 or 1)
+		panel.lootHint:SetText(C.muted .. (other and (other .. " " .. L["is loaded, so CraftWise does not loot."])
+			or L["Records recipe sources, then loots. Hold Shift to loot by hand."]) .. "|r")
 	end
 	panel:Hide()
 end
