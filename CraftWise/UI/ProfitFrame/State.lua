@@ -171,6 +171,14 @@ local function SaleTag(source, cutUnverified)
 	return nil
 end
 
+-- "reagents: AH" / "reagents: paid cost, else AH": the reagent cost basis of a view (#47).
+local function CostBasisText(view)
+	if ns.CostBasis(view) == "paid" then
+		return "reagents: paid cost, else AH"
+	end
+	return "reagents: AH"
+end
+
 local function View()
 	local v = Settings().view
 	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
@@ -190,5 +198,5 @@ ns.PF = {
 	ARROW_DOWN = ARROW_DOWN, ARROW_UP = ARROW_UP,
 	rows = rows, tabs = tabs, viewButtons = viewButtons, state = state,
 	Settings = Settings, Money = Money, Muted = Muted, ItemName = ItemName, StatusLine = StatusLine,
-	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag,
+	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag, CostBasisText = CostBasisText,
 }

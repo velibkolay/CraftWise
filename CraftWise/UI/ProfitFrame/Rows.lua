@@ -30,6 +30,23 @@ local function RenderTabs(ids)
 	end
 end
 
+-- The view's reagent cost basis for its header (#47), with how many rows fell back to AH prices.
+local function BasisNote(view)
+	local text = PF.CostBasisText(view)
+	if ns.CostBasis(view) == "paid" then
+		local fallback = 0
+		for _, r in ipairs(state.data) do
+			if r.paidFallbacks then
+				fallback = fallback + 1
+			end
+		end
+		if fallback > 0 then
+			text = text .. (" (%d %s with reagents at AH)"):format(fallback, fallback == 1 and "row" or "rows")
+		end
+	end
+	return text
+end
+
 local function RenderSummary(ids)
 	local text
 	if View() == "music" then
@@ -51,6 +68,7 @@ local function RenderSummary(ids)
 			end
 		end
 		text = ("%d upgrades from your recipes  ·  %s%d|r you can craft right now"):format(#state.data - (dismissed - state.hidden), C.good, ready)
+			.. Muted("  ·  " .. BasisNote("upgrades"))
 		if dismissed > 0 then
 			text = text .. Muted(("  ·  %d dismissed"):format(dismissed))
 		end
@@ -95,7 +113,7 @@ local function RenderSummary(ids)
 		else
 			text = text .. "  ·  " .. C.warn .. "no recipe with both a chance and reagent prices yet|r"
 		end
-		text = text .. ("  ·  %d crafts recorded"):format(ns.CraftsRecorded())
+		text = text .. ("  ·  %d crafts recorded"):format(ns.CraftsRecorded()) .. Muted("  ·  " .. BasisNote("level"))
 			.. "\n" .. Muted("Per skill-up = (reagents - sale) / chance. Orange always, grey never (hidden), yellow and green from your recorded crafts (~ = formula estimate until you have some). Hover a row for the maths.")
 	elseif View() == "learn" then
 		local withSource, fits = 0, 0
@@ -108,6 +126,7 @@ local function RenderSummary(ids)
 			end
 		end
 		text = ("%d recipes to learn  ·  %s%d|r with a known source  ·  %s%d|r fit your skill"):format(#state.data, C.good, withSource, C.good, fits)
+			.. Muted("  ·  " .. BasisNote("learn"))
 		if withSource == 0 then
 			text = text .. "\n" .. Muted("Sources come with the recipe data (issue #11). Recipes your trainer teaches appear after you open the trainer once.")
 		end
@@ -140,7 +159,8 @@ local function RenderSummary(ids)
 		if state.hidden > 0 then
 			text = text .. Muted(("  ·  %d hidden by filters"):format(state.hidden))
 		end
-		text = text .. "\n" .. Muted("Auction prices: " .. PF.PriceBasisText() .. ", else " .. ns.AUCTIONATOR_LABEL .. ". Change them in Settings: gear button.")
+		text = text .. "\n" .. Muted("Auction prices: " .. PF.PriceBasisText() .. ", else " .. ns.AUCTIONATOR_LABEL .. "  ·  "
+			.. BasisNote("profit") .. ". Change them in Settings: gear button.")
 	end
 	PF.frame.summary:SetText(text)
 end

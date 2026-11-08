@@ -183,6 +183,73 @@ function ns.GetBuyPrice(itemID)
 	return nil
 end
 
+-- Reagent cost basis per view (#47): "ah" (the cheapest of vendor and AH, as above) or "paid" (what
+-- you paid for the units you hold, from the ledger #46; per reagent the AH basis when there is none).
+ns.COST_BASIS_VIEWS = { "profit", "learn", "level", "upgrades" }
+ns.COST_BASIS_TEXT = { ah = "AH", paid = "paid cost" }
+
+function ns.CostBasis(view)
+	local bases = ns.db and ns.db.settings.costBasis
+	return bases and bases[view or "profit"] == "paid" and "paid" or "ah"
+end
+
+-- One unit at what you paid: { copper, source = "paid", label, units, noCraft } from the ledger. When
+-- some held units have no recorded price, it is the average of the logged ones, marked paidPartial
+-- with "N of M units" (decision 2 on #47). Without any paid cost: the AH basis price, marked
+-- paidFallback with the reason (paidNote). noCraft: a paid cost is the cost of what you hold, so
+-- craft-or-buy doesn't replace it (decision 1 on #47).
+local function Units(n)
+	return math.floor(n + 0.5)
+end
+
+function ns.GetPaidBuyPrice(itemID)
+	local paid = ns.Ledger and ns.Ledger.PaidCost(itemID)
+	if paid then
+		local price = { copper = paid.copper, source = "paid", units = paid.units, noCraft = true }
+		if paid.partial then
+			price.paidPartial = true
+			price.label = ("paid cost, %d of %d units"):format(Units(paid.known), Units(paid.units))
+			price.paidNote = ("average of the %d units you bought; %d held have no recorded price"):format(
+				Units(paid.known), Units(paid.units - paid.known))
+		else
+			price.label = ("paid cost, %d held"):format(Units(paid.units))
+		end
+		return price
+	end
+	local price = ns.GetBuyPrice(itemID)
+	if not price then
+		return nil
+	end
+	local out = {}
+	for k, v in pairs(price) do
+		out[k] = v
+	end
+	out.paidFallback = true
+	out.paidNote = "no paid cost"
+	return out
+end
+
+-- Price functions for Profit.Evaluate in one view: the view's cost basis, the sale value, and the
+-- recipes this character knows, so intermediate reagents cost min(buy, craft) (#47).
+function ns.ReagentPrices(view)
+	local basis = ns.CostBasis(view)
+	-- Each item's buy price is looked up once per build: intermediates appear in many recipes.
+	local base, memo = basis == "paid" and ns.GetPaidBuyPrice or ns.GetBuyPrice, {}
+	return {
+		basis = basis,
+		buy = function(itemID)
+			local v = memo[itemID]
+			if v == nil then
+				v = base(itemID) or false
+				memo[itemID] = v
+			end
+			return v or nil
+		end,
+		sell = ns.GetSellValue,
+		recipesFor = ns.KnownRecipesFor,
+	}
+end
+
 -- Is selling on the AH worth it over vendoring? When it pays at least ahMinPercent more than a
 -- vendor AND at least ahMinCopper more (defaults 20% and 10 copper, set in the Bags view; Veli,
 -- 2026-10-04). Below that the vendor wins: no deposit at risk, no trip to the auctioneer.

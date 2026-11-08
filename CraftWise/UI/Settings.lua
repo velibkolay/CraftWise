@@ -1,6 +1,7 @@
 -- Settings panel: opened with the gear button in the CraftWise window or /craftwise settings.
 -- Item tooltip section: on/off, always or only with Shift, and each line on/off.
 -- Profit prices (#26 phase 2): price basis and the auction house profit uses.
+-- Reagent cost per view (#47): AH or paid cost.
 local _, ns = ...
 local Style = ns.Style
 local C = Style.colors
@@ -114,8 +115,38 @@ local function Build(parent)
 	panel.houseHint:SetWidth(292)
 	panel.houseHint:SetJustifyH("LEFT")
 
+	-- Reagent cost per view (#47): AH (cheapest of vendor and AH) or paid cost from the ledger.
+	local basisY = y - 100
+	local basisHead = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	basisHead:SetPoint("TOPLEFT", 12, basisY)
+	basisHead:SetText(C.muted .. L["Reagent cost"] .. "|r")
+	local viewLabels = { profit = L["Profit"], learn = L["Learn"], level = L["Level"], upgrades = L["Upgrades"] }
+	panel.costBasis = {}
+	for i, view in ipairs(ns.COST_BASIS_VIEWS) do
+		local rowY = basisY - 18 - (i - 1) * 26
+		local label = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		label:SetPoint("TOPLEFT", 12, rowY - 5)
+		label:SetText(viewLabels[view])
+		panel.costBasis[view] = {}
+		for j, c in ipairs({ { "ah", L["AH"] }, { "paid", L["Paid cost"] } }) do
+			local b = Style.Button(panel, 100, 22, c[2])
+			b:SetPoint("TOPLEFT", 96 + (j - 1) * 106, rowY)
+			b:SetScript("OnClick", function()
+				ns.db.settings.costBasis[view] = c[1]
+				panel.render()
+				ns.Notify("PRICES_CHANGED")
+			end)
+			panel.costBasis[view][c[1]] = b
+		end
+	end
+	panel.basisHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	panel.basisHint:SetPoint("TOPLEFT", 12, basisY - 18 - #ns.COST_BASIS_VIEWS * 26)
+	panel.basisHint:SetWidth(292)
+	panel.basisHint:SetJustifyH("LEFT")
+	panel.basisHint:SetText(C.muted .. L["Paid cost: what you paid for the units you hold (/craftwise ledger); a reagent without one uses AH. Intermediates you can craft cost the cheaper of crafting and buying, unless they have a paid cost."] .. "|r")
+
 	-- Fast auto-loot (Loot.lua, #41).
-	local lootY = y - 100
+	local lootY = basisY - 18 - #ns.COST_BASIS_VIEWS * 26 - 52
 	panel.fastLoot = Style.Check(panel, L["Fast auto-loot"], ns.Loot.Enabled(), function(v)
 		ns.Loot.SetEnabled(v)
 		panel.render()
@@ -162,6 +193,12 @@ local function Build(parent)
 			hint = hint .. " " .. L["No data yet:"] .. " " .. table.concat(missing, ", ")
 		end
 		panel.houseHint:SetText(C.muted .. hint .. "|r")
+		for view, buttons in pairs(panel.costBasis) do
+			local basis = ns.CostBasis(view)
+			for key, b in pairs(buttons) do
+				b:SetSelected(key == basis)
+			end
+		end
 		panel.fastLoot:SetChecked(ns.Loot.Enabled())
 		local other = ns.Loot.Conflict()
 		panel.fastLoot:SetAlpha(other and 0.4 or 1)

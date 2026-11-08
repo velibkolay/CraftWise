@@ -2,7 +2,8 @@
 --
 -- For every learned recipe at your current skill:
 --   chance p      chance that one craft gives a skill point (see Chance below)
---   cost C        reagents at the cheapest buy price (vendor or AH), as in the Profit view
+--   cost C        reagents at the Level view's cost basis (#47): cheapest of vendor and AH, or paid
+--                 cost; an intermediate a known recipe makes costs min(buy, craft)
 --   sale S        what the crafted item brings: AH price (profit house and basis, #26) after that
 --                 house's cut when the AH rule says the AH is worth it (and the item isn't
 --                 soulbound), otherwise the vendor price. No AH sale where the cut is unverified.
@@ -174,7 +175,7 @@ function ns.LevelingRows(professionID)
 	local skill = ns.ProfessionSkill(professionID)
 	local pools = Pools()
 	local rows = {}
-	for _, r in ipairs(ns.BuildRows(professionID, false)) do
+	for _, r in ipairs(ns.BuildRows(professionID, false, "level")) do
 		local recipe = prof.recipes[r.recipeID] or {}
 		local p, info = Leveling.Chance(r.recipeID, recipe.difficulty, skill, pools)
 		if info.kind ~= "grey" then

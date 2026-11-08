@@ -11,11 +11,41 @@ local WARN = C.warn
 -- Where a price came from: "vendor", or the auction label ("typical · Horde AH",
 -- "Auctionator (house unknown)"), plus a thin-market mark.
 local function PriceLabel(line)
+	local text
 	if line.source == "vendor" then
-		return Muted("vendor")
+		text = Muted("vendor")
+	elseif line.source == "crafted" then
+		text = C.good .. "crafted|r"
+	else
+		text = Muted(line.label or "AH") .. (line.thin and (" " .. WARN .. "thin|r") or "")
 	end
-	return Muted(line.label or "AH") .. (line.thin and (" " .. WARN .. "thin|r") or "")
+	if line.crafted == false then
+		text = Muted("bought: ") .. text
+	end
+	if line.paidFallback and line.source ~= "crafted" then -- a crafted line says it in its detail line
+		text = text .. " " .. WARN .. "no paid cost|r"
+	end
+	return text
 end
+
+-- Second line under a reagent (#47): both unit values when a known recipe makes it, why the paid
+-- cost wasn't used, or what a partial paid cost covers. nil when there is nothing to add.
+local function ReagentDetail(line)
+	local parts = {}
+	if line.crafted ~= nil then
+		local bought = line.buyUnit and (Money(line.buyUnit) .. " " .. (line.buySource == "vendor" and "vendor" or (line.buyLabel or "AH")))
+			or ns.Market.NO_DATA
+		parts[#parts + 1] = ("each: crafted %s · bought %s"):format(Money(line.craftUnit), bought)
+	end
+	if (line.paidFallback or line.paidPartial) and line.paidNote then
+		parts[#parts + 1] = line.paidNote
+	end
+	if #parts == 0 then
+		return nil
+	end
+	return "    " .. table.concat(parts, " · ")
+end
+PF.ReagentDetail = ReagentDetail
 
 -- "Sells for" line: the chosen value and its tag (#48).
 local function SellText(r)
@@ -292,11 +322,15 @@ local function ShowLevelTooltip(row, r)
 		end
 	end
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine("One craft", 1, 0.82, 0)
+	GameTooltip:AddDoubleLine("One craft", Muted(PF.CostBasisText("level")), 1, 0.82, 0, 1, 1, 1)
 	for _, line in ipairs(r.reagents or {}) do
 		local left = ("  %d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
 			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), PriceLabel(line)), 1, 1, 1, 1, 1, 1)
+			local detail = ReagentDetail(line)
+			if detail then
+				GameTooltip:AddLine(detail, 0.55, 0.55, 0.6)
+			end
 		else
 			GameTooltip:AddDoubleLine(left, "no price", 1, 1, 1, 1, 0.4, 0.4)
 		end
@@ -421,7 +455,7 @@ local function ShowTooltip(row)
 	end
 
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine("Reagents", 1, 0.82, 0)
+	GameTooltip:AddDoubleLine("Reagents", Muted(PF.CostBasisText(View())), 1, 0.82, 0, 1, 1, 1)
 	if #r.reagents == 0 then
 		GameTooltip:AddLine("Unknown - open this profession again.", 1, 0.5, 0.25)
 	end
@@ -429,6 +463,10 @@ local function ShowTooltip(row)
 		local left = ("%d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
 			GameTooltip:AddDoubleLine(left, ("%s  %s"):format(Money(line.total), PriceLabel(line)), 1, 1, 1, 1, 1, 1)
+			local detail = ReagentDetail(line)
+			if detail then
+				GameTooltip:AddLine(detail, 0.55, 0.55, 0.6)
+			end
 		else
 			GameTooltip:AddDoubleLine(left, ns.Market.NO_DATA, 1, 1, 1, 1, 0.4, 0.4)
 		end

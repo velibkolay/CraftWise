@@ -72,7 +72,9 @@ local DB_DEFAULTS = {
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |
 		-- "BootyBay" | "Gadgetzan" | "Everlook".
 		priceBasis = "typical", priceHouse = "faction",
-		ledgerView = "reset" }, -- /craftwise ledger: "reset" (since last reset) | "today" | "login" (#46) -- ahMin*: Bags, AH only when it pays this much more than a vendor
+		ledgerView = "reset",
+		-- Reagent cost per view (#47): "ah" | "paid" (paid cost from the ledger, else AH per reagent).
+		costBasis = { profit = "ah", learn = "ah", level = "ah", upgrades = "ah" } }, -- /craftwise ledger: "reset" (since last reset) | "today" | "login" (#46) -- ahMin*: Bags, AH only when it pays this much more than a vendor
 }
 local CHAR_DEFAULTS = {
 	version = 1,
