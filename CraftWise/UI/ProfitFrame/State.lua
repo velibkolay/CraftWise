@@ -184,6 +184,11 @@ local function View()
 	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
 end
 
+-- Upgrades view section: "craft" (Craftable, #16) or "ah" (General / AH, #50).
+local function UpgradeSection()
+	return Settings().upgradeSection == "ah" and "ah" or "craft"
+end
+
 -- Views that list items across all professions (no profession tabs).
 local function ItemView()
 	return View() == "bags" or View() == "upgrades" or View() == "music"
@@ -198,5 +203,5 @@ ns.PF = {
 	ARROW_DOWN = ARROW_DOWN, ARROW_UP = ARROW_UP,
 	rows = rows, tabs = tabs, viewButtons = viewButtons, state = state,
 	Settings = Settings, Money = Money, Muted = Muted, ItemName = ItemName, StatusLine = StatusLine,
-	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag, CostBasisText = CostBasisText,
+	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag, CostBasisText = CostBasisText, UpgradeSection = UpgradeSection,
 }

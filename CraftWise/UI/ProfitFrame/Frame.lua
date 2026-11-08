@@ -136,6 +136,36 @@ local function BuildHeader()
 	mats:SetPoint("RIGHT", sortBtn, "LEFT", -24, 0)
 	PF.frame.matsOnly = mats
 	PF.frame.showDismissed = showDismissed
+
+	-- Upgrades: sections Craftable (#16) | General / AH (#50), and the AH search button (#50).
+	local craftSection = Style.Button(PF.frame, 90, 22, L["Craftable"])
+	craftSection:SetPoint("TOPLEFT", PAD + 222, -98)
+	local ahSection = Style.Button(PF.frame, 104, 22, L["General / AH"])
+	ahSection:SetPoint("LEFT", craftSection, "RIGHT", 6, 0)
+	PF.frame.sectionButtons = { craft = craftSection, ah = ahSection }
+	for key, button in pairs(PF.frame.sectionButtons) do
+		button:SetScript("OnClick", function()
+			Settings().upgradeSection, state.offset = key, 0
+			Refresh()
+		end)
+	end
+	local searchAH = Style.Button(PF.frame, 120, 22, L["Search AH"])
+	searchAH:SetPoint("TOPRIGHT", -PAD, -126)
+	searchAH:SetScript("OnClick", function()
+		ns.UpgradeSearch.Start() -- a click: the hardware event the AH search starts from
+		Refresh()
+	end)
+	searchAH:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Search AH"])
+		GameTooltip:AddLine("One search per equipment slot for gear you can wear now, while the auction house is open. Nothing runs in the background.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	searchAH:SetScript("OnLeave", function(self)
+		GameTooltip:Hide()
+		self:SetSelected(false)
+	end)
+	PF.frame.searchAH = searchAH
 	local musicOn = Style.Check(PF.frame, L["Music on"], ns.db.music.enabled, function(v)
 		ns.db.music.enabled = v
 		if not v then
@@ -289,7 +319,7 @@ local function BuildRows()
 				ns.ShowItemMenu(r.itemID, self)
 			elseif View() == "music" then
 				ShowPicker(self, r.name)
-			elseif View() == "upgrades" and mouse == "RightButton" then
+			elseif View() == "upgrades" and mouse == "RightButton" and r.itemID then
 				ns.ToggleDismissed(r.itemID)
 				ShowTooltip(self)
 			elseif C_TradeSkillUI.OpenRecipe then

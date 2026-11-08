@@ -71,6 +71,9 @@ local function Refresh()
 	local empty = "No recipes match. Clear the search or tick \"Show unlearned\"."
 	if View() == "learn" then
 		empty = "No recipes match. Clear the search or untick \"Fits my skill\"."
+	elseif View() == "upgrades" and PF.UpgradeSection() == "ah" then
+		empty = ns.UpgradeSearch.LastRun() and "No AH gear beats what you wear. Search again at the auction house later."
+			or "No AH search yet. Open the auction house and click Search AH."
 	elseif View() == "upgrades" then
 		empty = "No upgrades from recipes you know or can learn now. Open your professions once so CraftWise knows them."
 	end

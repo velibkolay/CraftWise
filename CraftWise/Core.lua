@@ -67,6 +67,7 @@ local DB_DEFAULTS = {
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
 		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
+		upgradeSection = "craft", -- Upgrades view: "craft" (Craftable, #16) | "ah" (General / AH, #50)
 		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |

@@ -343,7 +343,20 @@ C_AuctionHouse = {
 	ConfirmCommoditiesPurchase = noop,
 	PlaceBid = noop,
 	GetAuctionInfoByID = function(id) return stub.auctions[id] end,
+	-- Browse searches (Upgrades, #50): every query is kept in stub.browseQueries.
+	SendBrowseQuery = function(query) table.insert(stub.browseQueries, query) end,
+	IsThrottledMessageSystemReady = function() return stub.throttleReady end,
+	HasFullBrowseResults = function() return stub.browseFull ~= false end,
+	RequestMoreBrowseResults = function() stub.moreRequests = stub.moreRequests + 1 end,
 }
+stub.browseQueries, stub.throttleReady, stub.moreRequests = {}, true, 0
+Enum.ItemClass = { Weapon = 2, Armor = 4 }
+Enum.InventoryType = { IndexHeadType = 1, IndexNeckType = 2, IndexShoulderType = 3, IndexChestType = 5, IndexWaistType = 6,
+	IndexLegsType = 7, IndexFeetType = 8, IndexWristType = 9, IndexHandType = 10, IndexFingerType = 11, IndexTrinketType = 12,
+	IndexWeaponType = 13, IndexShieldType = 14, IndexRangedType = 15, IndexCloakType = 16, Index2HweaponType = 17,
+	IndexRobeType = 20, IndexWeaponmainhandType = 21, IndexWeaponoffhandType = 22, IndexHoldableType = 23,
+	IndexThrownType = 25, IndexRangedrightType = 26 }
+Enum.AuctionHouseSortOrder = { Price = 0, Name = 1, Level = 2, Bid = 3, Buyout = 4, TimeRemaining = 5 }
 stub.auctions = {}
 
 return stub

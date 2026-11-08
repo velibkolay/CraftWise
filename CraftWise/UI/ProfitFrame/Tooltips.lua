@@ -272,6 +272,26 @@ local function ShowUpgradeTooltip(row, r)
 			r.emptySlot and "empty" or r.currentStats == nil and "?" or r.currentStats == "" and "none" or r.currentStats),
 			0.8, 0.8, 0.8, 1, 1, 1)
 	end
+	if r.section == "ah" then
+		if r.suffix then
+			GameTooltip:AddLine("Random enchant: the stats above are the base item's, the listing's own enchant is not included.", 0.55, 0.55, 0.6, true)
+		end
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("Auction house", 1, 0.82, 0)
+		if r.notAtHouse then
+			GameTooltip:AddLine(("  Not seen at %s in your latest search. Search there, or change the profit house in Settings."):format(
+				r.houseLabel or "the profit house"), 1, 0.6, 0.3, true)
+		else
+			GameTooltip:AddDoubleLine("  Lowest buyout", Money(r.cost), 0.8, 0.8, 0.8, 1, 1, 1)
+			GameTooltip:AddDoubleLine("  Listed", ("%d at %s"):format(r.qty or 0, r.houseLabel or "?"), 0.8, 0.8, 0.8, 1, 1, 1)
+			GameTooltip:AddDoubleLine("  Seen", ns.Market.FormatAge(r.priceAge or 0) .. " ago", 0.8, 0.8, 0.8, 1, 1, 1)
+		end
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(r.dismissed and "Right-click: suggest this item again" or "Right-click: don't suggest this item",
+			0.55, 0.55, 0.6)
+		GameTooltip:Show()
+		return
+	end
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddDoubleLine("Recipe", (SKILL_COLORS[r.skillColor] or "") .. (r.recipeName or "?") .. "|r", 1, 0.82, 0, 1, 1, 1)
 	for _, line in ipairs(r.reagents or {}) do
