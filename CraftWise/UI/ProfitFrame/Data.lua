@@ -65,7 +65,7 @@ local function FilteredRows()
 		return out, 0
 	end
 	local learnView = View() == "learn"
-	local all = state.professionID and ns.BuildRows(state.professionID, learnView or s.includeUnlearned) or {}
+	local all = state.professionID and ns.BuildRows(state.professionID, learnView or s.includeUnlearned, View()) or {}
 	local query = state.query:lower()
 	local out, hidden = {}, 0
 	-- The search matches recipe names and reagent names ("which recipes use Light Leather").

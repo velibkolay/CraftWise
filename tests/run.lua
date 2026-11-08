@@ -61,7 +61,7 @@ end
 baseline = {}
 for k in pairs(_G) do baseline[k] = true end
 
-local specs = { "profit_spec", "prices_spec", "recipes_spec", "trainer_spec", "sources_spec", "loot_spec", "money_spec", "ui_spec", "data_spec", "bags_spec", "crafts_spec", "upgrades_spec", "music_spec", "video_spec", "bagsort_spec", "junk_spec", "usedin_spec", "tooltip_spec", "leveling_spec", "market_spec", "market_display_spec", "house_values_spec", "sell_tag_spec", "balance_spec", "ledger_spec", "api_audit_spec" }
+local specs = { "profit_spec", "prices_spec", "recipes_spec", "trainer_spec", "sources_spec", "loot_spec", "money_spec", "ui_spec", "data_spec", "bags_spec", "crafts_spec", "upgrades_spec", "music_spec", "video_spec", "bagsort_spec", "junk_spec", "usedin_spec", "tooltip_spec", "leveling_spec", "market_spec", "market_display_spec", "house_values_spec", "sell_tag_spec", "balance_spec", "ledger_spec", "cost_basis_spec", "api_audit_spec" }
 for _, spec in ipairs(specs) do
 	print(spec)
 	dofile("tests/" .. spec .. ".lua")

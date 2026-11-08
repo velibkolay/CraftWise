@@ -541,15 +541,48 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	return result
 end
 
+-- Recipes this character knows that make an item (#47: craft-or-buy for intermediate reagents):
+-- { { reagents, output, recipeID }, ... }. Only learned recipes of this character (decision 1 on #47);
+-- reagents from the profession window, else the bundled data. Rebuilt when recipes change.
+local makers
+function ns.KnownRecipesFor(itemID)
+	if not makers then
+		makers = {}
+		for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+			for recipeID, recipe in pairs(prof.recipes) do
+				if recipe.learned then
+					local reagents, output = recipe.reagents, recipe.output
+					if not reagents then
+						reagents, output = ns.BundledRecipe(recipeID)
+					end
+					local id = output and output.itemID
+					if id and reagents then
+						makers[id] = makers[id] or {}
+						table.insert(makers[id], { recipeID = recipeID, reagents = reagents, output = output })
+					end
+				end
+			end
+		end
+	end
+	return makers[itemID]
+end
+ns.Listen("RECIPES_CHANGED", function()
+	makers = nil
+end)
+ns.Listen("DB_READY", function()
+	makers = nil
+end)
+
 -- Rows for the profit table of one profession. Cached recipes come first-hand from the client;
 -- with includeUnlearned, bundled recipes of the same skill line that the client never listed are
 -- added too, so "what could I learn" works even if the client only lists learned recipes.
-function ns.BuildRows(professionID, includeUnlearned)
+-- view: the window view asking ("profit" | "learn" | "level"); it picks the reagent cost basis (#47).
+function ns.BuildRows(professionID, includeUnlearned, view)
 	local prof = ns.charDB and ns.charDB.professions[professionID]
 	if not prof then
 		return {}
 	end
-	local prices = { buy = ns.GetBuyPrice, sell = ns.GetSellValue }
+	local prices = ns.ReagentPrices(view or "profit")
 	local rows = {}
 	for recipeID, recipe in pairs(prof.recipes) do
 		if (recipe.learned or includeUnlearned) and ns.RecipeBelongs(professionID, recipeID) then

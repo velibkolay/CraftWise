@@ -242,3 +242,12 @@ Needs a full game restart (new file `Ledger.lua` in the TOC). Saved in `CraftWis
 - [ ] `pos[<itemID>].held` matches bags + bank right after login, with the bank closed (`C_Item.GetItemCount(id, true, false, true)` must count the bank from the cache). If it drops at login and comes back when the bank opens, report it: the paid cost would turn unknown.
 - [ ] `/craftwise ledger login`, `/craftwise ledger today` (per-day rows), `/craftwise ledger all` (since last reset), `/craftwise ledger reset`: start money, spent/received per item, net. With only trades in the session the line says "net matches the money change"; a quest reward or loot money shows as "not from logged trades". `/craftwise ledger` alone repeats the last view.
 - [ ] `/reload` keeps "since login"; a relog starts it again. A session over midnight: the new day's start money is the money held at midnight (taken at the first money change after it).
+
+## Reagent cost basis, craft or buy (#47)
+`/reload` is enough on top of #46 (no new file; #46 itself needs a restart).
+- [ ] Leatherworking with Cured Light Hide learned: hover Light Leather Pants in the Profit view. The Cured Light Hide line says `crafted` when Light Hide + Salt are cheaper than Cured Light Hide at the AH, and the line under it shows both values: `each: crafted 1s 55c · bought 2s typical · Horde AH`. When the AH is cheaper it says `bought: ...` with the same two values.
+- [ ] The Cost column of rows using an intermediate drops accordingly; the Cured Light Hide row itself still prices Light Hide and Salt as bought.
+- [ ] An intermediate whose recipe you have not learned (or that only an alt knows) is always bought.
+- [ ] Settings (gear), "Reagent cost": switch Profit to "Paid cost". The summary line says `reagents: paid cost, else AH (N rows with reagents at AH)`; the reagent tooltip header says the same. Buy a reagent at a vendor: its line now shows `paid cost, <n> held` and the row updates without reopening the window. Reagents you hold from before the log, or never bought, show their AH/vendor price with `no paid cost`, and the line under it says why.
+- [ ] The other views (Learn, Level, Upgrades) keep their own setting.
+- [ ] Opening the Profit view of a large profession (all recipes, "include unlearned") with craft-or-buy is not noticeably slower than before. Report a stutter.

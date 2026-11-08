@@ -168,7 +168,7 @@ end
 -- One row per known recipe whose item beats what you wear in its slot.
 function ns.UpgradeRows()
 	local out = {}
-	local prices = { buy = ns.GetBuyPrice, sell = ns.GetSellValue }
+	local prices = ns.ReagentPrices("upgrades")
 	local myLevel = UnitLevel and UnitLevel("player") or 0
 	local seen = {}
 	for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do

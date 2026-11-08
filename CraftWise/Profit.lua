@@ -4,10 +4,79 @@ local _, ns = ...
 local Profit = {}
 ns.Profit = Profit
 
+Profit.MAX_DEPTH = 4 -- crafted intermediates inside crafted intermediates, at most this deep
+
+local function Copy(t)
+	local out = {}
+	for k, v in pairs(t) do
+		out[k] = v
+	end
+	return out
+end
+
+-- Cost of one unit made by `recipe` ({ reagents, output = { itemID, quantity } }): its reagents'
+-- unit costs times their quantities, divided by the output quantity. nil when a reagent has no price.
+function Profit.CraftCost(recipe, prices, depth, visiting)
+	local qty = recipe.output and recipe.output.quantity
+	if not (qty and qty > 0 and recipe.reagents and #recipe.reagents > 0) then
+		return nil
+	end
+	local total, age, thin, fallback = 0, nil, nil, nil
+	for _, r in ipairs(recipe.reagents) do
+		local unit = Profit.UnitCost(r.itemID, prices, depth, visiting)
+		if not unit then
+			return nil
+		end
+		total = total + unit.copper * r.quantity
+		if unit.age and (not age or unit.age > age) then
+			age = unit.age
+		end
+		thin = thin or unit.thin
+		fallback = fallback or unit.paidFallback
+	end
+	return { copper = total / qty, age = age, thin = thin, paidFallback = fallback }
+end
+
+-- Cost of one unit of a reagent (#47): the buy price (prices.buy) or, when a recipe this character
+-- knows makes it (prices.recipesFor), the craft cost if that is lower. Recursive up to MAX_DEPTH, and
+-- an item already being priced up the chain is never crafted again (cycle guard). The result says
+-- which won: crafted = true ("crafted") or false ("bought"), with both unit values (craftUnit,
+-- buyUnit, buyLabel); crafted is nil when no known recipe makes the item. nil = no price at all.
+function Profit.UnitCost(itemID, prices, depth, visiting)
+	depth, visiting = depth or 0, visiting or {}
+	local bought = prices.buy(itemID)
+	local craft
+	if prices.recipesFor and depth < Profit.MAX_DEPTH and not visiting[itemID] then
+		visiting[itemID] = true
+		for _, recipe in ipairs(prices.recipesFor(itemID) or {}) do
+			local c = Profit.CraftCost(recipe, prices, depth + 1, visiting)
+			if c and (not craft or c.copper < craft.copper) then
+				craft = c
+			end
+		end
+		visiting[itemID] = nil
+	end
+	if craft and (not bought or craft.copper < bought.copper) then
+		return { copper = craft.copper, source = "crafted", label = "crafted", crafted = true, craftUnit = craft.copper,
+			buyUnit = bought and bought.copper, buyLabel = bought and bought.label, buySource = bought and bought.source,
+			age = craft.age, thin = craft.thin, paidFallback = craft.paidFallback }
+	end
+	if not bought then
+		return nil
+	end
+	if craft then
+		bought = Copy(bought)
+		bought.crafted, bought.craftUnit, bought.buyUnit = false, craft.copper, bought.copper
+		bought.buyLabel, bought.buySource = bought.label, bought.source
+	end
+	return bought
+end
+
 -- recipe: { reagents = { { itemID, quantity } }, output = { itemID, quantity } | nil,
 --           learned = bool, learnCost = copper | nil }
 -- prices: { buy = fn(itemID) -> { copper, source, age, label, thin } | nil,
---           sell = fn(itemID) -> { copper, source, age, label, thin, gross, cut, cutUnverified } | nil }
+--           sell = fn(itemID) -> { copper, source, age, label, thin, gross, cut, cutUnverified } | nil,
+--           recipesFor = fn(itemID) -> { recipe, ... } | nil (optional: craft-or-buy for intermediates) }
 -- Returns a result table. A missing price never counts as 0: the result is marked incomplete.
 -- A sale whose AH cut is unverified (#26) has a gross value only, so no profit is computed from it.
 function Profit.Evaluate(recipe, prices)
@@ -26,11 +95,27 @@ function Profit.Evaluate(recipe, prices)
 		end
 	end
 
+	-- The item this recipe makes is never priced by crafting it again inside its own reagents.
+	local visiting = {}
+	if recipe.output then
+		visiting[recipe.output.itemID] = true
+	end
 	for _, r in ipairs(recipe.reagents or {}) do
-		local price = prices.buy(r.itemID)
+		local price
+		if prices.recipesFor then
+			price = Profit.UnitCost(r.itemID, prices, 0, visiting)
+		else
+			price = prices.buy(r.itemID)
+		end
 		local line = { itemID = r.itemID, quantity = r.quantity }
 		if price then
 			line.unit, line.source, line.age, line.label, line.thin = price.copper, price.source, price.age, price.label, price.thin
+			line.crafted, line.craftUnit, line.buyUnit = price.crafted, price.craftUnit, price.buyUnit
+			line.buyLabel, line.buySource = price.buyLabel, price.buySource
+			line.paidFallback, line.paidNote = price.paidFallback, price.paidNote
+			if price.paidFallback then
+				result.paidFallbacks = (result.paidFallbacks or 0) + 1
+			end
 			result.thin = result.thin or price.thin or nil
 			line.total = price.copper * r.quantity
 			result.cost = result.cost + line.total
