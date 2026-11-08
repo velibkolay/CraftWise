@@ -355,7 +355,9 @@ local function RenderRow(row, r, index)
 	if r.noItemOutput then
 		cells.sellsFor:SetText(Muted("no item"))
 	else
-		cells.sellsFor:SetText(r.sellsFor and Money(r.sellsFor) or Muted("-"))
+		local tag = PF.SaleTag(r.sellSource, r.cutUnverified)
+		local tagText = tag and ("  " .. (r.cutUnverified and (C.warn .. tag .. "|r") or Muted(tag))) or ""
+		cells.sellsFor:SetText(r.sellsFor and (Money(r.sellsFor) .. tagText) or Muted("-"))
 	end
 
 	if r.profit then
