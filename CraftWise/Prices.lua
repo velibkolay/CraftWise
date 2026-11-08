@@ -265,16 +265,36 @@ local function MerchantItem(index)
 	end
 end
 
+-- What the open merchant asks for one unit, in copper: prices[itemID], and extended[itemID] = true
+-- for items that also (or only) cost currency or items.
+function ns.MerchantUnitPrices()
+	local prices, extended = {}, {}
+	if not GetMerchantNumItems then
+		return prices, extended
+	end
+	for index = 1, GetMerchantNumItems() do
+		local itemID = GetMerchantItemID and GetMerchantItemID(index)
+		local price, quantity, ext = MerchantItem(index)
+		if itemID then
+			if ext then
+				extended[itemID] = true
+			elseif price and price > 0 then
+				prices[itemID] = price / math.max(quantity or 1, 1)
+			end
+		end
+	end
+	return prices, extended
+end
+
 function ns.RecordMerchant()
 	if not ns.db or not GetMerchantNumItems then
 		return 0
 	end
 	local recorded = 0
-	for index = 1, GetMerchantNumItems() do
-		local itemID = GetMerchantItemID and GetMerchantItemID(index)
-		local price, quantity, extended = MerchantItem(index)
-		if itemID and price and price > 0 and not extended then
-			ns.db.vendor[itemID] = price / math.max(quantity or 1, 1)
+	local prices, extended = ns.MerchantUnitPrices()
+	for itemID, unit in pairs(prices) do
+		if not extended[itemID] then
+			ns.db.vendor[itemID] = unit
 			recorded = recorded + 1
 		end
 	end
