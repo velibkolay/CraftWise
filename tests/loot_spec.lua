@@ -51,7 +51,7 @@ it("records the recipe before looting, then loots every slot", function()
 	eq(ns.db.sources[RECIPE_ITEM].loot["Creature:46"].n, 1, "LOOT_OPENED does not count it twice")
 end)
 
-it("follows the auto-loot setting XOR the toggle modifier", function()
+it("without the autoloot payload, follows the auto-loot setting XOR the toggle modifier", function()
 	local cases = { { true, false, 3 }, { true, true, 0 }, { false, false, 0 }, { false, true, 3 } }
 	for _, c in ipairs(cases) do
 		local _, stub = setup()
@@ -60,6 +60,21 @@ it("follows the auto-loot setting XOR the toggle modifier", function()
 		stub.Fire("LOOT_READY")
 		eq(#stub.looted, c[3], ("setting %s modifier %s"):format(tostring(c[1]), tostring(c[2])))
 	end
+end)
+
+it("follows the LOOT_READY autoloot payload, not the modifier read at LOOT_READY (#57)", function()
+	-- Shift held at the click, released before LOOT_READY: the client says false, the XOR rule now says true.
+	local _, stub = setup()
+	stub.cv.autoLootDefault, stub.modifier = true, false
+	stub.loot = drop()
+	stub.Fire("LOOT_READY", false)
+	eq(#stub.looted, 0, "payload false: nothing looted")
+	-- Auto-loot off, Shift held at the click and released: the client says true, the XOR rule now says false.
+	local _, stub2 = setup()
+	stub2.cv.autoLootDefault, stub2.modifier = false, false
+	stub2.loot = drop()
+	stub2.Fire("LOOT_READY", true)
+	eq(#stub2.looted, 3, "payload true: looted")
 end)
 
 it("without fast loot the LOOT_OPENED path still records", function()
