@@ -2,8 +2,11 @@
 -- a dropped recipe is never lost) and then looted slot by slot with LootSlot, without Blizzard's loot
 -- animation. It acts only on a window the player opened by clicking (LOOT_READY): no input automation.
 --
---   * Auto-loot applies when the client's auto-loot setting (CVar autoLootDefault) differs from the auto-loot
---     toggle modifier being held (Shift by default): the same XOR rule as Blizzard's Settings panel.
+--   * Whether auto-loot applies is the client's own decision, taken at click time: the `autoloot` payload of
+--     LOOT_READY (bool, Nilable = false in Blizzard's Forever API docs). Recomputing it at LOOT_READY is wrong
+--     when the player has already let go of Shift by then (#57). Only when the payload is missing does this
+--     file fall back to the rule itself: auto-loot setting (CVar autoLootDefault) XOR the auto-loot toggle
+--     modifier held (Shift by default), the same rule as Blizzard's Settings panel.
 --   * Bind-on-pickup items are looted with LootSlot like any other; the client then asks (LOOT_BIND_CONFIRM) and
 --     Blizzard's dialog handles it. This file never confirms anything.
 --   * Locked slots (group loot rolls, master loot) are not touched; with a master looter this file does nothing.
@@ -49,7 +52,8 @@ function Loot.Conflict()
 	end
 end
 
--- Does auto-loot apply to this window? Setting XOR toggle modifier.
+-- Does auto-loot apply to this window? Setting XOR toggle modifier, read now. Only the fallback for a
+-- LOOT_READY without its `autoloot` payload: by the time the event fires the modifier may already be released.
 function Loot.AutoLootApplies()
 	local setting = C_CVar and C_CVar.GetCVarBool and C_CVar.GetCVarBool("autoLootDefault") or false
 	local modifier = IsModifiedClick and IsModifiedClick("AUTOLOOTTOGGLE") or false
@@ -124,8 +128,12 @@ end
 
 local busy = false
 
-local function OnReady()
-	if busy or not Loot.Active() or not Loot.AutoLootApplies() or IsMasterLoot() then
+-- autoloot: LOOT_READY's payload, the client's decision at click time (#57).
+local function OnReady(_, autoloot)
+	if autoloot == nil then
+		autoloot = Loot.AutoLootApplies()
+	end
+	if busy or not Loot.Active() or not autoloot or IsMasterLoot() then
 		return
 	end
 	if not (GetNumLootItems and GetLootSlotInfo and LootSlot) then
