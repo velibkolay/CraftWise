@@ -231,7 +231,7 @@ function ns.TrackedBalanceLines(itemID)
 			uses = uses or r.itemID == itemID
 		end
 		if uses then
-			local lines = ns.BalanceLines(reagents)
+			local lines = ns.BalanceLines(reagents, nil, output and output.itemID)
 			if #lines > 0 then
 				out[#out + 1] = { "Tracked", "|cffffffff" .. (recipe and recipe.name or ("Recipe " .. recipeID)) .. "|r" }
 				for _, l in ipairs(lines) do

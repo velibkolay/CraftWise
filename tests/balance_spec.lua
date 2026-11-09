@@ -292,3 +292,186 @@ it("account bank tabs are listed as not counted", function()
 	eq(ns.Holdings.Counter()(CURED), 60, "account bank items are not counted")
 	has(LinesText(ns.BalanceLines(PANTS_REAGENTS)), "Not counted: account bank (not read)")
 end)
+
+------------------------------------------------------------------- craft or buy in the buy list (#60)
+
+local CURE_HIDE_ID = 3816
+
+it("expand (pure): a missing intermediate the chooser crafts is replaced by its inputs, held inputs first", function()
+	local ns = Load()
+	local craft = function(id) if id == CURED then return CURE_HIDE, { craftUnit = 150 } end end
+	local e = ns.Balance.Expand({ { itemID = THREAD, quantity = 1 }, { itemID = CURED, quantity = 2 } }, {}, Held({ [HIDE] = 1 }), nil, craft)
+	eq(#e.crafts, 1); eq(e.crafts[1].itemID, CURED); eq(e.crafts[1].quantity, 2); eq(e.crafts[1].crafts, 2); eq(e.crafts[1].depth, 0)
+	eq(#e.buy, 3)
+	eq(e.buy[1].itemID, THREAD); eq(e.buy[1].quantity, 1)
+	eq(e.buy[2].itemID, HIDE); eq(e.buy[2].quantity, 1, "one Light Hide held")
+	eq(e.buy[3].itemID, SALT); eq(e.buy[3].quantity, 2)
+	-- the leftover pool counts, not the raw holdings: hides used up by the analysis are gone
+	e = ns.Balance.Expand({ { itemID = CURED, quantity = 2 } }, { [HIDE] = 0 }, Held({ [HIDE] = 5 }), nil, craft)
+	eq(e.buy[1].itemID, HIDE); eq(e.buy[1].quantity, 2)
+	-- no chooser decision: the list is unchanged
+	e = ns.Balance.Expand({ { itemID = CURED, quantity = 2 } }, {}, Held({}), nil, function() end)
+	eq(#e.crafts, 0); eq(e.buy[1].itemID, CURED); eq(e.buy[1].quantity, 2)
+end)
+
+it("expand (pure): nested intermediates, multi-unit yields, merged inputs and the cycle guard", function()
+	local ns = Load()
+	local A, B, X = 801, 802, 803
+	local recipes = {
+		[A] = { reagents = { { itemID = B, quantity = 3 }, { itemID = X, quantity = 1 } }, output = { itemID = A, quantity = 1 } },
+		[B] = { reagents = { { itemID = X, quantity = 1 } }, output = { itemID = B, quantity = 2 } },
+	}
+	local e = ns.Balance.Expand({ { itemID = A, quantity = 1 } }, {}, Held({}), nil, function(id) return recipes[id] end)
+	-- A: 3 B + 1 X; B yields 2 per craft -> 2 crafts -> 2 X.
+	eq(#e.crafts, 2)
+	eq(e.crafts[1].itemID, A); eq(e.crafts[2].itemID, B); eq(e.crafts[2].quantity, 3); eq(e.crafts[2].crafts, 2); eq(e.crafts[2].depth, 1)
+	eq(#e.buy, 1); eq(e.buy[1].itemID, X); eq(e.buy[1].quantity, 3, "2 for B + 1 for A, one line")
+	-- Cycle: A from B, B from A. A is being crafted, so the A that B needs is bought.
+	local cycle = {
+		[A] = { reagents = { { itemID = B, quantity = 1 } }, output = { itemID = A, quantity = 1 } },
+		[B] = { reagents = { { itemID = A, quantity = 1 } }, output = { itemID = B, quantity = 1 } },
+	}
+	e = ns.Balance.Expand({ { itemID = A, quantity = 2 } }, {}, Held({}), nil, function(id) return cycle[id] end)
+	eq(#e.crafts, 2); eq(#e.buy, 1); eq(e.buy[1].itemID, A); eq(e.buy[1].quantity, 2)
+end)
+
+-- The report from Veli's game (2026-11-09): Light Leather Pants, Cured Light Hide on the Horde AH at
+-- 1s80-1s99, crafted for 1s50 from Light Hide (1s AH) + Salt (50c vendor). Leather and thread for 2 crafts.
+local function SetupCure(ns, stub, opts)
+	opts = opts or {}
+	local recipes = {
+		[9068] = { info = { name = "Light Leather Pants", learned = true }, schematic = stub.Schematic({ { LEATHER, 10 }, { THREAD, 1 }, { CURED, 1 } }, PANTS) },
+	}
+	if not opts.noCure then
+		recipes[CURE_HIDE_ID] = { info = { name = "Cured Light Hide", learned = true }, schematic = stub.Schematic({ { HIDE, 1 }, { SALT, 1 } }, CURED) }
+	end
+	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = recipes }
+	stub.Fire("TRADE_SKILL_SHOW")
+	for id, name in pairs({ [LEATHER] = "Light Leather", [THREAD] = "Fine Thread", [CURED] = "Cured Light Hide", [HIDE] = "Light Hide",
+		[SALT] = "Salt", [PANTS] = "Light Leather Pants" }) do
+		stub.items[id] = { name = name }
+	end
+	stub.bags[0] = { { itemID = LEATHER, stackCount = 20 }, { itemID = THREAD, stackCount = 2 } }
+	if opts.hides then
+		stub.bags[0][3] = { itemID = HIDE, stackCount = opts.hides }
+	end
+	stub.Fire("BAG_UPDATE_DELAYED")
+	local db = CraftWiseMarketDB
+	local function listed(itemID, tiers)
+		local total = 0
+		for i = 2, #tiers, 2 do total = total + tiers[i] end
+		db.items[itemID] = { [HORDE] = { raw = { { t = NOW, total = total, tiers = tiers } }, days = {},
+			last = { t = NOW, min = tiers[1], qty = total } } }
+	end
+	listed(CURED, { opts.curedAt or 180, 1, 199, 20 })
+	listed(HIDE, { 100, 50 })
+	db.houses[HORDE] = { realm = "PvP", kind = "faction", faction = "Horde", label = "Horde AH", cut = { samples = 0 } }
+	db.scans[HORDE] = { { t = NOW, kind = "search", items = 2, source = "ui" } }
+	ns.db.vendor[THREAD] = 100
+	ns.db.vendor[SALT] = 50
+end
+
+it("buy list crafts a cheaper intermediate: craft 2 Cured Light Hide, buy 2 Light Hide (AH) + 2 Salt (vendor)", function()
+	local ns, stub = Load()
+	SetupCure(ns, stub)
+	local lines, b = ns.BalanceLines(PANTS_REAGENTS, nil, PANTS)
+	eq(b.target, 2); eq(b.possible, 0)
+	eq(#b.crafts, 1); eq(b.crafts[1].itemID, CURED); eq(b.crafts[1].quantity, 2)
+	eq(#b.buy, 2)
+	eq(b.buy[1].itemID, HIDE); eq(b.buy[1].quantity, 2); eq(b.buy[1].quote.source, "auction")
+	eq(b.buy[2].itemID, SALT); eq(b.buy[2].quantity, 2); eq(b.buy[2].quote.source, "vendor")
+	eq(b.total, 2 * 150, "the crafted cost of 2 Cured Light Hide"); eq(b.complete, true)
+	local text = LinesText(lines)
+	has(text, "To buy for 2 crafts")
+	has(text, "Craft 2 × Cured Light Hide | each: crafted 1s 50c · bought 1s 80c")
+	has(text, "2 × Light Hide | 2s  AH · Horde AH")
+	has(text, "2 × Salt | 1s  vendor")
+	has(text, "Total | 3s")
+	assert(not text:find("\n  2 × Cured Light Hide |", 1, true), "Cured Light Hide itself is not bought:\n" .. text)
+	-- the cost line of the same recipe makes the same decision
+	local row
+	for _, r in ipairs(ns.BuildRows(165, false, "profit")) do
+		if r.recipeID == 9068 then row = r end
+	end
+	for _, l in ipairs(row.reagents) do
+		if l.itemID == CURED then eq(l.source, "crafted"); eq(l.unit, 150) end
+	end
+end)
+
+it("buy list craft: held Light Hide is used first", function()
+	local ns, stub = Load()
+	SetupCure(ns, stub, { hides = 1 })
+	local lines, b = ns.BalanceLines(PANTS_REAGENTS, nil, PANTS)
+	eq(b.crafts[1].quantity, 2)
+	eq(b.buy[1].itemID, HIDE); eq(b.buy[1].quantity, 1)
+	eq(b.buy[2].itemID, SALT); eq(b.buy[2].quantity, 2)
+	eq(b.total, 100 + 2 * 50)
+	has(LinesText(lines), "1 × Light Hide | 1s  AH · Horde AH")
+end)
+
+it("buy list unchanged when buying the intermediate is cheaper or no known recipe makes it", function()
+	local ns, stub = Load()
+	SetupCure(ns, stub, { curedAt = 140 })
+	local lines, b = ns.BalanceLines(PANTS_REAGENTS, nil, PANTS)
+	eq(#b.crafts, 0); eq(#b.buy, 1); eq(b.buy[1].itemID, CURED); eq(b.buy[1].quantity, 2)
+	local text = LinesText(lines)
+	has(text, "2 × Cured Light Hide | 3s 39c  AH · Horde AH")
+	assert(not text:find("  Craft ", 1, true), text)
+	ns, stub = Load()
+	SetupCure(ns, stub, { noCure = true })
+	lines, b = ns.BalanceLines(PANTS_REAGENTS, nil, PANTS)
+	eq(#b.crafts, 0); eq(#b.buy, 1); eq(b.buy[1].itemID, CURED); eq(b.total, 180 + 199)
+end)
+
+it("buy list decides at market prices whatever the view's cost basis (Scout decision on #60)", function()
+	local ns, stub = Load()
+	SetupCure(ns, stub)
+	stub.bags[0][3] = { itemID = CURED, stackCount = 1 }
+	stub.names.player = "Veli"
+	stub.counts[CURED] = 1
+	stub.Fire("BAG_UPDATE_DELAYED")
+	ns.Ledger.Record("ahbuy", CURED, 1, 120, HORDE, 0) -- 1s20 paid
+	eq(ns.Ledger.PaidCost(CURED).copper, 120)
+	ns.db.settings.costBasis.level = "paid"
+	ns.db.settings.costBasis.profit = "paid"
+	-- The cost line keeps following the setting: the held Cured Light Hide at its paid cost.
+	local checked = false
+	for _, r in ipairs(ns.BuildRows(165, false, "level")) do
+		if r.recipeID == 9068 then
+			for _, l in ipairs(r.reagents) do
+				if l.itemID == CURED then eq(l.source, "paid"); eq(l.unit, 120); checked = true end
+			end
+		end
+	end
+	assert(checked, "no Cured Light Hide cost line in the level view")
+	-- The one missing unit is crafted: 1s50 at market beats 1s80 on the AH.
+	local _, b = ns.BalanceLines(PANTS_REAGENTS, nil, PANTS)
+	eq(#b.crafts, 1); eq(b.crafts[1].itemID, CURED); eq(b.crafts[1].quantity, 1)
+	eq(b.crafts[1].info.craftUnit, 150); eq(b.crafts[1].info.buyUnit, 180)
+	eq(#b.buy, 2); eq(b.buy[1].itemID, HIDE); eq(b.buy[1].quantity, 1); eq(b.buy[2].itemID, SALT); eq(b.buy[2].quantity, 1)
+	eq(b.total, 150)
+end)
+
+it("profit view tooltip shows the crafted buy list", function()
+	local ns, stub = Load()
+	SetupCure(ns, stub)
+	local seen = {}
+	local add, add2 = GameTooltip.AddLine, GameTooltip.AddDoubleLine
+	GameTooltip.AddLine = function(self, l, ...) seen[#seen + 1] = Plain(tostring(l)); return add(self, l, ...) end
+	GameTooltip.AddDoubleLine = function(self, l, r, ...) seen[#seen + 1] = Plain(l) .. " | " .. Plain(r); return add2(self, l, r, ...) end
+	ns.db.settings.view = "profit"
+	if ns.PF and ns.PF.frame and ns.PF.frame:IsShown() then ns.RefreshProfitFrame() else ns.ToggleProfitFrame() end
+	local hovered = false
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.data.recipeID == 9068 and f.scripts.OnEnter and f:IsShown() then
+			f.scripts.OnEnter(f); hovered = true
+			break
+		end
+	end
+	GameTooltip.AddLine, GameTooltip.AddDoubleLine = add, add2
+	assert(hovered, "no pants row")
+	local text = table.concat(seen, "\n")
+	has(text, "Craft 2 × Cured Light Hide | each: crafted 1s 50c · bought 1s 80c")
+	has(text, "2 × Salt | 1s  vendor")
+	has(text, "Total | 3s")
+end)

@@ -285,3 +285,11 @@ Needs a full game restart (new file `Ledger.lua` in the TOC). Saved in `CraftWis
 - [ ] If the ledger takes noticeably long to print (it waits up to 2 s for item data), report it.
 - [ ] `/craftwise market <itemID>` of an item you haven't seen this session: the header is the item's link; a suffix variant shows `<link> (item <id>:<suffix>)`.
 - [ ] Item menu "Recipes using this" on an item none of your professions uses: "<item> is not used by your professions." shows the item as a link.
+
+## Buy list: craft or buy for intermediates (#60)
+No new files: `/reload` is enough.
+- [ ] Profit view, Light Leather Pants with leather and thread for 2 crafts and no Cured Light Hide, Cured Light Hide on the AH above Light Hide + Salt (cost line says "crafted"): "To buy for 2 crafts" shows "Craft 2 × Cured Light Hide  each: crafted 1s50 · bought 1s80 ...", then "2 × Light Hide" (AH, house) and "2 × Salt" (vendor), no "2 × Cured Light Hide" line, and a total of 2 × the crafted cost (when the AH tiers match the price the cost line uses).
+- [ ] Light Hide or Salt in the bags: the held units are used first, only the rest is on the list.
+- [ ] Cured Light Hide cheaper on the AH than crafting (cost line "bought"), or the Cured Light Hide recipe not known: the list buys Cured Light Hide as before.
+- [ ] Settings, cost basis "Paid cost" for a view, holding 1 Cured Light Hide with a recorded paid cost and short of 1: the cost line shows the paid cost, but the buy list still crafts the missing one at market prices (Scout decision on #60: the buy list always decides on the AH basis).
+- [ ] Tracked recipe tooltip (hover a reagent in the bags): same buy list as the Profit view.
