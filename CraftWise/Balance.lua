@@ -9,7 +9,10 @@
 --   warning          = the largest reagent covers at least 2x and at least 5 more crafts than the
 --                      limiting one (decision 1 on #49).
 --   buy list         = per reagent, what is missing for the target count (default: what the largest
---                      reagent covers), after using what you hold and can make.
+--                      reagent covers), after using what you hold and can make. A missing reagent
+--                      that a known recipe makes more cheaply (the cost line's decision, #47
+--                      Profit.UnitCost, at market prices) is crafted: its inputs go on the list
+--                      instead (#60).
 -- Balance.Analyze is pure (counts and recipes come in as functions); ns.ReagentBalance wires it to
 -- Holdings, your known recipes and prices.
 local _, ns = ...
@@ -109,7 +112,8 @@ end
 -- makers(itemID) -> known recipes that make it { { reagents, output = { itemID, quantity } } } or nil;
 -- target: crafts to buy for (nil = what the largest reagent covers).
 -- Returns { possible, lines = { { itemID, quantity, held, units, made, covers } }, limiting, largest,
--- warn, target, buy = { { itemID, quantity } }, capped }.
+-- warn, target, buy = { { itemID, quantity } }, leftover, capped }. leftover: the counted pool after the
+-- buy list took what it could (what Balance.Expand starts from).
 function Balance.Analyze(reagents, held, makers, target)
 	makers = makers or function() return nil end
 	local result = { lines = {}, buy = {} }
@@ -153,6 +157,7 @@ function Balance.Analyze(reagents, held, makers, target)
 				need[r.itemID] = (need[r.itemID] or 0) + want - got
 			end
 		end
+		result.leftover = Snapshot(pool)
 		for _, r in ipairs(reagents) do
 			if need[r.itemID] then
 				result.buy[#result.buy + 1] = { itemID = r.itemID, quantity = need[r.itemID] }
@@ -161,6 +166,68 @@ function Balance.Analyze(reagents, held, makers, target)
 		end
 	end
 	return result
+end
+
+-- Craft or buy for the buy list (#60). Each missing reagent goes through choose(itemID, depth,
+-- visiting) -> recipe, info | nil, the cost line's decision: nil buys it; a recipe crafts it, and that
+-- recipe's inputs for the crafts needed are taken from what is left of what you hold (and can make
+-- from it), the rest is missing in turn (an input can itself be crafted). visiting holds the items
+-- being crafted up the chain (cycle guard; the depth limit is choose's, as in Profit.UnitCost).
+-- buy: Analyze's list; leftover: Analyze's pool; held(itemID) for items the pool hasn't read yet.
+-- Returns { buy = { { itemID, quantity } }, crafts = { { itemID, quantity, crafts, depth, info } } }.
+function Balance.Expand(buy, leftover, held, makers, choose, visiting)
+	makers = makers or function() return nil end
+	visiting = visiting or {}
+	local pool = Snapshot(leftover or {})
+	local function get(itemID)
+		if pool[itemID] == nil then
+			pool[itemID] = held(itemID) or 0
+		end
+		return pool[itemID]
+	end
+	local out, buyAt, craftAt = { buy = {}, crafts = {} }, {}, {}
+	local function add(list, at, itemID, fields)
+		local entry = at[itemID]
+		if entry then
+			for k, v in pairs(fields) do
+				if type(v) == "number" and k ~= "depth" then
+					entry[k] = entry[k] + v
+				end
+			end
+		else
+			entry = fields
+			entry.itemID = itemID
+			list[#list + 1] = entry
+			at[itemID] = entry
+		end
+	end
+	local function need(itemID, quantity, depth)
+		local recipe, info
+		if choose and not visiting[itemID] then
+			recipe, info = choose(itemID, depth, visiting)
+		end
+		if not (recipe and recipe.reagents and #recipe.reagents > 0) then
+			add(out.buy, buyAt, itemID, { quantity = quantity })
+			return
+		end
+		local yield = Yield(recipe)
+		local crafts = math.ceil(quantity / yield)
+		add(out.crafts, craftAt, itemID, { quantity = quantity, crafts = crafts, depth = depth, info = info })
+		visiting[itemID] = true
+		for _, r in ipairs(recipe.reagents) do
+			local want = r.quantity * crafts
+			local got = Take(pool, get, makers, r.itemID, want, 0, {})
+			if got < want then
+				need(r.itemID, want - got, depth + 1)
+			end
+		end
+		visiting[itemID] = nil
+		pool[itemID] = get(itemID) + crafts * yield - quantity -- spare units of a multi-unit craft
+	end
+	for _, b in ipairs(buy or {}) do
+		need(b.itemID, b.quantity, 0)
+	end
+	return out
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -276,12 +343,41 @@ function Balance.Cached(reagents, target)
 	return hit
 end
 
-function ns.ReagentBalance(reagents, target)
+-- The cost line's craft-or-buy decision for the buy list (#60): Profit.UnitCost with known recipes
+-- and market prices, always the "AH" cost basis (price basis #39, profit house), whatever the view's
+-- cost basis: the buy list is about units you don't hold yet, and a paid cost can't apply to units
+-- you still have to buy (Scout decision on #60). Crafted -> the recipe it used.
+function Balance.Chooser()
+	local prices = ns.ReagentPrices(nil, "ah")
+	return function(itemID, depth, visiting)
+		local unit = ns.Profit.UnitCost(itemID, prices, depth, visiting)
+		if unit and unit.crafted and unit.recipe then
+			return unit.recipe, unit
+		end
+	end
+end
+
+-- outputItemID: the item the recipe makes, never crafted inside its own buy list. Prices and
+-- craft-or-buy decisions are read fresh.
+function ns.ReagentBalance(reagents, target, outputItemID)
 	local analysis = Balance.Cached(reagents, target)
-	local result = setmetatable({ buy = {} }, { __index = analysis })
+	local result = setmetatable({ buy = {}, crafts = {} }, { __index = analysis })
 	result.counted, result.notCounted = ns.Holdings.PlacesText()
 	result.total, result.complete = 0, true
-	for i, b in ipairs(analysis.buy) do
+	local buy = analysis.buy
+	if #buy > 0 then
+		local count
+		local function held(itemID)
+			count = count or ns.Holdings.Counter()
+			return count(itemID)
+		end
+		local makers = Balance.Makers()
+		local expanded = Balance.Expand(buy, analysis.leftover, held, function(itemID)
+			return makers[itemID]
+		end, Balance.Chooser(), outputItemID and { [outputItemID] = true } or {})
+		buy, result.crafts = expanded.buy, expanded.crafts
+	end
+	for i, b in ipairs(buy) do
 		local line = { itemID = b.itemID, quantity = b.quantity }
 		line.quote, line.short = ns.BuyQuote(line.itemID, line.quantity)
 		if line.quote then
@@ -296,11 +392,11 @@ end
 
 -- Tooltip lines { left, right } for a recipe's reagents; empty when none of them is held (directly
 -- or through what you can make), so recipes you have nothing for stay short.
-function ns.BalanceLines(reagents, target)
+function ns.BalanceLines(reagents, target, outputItemID)
 	if not reagents or #reagents == 0 then
 		return {}
 	end
-	local b = ns.ReagentBalance(reagents, target)
+	local b = ns.ReagentBalance(reagents, target, outputItemID)
 	local any = false
 	for _, l in ipairs(b.lines) do
 		if l.units > 0 then
@@ -336,8 +432,23 @@ function ns.BalanceLines(reagents, target)
 		add(C.warn .. ("  %s limits you to %s crafts; you hold %s for %s.|r"):format(name(b.limiting.itemID), crafts(b.limiting.covers),
 			name(b.largest.itemID), crafts(b.largest.covers)), "")
 	end
-	if #b.buy > 0 then
+	if #b.buy > 0 or #b.crafts > 0 then
 		add(("|cffffd100To buy for %s crafts|r"):format(crafts(b.target)), "")
+		-- Intermediates cheaper to craft (#60): what to make, with both unit values as the cost line.
+		for _, c in ipairs(b.crafts) do
+			local left = ("  %sCraft %d × %s"):format(string.rep("  ", c.depth), c.quantity, name(c.itemID))
+			if c.crafts ~= c.quantity then
+				left = left .. (" (%d crafts)"):format(c.crafts)
+			end
+			local right = ""
+			local u = c.info
+			if u and u.craftUnit then
+				local bought = u.buyUnit and (money(u.buyUnit) .. " " .. (u.buySource == "vendor" and "vendor" or (u.buyLabel or "AH")))
+					or ns.Market.NO_DATA
+				right = C.muted .. "each: crafted " .. money(u.craftUnit) .. " · bought " .. bought .. "|r"
+			end
+			add(left, right)
+		end
 		for _, line in ipairs(b.buy) do
 			local right
 			if line.quote then

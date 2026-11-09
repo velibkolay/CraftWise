@@ -42,27 +42,28 @@ end
 -- an item already being priced up the chain is never crafted again (cycle guard). The result says
 -- which won: crafted = true ("crafted") or false ("bought"), with both unit values (craftUnit,
 -- buyUnit, buyLabel); crafted is nil when no known recipe makes the item. nil = no price at all.
--- A buy price marked noCraft is used as is, without looking at recipes.
+-- A buy price marked noCraft is used as is, without looking at recipes. A crafted result carries the
+-- cheapest recipe (recipe), so the buy list (#60) crafts with the same one.
 function Profit.UnitCost(itemID, prices, depth, visiting)
 	depth, visiting = depth or 0, visiting or {}
 	local bought = prices.buy(itemID)
 	if bought and bought.noCraft then
 		return bought -- a price that stands as is (paid cost of what you hold, #47 decision 1)
 	end
-	local craft
+	local craft, craftRecipe
 	if prices.recipesFor and depth < Profit.MAX_DEPTH and not visiting[itemID] then
 		visiting[itemID] = true
 		for _, recipe in ipairs(prices.recipesFor(itemID) or {}) do
 			local c = Profit.CraftCost(recipe, prices, depth + 1, visiting)
 			if c and (not craft or c.copper < craft.copper) then
-				craft = c
+				craft, craftRecipe = c, recipe
 			end
 		end
 		visiting[itemID] = nil
 	end
 	if craft and (not bought or craft.copper < bought.copper) then
 		return { copper = craft.copper, source = "crafted", label = "crafted", crafted = true, craftUnit = craft.copper,
-			buyUnit = bought and bought.copper, buyLabel = bought and bought.label, buySource = bought and bought.source,
+			recipe = craftRecipe, buyUnit = bought and bought.copper, buyLabel = bought and bought.label, buySource = bought and bought.source,
 			age = craft.age, thin = craft.thin, paidFallback = craft.paidFallback,
 			paidNote = craft.paidFallback and "some of its reagents have no paid cost (AH)" or nil }
 	end

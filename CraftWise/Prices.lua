@@ -230,9 +230,10 @@ function ns.GetPaidBuyPrice(itemID)
 end
 
 -- Price functions for Profit.Evaluate in one view: the view's cost basis, the sale value, and the
--- recipes this character knows, so intermediate reagents cost min(buy, craft) (#47).
-function ns.ReagentPrices(view)
-	local basis = ns.CostBasis(view)
+-- recipes this character knows, so intermediate reagents cost min(buy, craft) (#47). basis overrides
+-- the view's setting ("ah" for the buy list, #60).
+function ns.ReagentPrices(view, basis)
+	basis = basis or ns.CostBasis(view)
 	-- Each item's buy price is looked up once per build: intermediates appear in many recipes.
 	local base, memo = basis == "paid" and ns.GetPaidBuyPrice or ns.GetBuyPrice, {}
 	return {

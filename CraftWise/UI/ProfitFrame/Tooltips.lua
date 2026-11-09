@@ -92,9 +92,10 @@ local function SaleOptionLines(r)
 	return lines
 end
 
--- Reagents held vs needed, the limiting one and a buy list (#49).
-local function AddBalance(reagents)
-	local lines = ns.BalanceLines(reagents)
+-- Reagents held vs needed, the limiting one and a buy list (#49) that crafts intermediates cheaper to
+-- craft at market prices (#60).
+local function AddBalance(r)
+	local lines = ns.BalanceLines(r.reagents, nil, r.outputItemID)
 	if #lines == 0 then
 		return
 	end
@@ -421,7 +422,7 @@ local function ShowLevelTooltip(row, r)
 			GameTooltip:AddLine(("Makes money, but ~%.0f items per point to sell: check the AH can take them."):format(r.craftsPerPoint), 0.55, 0.55, 0.6, true)
 		end
 	end
-	AddBalance(r.reagents)
+	AddBalance(r)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine("The chance shown is for your current skill; it drops as you level.", 0.55, 0.55, 0.6, true)
 	GameTooltip:Show()
@@ -518,7 +519,7 @@ local function ShowTooltip(row)
 			GameTooltip:AddDoubleLine(left, ns.Market.NO_DATA, 1, 1, 1, 1, 0.4, 0.4)
 		end
 	end
-	AddBalance(r.reagents)
+	AddBalance(r)
 	if r.outputItemID then
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddDoubleLine("Sells for", SellText(r), 1, 0.82, 0, 1, 1, 1)
