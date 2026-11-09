@@ -295,3 +295,95 @@ it("keeps 30 days of entries in CraftWiseMarketDB and leaves the market data alo
 	eq(CraftWiseMarketDB.ledger.entries[1].t, NOW - 29 * DAY)
 	assert(CraftWiseMarketDB.items and CraftWiseMarketDB.scope, "market tables still there")
 end)
+
+----------------------------------------------------------------------------------- item names in chat (#59)
+
+local SALT_LINK = "|cffffffff|Hitem:4289::::::::20:::::|h[Salt]|h|r"
+
+-- Captures prints until the returned function is called (prints may come after an event).
+local function Capture()
+	local lines, orig = {}, print
+	print = function(s) lines[#lines + 1] = tostring(s) end
+	return function()
+		print = orig
+		return (table.concat(lines, "\n"):gsub("|TInterface\\MoneyFrame\\UI%-(%a)%a*Icon:[^|]*|t", function(u) return u:lower() end))
+	end
+end
+
+local function Requests(stub)
+	local asked = {}
+	C_Item.RequestLoadItemDataByID = function(id) asked[#asked + 1] = id end
+	return asked
+end
+
+it("#59: an entry keeps the item's name and link from record time; the ledger prints the link", function()
+	local ns, stub = Load()
+	stub.items[SALT].link = SALT_LINK
+	ns.Ledger.Record("vbuy", SALT, 3, 150, "Tharynn Bouden")
+	local e = ns.Ledger.Entries()[1]
+	eq(e.n, "Salt"); eq(e.l, SALT_LINK)
+	local asked = Requests(stub)
+	local stop = Capture()
+	SlashCmdList.CRAFTWISE("ledger login")
+	local text = stop()
+	has(text, SALT_LINK .. ": bought 3 for")
+	eq(#asked, 0, "nothing requested when the client has the item")
+end)
+
+it("#59: a stored name is printed at once when the item has left the client's cache", function()
+	local ns, stub = Load()
+	ns.Ledger.Record("vbuy", SALT, 3, 150, "x") -- stub link is no chat link: only the name is kept
+	eq(ns.Ledger.Entries()[1].l, nil)
+	stub.items[SALT] = nil
+	local asked = Requests(stub)
+	local stop = Capture()
+	SlashCmdList.CRAFTWISE("ledger login")
+	local text = stop()
+	has(text, "  Salt: bought 3 for")
+	eq(#asked, 0)
+	assert(not text:find("item 4289", 1, true), text)
+end)
+
+it("#59: an uncached item without a stored name is requested; the ledger prints once it arrives", function()
+	local ns, stub = Load()
+	local GREY = 15003
+	stub.items[GREY] = nil
+	ns.Ledger.Record("vsell", GREY, 1, 20, "x")
+	eq(ns.Ledger.Entries()[1].n, nil)
+	local asked = Requests(stub)
+	local stop = Capture()
+	SlashCmdList.CRAFTWISE("ledger login")
+	eq(stop(), "", "nothing printed while the item loads")
+	eq(asked[1], GREY)
+	stop = Capture()
+	stub.items[GREY] = { name = "Grey Thing", link = "|cff9d9d9d|Hitem:15003::::::::20:::::|h[Grey Thing]|h|r" }
+	stub.Fire("ITEM_DATA_LOAD_RESULT", GREY, true)
+	stub.RunTimers() -- the timeout was cancelled: no second print
+	local text = stop()
+	has(text, "|h[Grey Thing]|h|r: sold 1 for 20c")
+	assert(not text:find("item 15003", 1, true), text)
+	local _, n = text:gsub("Ledger, since login", "")
+	eq(n, 1, "printed once")
+	eq(ns.Ledger.Entries()[1].n, "Grey Thing", "the name is kept for the next print")
+end)
+
+it("#59: an item that never arrives prints as item <id> after the timeout; a failed load ends the wait", function()
+	local ns, stub = Load()
+	stub.items[15003], stub.items[SALT] = nil, nil
+	ns.Ledger.Record("vsell", 15003, 1, 20, "x")
+	Requests(stub)
+	local stop = Capture()
+	SlashCmdList.CRAFTWISE("ledger login")
+	stub.RunTimers()
+	has(stop(), "item 15003: sold 1 for 20c")
+
+	ns.Ledger.Record("vbuy", SALT, 1, 50, "x")
+	stop = Capture()
+	SlashCmdList.CRAFTWISE("ledger login")
+	stub.Fire("ITEM_DATA_LOAD_RESULT", 15003, false)
+	eq(stop(), "", "still waiting for Salt")
+	stop = Capture()
+	stub.Fire("ITEM_DATA_LOAD_RESULT", SALT, false)
+	local text = stop()
+	has(text, "item 4289: bought 1"); has(text, "item 15003: sold 1")
+end)

@@ -277,3 +277,11 @@ Needs a full game restart (new file `Ledger.lua` in the TOC). Saved in `CraftWis
 - [ ] Intermediate with a paid cost (Paid cost basis): buy Cured Light Hide, then hover Light Leather Pants. Its line shows `paid cost, <n> held` even if crafting it would be cheaper, and no `each: crafted ... · bought ...` line. Without a paid cost it is craft-or-buy as above; a crafted line whose reagents partly lack a paid cost says `some of its reagents have no paid cost (AH)`.
 - [ ] The other views (Learn, Level, Upgrades) keep their own setting.
 - [ ] Opening the Profit view of a large profession (all recipes, "include unlearned") with craft-or-buy is not noticeably slower than before. Report a stutter.
+
+## Item names in chat (#59)
+`/reload` is enough (no new file).
+- [ ] Buy and sell something at a vendor, then `/craftwise ledger login`: every item is a clickable link (click opens the item tooltip). `/dump CraftWiseMarketDB.ledger.entries[#CraftWiseMarketDB.ledger.entries]` shows `n` (name) and `l` (link).
+- [ ] An item not in the client's cache (e.g. Salt or a grey sold in an earlier session, after a full restart, before hovering it anywhere): `/craftwise ledger` prints within a moment with the item's name or link, never `item <id>`. Old entries from before #59 (no `n`) get their name after the first such print.
+- [ ] If the ledger takes noticeably long to print (it waits up to 2 s for item data), report it.
+- [ ] `/craftwise market <itemID>` of an item you haven't seen this session: the header is the item's link; a suffix variant shows `<link> (item <id>:<suffix>)`.
+- [ ] Item menu "Recipes using this" on an item none of your professions uses: "<item> is not used by your professions." shows the item as a link.

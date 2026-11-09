@@ -3,7 +3,8 @@
 -- `/craftwise ledger` (start money, spent and received per item, net, checked against GetMoney()).
 --
 -- Storage: CraftWiseMarketDB.ledger (decision 4 on #46: no new SavedVariables)
---   entries = { { t, c = charKey, k = kind, i = itemID, q = quantity, m = copper (total), w = where }, ... }
+--   entries = { { t, c = charKey, k = kind, i = itemID, q = quantity, m = copper (total), w = where,
+--                 n = item name, l = item link (both when the client had them at record time, #59) }, ... }
 --     kind: "ahbuy" (w = house key), "vbuy" (w = merchant name), "vsell" (w = merchant name),
 --           "buyback" (w = merchant name; takes back a vendor sale). Kept 30 days (decision 3).
 --     AH sales arrive by mail; they are #26 phase 3 and will be added here as kind "ahsell".
@@ -176,7 +177,8 @@ function L.Record(kind, itemID, quantity, copper, where, before)
 	if not (c and itemID and quantity and quantity > 0 and copper) then
 		return nil
 	end
-	local entry = { t = time(), c = charKey, k = kind, i = itemID, q = quantity, m = copper, w = where }
+	local name, link = ns.ItemInfoNow(itemID) -- kept so later prints don't depend on the item cache (#59)
+	local entry = { t = time(), c = charKey, k = kind, i = itemID, q = quantity, m = copper, w = where, n = name, l = link }
 	store.entries[#store.entries + 1] = entry
 	if kind == "ahbuy" or kind == "vbuy" then
 		local p = Position(c, itemID, before or L.HeldCount(itemID))
@@ -233,6 +235,7 @@ local function Totals(since, untilT)
 				items[e.i] = row
 				order[#order + 1] = row
 			end
+			row.name, row.link = e.n or row.name, e.l or row.link -- the newest entry that has them
 			if e.k == "ahbuy" or e.k == "vbuy" then
 				row.bought, row.spent = row.bought + e.q, row.spent + e.m
 				row.sources[L.KIND_LABELS[e.k]] = true
@@ -335,10 +338,6 @@ end
 -- /craftwise ledger [reset | login | today | all]
 ----------------------------------------------------------------------------------------------------
 
-local function ItemName(itemID)
-	return (C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)) or ("item " .. itemID)
-end
-
 local function Money(copper)
 	if copper == nil then
 		return "unknown"
@@ -353,12 +352,20 @@ local function Signed(copper)
 	return (copper > 0 and "+" or "") .. ns.FormatMoney(copper)
 end
 
-function L.Print(view)
-	local sum = L.Summary(view)
-	if not sum then
-		ns.Print("ledger: character not known yet")
+-- Entries recorded without a name (item not cached then, or logged before #59) get it once known.
+local function RememberNames(itemID)
+	local name, link = ns.ItemInfoNow(itemID)
+	if not name then
 		return
 	end
+	for _, e in ipairs(L.Entries()) do
+		if e.i == itemID and not e.n then
+			e.n, e.l = name, e.l or link
+		end
+	end
+end
+
+local function PrintSummary(sum)
 	ns.Print(("Ledger, %s: start %s, now %s, money change %s"):format(sum.label, Money(sum.startMoney),
 		Money(sum.money), Signed(sum.change)))
 	for _, row in ipairs(sum.items) do
@@ -374,7 +381,7 @@ function L.Print(view)
 		if row.sold ~= 0 or row.received ~= 0 then
 			parts[#parts + 1] = ("sold %d for %s"):format(row.sold, Money(row.received))
 		end
-		ns.Print(("  %s: %s"):format(ItemName(row.itemID), table.concat(parts, "; ")))
+		ns.Print(("  %s: %s"):format(ns.ItemChatText(row.itemID, { name = row.name, link = row.link }), table.concat(parts, "; ")))
 	end
 	ns.Print(("  spent %s, received %s, net %s"):format(Money(sum.spent), Money(sum.received), Signed(sum.net)))
 	if sum.other then
@@ -394,6 +401,30 @@ function L.Print(view)
 				Money(d.spent), Money(d.received), Signed(d.net), Signed(d.change)))
 		end
 	end
+end
+
+-- Prints the view as it is now; items whose name isn't known yet are loaded first (#59).
+function L.Print(view)
+	local sum = L.Summary(view)
+	if not sum then
+		ns.Print("ledger: character not known yet")
+		return
+	end
+	local ids, stored = {}, {}
+	for _, row in ipairs(sum.items) do
+		ids[#ids + 1] = row.itemID
+		stored[row.itemID] = row.name ~= nil
+	end
+	ns.WithItemNames(ids, function()
+		for _, itemID in ipairs(ids) do
+			if not stored[itemID] then
+				RememberNames(itemID)
+			end
+		end
+		PrintSummary(sum)
+	end, function(itemID)
+		return stored[itemID]
+	end)
 end
 
 function L.Slash(arg)
