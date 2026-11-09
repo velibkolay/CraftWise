@@ -899,7 +899,7 @@ it("/craftwise market prints every house with depth, typical and last seen", fun
 	stub.clock = NOW + 1800
 	OpenAH(stub, "Booty Bay")
 	CommoditySearch(stub, 5, { { unitPrice = 5000, quantity = 1 } }, 1)
-	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5") end)
+	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5"); stub.RunTimers() end)
 	assert(text:find("Horde AH: last", 1, true), text)
 	assert(text:find("Booty Bay: last", 1, true), text)
 	assert(text:find("3 @ ", 1, true) and text:find("25 @ ", 1, true), text)
@@ -915,28 +915,45 @@ it("/craftwise market takes a link (lower-cased by the slash handler) and finds 
 	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 9, itemSuffix = 1205 })
 	stub.RunTimers()
 	local link = "|cff1eff00|Hitem:9:0:0:0:0:0:1205:0:20|h[Thing of the Bear]|h|r"
-	local text = Printed(function() SlashCmdList.CRAFTWISE("market " .. link) end)
+	local text = Printed(function() SlashCmdList.CRAFTWISE("market " .. link); stub.RunTimers() end)
 	assert(text:find("item 9:1205:", 1, true), text)
 	assert(text:find("Horde AH: last", 1, true), text)
-	text = Printed(function() SlashCmdList.CRAFTWISE("market 9") end)
+	text = Printed(function() SlashCmdList.CRAFTWISE("market 9"); stub.RunTimers() end)
 	assert(text:find("item 9:1205:", 1, true), text)
+end)
+
+it("#59: /craftwise market names the item with its link, waiting for the client when it isn't cached", function()
+	local _, stub = Market()
+	InScope({ 5 })
+	OpenAH(stub)
+	CommoditySearch(stub, 5, { { unitPrice = 250, quantity = 3 } }, 3)
+	local link = "|cffffffff|Hitem:5::::::::20:::::|h[Copper Bar]|h|r"
+	local asked = {}
+	C_Item.RequestLoadItemDataByID = function(id) asked[#asked + 1] = id end
+	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5") end)
+	eq(text, "", "waits for the item")
+	eq(asked[1], 5)
+	stub.items[5] = { name = "Copper Bar", link = link }
+	text = Printed(function() stub.Fire("ITEM_DATA_LOAD_RESULT", 5, true) end)
+	assert(text:find(link .. ":", 1, true), text)
+	assert(not text:find("item 5", 1, true), text)
 end)
 
 it("/craftwise market: no data, unknown item, usage, disappeared label", function()
 	local _, stub = Market()
 	InScope({ 5 })
-	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5") end)
+	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5"); stub.RunTimers() end)
 	assert(text:find("no price data", 1, true), text)
-	text = Printed(function() SlashCmdList.CRAFTWISE("market 77") end)
+	text = Printed(function() SlashCmdList.CRAFTWISE("market 77"); stub.RunTimers() end)
 	assert(text:find("not a recorded item", 1, true), text)
-	text = Printed(function() SlashCmdList.CRAFTWISE("market") end)
+	text = Printed(function() SlashCmdList.CRAFTWISE("market"); stub.RunTimers() end)
 	assert(text:find("usage", 1, true), text)
 
 	OpenAH(stub)
 	CommoditySearch(stub, 5, { { unitPrice = 100, quantity = 10 }, { unitPrice = 200, quantity = 90 } }, 100)
 	stub.clock = NOW + 3600
 	CommoditySearch(stub, 5, { { unitPrice = 100, quantity = 6 }, { unitPrice = 200, quantity = 90 } }, 96)
-	text = Printed(function() SlashCmdList.CRAFTWISE("market 5") end)
+	text = Printed(function() SlashCmdList.CRAFTWISE("market 5"); stub.RunTimers() end)
 	assert(text:find("disappeared in 7 days: 4 units (sold or expired)", 1, true), text)
 	assert(not text:lower():find("sales", 1, true), text)
 end)

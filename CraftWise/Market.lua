@@ -1472,16 +1472,24 @@ function M.Slash(arg)
 			return tostring(a) < tostring(b)
 		end)
 	end
-	if not keys[1] then
-		ns.Print(("item %d: %s%s"):format(itemID, M.NO_DATA, M.InScope(itemID) and "" or " (not a recorded item)"))
-		return
-	end
-	for _, key in ipairs(keys) do
-		ns.Print("item " .. tostring(key) .. ":")
-		for _, house in ipairs(M.Houses(key)) do
-			PrintHouse(key, house)
+	-- The item's link or name (#59); a suffix variant adds its key.
+	ns.WithItemNames({ itemID }, function()
+		local item = ns.ItemChatText(itemID)
+		if not keys[1] then
+			ns.Print(("%s: %s%s"):format(item, M.NO_DATA, M.InScope(itemID) and "" or " (not a recorded item)"))
+			return
 		end
-	end
+		for _, key in ipairs(keys) do
+			local header = item
+			if key ~= itemID then
+				header = ns.ItemInfoNow(itemID) and ("%s (item %s)"):format(item, tostring(key)) or ("item " .. tostring(key))
+			end
+			ns.Print(header .. ":")
+			for _, house in ipairs(M.Houses(key)) do
+				PrintHouse(key, house)
+			end
+		end
+	end)
 end
 
 ----------------------------------------------------------------------------------------------------

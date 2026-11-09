@@ -114,6 +114,97 @@ function ns.Print(msg)
 	print("|cff4fb3ffCraftWise|r: " .. tostring(msg))
 end
 
+----------------------------------------------------------------------------------------------------
+-- Items in chat (#59): a clickable link when the client has one, else the name, else "item <id>".
+-- Items not in the client's cache are requested first; ns.WithItemNames prints once they arrive.
+----------------------------------------------------------------------------------------------------
+
+ns.ITEM_WAIT_SECONDS = 2 -- prints with what is known after this, even if an item never arrives
+
+-- A link that chat shows as a clickable item (|Hitem:...|h[Name]|h).
+local function ChatLink(link)
+	return type(link) == "string" and link:find("|Hitem:", 1, true) and link or nil
+end
+
+-- What the client knows about an item right now: name, chat link (each nil when not cached).
+function ns.ItemInfoNow(itemID)
+	local name, link
+	if C_Item and C_Item.GetItemInfo then
+		name, link = C_Item.GetItemInfo(itemID)
+	end
+	if not name and C_Item and C_Item.GetItemNameByID then
+		name = C_Item.GetItemNameByID(itemID)
+	end
+	return name, ChatLink(link)
+end
+
+-- Text for an item in chat. stored = { name, link } kept by the caller (e.g. a ledger entry), used
+-- when the client has nothing better; "item <id>" only when nothing is known.
+function ns.ItemChatText(itemID, stored)
+	local name, link = ns.ItemInfoNow(itemID)
+	stored = stored or {}
+	return link or ChatLink(stored.link) or name or stored.name or ("item " .. tostring(itemID))
+end
+
+local itemWaits = {} -- { need = { [itemID] = true }, fn, timer, done }
+
+local function FinishWait(job)
+	if job.done then
+		return
+	end
+	job.done = true
+	if job.timer then
+		job.timer:Cancel()
+	end
+	for i, j in ipairs(itemWaits) do
+		if j == job then
+			table.remove(itemWaits, i)
+			break
+		end
+	end
+	job.fn()
+end
+
+-- Runs fn once the client has every item in itemIDs, or after ns.ITEM_WAIT_SECONDS. known(itemID)
+-- may say an item needs no request (the caller has a stored name). Runs fn right away when nothing
+-- is missing. Blizzard's Forever UI answers C_Item.RequestLoadItemDataByID with ITEM_DATA_LOAD_RESULT
+-- (Blizzard_ObjectAPI/Mainline/AsyncCallbackSystem.lua); success = false (no such item) ends the wait too.
+function ns.WithItemNames(itemIDs, fn, known)
+	local need, missing = {}, {}
+	for _, itemID in ipairs(itemIDs or {}) do
+		if not need[itemID] and not (known and known(itemID)) and not ns.ItemInfoNow(itemID) then
+			need[itemID] = true
+			missing[#missing + 1] = itemID
+		end
+	end
+	if #missing == 0 or not (C_Item and C_Item.RequestLoadItemDataByID) then
+		fn()
+		return
+	end
+	local job = { need = need, fn = fn }
+	itemWaits[#itemWaits + 1] = job
+	job.timer = C_Timer.NewTimer(ns.ITEM_WAIT_SECONDS, function()
+		FinishWait(job)
+	end)
+	for _, itemID in ipairs(missing) do
+		if not job.done then
+			pcall(C_Item.RequestLoadItemDataByID, itemID)
+		end
+	end
+end
+
+ns.On("ITEM_DATA_LOAD_RESULT", function(_, itemID)
+	for i = #itemWaits, 1, -1 do
+		local job = itemWaits[i]
+		if job and job.need[itemID] then
+			job.need[itemID] = nil
+			if next(job.need) == nil then
+				FinishWait(job)
+			end
+		end
+	end
+end)
+
 SLASH_CRAFTWISE1 = "/craftwise"
 SlashCmdList.CRAFTWISE = function(msg)
 	msg = (msg or ""):lower():match("^%s*(.-)%s*$")

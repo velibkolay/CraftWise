@@ -114,7 +114,9 @@ function ns.ShowRecipesUsing(itemID)
 		end
 	end
 	if not best then
-		ns.Print(ItemName(itemID) .. " is not used by your professions.")
+		ns.WithItemNames({ itemID }, function()
+			ns.Print(ns.ItemChatText(itemID) .. " is not used by your professions.")
+		end)
 		return false
 	end
 	if not (PF.frame and PF.frame:IsShown()) then
