@@ -2,7 +2,7 @@
 
 WoW: Forever addon: crafting profit for every recipe you know **or can learn**.
 
-Type `/craftwise` to open the profit table. `/craftwise debug` prints what is cached. `/craftwise market <itemID or link>` prints the prices recorded per auction house.
+Type `/craftwise` to open the profit table. `/craftwise debug` prints what is cached. `/craftwise market <itemID or link>` prints the prices recorded per auction house. `/craftwise snapshot` saves a character snapshot for Claude (also refreshed on logout and `/reload`, see `docs/snapshot.md`).
 
 ## What it does (MVP)
 - Reads every recipe of a profession (learned and unlearned) when you open the profession window, and caches it per character.
