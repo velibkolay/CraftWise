@@ -59,6 +59,7 @@ local DB_DEFAULTS = {
 	sellAH = {}, -- [itemID] = true: items marked to sell on the auction house
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
+	snapshots = {}, -- ["<realm>-<name>"] = character snapshot for Claude (Snapshot.lua, issue #63)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
@@ -227,6 +228,12 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local ledgerArg = msg:match("^ledger%s*(.*)$")
 	if ledgerArg and ns.Ledger then
 		ns.Ledger.Slash(ledgerArg)
+		return
+	end
+	if msg == "snapshot" then
+		if ns.Snapshot then
+			ns.Snapshot.Slash()
+		end
 		return
 	end
 	if msg == "settings" or msg == "config" then

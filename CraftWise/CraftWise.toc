@@ -40,6 +40,7 @@ UpgradeSearch.lua
 Leveling.lua
 Music.lua
 Video.lua
+Snapshot.lua
 UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua

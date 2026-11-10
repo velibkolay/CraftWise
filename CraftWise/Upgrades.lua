@@ -110,6 +110,7 @@ local function ItemLevel(linkOrID)
 	end
 	return GetItemInfo and select(4, GetItemInfo(linkOrID)) or nil
 end
+Upgrades.ItemLevel = ItemLevel
 
 -- Can this character wear the item? The client's own check where it has one (armour and weapon
 -- proficiency), then the item's tooltip, which marks what you can't use (armour type, level, skill) in red.

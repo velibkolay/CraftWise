@@ -293,3 +293,19 @@ No new files: `/reload` is enough.
 - [ ] Cured Light Hide cheaper on the AH than crafting (cost line "bought"), or the Cured Light Hide recipe not known: the list buys Cured Light Hide as before.
 - [ ] Settings, cost basis "Paid cost" for a view, holding 1 Cured Light Hide with a recorded paid cost and short of 1: the cost line shows the paid cost, but the buy list still crafts the missing one at market prices (Scout decision on #60: the buy list always decides on the AH basis).
 - [ ] Tracked recipe tooltip (hover a reagent in the bags): same buy list as the Profit view.
+
+## Character snapshot for Claude (#63)
+New file `Snapshot.lua` in the TOC: **full game restart** needed (not `/reload`). Field reference: `docs/snapshot.md`.
+- [ ] `/craftwise snapshot` prints `snapshot saved, /reload to write it to disk` and no second line. A second line `not in this snapshot: ...` names sections the client didn't give: report which and why (`/dump CraftWiseDB.snapshots["<realm>-<name>"].skipped` and `.errors`).
+- [ ] `/reload`, then open `WTF/Account/<account>/SavedVariables/CraftWise.lua`: `["snapshots"]` has `["<realm>-<name>"]` with `t` = now. Log out instead of `/reload`: `t` moves to the logout time (refresh on `PLAYER_LOGOUT`).
+- [ ] `char`: level, XP, rested XP, money and guild match the character frame and XP bar tooltip. `guild` is `false` on a character without a guild.
+- [ ] `location`: zone, subzone and map name are right; `x`/`y` × 100 match the world map coordinates (a coordinates addon, or `/dump C_Map.GetPlayerMapPosition(C_Map.GetBestMapForUnit("player"), "player")`). In a dungeon `x`/`y` are missing, no error.
+- [ ] `equipment`: every worn slot has `link`, `ilvl`, `armor`, `stats` like the item tooltip, `dur`/`durMax` like the tooltip's Durability line. Check whether Tabard and Ranged are listed (a slot the client doesn't know is skipped).
+- [ ] `professions`: primary and secondary professions with the skill shown in the spellbook. A gathering profession without a window (Herbalism, Skinning) shows with `cached = false`.
+- [ ] `quests`: every quest of the log with title, level, zone header, objectives and counts as in the quest log; a quest ready to turn in has `complete = true`. Collapse one zone header in the quest log, snapshot again: that zone's quests are missing, the header is in `collapsedHeaders`, `read` < `inLog`, and the header is still collapsed afterwards (the snapshot must not expand it).
+- [ ] `reputations`: factions with the standing label and value as in the reputation pane; collapse a header: its factions are missing, the header is listed and stays collapsed.
+- [ ] Hunter with pet out: `pet` has name, family, level, happiness (1-3, as the happiness icon) and loyalty text. Pet dismissed: `pet` missing, `skipped.pet = "no hunter pet out"`. Report if `C_PetInfo.GetPetLoyalty` returns nothing.
+- [ ] `holdings`: bag counts match the bags; `bank`/`mail` appear after opening the bank/mailbox once, with their `t`.
+- [ ] `ledger.today` / `ledger.reset` totals match `/craftwise ledger today` / `/craftwise ledger all`.
+- [ ] Logout and `/reload` don't take noticeably longer than before; no Lua error on logout (BugSack keeps it for the next login).
+- [ ] The file has nothing about other players (party members, whisper partners, guild members).
