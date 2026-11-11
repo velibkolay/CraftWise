@@ -87,7 +87,7 @@ func TestMarketItems(t *testing.T) {
 	if i64(owl.Last.Min) != 95000 || m.Items[market.ItemKey{ItemID: 9005, Suffix: 5678}] == nil {
 		t.Fatalf("suffix gear %+v", owl.Last)
 	}
-	// A browse row, saved in table form (looked up again after the logout pack): no listings.
+	// A browse row, packed although the snapshot reads its price at logout (#105): no listings.
 	oil := m.Items[market.ItemKey{ItemID: 9008}][horde]
 	if !oil.LastOnly() || i64(oil.Last.Min) != 345 || i64(oil.Last.Qty) != 7 || oil.Last.Listings != nil || oil.Last.Off == nil {
 		t.Fatalf("oil %+v", oil.Last)
