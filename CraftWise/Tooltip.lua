@@ -10,6 +10,7 @@ ns.TOOLTIP_LINES = {
 	{ key = "skillups", label = "Your skill-ups (crafted items)" },
 	{ key = "market", label = "Auction prices per house" },
 	{ key = "tracked", label = "Tracked recipe: reagents you hold" },
+	{ key = "soldBy", label = "Sold by (merchants you opened)" },
 }
 
 local ACCENT = "|cff4fb3ff"
@@ -305,6 +306,11 @@ function ns.AddTooltipLines(tooltip, itemID)
 	end
 	if s.lines.tracked then
 		for _, line in ipairs(ns.TrackedBalanceLines(itemID)) do
+			lines[#lines + 1] = line
+		end
+	end
+	if s.lines.soldBy and ns.Merchant then
+		for _, line in ipairs(ns.Merchant.TooltipLines(itemID)) do
 			lines[#lines + 1] = line
 		end
 	end

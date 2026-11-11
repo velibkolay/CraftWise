@@ -53,6 +53,7 @@ local DB_DEFAULTS = {
 	version = 1,
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	sources = {}, -- [recipe itemID] = { vendors, loot, quests } seen in game (SourceRecorder.lua, issue #37)
+	merchants = {}, -- [npcID] = full inventory of a merchant this account opened (Merchant.lua, issue #66)
 	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor
@@ -63,7 +64,7 @@ local DB_DEFAULTS = {
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
-	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true } },
+	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true } },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
 		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
 		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
@@ -225,6 +226,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 		ns.Market.Slash(marketArg)
 		return
 	end
+	local whereArg = msg:match("^where%s*(.*)$")
+	if whereArg and ns.Merchant then
+		ns.Merchant.Slash(whereArg)
+		return
+	end
 	local ledgerArg = msg:match("^ledger%s*(.*)$")
 	if ledgerArg and ns.Ledger then
 		ns.Ledger.Slash(ledgerArg)
@@ -269,6 +275,9 @@ SlashCmdList.CRAFTWISE = function(msg)
 		end
 		if ns.CraftsRecorded then
 			ns.Print(("skill-up log: %d crafts recorded"):format(ns.CraftsRecorded()))
+		end
+		if ns.Merchant then
+			ns.Print(("merchants recorded: %d"):format(ns.Merchant.Count()))
 		end
 		local d = ns.db and ns.db.debug and ns.db.debug.trainer
 		if d then
