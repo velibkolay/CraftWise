@@ -345,3 +345,178 @@ it("item tooltip shows Sold by with the cheapest merchants, and the line can be 
 	ns.AddTooltipLines(tip, POLE)
 	assert(not table.concat(tip.lines, "\n"):find("Sold by"), table.concat(tip.lines, "\n"))
 end)
+
+-- #75: which character buys cheaper.
+local function asChar(stub, name, tbReaction)
+	stub.names.player = name
+	stub.reps[2].reaction = tbReaction
+end
+
+-- Money icons as letters: "90c", "1s 2c".
+local function plain(text)
+	return (text:gsub("|T[^|]*Gold[^|]*|t", "g"):gsub("|T[^|]*Silver[^|]*|t", "s"):gsub("|T[^|]*Copper[^|]*|t", "c"))
+end
+
+local function whereText(ns, query)
+	local printed = {}
+	local realPrint = print
+	print = function(t) printed[#printed + 1] = tostring(t) end
+	ns.Merchant.Slash(query)
+	print = realPrint
+	return plain(table.concat(printed, "\n"))
+end
+
+it("stores the character with each price, the standing price and the last visit", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x", "Thunder Bluff" }
+	asChar(stub, "Tanner", 6)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } }
+	open(stub, 3027, "Sewa Mistrunner")
+	local m = ns.db.merchants[3027]
+	local item = m.items[NIGHTCRAWLERS]
+	eq(m.char, "PvP-Tanner")
+	eq(item.pc["PvP-Tanner"].p, 90); eq(item.pc["PvP-Tanner"].st, 6); eq(type(item.pc["PvP-Tanner"].t), "number")
+	eq(item.pk[6], "PvP-Tanner")
+	asChar(stub, "Wright", 4)
+	stub.mf[1].price = 100
+	open(stub, 3027, "Sewa Mistrunner")
+	eq(m.char, "PvP-Wright")
+	eq(item.pc["PvP-Tanner"].p, 90); eq(item.pc["PvP-Wright"].p, 100); eq(item.pc["PvP-Wright"].st, 4)
+	eq(item.pk[6], "PvP-Tanner"); eq(item.pk[4], "PvP-Wright")
+	eq(item.ps[6], 90); eq(item.ps[4], 100)
+end)
+
+it("a price without a matched faction is stored per character without a standing", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x" }
+	asChar(stub, "Tanner", 6)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 100 },
+		{ itemID = RECIPE, name = "Recipe", price = 0, extended = true, costs = { { 10, nil, "Merchant's Favor" } } } }
+	open(stub, 5, "Vendor")
+	local m = ns.db.merchants[5]
+	eq(m.items[NIGHTCRAWLERS].pc["PvP-Tanner"].p, 100); eq(m.items[NIGHTCRAWLERS].pc["PvP-Tanner"].st, nil)
+	eq(m.items[NIGHTCRAWLERS].pk, nil)
+	eq(m.items[RECIPE].pc, nil) -- no copper price: nothing per character
+	local text = whereText(ns, tostring(NIGHTCRAWLERS))
+	assert(text:find("Vendor %- .* · 1s with PvP%-Tanner · standing not reported"), text)
+end)
+
+it("two characters at different standings: the lookup lists both, cheaper first", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x", "Thunder Bluff" }
+	asChar(stub, "Wright", 4)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 100 } }
+	open(stub, 3027, "Sewa Mistrunner")
+	asChar(stub, "Tanner", 6)
+	stub.mf[1].price = 90
+	open(stub, 3027, "Sewa Mistrunner")
+	local chars = ns.Merchant.Sellers(NIGHTCRAWLERS)[1].chars
+	eq(#chars, 2); eq(chars[1].key, "PvP-Tanner"); eq(chars[2].key, "PvP-Wright"); eq(chars[1].seen, nil)
+	local text = whereText(ns, "nightcrawlers")
+	assert(text:find("Sewa Mistrunner %- Thunder Bluff, Lower Rise %(47.2, 58.1%) · 90c with PvP%-Tanner %(Honored%), 1s with PvP%-Wright %(Neutral%) · faction Thunder Bluff"), text)
+	assert(text:find("base price seen at Neutral: 1s"), text)
+	-- Tooltip: names without the realm on the realm logged in.
+	local lines = ns.Merchant.TooltipLines(NIGHTCRAWLERS)
+	eq(lines[1][1], "Sold by")
+	assert(plain(lines[1][2]):find("^Sewa Mistrunner · 90c Tanner %(Honored%), 1s Wright %(Neutral%) · "), lines[1][2])
+	-- Logged in on another realm (now "Other-Tanner", Honored, never opened Sewa there): realm shown for
+	-- the others, and the live standing gives the Honored price seen here.
+	stub.realm = "Other"
+	local off = plain(ns.Merchant.TooltipLines(NIGHTCRAWLERS)[1][2])
+	assert(off:find("90c PvP%-Tanner %(Honored%), 90c Tanner %(seen at Honored%), 1s PvP%-Wright %(Neutral%)"), off)
+end)
+
+it("the merchant where one character buys cheaper is listed first", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x", "Orgrimmar" }
+	asChar(stub, "Wright", 4)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 95 } }
+	open(stub, 3333, "Lumak")
+	stub.npcLines = { "x", "Thunder Bluff" }
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 100 } }
+	open(stub, 3027, "Sewa Mistrunner")
+	asChar(stub, "Tanner", 6)
+	stub.mf[1].price = 90
+	open(stub, 3027, "Sewa Mistrunner") -- last visit at Honored: 90c
+	asChar(stub, "Wright", 4)
+	stub.mf[1].price = 100
+	open(stub, 3027, "Sewa Mistrunner") -- last visit at Neutral again: item.p = 100
+	local s = ns.Merchant.Sellers(NIGHTCRAWLERS)
+	eq(s[1].npcID, 3027); eq(s[1].unit, 90); eq(s[2].npcID, 3333)
+end)
+
+it("a character that never opened the merchant shows the price seen at its snapshot standing", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x", "Thunder Bluff" }
+	asChar(stub, "Tanner", 6)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } }
+	open(stub, 3027, "Sewa Mistrunner")
+	-- Alts known only from their #63 snapshots.
+	ns.db.snapshots = {
+		["PvP-Alt"] = { t = 1, reputations = { list = { { id = TB, name = "Thunder Bluff", reaction = 6 } } } },
+		["PvP-Low"] = { t = 1, reputations = { list = { { id = TB, name = "Thunder Bluff", reaction = 5 } } } }, -- no Friendly price seen
+		["PvP-None"] = { t = 1, reputations = { list = {}, collapsedHeaders = { "Horde" } } }, -- faction not listed
+		["PvP-Tanner"] = { t = 1, reputations = { list = { { id = TB, reaction = 4 } } } }, -- observed beats snapshot
+	}
+	eq(ns.Snapshot.Standing("PvP-Alt", TB), 6); eq(ns.Snapshot.Standing("PvP-None", TB), nil)
+	local chars = ns.Merchant.Sellers(NIGHTCRAWLERS)[1].chars
+	eq(#chars, 2)
+	eq(chars[1].key, "PvP-Tanner"); eq(chars[1].seen, nil)
+	eq(chars[2].key, "PvP-Alt"); eq(chars[2].seen, true); eq(chars[2].p, 90); eq(chars[2].st, 6)
+	local text = whereText(ns, "nightcrawlers")
+	assert(text:find("90c with PvP%-Tanner %(Honored%), 90c with PvP%-Alt %(seen at Honored%)"), text)
+	assert(not text:find("PvP%-Low") and not text:find("PvP%-None"), text)
+	-- Once a Friendly price is observed (any character), the Friendly alt shows it.
+	asChar(stub, "Other", 5)
+	stub.mf[1].price = 95
+	open(stub, 3027, "Sewa Mistrunner")
+	text = whereText(ns, "nightcrawlers")
+	assert(text:find("95c with PvP%-Low %(seen at Friendly%)"), text)
+end)
+
+it("the character logged in uses its live standing, not an older snapshot", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x", "Thunder Bluff" }
+	asChar(stub, "Tanner", 6)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } }
+	open(stub, 3027, "Sewa Mistrunner")
+	ns.db.snapshots = { ["PvP-Fresh"] = { t = 1, reputations = { list = { { id = TB, reaction = 4 } } } } }
+	asChar(stub, "Fresh", 6) -- logged in, reached Honored since its snapshot, never opened Sewa
+	local chars = ns.Merchant.Sellers(NIGHTCRAWLERS)[1].chars
+	eq(#chars, 2); eq(chars[2].key, "PvP-Fresh"); eq(chars[2].st, 6); eq(chars[2].seen, true)
+end)
+
+it("old records without a character key still show as before", function()
+	local ns, stub = setup()
+	ns.db.merchants = { [3027] = { name = "Sewa Mistrunner", zone = "Thunder Bluff", t = time(), realm = "PvP",
+		faction = { id = TB, name = "Thunder Bluff" }, standing = 6,
+		items = { [NIGHTCRAWLERS] = { name = "Nightcrawlers", p = 90, s = 1, n = -1, ps = { [6] = 90 }, t = time() } } } }
+	local s = ns.Merchant.Sellers(NIGHTCRAWLERS)
+	eq(#s, 1); eq(#s[1].chars, 0); eq(s[1].unit, 90)
+	local text = whereText(ns, "nightcrawlers")
+	assert(text:find("Sewa Mistrunner %- Thunder Bluff · 90c · Honored with Thunder Bluff"), text)
+	assert(plain(ns.Merchant.TooltipLines(NIGHTCRAWLERS)[1][2]):find("^Sewa Mistrunner · 90c · Honored · "), "old tooltip")
+	-- A snapshot standing still finds the price seen at it.
+	ns.db.snapshots = { ["PvP-Alt"] = { t = 1, reputations = { list = { { id = TB, reaction = 6 } } } } }
+	text = whereText(ns, "nightcrawlers")
+	assert(text:find("90c with PvP%-Alt %(seen at Honored%) · faction Thunder Bluff"), text)
+	-- A new visit adds the character next to the old data.
+	stub.npcLines = { "x", "Thunder Bluff" }
+	asChar(stub, "Wright", 4)
+	stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 100 } }
+	open(stub, 3027, "Sewa Mistrunner")
+	text = whereText(ns, "nightcrawlers")
+	assert(text:find("90c with PvP%-Alt %(seen at Honored%), 1s with PvP%-Wright %(Neutral%)"), text)
+end)
+
+it("the tooltip lists at most three characters per merchant", function()
+	local ns, stub = setup()
+	stub.npcLines = { "x", "Thunder Bluff" }
+	for i, name in ipairs({ "A", "B", "C", "D", "E" }) do
+		asChar(stub, name, 4)
+		stub.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 100 + i } }
+		open(stub, 3027, "Sewa Mistrunner")
+	end
+	local text = plain(ns.Merchant.TooltipLines(NIGHTCRAWLERS)[1][2])
+	assert(text:find("1s 1c A %(Neutral%), 1s 2c B %(Neutral%), 1s 3c C %(Neutral%), %+2"), text)
+end)
