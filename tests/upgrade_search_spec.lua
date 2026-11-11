@@ -137,11 +137,13 @@ it("prices outside the market scope are stored as last only", function()
 	local entry = CraftWiseMarketDB.items[6001]["PvP|H"]
 	eq(entry.last.min, 2500); eq(entry.last.qty, 4); eq(#entry.raw, 0); eq(next(entry.days), nil)
 	eq(CraftWiseMarketDB.items[6002]["PvP|H"].last.min, 400) -- in scope: Market's own browse recorder
-	local gear = 0
+	-- Market's browse recorder stores every row since #90, the gear recorder whatever it missed.
+	local inScope, lastOnly = 0, 0
 	for _, scan in ipairs(CraftWiseMarketDB.scans["PvP|H"]) do
-		if scan.kind == "gear" then gear = gear + scan.items end
+		if scan.kind == "gear" then lastOnly = lastOnly + scan.items else
+			inScope, lastOnly = inScope + scan.items, lastOnly + (scan.lastOnly or 0) end
 	end
-	eq(gear, 1)
+	eq(inScope, 1); eq(lastOnly, 1)
 	ns.Market.Prune()
 	eq(CraftWiseMarketDB.items[6001]["PvP|H"] ~= nil, true)
 end)

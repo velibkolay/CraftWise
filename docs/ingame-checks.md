@@ -431,3 +431,13 @@ New files `FishingZones.lua` and `UI\ProfitFrame\Fishing.lua` in the TOC: **full
 - [ ] `/craftwise fishing zones`, `/craftwise fishing zones <part of a zone name>`, `/craftwise fishing ownmin 20` (the zone's row switches to own catches once it has 20); `/craftwise fishing` still prints the #86 tables.
 - [ ] Without the reference addon (disable it, restart): the tab shows own zones only and "reference: not loaded", no Lua error.
 - [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].fishingZones` has up to 5 zones (`docs/snapshot.md`).
+
+## Every item of a full scan, Auctionator export (#90)
+`/reload` is enough (no new file, no TOC change).
+- [ ] Auctionator Full Scan at the Horde AH, wait until it says it finished, then wait about 10 seconds more: no stutter while CraftWise stores it. `/dump CraftWiseMarketDB.scans["<realm>|H"][#CraftWiseMarketDB.scans["<realm>|H"]]` shows `kind = "full"` with `items` (scope items) and `lastOnly` (all other items) roughly adding up to the number of items Auctionator reports.
+- [ ] An item outside your professions that was on sale (e.g. Silverleaf, a Glimmering Shard, a Waylaid Crate): `/craftwise market <id>` shows "Horde AH: last ..." and "history: none (outside the market scope, latest price only)".
+- [ ] `/reload`, then open `WTF/Account/<account>/SavedVariables/CraftWise.lua` (copy it with the game closed): `CraftWiseMarketDB.names` has names for most scanned items (the client names a row only once it has loaded the item). Report how many items have no name.
+- [ ] Size of `CraftWise.lua` before and after the first full scan, and `/reload` time. Headless: 10,000 items at one house are about 1 MB, at four houses about 2.6 MB.
+- [ ] Run a second full scan an hour later: an item sold out in between shows ", none in the latest full scan" in `/craftwise market`.
+- [ ] With Auctionator loaded, hover a reagent CraftWise has no AH price for at the profit house: its tooltip says "Auctionator (house unknown)" and `/craftwise market <id>` ends with "Auctionator (house unknown): <price>, read ... ago". `CraftWiseMarketDB.auctionator.items` fills with the scope items about 5 seconds after login.
+- [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].market.houses` lists each house with `lastFullScan` and counts.

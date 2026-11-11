@@ -193,5 +193,26 @@ Row fields:
 
 Full records (also settled sales with `received`, `sale`, `cut`, `saleDeposit`) are in `CraftWiseMarketDB.auctions.chars[<character key>]`, kept 30 days after they finish.
 
+### `market`
+Where the AH price data is (#90). The prices themselves are not copied into the snapshot: they are account-wide in `CraftWiseMarketDB` (same file, see below), and a full scan holds thousands of items.
+
+| Field | Meaning |
+|---|---|
+| `where` | `"CraftWiseMarketDB"`. |
+| `houses[<house key>]` | Per auction house seen (`"<realm>|H"`, `"<realm>|N:BootyBay"`, ...): `label`, `kind` (`faction`/`neutral`), `items` (items with a price there), `withHistory` (of those, items in the market scope with history), `lastRecorded` (last scan, search or browse), `lastFullScan`, `lastFullScanSource`, `lastFullScanItems` (scope items stored), `lastFullScanLastOnly` (items outside the scope stored with `last` only). |
+| `auctionator` | `label` ("Auctionator (house unknown)"), `house = "unknown"`, `items` (prices exported, see below). |
+| `names` | How many item names `CraftWiseMarketDB.names` holds. |
+
+## Market data (`CraftWiseMarketDB`, #26, #90)
+Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/reload` or quit, like the snapshot. Money is copper, times are Unix seconds.
+
+- `items[<item key>][<house key>]`: one string per item and house. The item key is the item ID, or `"<itemID>:<suffixID>"` for random-suffix gear. Decoding is in `Market.lua` (`DecodeEntry`): numbers are base 36, `"last|raw|days"`.
+  - `last` = `t,min,qty,listings[,off]`: the latest observation: when, lowest unit price, units listed, listings (price levels for commodities). `off` = time of a later full scan at that house that didn't list it.
+  - Items in the market scope (own professions' reagents, products and recipes, items you interacted with) also keep `raw` (48 h of scans with the cheapest 8 price levels) and `days` (30 days of daily low, typical, high, ...).
+  - Every other item of a full scan or browse list has `last` only: the string ends in `||` (#90).
+- `names[<itemID>]`: the item's name as the client gave it (full-scan rows, else the client cache at logout). Missing when the client hadn't loaded the item; not part of any price record.
+- `auctionator`: `{ source = "auctionator", house = "unknown", label = "Auctionator (house unknown)", items = { [<itemID>] = "t,copper,age" } }`. Auctionator's price for items CraftWise had no price for at the profit house when it looked (`t` = when CraftWise read it, `age` = days since Auctionator saw it). Auctionator mixes houses (#26), so this is never mixed into `items` and never wins over CraftWise's own prices. Kept 30 days.
+- `scans[<house key>]`: the last 30 recordings: `t`, `kind` (`full`, `search`, `gear`), `items` (scope items), `lastOnly` (other items), `source`.
+
 ## Size
 A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents) is about 57 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations, holdings and flight paths are roughly 12-13 KB each.

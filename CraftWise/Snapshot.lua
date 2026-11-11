@@ -408,11 +408,21 @@ function S.Auctions()
 	return ns.Auctions.SnapshotSummary()
 end
 
+-- Market data (#90): per house the last full scan and item counts; prices and names stay in
+-- CraftWiseMarketDB (account-wide, same file), so they aren't copied into every character's snapshot.
+function S.Market()
+	if not (ns.Market and ns.Market.SnapshotSummary) then
+		return nil, "Market not loaded"
+	end
+	return ns.Market.SnapshotSummary()
+end
+
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
 	{ "fishing", S.Fishing }, { "fishingZones", S.FishingZones }, { "auctions", S.Auctions },
+	{ "market", S.Market },
 }
 
 ----------------------------------------------------------------------------------------------------

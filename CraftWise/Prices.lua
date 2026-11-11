@@ -81,6 +81,10 @@ function ns.AuctionQuote(itemID)
 	end
 	local ah, age = ns.GetAuctionPrice(itemID)
 	if ah then
+		-- Saved apart, labelled "house unknown", for reading the file without the game (#90).
+		if ns.Market.ExportAuctionator then
+			ns.Market.ExportAuctionator(itemID, ah, age)
+		end
 		return { copper = ah, source = "auctionator", age = age, label = ns.AUCTIONATOR_LABEL }
 	end
 	return nil
