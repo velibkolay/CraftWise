@@ -338,7 +338,9 @@ C_AuctionHouse = {
 	GetNumReplicateItems = function() return #stub.replicate end,
 	GetReplicateItemInfo = function(i)
 		local r = stub.replicate[i + 1]
-		return r.name, nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, r.owner, r.owner, 0, r.itemID, r.link ~= nil
+		local complete = r.link ~= nil
+		if r.hasAllInfo ~= nil then complete = r.hasAllInfo end
+		return r.name, r.texture, r.count, r.quality or 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, r.owner, r.owner, 0, r.itemID, complete
 	end,
 	GetReplicateItemLink = function(i) return stub.replicate[i + 1].link end,
 	GetNumCommoditySearchResults = function(id) return #(stub.commodity[id] or { rows = {} }).rows end,
