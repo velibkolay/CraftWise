@@ -7,11 +7,12 @@ package tray
 import "errors"
 
 // Item is one menu line. A line without Action is shown greyed out (status lines); Separator
-// draws a divider. Quit ends Run after Action ran.
+// draws a divider; Checked shows a check mark. Quit ends Run after Action ran.
 type Item struct {
 	Label     string
 	Action    func()
 	Separator bool
+	Checked   bool
 	Quit      bool
 }
 

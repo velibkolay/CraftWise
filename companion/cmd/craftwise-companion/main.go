@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/velibkolay/CraftWise/companion/app"
+	"github.com/velibkolay/CraftWise/companion/autostart"
 	"github.com/velibkolay/CraftWise/companion/tray"
 )
 
@@ -42,12 +43,17 @@ func run() int {
 		dir     = flag.String("dir", "", "settings, state and log directory (default: the user config directory)")
 		open    = flag.String("open", "", "open site, me, config or log, then exit")
 		status  = flag.Bool("status", false, "print where the files are and the last upload, then exit")
+		autoRun = flag.String("autostart", "", "on or off: start with Windows, then exit")
 		showVer = flag.Bool("version", false, "print the version")
 	)
 	flag.Parse()
 	if *showVer {
 		fmt.Println("craftwise-companion", version)
 		return 0
+	}
+	if *autoRun != "" && !autostart.Supported() {
+		fmt.Fprintln(os.Stderr, "-autostart:", autostart.ErrUnsupported)
+		return 1
 	}
 	if *dump != "" {
 		*dryRun = true
@@ -64,7 +70,7 @@ func run() int {
 			return 2
 		}
 	}
-	interactive := *once || *noTray || !tray.Available() || *status || *open != ""
+	interactive := *once || *noTray || !tray.Available() || *status || *open != "" || *autoRun != ""
 	var console *os.File
 	if interactive {
 		console = os.Stderr
@@ -84,6 +90,14 @@ func run() int {
 		return 0
 	case *status:
 		printStatus(a)
+		return 0
+	case *autoRun != "":
+		st, err := autostart.New().Apply(*autoRun)
+		if err != nil {
+			a.Log.Printf("%v", err)
+			return 1
+		}
+		a.Log.Printf("start with Windows: %s", st)
 		return 0
 	}
 
@@ -155,7 +169,7 @@ func menu(a *app.App, quit context.CancelFunc) []tray.Item {
 			a.Log.Printf("%v", err)
 		}
 	}
-	return append(items,
+	items = append(items,
 		tray.Item{Separator: true},
 		tray.Item{Label: "Upload now", Action: a.Trigger},
 		tray.Item{Label: "Open " + strings.TrimPrefix(site, "https://"), Action: func() { report(app.OpenURL(site)) }},
@@ -163,9 +177,31 @@ func menu(a *app.App, quit context.CancelFunc) []tray.Item {
 		tray.Item{Separator: true},
 		tray.Item{Label: "Open settings", Action: func() { report(app.OpenFile(a.ConfigPath())) }},
 		tray.Item{Label: "Open log", Action: func() { report(app.OpenFile(a.LogPath())) }},
+	)
+	if autostart.Supported() {
+		items = append(items, autostartItem(a))
+	}
+	return append(items,
 		tray.Item{Separator: true},
 		tray.Item{Label: "Quit", Quit: true, Action: func() { a.Log.Printf("quit"); quit() }},
 	)
+}
+
+// autostartItem is "Start with Windows", checked when the Run value starts this exe.
+func autostartItem(a *app.App) tray.Item {
+	m := autostart.New()
+	st, err := m.State()
+	if err != nil {
+		a.Log.Printf("%v", err)
+	}
+	return tray.Item{Label: "Start with Windows", Checked: st.On, Action: func() {
+		st, err := m.Toggle()
+		if err != nil {
+			a.Log.Printf("%v", err)
+			return
+		}
+		a.Log.Printf("start with Windows: %s", st)
+	}}
 }
 
 func statusLine(s app.Status) string {
@@ -228,6 +264,13 @@ func printStatus(a *app.App) {
 		fmt.Println("SavedVariables:", err)
 	} else {
 		fmt.Println("SavedVariables:", filepath.Clean(file))
+	}
+	if autostart.Supported() {
+		if st, err := autostart.New().State(); err != nil {
+			fmt.Println("start with Windows:", err)
+		} else {
+			fmt.Println("start with Windows:", st)
+		}
 	}
 	fmt.Println(statusLine(a.Status()))
 }
