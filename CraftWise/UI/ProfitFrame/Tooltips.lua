@@ -340,6 +340,8 @@ local function ShowLevelTooltip(row, r)
 	if r.thresholdYellow then
 		GameTooltip:AddDoubleLine("  Your skill · yellow · grey", ("%s · %d · %d"):format(skill or "?", r.thresholdYellow, r.thresholdGrey),
 			0.8, 0.8, 0.8, 1, 1, 1)
+	else
+		GameTooltip:AddDoubleLine("  Yellow · grey", "thresholds unknown", 0.8, 0.8, 0.8, 0.6, 0.6, 0.6) -- never guessed (#83)
 	end
 	if info.kind == "orange" then
 		GameTooltip:AddLine("  Orange: every craft gives a point (100%).", 0.9, 0.9, 0.9, true)
@@ -470,6 +472,8 @@ local function ShowTooltip(row)
 	local yellow, grey = ns.RecipeThresholds(r.recipeID)
 	if yellow then
 		GameTooltip:AddDoubleLine("Skill-ups", ("|cffffff00yellow %d|r  |cff808080grey %d|r"):format(yellow, grey), 0.8, 0.8, 0.8, 1, 1, 1)
+	elseif r.thresholdsUnknown then
+		GameTooltip:AddDoubleLine("Skill-ups", "thresholds unknown", 0.8, 0.8, 0.8, 0.6, 0.6, 0.6) -- not in the bundled data (#83)
 	end
 	local n, ups = ns.SkillUpStats(r.recipeID)
 	if n > 0 then
@@ -539,6 +543,8 @@ local function ShowTooltip(row)
 	end
 	if r.bundledOnly then
 		GameTooltip:AddLine("From bundled data - open the profession to confirm.", 0.55, 0.55, 0.6, true)
+	elseif r.recordedInGame then
+		GameTooltip:AddLine("Recorded in game at a trainer (not in the bundled data).", 0.55, 0.55, 0.6, true)
 	end
 	GameTooltip:Show()
 end

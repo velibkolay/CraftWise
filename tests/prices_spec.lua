@@ -56,3 +56,43 @@ it("saved settings survive and defaults fill in", function()
 	local ns = LoadAddon({ savedDB = { vendor = { [5] = 3 }, settings = { includeUnlearned = false } } })
 	eq(ns.db.vendor[5], 3); eq(ns.db.settings.includeUnlearned, false); eq(ns.db.settings.sortKey, "profit")
 end)
+
+-- #83: the vendor floor survives an item the client hasn't cached this session.
+it("vendor sell price: the client's value is kept and used when the item isn't cached", function()
+	local ns, stub = LoadAddon()
+	ns.ItemSellPrices = { [700] = 5 }
+	stub.items[700] = { name = "Thing", sellPrice = 37 }
+	eq(ns.GetVendorSellPrice(700), 37)
+	eq(ns.db.sellPrices[700], 37)
+	stub.items[700] = nil -- next session, not in the client cache yet
+	eq(ns.GetVendorSellPrice(700), 37, "persisted price before the bundled table")
+	ns.db.sellPrices[700] = nil
+	eq(ns.GetVendorSellPrice(700), 5, "bundled table last")
+	eq(ns.GetVendorSellPrice(701), nil, "never seen: missing")
+end)
+
+it("vendor sell price: zero (vendors don't buy it) is kept as zero", function()
+	local ns, stub = LoadAddon()
+	stub.items[702] = { name = "Quest thing", sellPrice = 0 }
+	eq(ns.GetVendorSellPrice(702), 0)
+	stub.items[702] = nil
+	eq(ns.GetVendorSellPrice(702), 0)
+end)
+
+it("scope items get their sell price stored: cached now, the rest when the client loads them", function()
+	local ns, stub = LoadAddon()
+	local requested = {}
+	C_Item.RequestLoadItemDataByID = function(id) requested[id] = true end
+	ns.charDB.professions[165] = { name = "Leatherworking", recipes = {
+		[1] = { learned = true, reagents = { { itemID = 710, quantity = 1 } }, output = { itemID = 711, quantity = 1 } },
+	} }
+	stub.items[710] = { name = "Cached reagent", sellPrice = 12 }
+	stub.Fire("PLAYER_LOGIN")
+	eq(ns.db.sellPrices[710], 12)
+	eq(ns.db.sellPrices[711], nil); eq(requested[711], true)
+	stub.items[711] = { name = "Loaded output", sellPrice = 250 }
+	stub.Fire("GET_ITEM_INFO_RECEIVED", 711, true)
+	eq(ns.db.sellPrices[711], 250)
+	stub.items[711] = nil
+	eq(ns.GetVendorSellPrice(711), 250)
+end)

@@ -635,6 +635,11 @@ function M.RefreshScope()
 			AddRecipeItems(data.reagents, data.output)
 		end
 	end
+	-- Every recipe a trainer showed (#83): its output and reagents, also for recipes the bundled data
+	-- lacks, so their prices are recorded before the recipe is learned.
+	for _, rec in pairs(ns.db and ns.db.trainer or {}) do
+		AddRecipeItems(rec.reagents, rec.output)
+	end
 	-- Recipe items (#67): bundled, then recorded in game.
 	for recipeID, source in pairs(ns.SourceData or {}) do
 		local data = recipes[recipeID]
@@ -649,6 +654,9 @@ function M.RefreshScope()
 		end
 	end
 	checked = {} -- a new profession can take items a previous check left out
+	if ns.PersistSellPrices then
+		ns.PersistSellPrices(db.scope.items) -- vendor floor for uncached items later (#83)
+	end
 end
 
 local function ScanContainer(bag)
