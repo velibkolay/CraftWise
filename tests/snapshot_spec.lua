@@ -477,6 +477,27 @@ it("a full character stays small and holds nothing about other players", functio
 			stub.factions[#stub.factions + 1] = Faction(hdr * 100 + i, "Some Faction Name " .. i, 4, 1500, 0, 3000)
 		end
 	end
+	-- A heavy fishing log (#86): 90 days in 12 zones, 2 subzones each, open water and 2 pools per subzone,
+	-- 6 different long-named items; the snapshot keeps a capped ranking, not the log.
+	local catches, t0 = {}, time() - 80 * 86400
+	ns.db.fishObjects[50] = { name = "Some Long Fishing Bobber Name" }
+	for z = 1, 12 do
+		for sub = 1, 2 do
+			for w = 0, 2 do
+				local obj = w == 0 and 50 or (60000 + z * 10 + sub * 2 + w)
+				if w > 0 then ns.db.fishObjects[obj] = { name = "Some Long Floating Pool Name " .. obj } end
+				for i = 1, 20 do
+					t0 = t0 + 30
+					local itemID = 20000 + (i % 6)
+					stub.items[itemID] = { name = "Some Long Fish Name of the Deep Sea " .. itemID, sellPrice = 7 }
+					catches[#catches + 1] = { t = t0, zone = "Some Long Zone Name " .. z, sub = "Some Long Subzone " .. sub,
+						map = 1400 + z, x = 12.3, y = 45.6, obj = obj, spawn = w == 0 and ("B" .. #catches) or ("P" .. obj .. "-" .. math.floor(i / 5)),
+						clk = 50, same = w == 0 or nil, items = { [itemID] = 1, [20010] = 2 } }
+				end
+			end
+		end
+	end
+	ns.db.fishing["Forever-EU-Veli"] = { catches = catches, opened = {}, seen = {} }
 	-- Flight paths on both continents, 30 each.
 	for m, mapID in ipairs({ 1414, 1415 }) do
 		stub.taxi.mapID, stub.taxi.nodes, stub.taxi.mapNodes = mapID, {}, {}
@@ -492,8 +513,13 @@ it("a full character stays small and holds nothing about other players", functio
 	eq(snap.errors, nil); eq(snap.skipped, nil)
 	eq(#snap.flightPaths.maps, 2); eq(#snap.flightPaths.maps[2].nodes, 30)
 	eq(#snap.equipment.items, 18); eq(#snap.quests.list, 25); eq(#snap.reputations.list, 50)
+	eq(snap.fishing.catches, 12 * 2 * 3 * 20); eq(#snap.fishing.spots, 8); eq(snap.fishing.moreSpots, 12 * 2 * 3 - 8)
+	eq(#snap.fishing.pools, 5)
 	local text = "CraftWiseDB = " .. table.concat(Serialize({ snapshots = CraftWiseDB.snapshots }))
 	print(("       full character snapshot: %d bytes as SavedVariables"):format(#text))
+	local fishText = table.concat(Serialize(snap.fishing, "\t\t\t"))
+	print(("       of which fishing (#86, heavy log): %d bytes"):format(#fishText))
+	assert(#fishText < 5 * 1024, "fishing section too large: " .. #fishText)
 	assert(#text < 64 * 1024, "snapshot too large: " .. #text)
 	eq(text:find("Someone Else", 1, true), nil)
 end)

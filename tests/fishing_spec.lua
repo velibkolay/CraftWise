@@ -143,10 +143,10 @@ it("/craftwise fishing [zone] prints zones, subzones, items with labelled values
 	local text = printed(stub)
 	has(text, "Fishing, last 90 days: 2 catches.")
 	local m = ns.FormatMoney
-	has(text, "Stranglethorn Vale: 2 catches, " .. m(6) .. " per catch")
-	has(text, "  Nek'mani Wellspring: 2 catches, " .. m(6) .. " per catch (total " .. m(12) .. " + 1 without price)")
-	has(text, "Test Fish x2 - " .. m(6) .. " each (vendor)")
-	has(text, "Test Boot x1 - no price data")
+	has(text, "Stranglethorn Vale: n = 2 catches, " .. m(6) .. " (1 items without price left out) per catch")
+	has(text, "  Nek'mani Wellspring: n = 2 catches, " .. m(6) .. " (1 items without price left out) per catch")
+	has(text, "Test Fish x2 (2 of 3 items, 67%) - " .. m(6) .. " each (vendor)")
+	has(text, "Test Boot x1 (1 of 3 items, 33%) - no price data")
 	stub.printed = {}
 	SlashCmdList.CRAFTWISE("fishing Tanaris")
 	has(printed(stub), "No catches in tanaris in the last 90 days.")
@@ -155,7 +155,7 @@ it("/craftwise fishing [zone] prints zones, subzones, items with labelled values
 	cast(stub, { { link = "item:" .. BOOT } })
 	SlashCmdList.CRAFTWISE("fishing tanaris")
 	text = printed(stub)
-	has(text, "Tanaris: 1 catches, no price data per catch")
+	has(text, "Tanaris: n = 1 catches, no price data per catch")
 	has(text, "(no subzone)")
 	assert(not text:find("Stranglethorn", 1, true), "only the asked zone")
 end)
@@ -172,19 +172,16 @@ it("keeps 90 days, per character, account-wide", function()
 	eq(ns.Fishing.Summary().catches, 1)
 end)
 
-it("the character snapshot has the per-zone fishing summary", function()
+it("the character snapshot has the fishing ranking (#86 replaced the per-zone item lists)", function()
 	local ns, stub = setup()
 	cast(stub, { { link = "item:" .. FISH, qty = 2 } })
 	local snap = ns.Snapshot.Build()
 	local f = snap.fishing
 	assert(f, "fishing section")
-	eq(f.days, 90); eq(f.catches, 1)
-	local z = f.zones[1]
-	eq(z.zone, "Stranglethorn Vale"); eq(z.catches, 1); eq(z.valuePerCatch, 12)
-	local sub = z.subzones[1]
-	eq(sub.subzone, "Nek'mani Wellspring"); eq(sub.maps[1], 1434)
-	eq(sub.items[1].itemID, FISH); eq(sub.items[1].count, 2); eq(sub.items[1].unitValue, 6); eq(sub.items[1].valueSource, "vendor")
-	eq(sub.items[1].name, "Test Fish")
+	eq(f.days, 90); eq(f.catches, 1); eq(f.zones, nil)
+	local spot = f.spots[1]
+	eq(spot.zone, "Stranglethorn Vale"); eq(spot.sub, "Nek'mani Wellspring"); eq(spot.n, 1); eq(spot.perCatch, 12)
+	eq(spot.water, "?"); eq(spot.top, FISH .. " Test Fish 2/2")
 end)
 
 it("Fishing.lua is in the TOC after Loot.lua", function()
@@ -210,5 +207,7 @@ it("#78: the subzone is stored on every catch; no subzone is stored as \"\"", fu
 	stub.printed = {}
 	ns.Fishing.Slash("tanaris")
 	has(printed(stub), "(no subzone)")
-	eq(ns.Fishing.SnapshotSummary().zones[1].subzones[1].subzone ~= nil, true)
+	local subs = {}
+	for _, spot in ipairs(ns.Fishing.SnapshotSummary().spots) do subs[spot.zone] = spot.sub end
+	eq(subs.Tanaris, "")
 end)

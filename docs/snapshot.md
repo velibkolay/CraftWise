@@ -138,7 +138,19 @@ Per node:
 | `transition` | `true` for map-layer transition points (Blizzard's flight map shows them only on other map layers); missing otherwise. |
 
 ### `fishing`
-Fishing log summary (#69), this character, last 90 days: `{ days, catches, containersOpened, zones }`. `zones` is sorted by catches, each `{ zone, catches, valuePerCatch, unpricedUnits, subzones }`; each subzone `{ subzone (`""` = none), maps (uiMapIDs), catches, valuePerCatch, unpricedUnits, items }`; each item `{ itemID, name, count, unitValue, valueSource }`. Values are copper. `unitValue` is the item's best sell value (`valueSource` = the AH quote label, e.g. "typical · Horde AH", or "vendor"), or for a caught container without a price the mean value of its logged contents (`"contents of N opened"`); missing with `valueSource = "no price data"`. `valuePerCatch` leaves unpriced units out; `unpricedUnits` says how many. Raw catches are in `CraftWiseDB.fishing[<character key>]` (see `CraftWise/Fishing.lua`).
+Fishing log ranking (#69, #86), this character, last 90 days: `{ days, catches, containersOpened, sessionGapMinutes, findFish, spots, moreSpots, pools, morePools }`. Values are copper. The full tables are in `/craftwise fishing`; raw catches are in `CraftWiseDB.fishing[<character key>]` (see `CraftWise/Fishing.lua` and `CraftWise/FishingTables.lua`).
+
+| Field | Meaning |
+|---|---|
+| `spots` | The best 8 rows of zone, subzone and water type, ranked by `perHour` (rows with timed catches first), then `perCatch`. `moreSpots` = rows left out. |
+| spot `zone`, `sub` | Zone and subzone (`""` = none). |
+| spot `water` | `"open"` (open water), `"pool"` (one pool object, `obj` = its GameObject ID, `pool` = the name the client showed, missing if never shown), or `"?"` (water type not known yet; `obj`/`pool` as far as known). How the type is worked out: `CraftWise/Fishing.lua`. |
+| spot `n` | Catches (one per loot window). Small numbers are small samples: no drop rates. |
+| spot `perCatch` | Value per catch: each item at its best sell value (AH after cut at the profit house and basis, else vendor incl. remembered sell prices; containers by their logged contents). `unpriced` = item units without any price, left out (missing when 0). |
+| spot `perHour`, `timed`, `minutes` | Value per hour over the `timed` catches: catches less than `sessionGapMinutes` apart are one session, a catch's time is the time since the previous catch of its session, a session's first catch is untimed. `minutes` = their time. Missing without timed catches. |
+| spot `top` | Up to 3 items, most first: `"<itemID> <name> <count>/<all items caught in this row>"`, separated by `; `. |
+| `pools` | Up to 5 pool objects with the most ended visits (`morePools` = rest): `{ obj, name, visits, perVisit = "<min>-<max>, avg <avg>", going, seen, notFished }`. A visit = catches from one pool spawn; it has ended once a later catch came from elsewhere or the session gap passed (`going` = visits not ended). Its catch count is what the pool gave until it vanished **or the player left** (the client doesn't tell the two apart). `seen` = sightings without fishing (tooltip, interact target), `notFished` = sighted spawns never fished. |
+| `findFish` | `{ spellID = 43308, known, tracking }`: whether this character knows Find Fish and whether its tracking is on, missing when the client didn't say. |
 
 ### `auctions`
 Auction tracker (#81), this character: `{ active, sold, returning, uncertain, expectedTotal, expectedMissing, ownedListAt, ownedListHouse }`. Each list holds rows (fields below). Money is copper.
