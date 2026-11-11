@@ -172,7 +172,8 @@ function GetNumQuestRewards() return #stub.quest.rewards end
 function GetQuestItemLink(kind, i) return (kind == "choice" and stub.quest.choices or stub.quest.rewards)[i] end
 
 stub.names = {} -- unit token -> name
-function UnitName(unit) return stub.names[unit] end
+stub.surnames = {} -- unit token -> Forever surname (#77): UnitName returns name, surname
+function UnitName(unit) return stub.names[unit], stub.surnames[unit] end
 
 -- Trainer: stub.trainer = { { name, kind, fee, required, tooltipID } }; the list honours the type filter
 stub.trainer = {}

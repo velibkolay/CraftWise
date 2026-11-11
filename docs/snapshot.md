@@ -4,7 +4,8 @@ A per-character state snapshot that a Claude session reads from disk to answer q
 
 ## Where it is
 - File: `WTF/Account/<account>/SavedVariables/CraftWise.lua` (account-wide, so a session that can read the account SavedVariables folder sees every character).
-- Key: `CraftWiseDB.snapshots["<realm>-<name>"]`, e.g. `CraftWiseDB.snapshots["Forever-EU-Veli"]`. One entry per character, overwritten each time; no history.
+- Key: `CraftWiseDB.snapshots["<realm>-<name> <surname>"]` (#77; Forever characters have a surname), e.g. `CraftWiseDB.snapshots["CAMWOW EU4 Realm 8 PvP-Velikopter Tanner"]`; `"<realm>-<name>"` for a character without a surname. One entry per character, overwritten each time; no history.
+- Before #77 the key had no surname, so characters with the same first name shared one entry. At login such an old entry moves to the current character only if its `char.class` and `char.race` match; otherwise it stays under the old key with `legacy = true` (its owner is unknown) and CraftWise prints once what it could not assign. The ledger and the fishing log move with it.
 - Written by `/craftwise snapshot` (prints "snapshot saved, /reload to write it to disk") and automatically on `PLAYER_LOGOUT` (logout, `/reload`, quit).
 - **The file is only current after `/reload`, logout or quit.** The game writes SavedVariables to disk only then; `/craftwise snapshot` alone updates the table in memory. Check `t` against the current time before trusting it.
 
@@ -26,7 +27,7 @@ Times (`t`, `scanned`, `since`) are Unix seconds (`time()`). Money is in copper 
 ### `char`
 | Field | Meaning |
 |---|---|
-| `name`, `realm` | Character name and realm. |
+| `name`, `surname`, `realm` | First name, Forever surname (missing for a character without one) and realm. |
 | `faction` | `"Horde"` / `"Alliance"` (`UnitFactionGroup`). |
 | `race`, `class` | Localized race and class (`UnitRace`, `UnitClass`). |
 | `level` | Character level. |

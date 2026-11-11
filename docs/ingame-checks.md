@@ -366,3 +366,10 @@ New file `Fishing.lua` in the TOC: **full game restart** needed (not `/reload`).
 - [ ] Catch a container (trunk, crate, bloated fish), open it from the bags: `/dump CraftWiseDB.fishing["<realm>-<name>"].opened` has an entry with the container's item ID and its contents. `/craftwise fishing` then values the container by its contents ("contents of 1 opened") if it has no price itself. Coins from a container are not recorded.
 - [ ] `/craftwise fishing <zone>` (zone or subzone name, any case) lists only that zone.
 - [ ] `/craftwise snapshot`, `/reload`: the snapshot has `fishing` with the per-zone summary (`docs/snapshot.md`).
+
+## Character key with surname (#77)
+No new files: `/reload` is enough. Make a backup of `WTF/Account/<account>/SavedVariables/CraftWise.lua` first.
+- [ ] Log in with Velikopter Tanner. If the old snapshot under `"<realm>-Velikopter"` is that character's class and race, chat says the ledger, snapshot and fishing log now belong to Velikopter Tanner. Otherwise it says they were kept under the old key, marked legacy (once; not again after `/reload`).
+- [ ] `/reload`, then check the file: `CraftWiseDB.snapshots` has `"<realm>-Velikopter Tanner"` with `char.name = "Velikopter"`, `char.surname = "Tanner"`; `CraftWiseMarketDB.ledger.chars` and `CraftWiseDB.fishing` use the same key. Report the exact key (it shows which separator the client's `Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR` gives; expected a space).
+- [ ] Log in with Velikopter Wright, buy something at a vendor, fish once, `/reload`: Wright has its own `"<realm>-Velikopter Wright"` entries; Tanner's ledger (`/craftwise ledger`) and `/craftwise fishing` are unchanged when you switch back.
+- [ ] `/craftwise where <item>` (merchants, #75) shows the standing of the character you are on.

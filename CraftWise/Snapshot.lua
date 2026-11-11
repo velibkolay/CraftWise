@@ -1,5 +1,5 @@
 -- Character snapshot for Claude (issue #63): what this character is, where it stands, what it wears,
--- knows, holds and is questing on, written to the account-wide CraftWiseDB.snapshots["<realm>-<name>"]
+-- knows, holds and is questing on, written to the account-wide CraftWiseDB.snapshots["<realm>-<name> <surname>"]
 -- so a Claude session can read it from WTF/Account/<account>/SavedVariables/CraftWise.lua.
 -- Written by `/craftwise snapshot` and on PLAYER_LOGOUT (logout, /reload, quit); the file on disk is
 -- only current after one of those. Overwritten each time, no history. Field reference: docs/snapshot.md.
@@ -41,16 +41,9 @@ local function Round(v, places)
 	return math.floor(v * m + 0.5) / m
 end
 
--- "<realm>-<name>", the same key the ledger uses (#46).
+-- "<realm>-<name> <surname>", the key the ledger and the fishing log use too (#77).
 function S.Key()
-	if ns.Ledger and ns.Ledger.CharKey then
-		return ns.Ledger.CharKey()
-	end
-	local name = UnitName and UnitName("player")
-	if not name or name == "" then
-		return nil
-	end
-	return ((GetRealmName and GetRealmName()) or "") .. "-" .. name
+	return ns.CharKey()
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -61,7 +54,9 @@ function S.Character()
 	if not (UnitName and UnitLevel) then
 		return nil, "UnitName/UnitLevel not available"
 	end
-	local c = { name = UnitName("player"), level = UnitLevel("player") }
+	-- name and surname apart (#77); surname missing for a character without one.
+	local _, name, surname = ns.CharName()
+	local c = { name = name, surname = surname, level = UnitLevel("player") }
 	c.realm = GetRealmName and GetRealmName() or nil
 	if UnitFactionGroup then
 		c.faction = UnitFactionGroup("player")
