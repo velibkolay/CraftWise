@@ -155,21 +155,87 @@ function ns.GetVendorBuyPrice(itemID)
 	return price and price > 0 and price or nil
 end
 
--- What a vendor pays for one unit (ItemSparse sell price). nil if the item isn't cached yet.
-function ns.GetVendorSellPrice(itemID)
+-- Sell price as the client returns it, remembered in CraftWiseDB.sellPrices (#83).
+local function ClientSellPrice(itemID)
 	local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-	if not getInfo then
+	if not (getInfo and itemID) then
 		return nil
 	end
 	local sell = select(11, getInfo(itemID))
+	if type(sell) == "number" and type(itemID) == "number" and ns.db then
+		ns.db.sellPrices[itemID] = sell
+	end
+	return sell
+end
+
+-- What a vendor pays for one unit (ItemSparse sell price). When the item isn't in the client cache:
+-- the price the client returned earlier (CraftWiseDB.sellPrices, #83), else the bundled table.
+-- nil if none of them has it.
+function ns.GetVendorSellPrice(itemID)
+	if not ((C_Item and C_Item.GetItemInfo) or GetItemInfo) then
+		return nil
+	end
+	local sell = ClientSellPrice(itemID)
 	if sell == nil then
 		if C_Item and C_Item.RequestLoadItemDataByID then
 			C_Item.RequestLoadItemDataByID(itemID)
 		end
-		sell = ns.ItemSellPrices and ns.ItemSellPrices[itemID]
+		sell = (ns.db and ns.db.sellPrices[itemID]) or (ns.ItemSellPrices and ns.ItemSellPrices[itemID])
 	end
 	return sell
 end
+
+-- Remembers the sell price of every item in the list ({ [itemID] = true }, the market scope) that has
+-- none yet: cached items now, the rest when the client loads them (GET_ITEM_INFO_RECEIVED). Loads are
+-- requested a batch per frame so a large scope doesn't flood the client.
+local SELL_BATCH = 100
+local waitingSell = {}
+local queue, inQueue, queued = {}, {}, false
+
+local function RunSellQueue()
+	queued = false
+	local n = 0
+	while n < SELL_BATCH and #queue > 0 do
+		local itemID = table.remove(queue)
+		inQueue[itemID] = nil
+		if ns.db and ns.db.sellPrices[itemID] == nil and ClientSellPrice(itemID) == nil then
+			waitingSell[itemID] = true
+			if C_Item and C_Item.RequestLoadItemDataByID then
+				C_Item.RequestLoadItemDataByID(itemID)
+			end
+			n = n + 1
+		end
+	end
+	if #queue > 0 and C_Timer and C_Timer.After then
+		queued = true
+		C_Timer.After(0.2, RunSellQueue)
+	end
+end
+
+function ns.PersistSellPrices(items)
+	if not ns.db then
+		return
+	end
+	local sell = ns.db.sellPrices
+	for itemID in pairs(items or {}) do
+		if type(itemID) == "number" and sell[itemID] == nil and not waitingSell[itemID] and not inQueue[itemID] then
+			queue[#queue + 1] = itemID
+			inQueue[itemID] = true
+		end
+	end
+	if not queued and #queue > 0 then
+		RunSellQueue()
+	end
+end
+
+ns.On("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
+	if itemID and waitingSell[itemID] then
+		waitingSell[itemID] = nil
+		if success ~= false then
+			ClientSellPrice(itemID)
+		end
+	end
+end)
 
 -- Cheapest way to obtain one unit: { copper, source = "vendor"|"auction", age, label, thin }
 function ns.GetBuyPrice(itemID)

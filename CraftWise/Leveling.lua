@@ -181,7 +181,7 @@ function ns.LevelingRows(professionID)
 		if info.kind ~= "grey" then
 			local output = recipe.output
 			if not output and r.outputItemID then
-				output = select(2, ns.BundledRecipe(r.recipeID))
+				output = select(2, ns.RecipeFallback(r.recipeID))
 			end
 			local sale, saleSource, saleDetails = Leveling.Sale(not r.noItemOutput and output or nil)
 			r.chance, r.chanceInfo = p, info

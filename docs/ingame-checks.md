@@ -396,3 +396,11 @@ New file `Auctions.lua` in the TOC: **full game restart** needed (not `/reload`)
 - [ ] Take a returned item from an "Auction expired: X" mail and from an "Auction cancelled: X" mail: the row turns `returned`. If not, report the mail subjects exactly: the patterns come from `AUCTION_EXPIRED_MAIL_SUBJECT` and `AUCTION_REMOVED_MAIL_SUBJECT`, which Blizzard's Forever UI code doesn't use (`/dump AUCTION_EXPIRED_MAIL_SUBJECT`).
 - [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].auctions` has `active`, `sold` with `expectedTotal`, `returning`, `uncertain`, matching `/craftwise auctions`.
 - [ ] Nothing in `CraftWiseMarketDB.auctions` names a buyer.
+
+## Trainer recipes and vendor floor (#83)
+No new files: `/reload` is enough.
+- [ ] Open the Leatherworking window once, then the Expert Leatherworking trainer (Tarn, Thunder Bluff). `/craftwise debug`: "last trainer: N services, M recorded (K with output and reagents)". K = 0 means `C_TradeSkillUI.GetRecipeSchematic` returns nothing for trainer recipes with the profession window closed: report it with `/dump C_TradeSkillUI.GetRecipeSchematic(1255075, false)` (Mender's Leather Belt).
+- [ ] `/reload`, then check `CraftWiseDB.trainer[1255075]`: `fee` (18s = 1800), `required = 150`, `skill = "Leatherworking"`, `line = 165`, `output.itemID` one of 252459-252461 / 252520-252523, `reagents` with counts matching the trainer's recipe tooltip, `at`. Same for the other belts (1255076-1255081). If an entry is missing, `CraftWiseDB.debug.trainer.samples` shows the tooltip ID of the first services.
+- [ ] `/craftwise`, Learn view: the seven belts are listed with Trainable at 150 and the fee; the tooltip ends with "Recorded in game at a trainer" and shows "Skill-ups: thresholds unknown" (never yellow/grey numbers).
+- [ ] At the AH, run a full scan or search a belt: its price is recorded (`/craftwise market <belt link>` shows data, not "(not a recorded item)").
+- [ ] Vendor floor: `/dump CraftWiseDB.sellPrices` has entries after login (scope items). Log out, log back in and hover a scope item in the Bags view before its tooltip loaded: the vendor value shows at once.

@@ -332,6 +332,8 @@ function ns.RecipeLine(recipeID)
 			return ns.SkillLineOf(professionID)
 		end
 	end
+	local rec = ns.db and ns.db.trainer[recipeID]
+	return rec and rec.line or nil
 end
 
 -- Login clean-up (#44): a recipe filed under a profession it doesn't belong to moves to the cached
@@ -384,6 +386,28 @@ function ns.BundledRecipe(recipeID)
 		return nil
 	end
 	return data.reagents, data.output or nil, data.output == false
+end
+
+-- Reagents and output a trainer showed for this recipe (#83, Trainer.lua): first-hand client data.
+function ns.RecordedRecipe(recipeID)
+	local rec = ns.db and ns.db.trainer[recipeID]
+	if not (rec and rec.reagents) then
+		return nil
+	end
+	return rec.reagents, rec.output, rec.noItemOutput or false
+end
+
+-- Recipe data when the profession window gave none: bundled data first, else recorded at a trainer.
+-- Fourth return: "bundled" | "recorded".
+function ns.RecipeFallback(recipeID)
+	local reagents, output, noItem = ns.BundledRecipe(recipeID)
+	if reagents then
+		return reagents, output, noItem, "bundled"
+	end
+	reagents, output, noItem = ns.RecordedRecipe(recipeID)
+	if reagents then
+		return reagents, output, noItem, "recorded"
+	end
 end
 
 -- Recipe names by ID for one skill line, built once from RecipeNames[skillLine][name] = id.
@@ -619,6 +643,9 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.outputItemID = recipe.output and recipe.output.itemID
 	result.outputQuantity = recipe.output and recipe.output.quantity
 	result.bundledOnly = recipe.bundledOnly
+	result.recordedInGame = recipe.recordedInGame -- recipe data from a trainer window (#83)
+	-- Skill-up thresholds come from the bundled data only; a recipe it lacks has none (never guessed).
+	result.thresholdsUnknown = not (ns.RecipeThresholds and ns.RecipeThresholds(recipeID)) or nil
 	return result
 end
 
@@ -634,7 +661,7 @@ function ns.KnownRecipesFor(itemID)
 				if recipe.learned then
 					local reagents, output = recipe.reagents, recipe.output
 					if not reagents then
-						reagents, output = ns.BundledRecipe(recipeID)
+						reagents, output = ns.RecipeFallback(recipeID)
 					end
 					local id = output and output.itemID
 					if id and reagents then
@@ -656,7 +683,8 @@ end)
 
 -- Rows for the profit table of one profession. Cached recipes come first-hand from the client;
 -- with includeUnlearned, bundled recipes of the same skill line that the client never listed are
--- added too, so "what could I learn" works even if the client only lists learned recipes.
+-- added too, so "what could I learn" works even if the client only lists learned recipes, and so are
+-- recipes a trainer showed that neither lists (#83, marked recordedInGame).
 -- view: the window view asking ("profit" | "learn" | "level"); it picks the reagent cost basis (#47).
 function ns.BuildRows(professionID, includeUnlearned, view)
 	local prof = ns.charDB and ns.charDB.professions[professionID]
@@ -668,10 +696,10 @@ function ns.BuildRows(professionID, includeUnlearned, view)
 	for recipeID, recipe in pairs(prof.recipes) do
 		if (recipe.learned or includeUnlearned) and ns.RecipeBelongs(professionID, recipeID) then
 			if not recipe.reagents then
-				local reagents, output, noItem = ns.BundledRecipe(recipeID)
+				local reagents, output, noItem, origin = ns.RecipeFallback(recipeID)
 				if reagents then
-					recipe = setmetatable({ reagents = reagents, output = output, noItemOutput = noItem or nil },
-						{ __index = recipe })
+					recipe = setmetatable({ reagents = reagents, output = output, noItemOutput = noItem or nil,
+						recordedInGame = origin == "recorded" or nil }, { __index = recipe })
 				end
 			end
 			table.insert(rows, MakeRow(prof, recipeID, recipe, prices))
@@ -698,6 +726,25 @@ function ns.BuildRows(professionID, includeUnlearned, view)
 						bundledOnly = true,
 					}, prices))
 				end
+			end
+		end
+	end
+	if includeUnlearned then
+		local skillLine = ns.SkillLineOf(professionID)
+		for recipeID, rec in pairs(ns.db and ns.db.trainer or {}) do
+			if rec.line == skillLine and rec.reagents and not prof.recipes[recipeID]
+				and not (ns.RecipeData and ns.RecipeData[recipeID]) and not IsSpellKnown(recipeID) then
+				local output = rec.output
+				local icon = rec.icon or (output and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(output.itemID))
+				table.insert(rows, MakeRow(prof, recipeID, {
+					name = rec.name or ("Recipe #" .. recipeID),
+					icon = icon,
+					learned = false,
+					reagents = rec.reagents,
+					output = output,
+					noItemOutput = rec.noItemOutput or nil,
+					recordedInGame = true,
+				}, prices))
 			end
 		end
 	end

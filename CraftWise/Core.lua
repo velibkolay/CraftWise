@@ -54,7 +54,10 @@ local DB_DEFAULTS = {
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	sources = {}, -- [recipe itemID] = { vendors, loot, quests } seen in game (SourceRecorder.lua, issue #37)
 	merchants = {}, -- [npcID] = full inventory of a merchant this account opened (Merchant.lua, issue #66)
-	trainer = {}, -- [recipeID] = { fee = copper, required = skill }
+	-- [recipeID] = { fee = copper, required = skill, at, name, icon, skill = profession name, line,
+	--   reagents, output, noItemOutput, recipeAt }: seen at a trainer (Trainer.lua; recipe fields #83)
+	trainer = {},
+	sellPrices = {}, -- [itemID] = vendor sell price per unit, as the client returned it (#83)
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor
 	sellAH = {}, -- [itemID] = true: items marked to sell on the auction house
@@ -493,7 +496,8 @@ SlashCmdList.CRAFTWISE = function(msg)
 		end
 		local d = ns.db and ns.db.debug and ns.db.debug.trainer
 		if d then
-			ns.Print(("last trainer: %s services, %d recorded, event %s"):format(tostring(d.services), d.recorded or 0, tostring(d.event)))
+			ns.Print(("last trainer: %s services, %d recorded (%d with output and reagents), event %s"):format(
+				tostring(d.services), d.recorded or 0, d.withRecipe or 0, tostring(d.event)))
 		end
 		return
 	end

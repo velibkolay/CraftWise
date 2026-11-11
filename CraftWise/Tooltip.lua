@@ -225,7 +225,7 @@ function ns.TrackedBalanceLines(itemID)
 		for _, prof in pairs(ns.charDB.professions) do
 			recipe = recipe or prof.recipes[recipeID]
 		end
-		local reagents = recipe and recipe.reagents or ns.BundledRecipe(recipeID)
+		local reagents = recipe and recipe.reagents or ns.RecipeFallback(recipeID)
 		local output = recipe and recipe.output
 		local uses = output and output.itemID == itemID
 		for _, r in ipairs(reagents or {}) do

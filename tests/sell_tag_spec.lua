@@ -130,6 +130,9 @@ it("missing values stay missing: no AH data, vendor price not loaded or zero", f
 	eq(lines[1][2], "vendors don't buy it"); eq(lines[2][2], "no price data")
 	eq(lines[1][3], false); eq(lines[2][3], false)
 	stub.items[PANTS] = nil
+	-- The price the client returned earlier is kept (#83); never seen at all, it stays missing.
+	eq(Lines(ns, Row(ns))[1][2], "vendors don't buy it")
+	ns.db.sellPrices[PANTS] = nil
 	eq(Lines(ns, Row(ns))[1][2], "sell price not loaded yet")
 end)
 

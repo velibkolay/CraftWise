@@ -101,6 +101,7 @@ function stub.EnableAuctionator()
 end
 function stub.DisableAuctionator() Auctionator = nil end
 
+stub.schematics = {} -- [recipe spellID] = schematic the client returns without the profession window
 -- Profession window: stub.profession = { id, name, skill, max, recipes = { [id] = { info, schematic, source } } }
 stub.profession = nil
 C_TradeSkillUI = {
@@ -122,6 +123,7 @@ C_TradeSkillUI = {
 		return r and r.info
 	end,
 	GetRecipeSchematic = function(id)
+		if stub.schematics[id] then return stub.schematics[id] end -- any recipe spell, window closed (#83)
 		local r = stub.profession.recipes[id]
 		return r and r.schematic
 	end,
@@ -175,7 +177,8 @@ stub.names = {} -- unit token -> name
 stub.surnames = {} -- unit token -> Forever surname (#77): UnitName returns name, surname
 function UnitName(unit) return stub.names[unit], stub.surnames[unit] end
 
--- Trainer: stub.trainer = { { name, kind, fee, required, tooltipID } }; the list honours the type filter
+-- Trainer: stub.trainer = { { name, kind, fee, required, tooltipID, icon, skill } }; the list honours the
+-- type filter. skill: the required skill's name ("Leatherworking" when nil, none when false).
 stub.trainer = {}
 stub.trainerFilter = { available = 1, unavailable = 1, used = 1 }
 local function visibleServices()
@@ -188,9 +191,13 @@ end
 function GetTrainerServiceTypeFilter(t) return stub.trainerFilter[t] == 1 and 1 or nil end
 function SetTrainerServiceTypeFilter(t, v) stub.trainerFilter[t] = v end
 function GetNumTrainerServices() return #visibleServices() end
-function GetTrainerServiceInfo(i) local s = visibleServices()[i]; return s.name, s.kind end
+function GetTrainerServiceInfo(i) local s = visibleServices()[i]; return s.name, s.kind, s.icon end
 function GetTrainerServiceCost(i) return visibleServices()[i].fee end
-function GetTrainerServiceSkillReq(i) return "Leatherworking", visibleServices()[i].required, true end
+function GetTrainerServiceSkillReq(i)
+	local s = visibleServices()[i]
+	if s.skill == false then return nil, 0, false end
+	return s.skill or "Leatherworking", s.required, true
+end
 C_TooltipInfo = { GetTrainerService = function(i)
 	local id = visibleServices()[i].tooltipID
 	return id and { id = id } or nil

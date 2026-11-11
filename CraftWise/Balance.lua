@@ -253,7 +253,7 @@ function Balance.Makers()
 			if recipe.learned then
 				local reagents, output = recipe.reagents, recipe.output
 				if not reagents then
-					local bundledReagents, bundledOutput = ns.BundledRecipe(recipeID)
+					local bundledReagents, bundledOutput = ns.RecipeFallback(recipeID) -- bundled, else seen at a trainer (#83)
 					reagents, output = bundledReagents, output or bundledOutput
 				end
 				if reagents and output and output.itemID then
