@@ -465,3 +465,15 @@ New file `Crates.lua` in the TOC: **full game restart** needed (not `/reload`). 
 `/reload` is enough (no new file, no TOC change).
 - [ ] Have a fishing log with catches that have an AH price at the profit house (the snapshot values them at logout), then `/reload`. In `CraftWise.lua` (copy it with the game closed) every value under `CraftWiseMarketDB.items[<id>]["<realm>|H"]` is a string; report any `{ ["days"] = ..., ["last"] = ..., ["raw"] = ... }` table.
 - [ ] Logout and `/reload` take no longer than before, and BugSack shows no CraftWise error at logout.
+
+## Companion app (#94)
+Not part of the addon: build `companion/` (see `docs/companion.md`), create an upload token on wow.velikopter.com/me. Headless tests cover the delta, the request shapes (also checked against the Worker's validator), the watcher and retries; the tray and the real file system are untested.
+- [ ] Windows: start `craftwise-companion.exe` (built with `-H=windowsgui`): a gold coin appears in the notification area, no console window. Right and left click open the menu; "Open settings" opens `config.json` in Notepad. Put the token in, save, then "Upload now": the first menu line says "Checked HH:MM: sent ..." and wow.velikopter.com shows the houses and prices.
+- [ ] Auto-detect: with WoW in `C:\Program Files (x86)\World of Warcraft`, `craftwise-companion -status` (console build) prints the right `CraftWise.lua` without setting `wowPath`. With several account folders it picks the one written last; `account` in the settings overrides it.
+- [ ] In game `/reload`: within about 10 seconds the log (`Open log`) shows "upload (file changed)" and only the new data (a few prices, not the whole file). Logout: the same.
+- [ ] While the game is writing (logout with a large market DB) the log never shows a parse error that stays; "still being written" is followed by a successful read.
+- [ ] Nothing is created or changed in the `_forever_` folder by the companion (the game's own `CraftWise.lua.bak` is from WoW).
+- [ ] A second start says "another CraftWise Companion is already running" in the log and exits.
+- [ ] Explorer restart (Task Manager > Windows Explorer > Restart): the icon comes back.
+- [ ] Quit from the menu removes the icon; no process left in Task Manager.
+- [ ] macOS (MacBook): `./craftwise-companion-macos -once` uploads from `/Applications/World of Warcraft/_forever_`; without `-once` it keeps running in the terminal and uploads after `/reload`.
