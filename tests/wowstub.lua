@@ -202,12 +202,14 @@ C_Container = {
 	GetContainerNumSlots = function(bag) return stub.bags[bag] and #stub.bags[bag] or 0 end,
 	GetContainerItemInfo = function(bag, slot) return stub.bags[bag] and stub.bags[bag][slot] end,
 }
--- classID by itemID: stub.itemClass[id] = 2 weapon / 4 armor / 7 trade goods
+-- classID by itemID: stub.itemClass[id] = 2 weapon / 4 armor / 7 trade goods / 9 recipe;
+-- subclassID by itemID: stub.itemSubclass[id] (for recipes Enum.ItemRecipeSubclass)
 stub.itemClass = {}
+stub.itemSubclass = {}
 C_Item.GetItemInfoInstant = function(id)
 	if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) end
 	local item = stub.items[id]
-	return id, nil, nil, item and item.equipLoc or "", item and item.icon, stub.itemClass[id]
+	return id, nil, nil, item and item.equipLoc or "", item and item.icon, stub.itemClass[id], stub.itemSubclass[id]
 end
 C_Item.GetItemNameByID = function(id) return stub.items[id] and stub.items[id].name end
 C_Item.GetItemMaxStackSizeByID = function(id) return stub.items[id] and stub.items[id].stack end
@@ -350,7 +352,10 @@ C_AuctionHouse = {
 	RequestMoreBrowseResults = function() stub.moreRequests = stub.moreRequests + 1 end,
 }
 stub.browseQueries, stub.throttleReady, stub.moreRequests = {}, true, 0
-Enum.ItemClass = { Weapon = 2, Armor = 4 }
+Enum.ItemClass = { Weapon = 2, Armor = 4, Recipe = 9 }
+-- Values from Blizzard's ItemConstantsDocumentation.lua (Gethe/wow-ui-source, branch forever).
+Enum.ItemRecipeSubclass = { Book = 0, Leatherworking = 1, Tailoring = 2, Engineering = 3, Blacksmithing = 4,
+	Cooking = 5, Alchemy = 6, FirstAid = 7, Enchanting = 8, Fishing = 9, Jewelcrafting = 10, Inscription = 11 }
 Enum.InventoryType = { IndexHeadType = 1, IndexNeckType = 2, IndexShoulderType = 3, IndexChestType = 5, IndexWaistType = 6,
 	IndexLegsType = 7, IndexFeetType = 8, IndexWristType = 9, IndexHandType = 10, IndexFingerType = 11, IndexTrinketType = 12,
 	IndexWeaponType = 13, IndexShieldType = 14, IndexRangedType = 15, IndexCloakType = 16, Index2HweaponType = 17,

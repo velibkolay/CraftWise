@@ -517,6 +517,13 @@ end
 -- Scope (decision 4): reagents and products of known and learnable recipes of the player's
 -- professions, plus every item the player interacted with. Nothing outside it is stored. It only
 -- grows. Buying and selling at a merchant and posting on the AH all pass through the bags.
+-- #67 adds the recipe items (recipe, pattern, plans, formula, schematic) of those professions:
+--   1. the item that teaches a bundled recipe of a scope profession (ns.SourceData, client DB2),
+--   2. recipe items recorded in game for such a recipe (CraftWiseDB.sources, #37),
+--   3. any AH row whose item the client files as a recipe of a scope profession (item class Recipe,
+--      subclass = the profession). This also takes profession books (Expert Cookbook and the like)
+--      when the client files them under the profession; the "Book" subclass names no profession and
+--      stays out. Bundled data has no profession-book IDs (no DB2 table in the generators lists them).
 ----------------------------------------------------------------------------------------------------
 
 local function AddToScope(itemID)
@@ -538,6 +545,73 @@ local function AddRecipeItems(reagents, output)
 	end
 end
 
+-- Profession names (ns.ProfessionSkillLines) by the client's Enum.ItemRecipeSubclass field name.
+-- Book, Jewelcrafting and Inscription name no profession CraftWise has a skill line for.
+local RECIPE_SUBCLASS_PROFESSION = {
+	Leatherworking = "Leatherworking",
+	Tailoring = "Tailoring",
+	Engineering = "Engineering",
+	Blacksmithing = "Blacksmithing",
+	Cooking = "Cooking",
+	Alchemy = "Alchemy",
+	FirstAid = "First Aid",
+	Enchanting = "Enchanting",
+	Fishing = "Fishing",
+}
+
+-- [subclassID] = skill line, from the client's enum; nil until both the enum and the bundled names exist.
+local function RecipeSubclassLines()
+	local enum = Enum and Enum.ItemRecipeSubclass
+	if not (enum and ns.ProfessionSkillLines) then
+		return nil
+	end
+	local out = {}
+	for field, name in pairs(RECIPE_SUBCLASS_PROFESSION) do
+		local subclass, line = enum[field], ns.ProfessionSkillLines[name]
+		if subclass and line then
+			out[subclass] = line
+		end
+	end
+	return out
+end
+
+local function RecipeClass()
+	return Enum and Enum.ItemClass and Enum.ItemClass.Recipe or 9
+end
+
+-- The skill line of the profession the client files this recipe item under, or nil.
+local subclassLines
+function M.RecipeItemLine(itemID)
+	if not (itemID and C_Item and C_Item.GetItemInfoInstant) then
+		return nil
+	end
+	local _, _, _, _, _, classID, subclassID = C_Item.GetItemInfoInstant(itemID)
+	if classID == nil or classID ~= RecipeClass() then
+		return nil
+	end
+	subclassLines = subclassLines or RecipeSubclassLines()
+	return subclassLines and subclassLines[subclassID]
+end
+
+-- AH rows of items outside the scope are checked once per session: a full scan reads every row.
+local checked = {}
+local function InScopeOrRecipe(itemID)
+	if M.InScope(itemID) then
+		return true
+	end
+	if not db or itemID == nil or checked[itemID] then
+		return false
+	end
+	checked[itemID] = true
+	local line = M.RecipeItemLine(itemID)
+	if line and db.scope.skillLines[line] then
+		AddToScope(itemID)
+		return true
+	end
+	return false
+end
+M.InScopeOrRecipe = InScopeOrRecipe
+
 function M.RefreshScope()
 	if not db then
 		return
@@ -555,11 +629,26 @@ function M.RefreshScope()
 			lines[line] = true
 		end
 	end
-	for _, data in pairs(ns.RecipeData or {}) do
+	local recipes = ns.RecipeData or {}
+	for _, data in pairs(recipes) do
 		if lines[data.skillLine] then
 			AddRecipeItems(data.reagents, data.output)
 		end
 	end
+	-- Recipe items (#67): bundled, then recorded in game.
+	for recipeID, source in pairs(ns.SourceData or {}) do
+		local data = recipes[recipeID]
+		if source.item and data and lines[data.skillLine] then
+			AddToScope(source.item)
+		end
+	end
+	for itemID, rec in pairs(ns.db and ns.db.sources or {}) do
+		local data = rec.recipe and recipes[rec.recipe]
+		if data and lines[data.skillLine] then
+			AddToScope(itemID)
+		end
+	end
+	checked = {} -- a new profession can take items a previous check left out
 end
 
 local function ScanContainer(bag)
@@ -747,7 +836,7 @@ local function RecordBrowse(results)
 	for _, row in ipairs(results) do
 		local key = row.itemKey
 		local itemID = key and key.itemID
-		if M.InScope(itemID) and (row.totalQuantity or 0) > 0 and (row.minPrice or 0) > 0 then
+		if (row.totalQuantity or 0) > 0 and (row.minPrice or 0) > 0 and InScopeOrRecipe(itemID) then
 			local entry = GetEntry(M.ItemKey(itemID, key.itemSuffix), currentHouse, true)
 			local last = entry.last
 			local repeated = last and now - last.t < DEDUPE_SECONDS and last.min == row.minPrice and last.qty == row.totalQuantity
@@ -816,7 +905,7 @@ end
 
 local function CollectRow(scan, index)
 	local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
-	if not (M.InScope(itemID) and (count or 0) > 0 and (buyout or 0) > 0) then
+	if not ((count or 0) > 0 and (buyout or 0) > 0 and InScopeOrRecipe(itemID)) then
 		return true
 	end
 	-- Auctionator's comment: the list sometimes holds rows with no item data. It skips them too.
