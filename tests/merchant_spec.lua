@@ -577,3 +577,44 @@ it("stores the reputation requirement a Favor item's tooltip states, as the clie
 	eq(items[252800].req, nil)
 	ITEM_REQ_REPUTATION, FACTION_STANDING_LABEL6 = nil, nil
 end)
+
+-- #107: a Favor vendor's names always belong to their own item IDs, in the record and in the snapshot's
+-- favor list, when the list changes length or order between visits, is filtered, or names load late.
+it("#107: names stay with their item IDs across reordered, shorter, filtered and late-loading lists", function()
+	local ns, stub = setup()
+	local NAMES = { [252805] = "Pattern: Brawler's Leather Tunic", [252778] = "Pattern: Trapper's Leather Gloves",
+		[252777] = "Pattern: Brawler's Leather Gloves", [252806] = "Pattern: Trapper's Leather Tunic" }
+	local function row(id, named)
+		return { itemID = id, name = named ~= false and NAMES[id] or nil, extended = true,
+			costs = { { 30, "|cffffffff|Hcurrency:3402:0|h[Merchant's Favor]|h|r", "Merchant's Favor" } } }
+	end
+	local function check(where)
+		local m = ns.db.merchants[248201]
+		for id, item in pairs(m.items) do
+			eq(item.name, NAMES[id], where .. ": record " .. id)
+		end
+		local f = ns.Crates.SnapshotFavor()
+		local v = f.vendors[1]
+		eq(v.npc, 248201, where)
+		for _, it in ipairs(v.items) do
+			eq(it.name, NAMES[it.id], where .. ": snapshot " .. it.id)
+		end
+		return v
+	end
+	-- First visit: names not loaded yet for two items, MERCHANT_UPDATE brings them in another order.
+	stub.mf = { row(252777), row(252778, false), row(252805, false), row(252806) }
+	open(stub, 248201, "Pawani")
+	eq(ns.db.merchants[248201].items[252805].name, nil, "a name not loaded yet is missing, not borrowed")
+	stub.mf = { row(252805), row(252777), row(252806), row(252778) }
+	stub.Fire("MERCHANT_UPDATE")
+	eq(#check("late names").items, 4)
+	-- Re-visit with a shorter list in another order, one name not loaded: the old name stays with its ID.
+	stub.mf = { row(252806), row(252805, false), row(252778) }
+	open(stub, 248201, "Pawani")
+	eq(#check("shorter").items, 3, "an unfiltered list drops what it no longer shows")
+	-- A filtered view (one item at index 1) keeps the others with their own names.
+	stub.filter = 1
+	stub.mf = { row(252778) }
+	open(stub, 248201, "Pawani")
+	eq(#check("filtered").items, 3)
+end)

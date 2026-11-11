@@ -191,8 +191,13 @@ func TestSnapshot(t *testing.T) {
 		i64(e.Items[0].DurMax) != 40 || len(e.Empty) != 17 {
 		t.Fatalf("equipment %+v", e)
 	}
-	if p := s.Professions; len(p) != 1 || p[0].Name != "Leatherworking" || i64(p[0].Line) != 165 || i64(p[0].RecipesKnown) != 1 {
+	if p := s.Professions; len(p) != 1 || p[0].Name != "Leatherworking" || i64(p[0].Line) != 165 || i64(p[0].RecipesKnown) != 1 ||
+		p[0].Known != "1" {
 		t.Fatalf("professions %+v", p)
+	}
+	if r := s.RecipesLearned; len(r) != 1 || r[0].ID != 1 || r[0].Name != "Test Armor Kit" || r[0].Profession != "Leatherworking" ||
+		r[0].How != "event" || r[0].T == nil || r[0].After != nil {
+		t.Fatalf("recipesLearned %+v", r)
 	}
 	q := s.Quests
 	if len(q.List) != 2 || q.List[0].Objectives[0].Text != "Test Hides: 2/6" || i64(q.List[0].Objectives[0].Need) != 6 ||

@@ -204,6 +204,8 @@ it("builds every section from the client", function()
 	local p = snap.professions[1]
 	eq(p.name, "Leatherworking"); eq(p.kind, "primary"); eq(p.skill, 125); eq(p.max, 150); eq(p.recipesKnown, 1)
 	eq(p.scanned ~= nil, true)
+	eq(p.known, "1", "unlearned recipes are not listed (#107)")
+	eq(#snap.recipesLearned, 0)
 	local q = snap.quests
 	eq(q.inLog, 3); eq(q.read, 2); eq(q.collapsedHeaders[1], "Durotar"); eq(q.hidden, 0)
 	eq(q.list[1].id, 845); eq(q.list[1].zone, "The Barrens"); eq(q.list[1].level, 14); eq(q.list[1].complete, false)
@@ -295,6 +297,26 @@ it("reads without changing quest log or reputation UI state", function()
 	SmallCharacter(ns, stub)
 	ns.Snapshot.Build()
 	eq(stub.uiChanges, 0)
+end)
+
+it("#107: known recipe IDs with names, and recipes learned recently with time, newest first", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	time = function() return NOW + 60 end
+	stub.Fire("NEW_RECIPE_LEARNED", 2) -- "Not Yet", cached unlearned
+	time = function() return NOW + 120 end
+	stub.profession.recipes[2].info.learned = true -- the client lists it learned from now on
+	stub.profession.recipes[3] = { info = { name = "Brand New Kit", learned = true } }
+	stub.Fire("TRADE_SKILL_LIST_UPDATE")
+	ns.charDB.professions[165].recipes[1255102] = { learned = true } -- learned, name not cached
+	local snap = ns.Snapshot.Build()
+	local p = snap.professions[1]
+	eq(p.recipesKnown, 4); eq(p.known, "1,2,3,1255102", "ascending IDs")
+	local r = snap.recipesLearned
+	eq(#r, 2)
+	eq(r[1].id, 3); eq(r[1].name, "Brand New Kit"); eq(r[1].profession, "Leatherworking"); eq(r[1].how, "scan")
+	eq(r[1].t, NOW + 120); eq(r[1].after ~= nil, true)
+	eq(r[2].id, 2); eq(r[2].name, "Not Yet"); eq(r[2].how, "event"); eq(r[2].t, NOW + 60); eq(r[2].after, nil)
 end)
 
 it("professions: refreshed cap after Expert, Fishing without a window (#65)", function()
@@ -525,6 +547,22 @@ it("a full character stays small and holds nothing about other players", functio
 	ns.db.merchants[248201] = { name = "Pawani", zone = "The Barrens", map = 1413, x = 49.6, y = 29.6, t = NOW,
 		faction = { id = 2587, name = "Durotar Supply and Logistics" }, standing = 4, items = favorItems }
 	C_CurrencyInfo = { GetCurrencyInfo = function() return { name = "Merchant's Favor", quantity = 45, maxQuantity = 0, totalEarned = 120 } end }
+	-- Known recipes (#107): every recipe of the two largest crafts in the bundled client data known
+	-- (Leatherworking 495, Blacksmithing 432), all of Cooking (129) and First Aid (31), with real-sized
+	-- recipe IDs; and a full learned log.
+	for _, pr in ipairs({ { 164, "Blacksmithing", 432 }, { 165, "Leatherworking", 495 }, { 185, "Cooking", 129 }, { 129, "First Aid", 31 } }) do
+		local recipes = {}
+		for i = 1, pr[3] do
+			recipes[1255000 + pr[1] * 1000 + i] = { name = "Some Long Recipe Name of the Monkey " .. i, learned = true }
+		end
+		for i = 1, 100 do
+			recipes[1355000 + pr[1] * 1000 + i] = { name = "Unlearned " .. i, learned = false }
+		end
+		ns.charDB.professions[pr[1]] = { name = pr[2], skill = 300, maxSkill = 300, scannedAt = NOW, recipes = recipes }
+	end
+	for i = 1, ns.LEARNED_MAX do
+		ns.NoteLearned(1255000 + 165 * 1000 + i, "scan", NOW, NOW - 3600, 165)
+	end
 	stub.Fire("PLAYER_LOGOUT")
 	local snap = CraftWiseDB.snapshots["Forever-EU-Veli"]
 	eq(snap.errors, nil); eq(snap.skipped, nil)
@@ -540,6 +578,9 @@ it("a full character stays small and holds nothing about other players", functio
 	assert(#fishText < 5 * 1024, "fishing section too large: " .. #fishText)
 	local crateText = table.concat(Serialize({ crates = snap.crates, favor = snap.favor }, "\t\t\t"))
 	print(("       of which crates and favor (#91): %d bytes"):format(#crateText))
+	local recipeText = table.concat(Serialize({ professions = snap.professions, recipesLearned = snap.recipesLearned }, "\t\t\t"))
+	print(("       of which professions and recipes learned (#107): %d bytes"):format(#recipeText))
+	eq(#snap.recipesLearned, ns.LEARNED_MAX)
 	assert(#text < 128 * 1024, "snapshot too large: " .. #text)
 	eq(text:find("Someone Else", 1, true), nil)
 end)

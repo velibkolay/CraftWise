@@ -12,22 +12,24 @@ type Snapshot struct {
 	Skipped map[string]string `json:"skipped,omitempty"`
 	Errors  map[string]string `json:"errors,omitempty"`
 
-	Char         *Character        `json:"char,omitempty"`
-	Location     *Location         `json:"location,omitempty"`
-	Equipment    *Equipment        `json:"equipment,omitempty"`
-	Professions  []Profession      `json:"professions,omitempty"`
-	Quests       *Quests           `json:"quests,omitempty"`
-	Reputations  *Reputations      `json:"reputations,omitempty"`
-	Pet          *Pet              `json:"pet,omitempty"`
-	Holdings     *Holdings         `json:"holdings,omitempty"`
-	Ledger       map[string]Totals `json:"ledger,omitempty"` // "today", "reset"
-	FlightPaths  *FlightPaths      `json:"flightPaths,omitempty"`
-	Fishing      *FishingSummary   `json:"fishing,omitempty"`
-	FishingZones *FishingZones     `json:"fishingZones,omitempty"`
-	Auctions     *AuctionSummary   `json:"auctions,omitempty"`
-	Market       *MarketSummary    `json:"market,omitempty"`
-	Crates       *Crates           `json:"crates,omitempty"`
-	Favor        *Favor            `json:"favor,omitempty"`
+	Char        *Character   `json:"char,omitempty"`
+	Location    *Location    `json:"location,omitempty"`
+	Equipment   *Equipment   `json:"equipment,omitempty"`
+	Professions []Profession `json:"professions,omitempty"`
+	// RecipesLearned is the recently learned recipes, newest first (#107).
+	RecipesLearned []LearnedRecipe   `json:"recipesLearned,omitempty"`
+	Quests         *Quests           `json:"quests,omitempty"`
+	Reputations    *Reputations      `json:"reputations,omitempty"`
+	Pet            *Pet              `json:"pet,omitempty"`
+	Holdings       *Holdings         `json:"holdings,omitempty"`
+	Ledger         map[string]Totals `json:"ledger,omitempty"` // "today", "reset"
+	FlightPaths    *FlightPaths      `json:"flightPaths,omitempty"`
+	Fishing        *FishingSummary   `json:"fishing,omitempty"`
+	FishingZones   *FishingZones     `json:"fishingZones,omitempty"`
+	Auctions       *AuctionSummary   `json:"auctions,omitempty"`
+	Market         *MarketSummary    `json:"market,omitempty"`
+	Crates         *Crates           `json:"crates,omitempty"`
+	Favor          *Favor            `json:"favor,omitempty"`
 
 	Raw *svparse.Table `json:"-" lua:"-"`
 }
@@ -84,6 +86,19 @@ type Profession struct {
 	RecipesKnown *int64 `json:"recipesKnown,omitempty"`
 	Scanned      *int64 `json:"scanned,omitempty"`
 	Cached       *bool  `json:"cached,omitempty"`
+	// Known is the learned recipe IDs, ascending, as "id,id,..." (#107).
+	Known string `json:"known,omitempty"`
+}
+
+// LearnedRecipe is one recently learned recipe (#107). How "event": learned at T; how "scan": learned
+// between After and T.
+type LearnedRecipe struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name,omitempty"`
+	Profession string `json:"profession,omitempty"`
+	T          *int64 `json:"t,omitempty"`
+	How        string `json:"how,omitempty"`
+	After      *int64 `json:"after,omitempty"`
 }
 
 type Quests struct {

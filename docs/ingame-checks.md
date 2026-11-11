@@ -477,3 +477,10 @@ Not part of the addon: build `companion/` (see `docs/companion.md`), create an u
 - [ ] Explorer restart (Task Manager > Windows Explorer > Restart): the icon comes back.
 - [ ] Quit from the menu removes the icon; no process left in Task Manager.
 - [ ] macOS (MacBook): `./craftwise-companion-macos -once` uploads from `/Applications/World of Warcraft/_forever_`; without `-once` it keeps running in the terminal and uploads after `/reload`.
+
+## Recently learned recipes and known recipe IDs (#107)
+`/reload` is enough (no new file, no TOC change).
+- [ ] Learn a recipe from a pattern (e.g. a Pawani pattern) with the profession window closed: `/dump CraftWiseCharDB.learned` ends with `{ id = <recipe>, how = "event", t = <now>, line = 165 }`. If the entry is missing, Forever doesn't fire `NEW_RECIPE_LEARNED` for patterns: open the profession window, the next scan adds it with `how = "scan"` and `after` = the previous scan's time. Report which of the two happened.
+- [ ] Same at a trainer: buy a recipe, check `CraftWiseCharDB.learned` the same way and report `how`.
+- [ ] The profit window shows the newly learned recipe as learned right away (before opening the profession window).
+- [ ] `/craftwise snapshot`, `/reload`: in `snapshots[...]`, each scanned profession has `known` (ascending recipe IDs, comma-separated; the count equals `recipesKnown`), and `recipesLearned` lists the recipe with name, profession and time.
