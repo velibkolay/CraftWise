@@ -96,6 +96,8 @@ local DB_DEFAULTS = {
 	fishObjects = {}, -- [GameObject ID] = { name, t }: names the client gave for fishing loot sources (#86)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
+	-- What was just looted, on screen (LootToast.lua, #114): seconds fully shown, then fade; pos = anchor.
+	lootToast = { enabled = true, duration = 4, fade = 1, value = true, locked = true },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
 	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true } },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
@@ -467,6 +469,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local whereArg = msg:match("^where%s*(.*)$")
 	if whereArg and ns.Merchant then
 		ns.Merchant.Slash(whereArg)
+		return
+	end
+	local toastArg = msg:match("^loottoast%s*(.*)$")
+	if toastArg and ns.LootToast then
+		ns.LootToast.Slash(toastArg)
 		return
 	end
 	local ledgerArg = msg:match("^ledger%s*(.*)$")
