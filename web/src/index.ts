@@ -76,13 +76,10 @@ async function route(request: Request, env: Env): Promise<Response> {
 	const path = url.pathname;
 	const now = nowSeconds();
 
-	// The private page itself: served only with a valid Access login.
+	// The private page itself (#98): served only with a valid Access login.
 	if (path === "/me" || path.startsWith("/me/")) {
 		await verifyAccess(request, env, now);
-		const res = await env.ASSETS.fetch(request);
-		const out = new Response(res.body, res);
-		out.headers.set("cache-control", "private, no-store");
-		return out;
+		return mePage(request, env, url);
 	}
 	if (path === "/api/me" || path.startsWith("/api/me/")) return privateApi(request, env, url, now);
 
@@ -112,6 +109,18 @@ async function itemPage(request: Request, env: Env, url: URL): Promise<Response>
 	const res = await env.ASSETS.fetch(new Request(new URL(ok ? "/item" : "/404", url), request));
 	const out = new Response(res.body, { status: ok ? res.status : 404, headers: res.headers });
 	for (const [k, v] of Object.entries(PAGE_HEADERS)) out.headers.set(k, v);
+	return out;
+}
+
+// The private page: public/me/index.html for /me, /me/ and /me/index.html; the not-found page
+// for anything else under /me/. Its data comes from /api/me/*, which checks Access on its own.
+async function mePage(request: Request, env: Env, url: URL): Promise<Response> {
+	if (request.method !== "GET" && request.method !== "HEAD") methodNotAllowed("GET");
+	const ok = url.pathname === "/me" || url.pathname === "/me/" || url.pathname === "/me/index.html";
+	const res = await env.ASSETS.fetch(new Request(new URL(ok ? "/me/" : "/404", url), request));
+	const out = new Response(res.body, { status: ok ? res.status : 404, headers: res.headers });
+	for (const [k, v] of Object.entries(PAGE_HEADERS)) out.headers.set(k, v);
+	out.headers.set("cache-control", "private, no-store");
 	return out;
 }
 

@@ -60,20 +60,17 @@ Worker `craftwise-web` > **Settings > Variables and Secrets > Add**:
 ## 6. Check
 - `https://wow.velikopter.com/` shows the price list (empty until the first upload);
   `https://wow.velikopter.com/api/houses` answers `{"houses":[]}` before the first upload.
-- `https://wow.velikopter.com/me` asks for the One-time PIN, then shows the private placeholder.
+- `https://wow.velikopter.com/me` asks for the One-time PIN, then shows the private page (My Characters).
 - `https://wow.velikopter.com/api/me` (after the PIN) shows your e-mail.
 - `https://wow.velikopter.com/api/upload` without a token answers 401.
 
 ## 7. Upload token for the companion
-Until the private page (#98) has a button: open `https://wow.velikopter.com/me`, press F12 >
-Console and run
+Open `https://wow.velikopter.com/me`, panel **Upload Tokens** (on a phone: the **Tokens** tab). Type a
+name (e.g. `Companion PC`) and press **New Token**. The token (`cw_...`) is shown once in the gold
+popup: press **Copy** and put it into the companion app (#94), then **Done**. **Revoke** next to a
+token stops it at once (after a confirm step under its row).
 
-```js
-fetch("/api/me/tokens", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Companion PC" }) }).then((r) => r.json()).then(console.log)
-```
-
-The answer holds `token` (`cw_...`); it is shown only once. Put it into the companion app (#94).
-`GET /api/me/tokens` lists tokens, `DELETE /api/me/tokens/<id>` revokes one.
+`GET /api/me/tokens` lists tokens, `DELETE /api/me/tokens/<id>` revokes one (see `web/docs/api.md`).
 
 ## 8. Read access for Claude (optional)
 A service token lets Claude read `/api/me/*` without the One-time PIN. The Worker lets a service

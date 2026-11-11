@@ -108,6 +108,8 @@
 	--fall: #3fe04f;
 	--spark: #e9c65a;
 	--spark-under: rgba(0, 0, 0, 0.8);
+	--money-in: #3fe04f;
+	--money-out: #ff5a45;
 
 	--radius: 4px;
 	--row: 34px;
@@ -177,6 +179,8 @@
 	--fall: #1d7348;
 	--spark: #4a4740;
 	--spark-under: transparent;
+	--money-in: #1d7348;
+	--money-out: #b3261e;
 
 	--radius: 2px;
 	--row: 44px;
