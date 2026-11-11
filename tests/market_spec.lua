@@ -852,6 +852,62 @@ it("logout packs every entry; a saved file with tables and strings both loads", 
 	eq(M2.Current(6, HORDE).min, 7)
 end)
 
+-- #105: the snapshot (Snapshot.lua, loaded after Market.lua) values the fishing log at logout, which
+-- reads market prices and unpacks those entries; packing must come after it.
+it("#105: after the full logout sequence every market entry is a string", function()
+	local M, stub, ns = Market()
+	stub.names.player = "Veli"
+	stub.Fire("PLAYER_LOGIN")
+	stub.Fire("PLAYER_ENTERING_WORLD", true, false)
+	stub.items[5] = { name = "Test Fish" }
+	stub.items[6] = { name = "Test Oil" }
+	InScope({ 5, 6 })
+	OpenAH(stub)
+	CommoditySearch(stub, 5, { { unitPrice = 400, quantity = 3 } }, 3)
+	CommoditySearch(stub, 6, { { unitPrice = 90, quantity = 2 } }, 2)
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	ns.db.fishing[ns.CharKey()] = { opened = {}, seen = {}, catches = {
+		{ t = NOW - 120, zone = "Test Zone", sub = "", items = { [5] = 1 } },
+		{ t = NOW - 60, zone = "Test Zone", sub = "", items = { [5] = 1, [6] = 1 } },
+	} }
+	stub.Fire("PLAYER_LOGOUT")
+	local snap = CraftWiseDB.snapshots[ns.CharKey()]
+	assert(snap and snap.fishing, "snapshot with fishing written at logout")
+	local n = 0
+	for itemKey, perItem in pairs(CraftWiseMarketDB.items) do
+		for house, entry in pairs(perItem) do
+			n = n + 1
+			eq(type(entry), "string", "entry " .. tostring(itemKey) .. " at " .. house)
+		end
+	end
+	eq(n, 2)
+	eq(M.Current(5, HORDE).min, 400)
+end)
+
+it("#105: OnLast handlers run after later ns.On handlers, also when one of those raises", function()
+	local _, stub, ns = Market()
+	local order = {}
+	ns.OnLast("PLAYER_LOGOUT", function() order[#order + 1] = "last" end)
+	ns.On("PLAYER_LOGOUT", function() order[#order + 1] = "later" end)
+	stub.Fire("PLAYER_LOGOUT")
+	eq(table.concat(order, ","), "later,last")
+
+	order = {}
+	CraftWiseMarketDB.items[7] = { [HORDE] = { last = { t = NOW, min = 7, qty = 1 }, raw = {}, days = {} } }
+	ns.On("PLAYER_LOGOUT", function() error("boom") end)
+	local ok, err = pcall(stub.Fire, "PLAYER_LOGOUT")
+	eq(ok, false)
+	assert(tostring(err):find("boom", 1, true), tostring(err))
+	eq(table.concat(order, ","), "later,last")
+	eq(type(CraftWiseMarketDB.items[7][HORDE]), "string", "packed despite the error")
+
+	-- Events without OnLast handlers raise as before, straight from the handler.
+	ns.On("BAG_UPDATE_DELAYED", function() error("bags") end)
+	ok, err = pcall(stub.Fire, "BAG_UPDATE_DELAYED")
+	eq(ok, false)
+	assert(tostring(err):find("bags", 1, true), tostring(err))
+end)
+
 it("storage round trip keeps every field, nil and zero included", function()
 	local M = Market()
 	local today = math.floor(NOW / DAY)

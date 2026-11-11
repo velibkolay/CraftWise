@@ -74,7 +74,7 @@ local function collect()
 				calls[name] = calls[name] or path
 			end
 		end
-		for name in src:gmatch("ns%.On%(%s*\"([%u_]+)\"") do events[name] = path end
+		for name in src:gmatch("ns%.On%a*%(%s*\"([%u_]+)\"") do events[name] = path end -- ns.On, ns.OnLast
 		for list in src:gmatch("ipairs%(%s*{([^}]*)}%s*%)%s*do%s*ns%.On") do
 			for name in list:gmatch("\"([%u_]+)\"") do events[name] = path end
 		end

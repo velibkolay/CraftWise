@@ -458,18 +458,7 @@ CraftWiseMarketDB = {
 ["Stub Realm|H"] = "tnzxxc,bko,2,1,to1vgo||",
 },
 [9008] = {
-["Stub Realm|H"] = {
-["days"] = {
-},
-["last"] = {
-["min"] = 345,
-["off"] = 1793917320,
-["qty"] = 7,
-["t"] = 1793827320,
-},
-["raw"] = {
-},
-},
+["Stub Realm|H"] = "tnzy0o,9l,7,,to1vgo||",
 },
 ["9005:1234"] = {
 ["Stub Realm|H"] = "to1vgo,21aw,1,1,to3rio||",

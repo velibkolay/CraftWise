@@ -460,3 +460,8 @@ New file `Crates.lua` in the TOC: **full game restart** needed (not `/reload`). 
 - [ ] An item searched or browsed only (no full scan) has an entry after closing the AH.
 - [ ] A Waylaid Crate or an item you never saw before the scan: present after the scan or after the next login (the client loads it on request).
 - [ ] With a non-English client (if available): `names` are in that language; `itemInfo` is the same numbers.
+
+## Market entries packed at logout (#105)
+`/reload` is enough (no new file, no TOC change).
+- [ ] Have a fishing log with catches that have an AH price at the profit house (the snapshot values them at logout), then `/reload`. In `CraftWise.lua` (copy it with the game closed) every value under `CraftWiseMarketDB.items[<id>]["<realm>|H"]` is a string; report any `{ ["days"] = ..., ["last"] = ..., ["raw"] = ... }` table.
+- [ ] Logout and `/reload` take no longer than before, and BugSack shows no CraftWise error at logout.
