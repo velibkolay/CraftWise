@@ -66,6 +66,35 @@ function itemOut(i: ItemRow) {
 	return { id: i.id, name: i.name, quality: i.quality, icon: i.icon, class: i.class, subclass: i.subclass };
 }
 
+// Random-suffix variants packed per item (#118, migrations/0002_variants.sql) as price rows.
+interface VariantRow {
+	house: number;
+	item: number;
+	data: string;
+}
+function variantPrices(rows: VariantRow[]): PriceRow[] {
+	const out: PriceRow[] = [];
+	for (const r of rows) {
+		for (const [s, v] of Object.entries(JSON.parse(r.data) as Record<string, (number | null)[]>)) {
+			out.push({ house: r.house, item: r.item, suffix: Number(s), t: v[0]!, min: v[1]!, qty: v[2]!, listings: v[3] ?? null, off: v[4] ?? null, depth_t: null, depth_total: null, depth: null });
+		}
+	}
+	return out;
+}
+
+// `prices` rows plus packed variants: per house, item and suffix the newer `t` is the current
+// price; a depth stored in `prices` stays. Sorted by house, item, suffix.
+function mergePrices(rows: PriceRow[], variants: PriceRow[]): PriceRow[] {
+	const byKey = new Map(rows.map((r) => [`${r.house}:${r.item}:${r.suffix}`, r]));
+	for (const v of variants) {
+		const key = `${v.house}:${v.item}:${v.suffix}`;
+		const p = byKey.get(key);
+		if (!p) byKey.set(key, v);
+		else if (v.t > p.t) byKey.set(key, { ...p, t: v.t, min: v.min, qty: v.qty, listings: v.listings, off: v.off });
+	}
+	return [...byKey.values()].sort((a, b) => a.house - b.house || a.item - b.item || a.suffix - b.suffix);
+}
+
 function currentOut(p: PriceRow) {
 	return { t: p.t, min: p.min, qty: p.qty, listings: p.listings, off: p.off, listed: listed(p) };
 }
@@ -111,16 +140,18 @@ export async function search(env: Env, url: URL): Promise<Response> {
 	const items = await findItems(env, q, limit);
 	const hs = await allHouses(env);
 	const byId = new Map(hs.map((h) => [h.id, h]));
-	const prices = items.length
-		? (
-				await env.DB.prepare(
-					`SELECT house, item, suffix, t, min, qty, listings, off, depth_t, depth_total FROM prices
-					WHERE house IN (SELECT id FROM houses) AND item IN (SELECT value FROM json_each(?1))`,
-				)
-					.bind(JSON.stringify(items.map((i) => i.id)))
-					.all<PriceRow>()
-			).results
-		: [];
+	let prices: PriceRow[] = [];
+	if (items.length) {
+		const ids = JSON.stringify(items.map((i) => i.id));
+		const [rows, variants] = await env.DB.batch([
+			env.DB.prepare(
+				`SELECT house, item, suffix, t, min, qty, listings, off, depth_t, depth_total FROM prices
+				WHERE house IN (SELECT id FROM houses) AND item IN (SELECT value FROM json_each(?1))`,
+			).bind(ids),
+			env.DB.prepare("SELECT house, item, data FROM variants WHERE house IN (SELECT id FROM houses) AND item IN (SELECT value FROM json_each(?1))").bind(ids),
+		]);
+		prices = mergePrices(rows!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[]));
+	}
 	return json(
 		{
 			query: q,
@@ -160,12 +191,37 @@ interface PointRow {
 	tiers: string;
 }
 
+interface VariantDayRow {
+	house: number;
+	day: number;
+	data: string;
+}
+
+// `daily` rows plus packed variant days (src 0): a CraftWise aggregate (src 1) wins the day, two
+// rows built from `last` are combined (lowest lo, highest hi, most units and listings). By day.
+function mergeDays(rows: DailyRow[], variantDays: VariantDayRow[]): DailyRow[] {
+	const byKey = new Map(rows.map((r) => [`${r.house}:${r.suffix}:${r.day}`, r]));
+	const most = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b));
+	for (const r of variantDays) {
+		for (const [s, v] of Object.entries(JSON.parse(r.data) as Record<string, (number | null)[]>)) {
+			const d: DailyRow = { house: r.house, suffix: Number(s), day: r.day, src: 0, lo: v[0]!, typ: null, hi: v[1]!, qty_max: v[2]!, list_max: v[3] ?? null, n: null, gone: null };
+			const key = `${d.house}:${d.suffix}:${d.day}`;
+			const o = byKey.get(key);
+			if (!o) byKey.set(key, d);
+			else if (o.src === 0) {
+				byKey.set(key, { ...o, lo: Math.min(o.lo ?? d.lo!, d.lo!), hi: Math.max(o.hi ?? d.hi!, d.hi!), qty_max: most(o.qty_max, d.qty_max), list_max: most(o.list_max, d.list_max) });
+			}
+		}
+	}
+	return [...byKey.values()].sort((a, b) => a.day - b.day);
+}
+
 export async function itemDetail(env: Env, url: URL, id: number, now: number): Promise<Response> {
 	const days = intParam(url, "days", L.HISTORY_DAYS, L.TYPICAL_DAYS, L.HISTORY_DAYS_MAX);
 	const hours = intParam(url, "hours", L.RAW_HOURS, 0, L.RAW_HOURS_MAX);
 	const today = dayNumber(now);
 	const db = env.DB;
-	const [item, prices, daily, points] = await db.batch([
+	const [item, prices, daily, points, variants, variantDays] = await db.batch([
 		db.prepare("SELECT * FROM items WHERE id = ?1").bind(id),
 		db.prepare("SELECT * FROM prices WHERE house IN (SELECT id FROM houses) AND item = ?1").bind(id),
 		db.prepare(
@@ -176,10 +232,12 @@ export async function itemDetail(env: Env, url: URL, id: number, now: number): P
 			`SELECT house, suffix, t, total, listings, m, tiers FROM points
 			WHERE house IN (SELECT id FROM houses) AND item = ?1 AND t >= ?2 ORDER BY t`,
 		).bind(id, now - hours * 3600),
+		db.prepare("SELECT house, item, data FROM variants WHERE house IN (SELECT id FROM houses) AND item = ?1").bind(id),
+		db.prepare("SELECT house, day, data FROM variant_days WHERE house IN (SELECT id FROM houses) AND item = ?1 AND day > ?2").bind(id, today - days),
 	]);
 	const info = (item!.results as unknown as ItemRow[])[0] ?? null;
-	const priceRows = prices!.results as unknown as PriceRow[];
-	const dailyRows = daily!.results as unknown as DailyRow[];
+	const priceRows = mergePrices(prices!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[]));
+	const dailyRows = mergeDays(daily!.results as unknown as DailyRow[], variantDays!.results as unknown as VariantDayRow[]);
 	const pointRows = points!.results as unknown as PointRow[];
 	if (!info && !priceRows.length && !dailyRows.length) {
 		throw new HttpError(404, "not_found", `no data for item ${id}`);
