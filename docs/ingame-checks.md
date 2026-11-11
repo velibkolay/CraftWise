@@ -396,6 +396,7 @@ New file `Auctions.lua` in the TOC: **full game restart** needed (not `/reload`)
 - [ ] Take a returned item from an "Auction expired: X" mail and from an "Auction cancelled: X" mail: the row turns `returned`. If not, report the mail subjects exactly: the patterns come from `AUCTION_EXPIRED_MAIL_SUBJECT` and `AUCTION_REMOVED_MAIL_SUBJECT`, which Blizzard's Forever UI code doesn't use (`/dump AUCTION_EXPIRED_MAIL_SUBJECT`).
 - [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].auctions` has `active`, `sold` with `expectedTotal`, `returning`, `uncertain`, matching `/craftwise auctions`.
 - [ ] Nothing in `CraftWiseMarketDB.auctions` names a buyer.
+- [ ] #116: with auctions listed at the Horde AH, `/craftwise auctions` prints "if all listed sell: ... after 5% cut (confirmed)" right after "on its way"; the amount is the sum of the Auctions tab's buyouts minus 5% each. A bid-only listing shows as "not counted: 1 without buyout", one at Booty Bay as "1 with cut unverified". The snapshot has the same numbers in `listedTotal`, `listedNoBuyout`, `listedUnknownCut`.
 
 ## Trainer recipes and vendor floor (#83)
 No new files: `/reload` is enough.

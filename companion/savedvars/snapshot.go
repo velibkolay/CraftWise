@@ -267,14 +267,20 @@ type FishingZone struct {
 
 // AuctionSummary is the snapshot's auction tracker section (#81).
 type AuctionSummary struct {
-	Active          []AuctionRow `json:"active"`
-	Sold            []AuctionRow `json:"sold"`
-	Returning       []AuctionRow `json:"returning"`
-	Uncertain       []AuctionRow `json:"uncertain"`
-	ExpectedTotal   *int64       `json:"expectedTotal,omitempty"`
-	ExpectedMissing *int64       `json:"expectedMissing,omitempty"`
-	OwnedListAt     *int64       `json:"ownedListAt,omitempty"`
-	OwnedListHouse  string       `json:"ownedListHouse,omitempty"`
+	Active           []AuctionRow `json:"active"`
+	Sold             []AuctionRow `json:"sold"`
+	Returning        []AuctionRow `json:"returning"`
+	Uncertain        []AuctionRow `json:"uncertain"`
+	ExpectedTotal    *int64       `json:"expectedTotal,omitempty"`
+	ExpectedMissing  *int64       `json:"expectedMissing,omitempty"`
+	ListedTotal      *int64       `json:"listedTotal,omitempty"`
+	ListedCounted    *int64       `json:"listedCounted,omitempty"`
+	ListedNote       string       `json:"listedNote,omitempty"`
+	ListedNoBuyout   *int64       `json:"listedNoBuyout,omitempty"`
+	ListedUnknownCut *int64       `json:"listedUnknownCut,omitempty"`
+	ListedUnpriced   *int64       `json:"listedUnpriced,omitempty"`
+	OwnedListAt      *int64       `json:"ownedListAt,omitempty"`
+	OwnedListHouse   string       `json:"ownedListHouse,omitempty"`
 }
 
 type AuctionRow struct {

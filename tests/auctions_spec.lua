@@ -463,6 +463,69 @@ it("snapshot section and /craftwise auctions: listed, sold with expected total, 
 	assert(out:find("expected unknown: bid and buyout: sale price unknown", 1, true), out)
 end)
 
+-- Issue #116: what the listed auctions pay if they all sell at their buyout, after the cut.
+it("listed total: buyout x units after the confirmed cut, bid and buyout counted at the buyout", function()
+	local ns, stub = Load()
+	AtHouse(stub)
+	Post(stub, LEATHER, 20, 150) -- 3000 - 150 = 2850
+	local p = Post(stub, PANTS, 1, 9000, { item = true, bid = 5000 }) -- at its buyout: 9000 - 450 = 8550
+	local payout, note, price = ns.Auctions.IfSold(Find(ns, function(r) return r.id == p end))
+	eq(payout, 8550); eq(note, "5% cut (confirmed)"); eq(price, 9000)
+	local s = ns.Auctions.Summary()
+	eq(s.listedTotal, 2850 + 8550); eq(s.listedCounted, 2); eq(s.listedNote, "5% cut (confirmed)")
+	eq(s.listedNoBuyout, 0); eq(s.listedUnknownCut, 0); eq(s.listedUnpriced, 0)
+	-- A sold auction is no longer listed: it moves to the expected total.
+	Sold(stub, "Rugged Leather Pants", p)
+	s = ns.Auctions.Summary()
+	eq(s.listedTotal, 2850); eq(s.listedCounted, 1); eq(s.expectedTotal, 0, "bid and buyout sold: price unknown")
+	local out = Printed(function() SlashCmdList.CRAFTWISE("auctions") end)
+	local line = out:match("  if all listed sell: [^\n]*")
+	assert(line and line:find(" after 5% cut (confirmed)", 1, true) and not line:find("not counted", 1, true), out)
+	assert(out:find("on its way: [^\n]*\n[^\n]*  if all listed sell: "), "printed right after on its way:\n" .. out)
+end)
+
+it("listed total: no buyout and unverified cut are counted apart, never guessed", function()
+	local ns, stub = Load()
+	AtHouse(stub)
+	Post(stub, PANTS, 1, 9000, { item = true })
+	Post(stub, CLOAK, 1, nil, { item = true, bid = 5000 }) -- bid only
+	AtHouse(stub, "Booty Bay")
+	local b = Post(stub, PANTS, 1, 8000, { item = true })
+	local payout, note, price = ns.Auctions.IfSold(Find(ns, function(r) return r.id == b end))
+	eq(payout, nil); eq(note, "cut unverified"); eq(price, 8000)
+	-- Listed before tracking: the owned list's price may be per unit or per stack, so it isn't used.
+	stub.owned = {
+		{ auctionID = 950, itemKey = { itemID = HIDE }, quantity = 5, status = 0, buyoutAmount = 1500, timeLeftSeconds = 3600 },
+		{ auctionID = 951, itemKey = { itemID = CLOAK }, quantity = 1, status = 0, bidAmount = 4000, timeLeftSeconds = 3600 },
+	}
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(select(2, ns.Auctions.IfSold(Find(ns, function(r) return r.id == 950 end))), "price not recorded")
+	eq(select(2, ns.Auctions.IfSold(Find(ns, function(r) return r.id == 951 end))), "no buyout")
+	stub.Fire("PLAYER_LOGOUT")
+	local s = CraftWiseDB.snapshots["PvP-Veli Tanner"].auctions
+	eq(#s.active, 5)
+	eq(s.listedTotal, 8550); eq(s.listedCounted, 1); eq(s.listedNote, "5% cut (confirmed)")
+	eq(s.listedNoBuyout, 2); eq(s.listedUnknownCut, 1); eq(s.listedUnpriced, 1)
+	local out = Printed(function() SlashCmdList.CRAFTWISE("auctions") end)
+	assert(out:find(" after 5% cut (confirmed) (not counted: 2 without buyout, 1 with cut unverified, 1 with price not recorded)", 1, true), out)
+end)
+
+it("listed total: unknown when nothing listed can be counted; no line without listings", function()
+	local ns, stub = Load()
+	AtHouse(stub, "Booty Bay")
+	Post(stub, PANTS, 1, 8000, { item = true })
+	local s = ns.Auctions.Summary()
+	eq(s.listedTotal, 0); eq(s.listedCounted, 0); eq(s.listedNote, nil); eq(s.listedUnknownCut, 1)
+	local out = Printed(function() SlashCmdList.CRAFTWISE("auctions") end)
+	assert(out:find("  if all listed sell: unknown (not counted: 1 with cut unverified)", 1, true), out)
+	stub.surnames.player = "Smith"
+	AtHouse(stub)
+	Post(stub, LEATHER, 5, 150)
+	stub.Fire("AUCTION_CANCELED", Recs(ns)[1].id)
+	out = Printed(function() SlashCmdList.CRAFTWISE("auctions") end)
+	assert(not out:find("if all listed sell", 1, true), out)
+end)
+
 it("a character without auctions has an empty section; prune drops finished records after 30 days", function()
 	local ns, stub = Load()
 	stub.Fire("PLAYER_LOGOUT")

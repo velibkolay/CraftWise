@@ -175,13 +175,15 @@ Fishing zones by value per catch (#88), the same ranking as the Fishing tab: `{ 
 | zone `perHour` | Own catches per hour in this zone (timed catches, see `fishing`) x `perCatch`. Missing without own timed catches there. |
 
 ### `auctions`
-Auction tracker (#81), this character: `{ active, sold, returning, uncertain, expectedTotal, expectedMissing, ownedListAt, ownedListHouse }`. Each list holds rows (fields below). Money is copper.
+Auction tracker (#81), this character: `{ active, sold, returning, uncertain, expectedTotal, expectedMissing, listedTotal, listedCounted, listedNote, listedNoBuyout, listedUnknownCut, listedUnpriced, ownedListAt, ownedListHouse }`. Each list holds rows (fields below). Money is copper.
 
 | Field | Meaning |
 |---|---|
 | `active` | Listed auctions. |
 | `sold` | Sold, money not collected from the mailbox yet. |
 | `expectedTotal` | Sum of `expected` over `sold`: gold on its way. Sales without an expected payout are left out and counted in `expectedMissing`. |
+| `listedTotal`, `listedCounted`, `listedNote` | What `active` pays if every listing sells at its buyout (#116): unit buyout x units, minus the house cut as for `expected` (confirmed or measured cut only, rounded per auction), summed over the `listedCounted` listings where both are known. A listing with bid and buyout counts at its buyout. `listedNote` is the cut text when all counted listings share it (`"5% cut (confirmed)"`), else `"each house's cut"`; missing when none is counted. |
+| `listedNoBuyout`, `listedUnknownCut`, `listedUnpriced` | Listings left out of `listedTotal`: bid only, cut unverified at their house (neutral houses), price not recorded (listed before tracking: the owned list's price may be per unit or per stack). |
 | `returning` | Expired or cancelled: the item is on its way back by mail. |
 | `uncertain` | Missing from the owned list before its expiry with no message seen: sold or cancelled, which is unknown. |
 | `ownedListAt`, `ownedListHouse` | When the client's owned-auctions list (AH "Auctions" tab) was last read, and at which house. CraftWise never asks for that list itself. |
