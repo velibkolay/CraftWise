@@ -484,3 +484,17 @@ Not part of the addon: build `companion/` (see `docs/companion.md`), create an u
 - [ ] Same at a trainer: buy a recipe, check `CraftWiseCharDB.learned` the same way and report `how`.
 - [ ] The profit window shows the newly learned recipe as learned right away (before opening the profession window).
 - [ ] `/craftwise snapshot`, `/reload`: in `snapshots[...]`, each scanned profession has `known` (ascending recipe IDs, comma-separated; the count equals `recipesKnown`), and `recipesLearned` lists the recipe with name, profession and time.
+
+## Loot toast (#114)
+Needs a full game restart (new file `LootToast.lua` in the TOC). On by default; Settings, "Loot toast".
+- [ ] Autoloot a mob: one line per item (icon, name in its quality colour, `xN` for stacks) appears at the anchor, stays about 4 s, then fades over 1 s. Same with a hand-opened loot window (Shift + right-click), clicking the items.
+- [ ] A mob with several items and coin: one line per item plus one coin line with the exact amount. Each line fades on its own timer (loot a second mob 2 s later: the first lines go first).
+- [ ] Area loot of several corpses (or two kills of the same mob quickly): the same item adds to its line (`x` count goes up) instead of a second line; coins add to one coin line.
+- [ ] Value text: an item with an AH price (Auctionator or a CraftWise scan) shows `<money> AH`, a vendor-only item `<money> vendor`, both for the whole stack and matching the item tooltip's "Sells for" times the count. An item without any price shows no value. `/craftwise loottoast value off` hides it.
+- [ ] Coin: selling to a vendor, taking money from mail and a quest reward do **not** show a coin line. In a group, "Your share of the loot is ..." shows the coin line with your share. If looted coin never shows, `CHAT_MSG_MONEY` and `PLAYER_MONEY` are more than 2 s apart (or the first never fires) on Forever: report it.
+- [ ] Another player's loot in a group never shows; quest reward items (pushed, "You receive item:") don't either.
+- [ ] Inside a dungeon in combat: if `CHAT_MSG_LOOT` text is a secret value there, lines are skipped without a Lua error. Report whether loot during combat in an instance shows.
+- [ ] `/craftwise loottoast unlock`: a blue bar appears; drag it, `/craftwise loottoast lock` hides the bar. `/craftwise loottoast test` shows up to three bag items and a coin line there. `/reload` (and a relog) keeps the position. `/craftwise loottoast reset` puts it back.
+- [ ] `/craftwise loottoast duration 8`: lines stay 8 s. `duration 0` and `duration 50` are refused with a usage line. `/craftwise loottoast off`: nothing shows on loot; `on` again.
+- [ ] Non-English client (if available): lines still appear (the client's own `LOOT_ITEM_SELF` / `LOOT_ITEM_SELF_MULTIPLE` strings are used).
+- [ ] Fast auto-loot (#41) on and off, and with another loot addon: the toast shows the same either way (it reads what arrived, not who looted).

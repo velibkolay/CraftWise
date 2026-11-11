@@ -32,6 +32,7 @@ Loot.lua
 Fishing.lua
 FishingTables.lua
 FishingZones.lua
+LootToast.lua
 Crafts.lua
 Bags.lua
 Holdings.lua

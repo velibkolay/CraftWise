@@ -27,6 +27,8 @@ function frameMeta.CreateFontString() return widget() end
 function frameMeta.GetStringWidth() return 80 end
 function frameMeta.GetFrameLevel() return 2 end
 function frameMeta.CreateTexture() return widget() end
+function frameMeta.SetPoint(self, ...) self.lastPoint = { ... } end
+function frameMeta.SetAlpha(self, a) self.alpha = a end
 
 stub.frames = {}
 function CreateFrame(_, name)

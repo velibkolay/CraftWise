@@ -156,7 +156,19 @@ local function Build(parent)
 	panel.lootHint:SetPoint("TOPLEFT", 12, lootY - 22)
 	panel.lootHint:SetWidth(292)
 	panel.lootHint:SetJustifyH("LEFT")
-	panel:SetHeight(-lootY + 62)
+	-- Loot toast (LootToast.lua, #114).
+	local toastY = lootY - 52
+	panel.lootToast = Style.Check(panel, L["Loot toast"], ns.LootToast.Enabled(), function(v)
+		ns.LootToast.Slash(v and "on" or "off")
+		panel.render()
+	end)
+	panel.lootToast:SetPoint("TOPLEFT", 12, toastY)
+	panel.toastHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	panel.toastHint:SetPoint("TOPLEFT", 12, toastY - 22)
+	panel.toastHint:SetWidth(292)
+	panel.toastHint:SetJustifyH("LEFT")
+	panel.toastHint:SetText(C.muted .. L["Shows what you loot for a few seconds. Move it: /craftwise loottoast unlock"] .. "|r")
+	panel:SetHeight(-toastY + 62)
 
 	function panel.render()
 		for key, b in pairs(panel.clicks) do
@@ -200,6 +212,7 @@ local function Build(parent)
 			end
 		end
 		panel.fastLoot:SetChecked(ns.Loot.Enabled())
+		panel.lootToast:SetChecked(ns.LootToast.Enabled())
 		local other = ns.Loot.Conflict()
 		panel.fastLoot:SetAlpha(other and 0.4 or 1)
 		panel.lootHint:SetText(C.muted .. (other and (other .. " " .. L["is loaded, so CraftWise does not loot."])
