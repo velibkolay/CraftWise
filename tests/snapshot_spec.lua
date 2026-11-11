@@ -584,3 +584,93 @@ it("a full character stays small and holds nothing about other players", functio
 	assert(#text < 128 * 1024, "snapshot too large: " .. #text)
 	eq(text:find("Someone Else", 1, true), nil)
 end)
+
+-- #123: during PLAYER_LOGOUT the Forever client returns 0 for GetMoney, UnitXP and UnitXPMax. The
+-- stub gives real values while in the world, then 0 (rested nil) when the logout fires.
+local function LiveXP(stub)
+	stub.xp, stub.xpMax = 12000, 18600
+	function UnitXP() return stub.xp end
+	function UnitXPMax() return stub.xpMax end
+end
+
+local function LoggingOut(stub)
+	stub.money, stub.xp, stub.xpMax, stub.rested = 0, 0, 0, nil
+	stub.Fire("PLAYER_LOGOUT")
+end
+
+it("#123: the logout snapshot keeps money, XP, rested and level last seen in the world", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	LiveXP(stub)
+	stub.Fire("PLAYER_XP_UPDATE", "player")
+	stub.money = 150000
+	stub.Fire("PLAYER_MONEY")
+	stub.xp = 18000
+	stub.Fire("PLAYER_XP_UPDATE", "player")
+	-- Level up: the event carries the new level while UnitLevel still returns the old one.
+	stub.xp, stub.xpMax = 400, 20000
+	stub.Fire("PLAYER_LEVEL_UP", 25)
+	stub.level = 25
+	stub.rested = 3000
+	stub.Fire("UPDATE_EXHAUSTION")
+	local dayStart = CraftWiseMarketDB.ledger.chars["Forever-EU-Veli"].days[os.date("%Y-%m-%d", NOW)]
+	eq(dayStart, 123456)
+	stub.level = 0 -- whatever the client says by now, a live 0 isn't used
+	LoggingOut(stub)
+	local c = CraftWiseDB.snapshots["Forever-EU-Veli"].char
+	eq(c.money, 150000, "money"); eq(c.xp, 400, "xp"); eq(c.xpMax, 20000, "xpMax"); eq(c.rested, 3000, "rested")
+	eq(c.level, 25, "level")
+	local today = CraftWiseDB.snapshots["Forever-EU-Veli"].ledger.today
+	eq(today.money, 150000); eq(today.startMoney, 123456); eq(today.change, 150000 - 123456)
+	eq(today.other, 150000 - 123456)
+	eq(CraftWiseDB.snapshots["Forever-EU-Veli"].ledger.reset.money, 150000)
+	eq(CraftWiseMarketDB.ledger.chars["Forever-EU-Veli"].days[os.date("%Y-%m-%d", NOW)], 123456, "day start untouched")
+end)
+
+it("#123: a live value that isn't 0 at logout is used as it is", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	LiveXP(stub)
+	stub.Fire("PLAYER_ENTERING_WORLD", false, true)
+	stub.money, stub.xp = 200000, 13000 -- no event for these
+	stub.Fire("PLAYER_LOGOUT")
+	local c = CraftWiseDB.snapshots["Forever-EU-Veli"].char
+	eq(c.money, 200000); eq(c.xp, 13000); eq(c.xpMax, 18600); eq(c.rested, 4200)
+end)
+
+it("#123: /craftwise snapshot reads live values, 0 included", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	LiveXP(stub)
+	stub.Fire("PLAYER_ENTERING_WORLD", false, true)
+	stub.money, stub.xp, stub.rested = 0, 0, nil -- spent everything, just levelled, no rested XP
+	SlashCmdList.CRAFTWISE("snapshot")
+	local c = CraftWiseDB.snapshots["Forever-EU-Veli"].char
+	eq(c.money, 0); eq(c.xp, 0); eq(c.rested, 0)
+	eq(CraftWiseDB.snapshots["Forever-EU-Veli"].ledger.today.money, 0)
+end)
+
+it("#123: money and XP seen as 0 in the world stay 0 at logout", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	LiveXP(stub)
+	stub.money, stub.xp, stub.rested = 0, 0, nil
+	stub.Fire("PLAYER_ENTERING_WORLD", false, true)
+	LoggingOut(stub)
+	local c = CraftWiseDB.snapshots["Forever-EU-Veli"].char
+	eq(c.money, 0); eq(c.xp, 0); eq(c.xpMax, 18600); eq(c.rested, 0)
+end)
+
+it("#123: logout with nothing seen in the world leaves money and XP missing and writes no ledger", function()
+	local ns, stub = LoadAddon()
+	ClientExtras(stub)
+	LiveXP(stub)
+	LoggingOut(stub) -- no PLAYER_ENTERING_WORLD, no money or XP event before it
+	local snap = CraftWiseDB.snapshots["Forever-EU-Veli"]
+	assert(snap, "snapshot saved")
+	eq(snap.char.money, nil, "money"); eq(snap.char.xp, nil, "xp"); eq(snap.char.xpMax, nil, "xpMax")
+	eq(snap.char.rested, nil, "rested"); eq(snap.char.level, 24, "a live level is used")
+	eq(snap.ledger, nil); eq(snap.skipped.ledger, "no ledger for this character yet")
+	local c = CraftWiseMarketDB.ledger.chars["Forever-EU-Veli"]
+	eq(c and c.reset, nil, "no reset with money 0"); eq(c and next(c.days), nil, "no day start with money 0")
+end)

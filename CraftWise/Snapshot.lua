@@ -56,7 +56,10 @@ function S.Character()
 	end
 	-- name and surname apart (#77); surname missing for a character without one.
 	local _, name, surname = ns.CharName()
-	local c = { name = name, surname = surname, level = UnitLevel("player") }
+	-- Level, XP, rested and money: live, except at logout, where the client returns 0 and the values
+	-- last seen in the world are used (#123, ns.PlayerValue in Core.lua); missing when none was seen.
+	local Value = ns.PlayerValue
+	local c = { name = name, surname = surname, level = Value("level", UnitLevel("player")) }
 	c.realm = GetRealmName and GetRealmName() or nil
 	if UnitFactionGroup then
 		c.faction = UnitFactionGroup("player")
@@ -68,13 +71,18 @@ function S.Character()
 		c.class = UnitClass("player")
 	end
 	if UnitXP and UnitXPMax then
-		c.xp, c.xpMax = UnitXP("player"), UnitXPMax("player")
+		c.xp, c.xpMax = Value("xp", UnitXP("player")), Value("xpMax", UnitXPMax("player"))
 	end
 	if GetXPExhaustion then
-		c.rested = GetXPExhaustion() or 0 -- nil = no rested XP (Blizzard's ExpBar.lua reads it so)
+		local rested = GetXPExhaustion() -- nil = no rested XP (Blizzard's ExpBar.lua reads it so)
+		if ns.loggingOut then
+			c.rested = Value("rested", rested)
+		else
+			c.rested = rested or 0
+		end
 	end
 	if GetMoney then
-		c.money = GetMoney()
+		c.money = Value("money", GetMoney())
 	end
 	-- guild: name; false = not in a guild; missing = the client hasn't sent the guild yet.
 	if IsInGuild and not IsInGuild() then
@@ -532,7 +540,8 @@ function S.Slash()
 	end
 end
 
--- Logout, /reload and quit: refresh so the file on disk is current. Never raises.
+-- Logout, /reload and quit: refresh so the file on disk is current. Never raises. The client returns 0
+-- for money and XP by now; char and ledger use the values last seen in the world (#123).
 ns.On("PLAYER_LOGOUT", function()
 	pcall(S.Save)
 end)

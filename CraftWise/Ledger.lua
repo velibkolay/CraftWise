@@ -72,6 +72,13 @@ local function Char(key)
 	return c
 end
 
+-- Money carried now. At logout the client returns 0 (#123): then the money last seen in the world,
+-- nil when none was seen (ns.PlayerValue in Core.lua).
+local function CurrentMoney()
+	return ns.PlayerValue("money", GetMoney())
+end
+L.CurrentMoney = CurrentMoney
+
 -- Money right now; also notes the start of the day the first time a day is seen.
 local lastMoney
 local function NoteMoney(before)
@@ -79,7 +86,10 @@ local function NoteMoney(before)
 	if not c then
 		return
 	end
-	local now = GetMoney()
+	local now = CurrentMoney()
+	if now == nil then
+		return -- logout without money ever seen: nothing is written
+	end
 	local today = L.DayKey()
 	if c.days[today] == nil then
 		c.days[today] = before or now
@@ -265,6 +275,9 @@ function L.Summary(view)
 		return nil
 	end
 	NoteMoney()
+	if not c.reset then
+		return nil -- money never seen (logout before it was): no ledger for this character yet
+	end
 	view = view or L.View()
 	local since, startMoney
 	if view == "login" then
@@ -279,8 +292,8 @@ function L.Summary(view)
 	end
 	local sum = Totals(since)
 	sum.view, sum.label, sum.since, sum.startMoney = view, L.VIEW_LABELS[view], since, startMoney
-	sum.money = GetMoney()
-	if startMoney then
+	sum.money = CurrentMoney()
+	if startMoney and sum.money then
 		sum.change = sum.money - startMoney
 		sum.other = sum.change - sum.net
 	end
@@ -306,10 +319,12 @@ function L.Days(limit)
 	for i, day in ipairs(keys) do
 		local nextDay = keys[i + 1]
 		local sum = Totals(DayStart(day), nextDay and DayStart(nextDay) or nil)
-		local endMoney = nextDay and c.days[nextDay] or GetMoney()
+		local endMoney = nextDay and c.days[nextDay] or CurrentMoney()
 		local row = { day = day, startMoney = c.days[day], endMoney = endMoney, spent = sum.spent, received = sum.received, net = sum.net }
-		row.change = endMoney - row.startMoney
-		row.other = row.change - row.net
+		if endMoney then
+			row.change = endMoney - row.startMoney
+			row.other = row.change - row.net
+		end
 		table.insert(rows, 1, row)
 	end
 	while limit and #rows > limit do

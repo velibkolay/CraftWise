@@ -349,6 +349,92 @@ function ns.MigrateCharKey()
 	return migration
 end
 
+----------------------------------------------------------------------------------------------------
+-- Player values as last seen in the world (#123). During PLAYER_LOGOUT (logout, /reload, quit) the
+-- Forever client returns 0 for GetMoney, UnitXP and UnitXPMax (a level 21 character's logout
+-- snapshot had money 0, xp 0, xpMax 0), so what is saved then uses the values the client gave while
+-- the character was in the world: money, xp, xpMax, rested (GetXPExhaustion, 0 = none), level, each
+-- read again on the event that changes it. ns.loggingOut is true from PLAYER_LOGOUT on; Core.lua
+-- loads first, so it is set before any other module's logout handler runs.
+----------------------------------------------------------------------------------------------------
+
+ns.lastSeen = {}
+ns.loggingOut = false
+
+local function SeeMoney()
+	if GetMoney then
+		ns.lastSeen.money = GetMoney()
+	end
+end
+
+local function SeeXP()
+	local s = ns.lastSeen
+	if UnitXP and UnitXPMax then
+		s.xp, s.xpMax = UnitXP("player"), UnitXPMax("player")
+	end
+end
+
+local function SeeRested()
+	if GetXPExhaustion then
+		ns.lastSeen.rested = GetXPExhaustion() or 0 -- nil = no rested XP (Blizzard's ExpBar.lua reads it so)
+	end
+end
+
+local function SeeLevel(level)
+	level = level or (UnitLevel and UnitLevel("player"))
+	if type(level) == "number" and level > 0 then
+		ns.lastSeen.level = level
+	end
+end
+
+function ns.SeePlayer()
+	if ns.loggingOut then
+		return
+	end
+	SeeMoney()
+	SeeXP()
+	SeeRested()
+	SeeLevel()
+end
+
+-- A player value read live, except at logout: there a live 0 or nil gives way to the value last seen
+-- in the world, and to nil (unknown) when none was seen. `key` is a field of ns.lastSeen.
+function ns.PlayerValue(key, live)
+	if not ns.loggingOut or (live ~= nil and live ~= 0) then
+		return live
+	end
+	return ns.lastSeen[key]
+end
+
+ns.On("PLAYER_ENTERING_WORLD", function()
+	ns.SeePlayer()
+end)
+ns.On("PLAYER_MONEY", function()
+	if not ns.loggingOut then
+		SeeMoney()
+	end
+end)
+ns.On("PLAYER_XP_UPDATE", function(_, unit)
+	if not ns.loggingOut and (unit == nil or unit == "player") then
+		SeeXP()
+	end
+end)
+-- The event carries the new level; UnitLevel may still return the old one while it runs.
+ns.On("PLAYER_LEVEL_UP", function(_, level)
+	if not ns.loggingOut then
+		SeeLevel(level)
+		SeeXP()
+	end
+end)
+ns.On("UPDATE_EXHAUSTION", function()
+	if not ns.loggingOut then
+		SeeRested()
+	end
+end)
+ns.On("PLAYER_LOGOUT", function()
+	ns.loggingOut = true
+end)
+
 ns.On("PLAYER_LOGIN", function()
 	ns.MigrateCharKey()
 end)
