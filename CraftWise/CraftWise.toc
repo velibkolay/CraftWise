@@ -30,6 +30,7 @@ SourceRecorder.lua
 Merchant.lua
 Loot.lua
 Fishing.lua
+FishingTables.lua
 Crafts.lua
 Bags.lua
 Holdings.lua

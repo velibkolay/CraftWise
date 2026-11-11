@@ -64,7 +64,8 @@ local DB_DEFAULTS = {
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	snapshots = {}, -- [ns.CharKey()] (= "<realm>-<name> <surname>", #77) = character snapshot for Claude (Snapshot.lua, issue #63)
-	fishing = {}, -- [ns.CharKey()] = { catches, opened }, 90 days (Fishing.lua, issue #69)
+	fishing = {}, -- [ns.CharKey()] = { catches, opened, seen, findFish }, 90 days (Fishing.lua, issues #69, #86)
+	fishObjects = {}, -- [GameObject ID] = { name, t }: names the client gave for fishing loot sources (#86)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
@@ -79,6 +80,7 @@ local DB_DEFAULTS = {
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |
 		-- "BootyBay" | "Gadgetzan" | "Everlook".
 		priceBasis = "typical", priceHouse = "faction",
+		fishingSessionGap = 5, -- minutes: fishing catches closer than this are one session (value per hour, #86)
 		ledgerView = "reset",
 		-- Reagent cost per view (#47): "ah" | "paid" (paid cost from the ledger, else AH per reagent).
 		costBasis = { profit = "ah", learn = "ah", level = "ah", upgrades = "ah" } }, -- /craftwise ledger: "reset" (since last reset) | "today" | "login" (#46) -- ahMin*: Bags, AH only when it pays this much more than a vendor
@@ -267,6 +269,8 @@ function ns.MigrateCharKey()
 				into.catches, into.opened = into.catches or {}, into.opened or {}
 				AppendList(into.catches, log.catches)
 				AppendList(into.opened, log.opened)
+				into.seen = into.seen or {}
+				AppendList(into.seen, log.seen)
 			else
 				fishing[newKey] = log
 			end
