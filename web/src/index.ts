@@ -27,6 +27,10 @@ async function privateApi(request: Request, env: Env, url: URL, now: number): Pr
 	const user = await verifyAccess(request, env, now);
 	const path = url.pathname.slice("/api/me".length);
 	const method = request.method;
+	// An Access service token (no e-mail, e.g. Claude's read access) may only read.
+	if (user.email === null && method !== "GET" && method !== "HEAD") {
+		throw new HttpError(403, "read_only", "service tokens can only read");
+	}
 	if (method !== "GET" && method !== "HEAD") assertSameOrigin(request, url);
 
 	if (path === "" || path === "/") {

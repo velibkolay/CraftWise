@@ -71,6 +71,16 @@ fetch("/api/me/tokens", { method: "POST", headers: { "content-type": "applicatio
 The answer holds `token` (`cw_...`); it is shown only once. Put it into the companion app (#94).
 `GET /api/me/tokens` lists tokens, `DELETE /api/me/tokens/<id>` revokes one.
 
+## 8. Read access for Claude (optional)
+A service token lets Claude read `/api/me/*` without the One-time PIN. The Worker lets a service
+token (an Access login without an e-mail) only read: `POST` and `DELETE` answer 403 `read_only`.
+1. **Zero Trust > Access > Service credentials > Service Tokens > Create**, name `claude-read`,
+   duration as you like. Copy the Client ID and the Client Secret (the secret is shown once).
+2. Application `CraftWise private` > **Policies > Add a policy**: name `claude-read`, action
+   **Service Auth**, Include > Service Token > `claude-read`. Save.
+3. Requests send the headers `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
+Revoke it under Service Tokens; nothing else changes.
+
 ## Watching the free limits
 - `https://wow.velikopter.com/api/me/usage`: rows written today (uploads stop at 90,000 of D1's
   100,000) and the database size (free: 500 MB). See "Budget" in `web/docs/api.md`.
