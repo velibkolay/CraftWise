@@ -49,8 +49,9 @@ export function houses() {
 	};
 }
 
-export async function upload(token: string, body: unknown): Promise<Response> {
-	return call("POST", "/api/upload", { body, headers: bearer(token) });
+// Uploads a test shorthand (see `body` below).
+export async function upload(token: string, short: Short): Promise<Response> {
+	return call("POST", "/api/upload", { body: body(short), headers: bearer(token) });
 }
 
 // ------------------------------------------------------------------------------------------
@@ -112,4 +113,59 @@ export function access(jwt: string, extra: Record<string, string> = {}): Record<
 export async function clearData(): Promise<void> {
 	const tables = ["houses", "items", "item_words", "prices", "points", "daily", "scans", "cache", "tokens", "usage", "characters", "snapshots", "auctions", "fishing", "ledger"];
 	await env.DB.batch(tables.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+}
+
+// Test shorthand -> the upload contract (web/docs/api.md):
+//   scans: [{ house, ... }]                      -> scans: { [house]: [...] }
+//   items: { [id]: { n, q, i, c, s } }           -> names + itemInfo
+//   prices: [{ item, house, last, raw, days }]   -> items: { [item]: { [house]: entry } }
+//   raw tiers [p, q, p, q]                        -> [{ price, qty }]; days [{ day, ... }] -> { [day]: ... }
+export interface Short {
+	v?: number;
+	houses?: unknown;
+	scans?: ({ house: string } & Record<string, unknown>)[];
+	items?: Record<string, { n?: string; q?: number; i?: number; c?: number; s?: number }>;
+	prices?: {
+		item: string;
+		house: string;
+		last?: unknown;
+		raw?: ({ tiers: number[] } & Record<string, unknown>)[];
+		days?: ({ day: number } & Record<string, unknown>)[];
+	}[];
+}
+
+export function body(s: Short): Record<string, unknown> {
+	const out: Record<string, unknown> = { v: s.v ?? 1, houses: s.houses ?? houses() };
+	if (s.scans) {
+		const scans: Record<string, unknown[]> = {};
+		for (const { house, ...rest } of s.scans) (scans[house] ??= []).push(rest);
+		out.scans = scans;
+	}
+	if (s.items) {
+		const names: Record<string, string> = {};
+		const itemInfo: Record<string, unknown> = {};
+		for (const [id, { n, ...info }] of Object.entries(s.items)) {
+			if (n !== undefined) names[id] = n;
+			if (Object.keys(info).length) itemInfo[id] = info;
+		}
+		out.names = names;
+		out.itemInfo = itemInfo;
+	}
+	if (s.prices) {
+		const items: Record<string, Record<string, unknown>> = {};
+		for (const p of s.prices) {
+			const entry: Record<string, unknown> = {};
+			if (p.last) entry.last = p.last;
+			if (p.raw) {
+				entry.raw = p.raw.map(({ tiers, ...r }) => ({
+					...r,
+					tiers: Array.from({ length: tiers.length / 2 }, (_, i) => ({ price: tiers[2 * i], qty: tiers[2 * i + 1] })),
+				}));
+			}
+			if (p.days) entry.days = Object.fromEntries(p.days.map(({ day, ...d }) => [String(day), d]));
+			(items[p.item] ??= {})[p.house] = entry;
+		}
+		out.items = items;
+	}
+	return out;
 }

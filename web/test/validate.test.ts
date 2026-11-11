@@ -20,12 +20,43 @@ function message(fn: () => unknown): string {
 const base = () => ({ v: 1, houses: houses() });
 
 describe("public upload shape", () => {
-	it("accepts a minimal body and splits item keys", () => {
+	const last = { t: NOW, min: 1, qty: 1 };
+	const withItems = (items: unknown) => validatePublic({ ...base(), items }, NOW);
+
+	it("accepts the companion's MarketDB JSON and splits item keys", () => {
 		const out = validatePublic(
-			{ ...base(), prices: [{ item: "15210:1017", house: BOOTY, last: { t: NOW, min: 1, qty: 1 } }] },
+			{
+				...base(),
+				scans: { [HORDE]: [{ t: NOW, kind: "full", items: 1, lastOnly: 1, source: "ui" }] },
+				names: { "15210": "Burnished Leggings" },
+				itemInfo: { "15210": { q: 2, i: 1, c: 4, s: 2, t: NOW } },
+				items: {
+					"15210:1017": { [BOOTY]: { last } },
+					"2589": {
+						[HORDE]: {
+							last,
+							raw: [{ t: NOW, total: 30, tiers: [{ price: 5, qty: 10 }, { price: 6, qty: 20 }] }],
+							days: { "20763": { lo: 5, typ: 6, n: 1 } },
+						},
+					},
+				},
+			},
 			NOW,
 		);
-		expect(out.prices[0]).toMatchObject({ item: 15210, suffix: 1017, last: { listings: null, off: null }, raw: [], days: [] });
+		expect(out.prices).toEqual([
+			{
+				house: HORDE,
+				item: 2589,
+				suffix: 0,
+				last: { ...last, listings: null, off: null },
+				raw: [{ t: NOW, total: 30, listings: null, m: null, tiers: [5, 10, 6, 20] }],
+				days: [{ day: 20763, lo: 5, typ: 6, hi: null, qtyMax: null, listMax: null, n: 1, gone: null }],
+			},
+			// integer-like keys come first in a JS object
+			{ house: BOOTY, item: 15210, suffix: 1017, last: { ...last, listings: null, off: null }, raw: [], days: [] },
+		]);
+		expect(out.items).toEqual([{ id: 15210, n: "Burnished Leggings", q: 2, i: 1, c: 4, s: 2 }]);
+		expect(out.scans).toEqual([{ house: HORDE, t: NOW, kind: "full", items: 1, lastOnly: 1, source: "ui" }]);
 		expect(out.houses.map((h) => [h.key, h.kind, h.faction])).toEqual([
 			[HORDE, "faction", "Horde"],
 			[BOOTY, "neutral", null],
@@ -46,33 +77,34 @@ describe("public upload shape", () => {
 		);
 	});
 
-	it("refuses unknown houses, bad item keys, duplicates and empty entries", () => {
-		const p = (x: object) => validatePublic({ ...base(), prices: [x] }, NOW);
-		const last = { t: NOW, min: 1, qty: 1 };
-		expect(message(() => p({ item: "1", house: "Other|H", last }))).toBe('prices[0].house: house not listed in `houses`');
-		expect(message(() => p({ item: "0", house: HORDE, last }))).toMatch(/expected an item key/);
-		expect(message(() => p({ item: 12, house: HORDE, last }))).toMatch(/expected an item key/);
-		expect(message(() => p({ item: "1", house: HORDE }))).toBe("prices[0]: no last, raw or days");
-		expect(
-			message(() => validatePublic({ ...base(), prices: [{ item: "1", house: HORDE, last }, { item: "1", house: HORDE, last }] }, NOW)),
-		).toBe("prices[1]: item and house twice in one upload");
+	it("refuses unknown houses, bad item keys and empty entries", () => {
+		expect(message(() => withItems({ "1": { "Other|H": { last } } }))).toBe('items["1"]["Other|H"]: house not listed in `houses`');
+		expect(message(() => withItems({ "0": { [HORDE]: { last } } }))).toMatch(/expected an item key/);
+		expect(message(() => withItems({ "1": { [HORDE]: {} } }))).toBe(`items["1"]["${HORDE}"]: no last, raw or days`);
+		expect(message(() => validatePublic({ ...base(), scans: { "Other|H": [] } }, NOW))).toMatch(/house not listed/);
 	});
 
 	it("checks times, tiers and days", () => {
-		const p = (x: object) => validatePublic({ ...base(), prices: [{ item: "1", house: HORDE, ...x }] }, NOW);
-		expect(message(() => p({ last: { t: NOW + 2 * 86400, min: 1, qty: 1 } }))).toBe("prices[0].last.t: time out of range");
-		expect(message(() => p({ last: { t: 1000, min: 1, qty: 1 } }))).toBe("prices[0].last.t: time out of range");
-		expect(message(() => p({ last: { t: NOW, min: 1.5, qty: 1 } }))).toBe("prices[0].last.min: expected a non-negative integer");
-		expect(message(() => p({ raw: [{ t: NOW, total: 3, tiers: [5, 1, 4] }] }))).toMatch(/tiers: expected \[price, qty/);
-		expect(message(() => p({ raw: [{ t: NOW, total: 3, tiers: [5, 1, 4, 2] }] }))).toBe("prices[0].raw[0].tiers[2]: prices must rise");
-		expect(message(() => p({ raw: [{ t: NOW, total: 3, tiers: Array(18).fill(1) }] }))).toMatch(/more than 16 entries/);
-		expect(message(() => p({ days: [{ day: 5 }] }))).toBe("prices[0].days[0].day: day out of range");
+		const e = (x: object) => withItems({ "1": { [HORDE]: x } });
+		const p = `items["1"]["${HORDE}"]`;
+		expect(message(() => e({ last: { t: NOW + 2 * 86400, min: 1, qty: 1 } }))).toBe(`${p}.last.t: time out of range`);
+		expect(message(() => e({ last: { t: 1000, min: 1, qty: 1 } }))).toBe(`${p}.last.t: time out of range`);
+		expect(message(() => e({ last: { t: NOW, min: 1.5, qty: 1 } }))).toBe(`${p}.last.min: expected a non-negative integer`);
+		expect(message(() => e({ raw: [{ t: NOW, total: 3, tiers: [5, 1] }] }))).toBe(`${p}.raw[0].tiers[0]: expected { price, qty }`);
+		expect(message(() => e({ raw: [{ t: NOW, total: 3, tiers: [{ price: 5, qty: 1 }, { price: 4, qty: 2 }] }] }))).toBe(
+			`${p}.raw[0].tiers[1].price: prices must rise`,
+		);
+		expect(message(() => e({ raw: [{ t: NOW, total: 3, tiers: Array.from({ length: 9 }, (_, i) => ({ price: i, qty: 1 })) }] }))).toMatch(
+			/more than 8 entries/,
+		);
+		expect(message(() => e({ days: { "5": { lo: 1 } } }))).toBe(`${p}.days["5"]: day out of range`);
+		expect(message(() => e({ days: { x: {} } }))).toBe(`${p}.days["x"]: day key must be a day number`);
 	});
 
-	it("checks item info", () => {
-		expect(message(() => validatePublic({ ...base(), items: { abc: {} } }, NOW))).toMatch(/item ID must be a positive integer/);
-		expect(message(() => validatePublic({ ...base(), items: { "5": { n: "" } } }, NOW))).toMatch(/items\["5"\]\.n: expected a string/);
-		expect(validatePublic({ ...base(), items: { "5": {} } }, NOW).items).toEqual([{ id: 5, n: null, q: null, i: null, c: null, s: null }]);
+	it("checks names and item info", () => {
+		expect(message(() => validatePublic({ ...base(), itemInfo: { abc: {} } }, NOW))).toMatch(/item ID must be a positive integer/);
+		expect(message(() => validatePublic({ ...base(), names: { "5": "" } }, NOW))).toMatch(/names\["5"\]: expected a string/);
+		expect(validatePublic({ ...base(), itemInfo: { "5": {} } }, NOW).items).toEqual([{ id: 5, n: null, q: null, i: null, c: null, s: null }]);
 	});
 });
 

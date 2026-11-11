@@ -4,7 +4,7 @@
 import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { MAX_PUBLIC_BYTES } from "../src/limits";
-import { call, clearData, HORDE, houses, makeToken, now } from "./helpers";
+import { body as shape, call, clearData, HORDE, makeToken, now, type Short } from "./helpers";
 
 const DAY = 86400;
 const ITEMS = 10_000;
@@ -57,7 +57,7 @@ function chunk(from: number, to: number, t: number, opts: { info: boolean; histo
 		}
 		prices.push(entry);
 	}
-	return { v: 1, houses: houses(), items: opts.info ? items : undefined, prices };
+	return { items: opts.info ? items : undefined, prices };
 }
 
 async function fullScan(t: number, opts: { info: boolean; history: number; shift: number; day?: number }) {
@@ -70,7 +70,8 @@ async function fullScan(t: number, opts: { info: boolean; history: number; shift
 	let bytes = 0;
 	for (const p of all.prices) {
 		const id = (p as { item: string }).item;
-		const size = JSON.stringify(p).length + (all.items ? JSON.stringify(all.items[id]).length + 12 : 0);
+		const size = JSON.stringify(shape({ houses: {}, prices: [p] as Short["prices"] }).items).length +
+			(all.items ? JSON.stringify(all.items[id]).length + 12 : 0);
 		if (cur.prices.length >= CHUNK || bytes + size > 450_000) {
 			bodies.push(cur);
 			cur = { prices: [], items: {} };
@@ -82,10 +83,10 @@ async function fullScan(t: number, opts: { info: boolean; history: number; shift
 	}
 	bodies.push(cur);
 	for (const [n, b] of bodies.entries()) {
-		const body: Record<string, unknown> = { v: 1, houses: houses(), prices: b.prices };
-		if (all.items) body.items = b.items;
-		if (n === 0) body.scans = [{ house: HORDE, t, kind: "full", items: SCOPE, lastOnly: ITEMS - SCOPE, source: "auctionator" }];
-		const text = JSON.stringify(body);
+		const short: Short = { prices: b.prices as Short["prices"] };
+		if (all.items) short.items = b.items as Short["items"];
+		if (n === 0) short.scans = [{ house: HORDE, t, kind: "full", items: SCOPE, lastOnly: ITEMS - SCOPE, source: "auctionator" }];
+		const text = JSON.stringify(shape(short));
 		maxBytes = Math.max(maxBytes, text.length);
 		const res = await call("POST", "/api/upload", { raw: text, headers: { authorization: `Bearer ${token}` } });
 		expect(res.status, await res.clone().text()).toBe(200);

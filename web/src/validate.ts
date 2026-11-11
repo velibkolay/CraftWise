@@ -215,19 +215,22 @@ function last(v: unknown, path: Path, now: number): Last {
 	};
 }
 
+// [{ price, qty }, ...] cheapest first (at most 8) -> [price, qty, price, qty, ...] as stored.
 function tiers(v: unknown, path: Path): number[] {
-	const list = arr(v, path, L.MAX_TIER_VALUES);
-	if (list.length % 2 !== 0) fail(path, "expected [price, qty, price, qty, ...]");
+	const list = arr(v, path, L.MAX_TIERS);
+	const out: number[] = new Array(list.length * 2);
 	let prev = -1;
 	for (let i = 0; i < list.length; i++) {
-		const n = list[i];
-		if (!isInt(n)) int(n, at(path, `[${i}]`));
-		if (i % 2 === 0) {
-			if ((n as number) <= prev) fail(at(path, `[${i}]`), "prices must rise");
-			prev = n as number;
-		}
+		const t = list[i];
+		if (!isObj(t)) fail(at(path, `[${i}]`), "expected { price, qty }");
+		const price = isInt(t.price) ? t.price : int(t.price, at(path, `[${i}].price`));
+		const qty = isInt(t.qty) ? t.qty : int(t.qty, at(path, `[${i}].qty`));
+		if (price <= prev) fail(at(path, `[${i}].price`), "prices must rise");
+		prev = price;
+		out[2 * i] = price;
+		out[2 * i + 1] = qty;
 	}
-	return list as number[];
+	return out;
 }
 
 function rawPoint(v: unknown, path: Path, now: number): RawPoint {
@@ -241,10 +244,11 @@ function rawPoint(v: unknown, path: Path, now: number): RawPoint {
 	};
 }
 
-function day(v: unknown, path: Path, now: number): Day {
+function day(key: string, v: unknown, path: Path, now: number): Day {
+	if (!/^[0-9]{1,6}$/.test(key)) fail(path, "day key must be a day number");
+	const d = Number(key);
+	if (d < Math.floor(L.MIN_TIME / L.DAY) || d > Math.floor((now + L.MAX_FUTURE) / L.DAY)) fail(path, "day out of range");
 	const o = obj(v, path);
-	const d = int(o.day, at(path, ".day"));
-	if (d < Math.floor(L.MIN_TIME / L.DAY) || d > Math.floor((now + L.MAX_FUTURE) / L.DAY)) fail(at(path, ".day"), "day out of range");
 	return {
 		day: d,
 		lo: optInt(o.lo, at(path, ".lo")),
@@ -269,56 +273,92 @@ export function validatePublic(body: unknown, now: number): PublicUpload {
 		return key;
 	};
 
-	const scans = arr(b.scans, "scans", L.MAX_SCANS).map((v, i): Scan => {
-		const path = `scans[${i}]`;
-		const o = obj(v, path);
-		const kind = str(o.kind, `${path}.kind`, 16);
-		if (!SCAN_KIND.test(kind)) fail(`${path}.kind`, "expected lower-case letters");
-		return {
-			house: house(o.house, `${path}.house`),
-			t: time(o.t, `${path}.t`, now),
-			kind,
-			items: optInt(o.items, `${path}.items`),
-			lastOnly: optInt(o.lastOnly, `${path}.lastOnly`),
-			source: optStr(o.source, `${path}.source`, 32),
-		};
-	});
-
-	const items: ItemInfo[] = [];
-	if (b.items !== undefined && b.items !== null) {
-		const o = obj(b.items, "items");
-		const ids = Object.keys(o);
-		if (ids.length > L.MAX_ITEMS) fail("items", `more than ${L.MAX_ITEMS} items`);
-		for (const id of ids) {
-			const path = `items[${JSON.stringify(id)}]`;
-			if (!/^[1-9][0-9]{0,9}$/.test(id)) fail(path, "item ID must be a positive integer");
-			const info = obj(o[id], path);
-			items.push({
-				id: Number(id),
-				n: optStr(info.n, `${path}.n`, 200),
-				q: optInt(info.q, `${path}.q`),
-				i: optInt(info.i, `${path}.i`),
-				c: optInt(info.c, `${path}.c`),
-				s: optInt(info.s, `${path}.s`),
+	// scans: { "<house>": [{ t, kind, items, lastOnly, source }, ...] } (CraftWiseMarketDB.scans)
+	const scans: Scan[] = [];
+	if (b.scans !== undefined && b.scans !== null) {
+		const o = obj(b.scans, "scans");
+		for (const key of Object.keys(o)) {
+			const hp = `scans[${JSON.stringify(key)}]`;
+			const h = house(key, hp);
+			arr(o[key], hp, L.MAX_SCANS).forEach((v, i) => {
+				const path = `${hp}[${i}]`;
+				const s = obj(v, path);
+				const kind = str(s.kind, `${path}.kind`, 16);
+				if (!SCAN_KIND.test(kind)) fail(`${path}.kind`, "expected lower-case letters");
+				scans.push({
+					house: h,
+					t: time(s.t, `${path}.t`, now),
+					kind,
+					items: optInt(s.items, `${path}.items`),
+					lastOnly: optInt(s.lastOnly, `${path}.lastOnly`),
+					source: optStr(s.source, `${path}.source`, 32),
+				});
 			});
 		}
+		if (scans.length > L.MAX_SCANS) fail("scans", `more than ${L.MAX_SCANS} scans`);
 	}
 
-	const seen = new Set<string>();
-	const prices = arr(b.prices, "prices", L.MAX_PRICE_ENTRIES).map((v, i): Price => {
-		const path = () => `prices[${i}]`;
-		const o = obj(v, path);
-		const h = house(o.house, at(path, ".house"));
-		const key = itemKey(o.item, at(path, ".item"));
-		const id = `${h}\u0000${key.item}:${key.suffix}`;
-		if (seen.has(id)) fail(path, "item and house twice in one upload");
-		seen.add(id);
-		const raw = arr(o.raw, at(path, ".raw"), L.MAX_RAW_POINTS).map((p, j) => rawPoint(p, at(path, `.raw[${j}]`), now));
-		const days = arr(o.days, at(path, ".days"), L.MAX_DAYS).map((d, j) => day(d, at(path, `.days[${j}]`), now));
-		const l = o.last === undefined || o.last === null ? null : last(o.last, at(path, ".last"), now);
-		if (!l && raw.length === 0 && days.length === 0) fail(path, "no last, raw or days");
-		return { house: h, ...key, last: l, raw, days };
-	});
+	// names: { "<itemID>": name } and itemInfo: { "<itemID>": { q, i, c, s, t } } (#92)
+	const info = new Map<number, ItemInfo>();
+	const entry = (id: string, path: string): ItemInfo => {
+		if (!/^[1-9][0-9]{0,9}$/.test(id)) fail(path, "item ID must be a positive integer");
+		let e = info.get(Number(id));
+		if (!e) {
+			e = { id: Number(id), n: null, q: null, i: null, c: null, s: null };
+			info.set(e.id, e);
+		}
+		return e;
+	};
+	if (b.names !== undefined && b.names !== null) {
+		const o = obj(b.names, "names");
+		for (const id of Object.keys(o)) {
+			const path = `names[${JSON.stringify(id)}]`;
+			entry(id, path).n = str(o[id], path, 200);
+		}
+	}
+	if (b.itemInfo !== undefined && b.itemInfo !== null) {
+		const o = obj(b.itemInfo, "itemInfo");
+		for (const id of Object.keys(o)) {
+			const path = `itemInfo[${JSON.stringify(id)}]`;
+			const v = obj(o[id], path);
+			const e = entry(id, path);
+			e.q = optInt(v.q, `${path}.q`);
+			e.i = optInt(v.i, `${path}.i`);
+			e.c = optInt(v.c, `${path}.c`);
+			e.s = optInt(v.s, `${path}.s`);
+			optTime(v.t, `${path}.t`, now); // when the client gave it; checked, not stored
+		}
+	}
+	if (info.size > L.MAX_ITEMS) fail("itemInfo", `more than ${L.MAX_ITEMS} items in names and itemInfo`);
+	const items = [...info.values()];
+
+	// items: { "<item key>": { "<house>": { last, raw, days } } } (CraftWiseMarketDB.items, decoded)
+	const prices: Price[] = [];
+	if (b.items !== undefined && b.items !== null) {
+		const o = obj(b.items, "items");
+		for (const k of Object.keys(o)) {
+			const ip: Path = () => `items[${JSON.stringify(k)}]`;
+			const key = itemKey(k, ip);
+			const perHouse = obj(o[k], ip);
+			for (const hk of Object.keys(perHouse)) {
+				const path = at(ip, `[${JSON.stringify(hk)}]`);
+				const h = house(hk, path);
+				const e = obj(perHouse[hk], path);
+				const raw = arr(e.raw, at(path, ".raw"), L.MAX_RAW_POINTS).map((p, j) => rawPoint(p, at(path, `.raw[${j}]`), now));
+				const days: Day[] = [];
+				if (e.days !== undefined && e.days !== null) {
+					const d = obj(e.days, at(path, ".days"));
+					const dayKeys = Object.keys(d);
+					if (dayKeys.length > L.MAX_DAYS) fail(at(path, ".days"), `more than ${L.MAX_DAYS} days`);
+					for (const dk of dayKeys) days.push(day(dk, d[dk], at(path, `.days[${JSON.stringify(dk)}]`), now));
+				}
+				const l = e.last === undefined || e.last === null ? null : last(e.last, at(path, ".last"), now);
+				if (!l && raw.length === 0 && days.length === 0) fail(path, "no last, raw or days");
+				prices.push({ house: h, ...key, last: l, raw, days });
+				if (prices.length > L.MAX_PRICE_ENTRIES) fail("items", `more than ${L.MAX_PRICE_ENTRIES} item and house entries`);
+			}
+		}
+	}
 
 	return { houses: houseList, scans, items, prices };
 }
@@ -390,6 +430,7 @@ export function validatePrivate(body: unknown, now: number): PrivateUpload {
 			place: optStr(o.w, `${path}.w`, 100),
 			name: optStr(o.n, `${path}.n`, 200),
 		};
+		optStr(o.l, `${path}.l`, 500); // item link: checked, not stored
 		const base = JSON.stringify([e.char, e.t, e.kind, e.item, e.qty, e.money, e.place]);
 		const n = (occurrences.get(base) ?? 0) + 1;
 		occurrences.set(base, n);

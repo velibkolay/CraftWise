@@ -7,13 +7,13 @@ export const DAY = 86400;
 // Upload request bodies. The companion splits larger uploads into several requests.
 export const MAX_PUBLIC_BYTES = 500_000; // ~5 ms CPU at most (npm run bench)
 export const MAX_PRIVATE_BYTES = 500_000;
-export const MAX_PRICE_ENTRIES = 2000;
-export const MAX_ITEMS = 5000;
+export const MAX_PRICE_ENTRIES = 2000; // item and house entries
+export const MAX_ITEMS = 5000; // item IDs in names + itemInfo
 export const MAX_HOUSES = 20;
 export const MAX_SCANS = 200;
 export const MAX_RAW_POINTS = 500; // per price entry (the addon keeps 48 h)
 export const MAX_DAYS = 400; // per price entry (the addon keeps 30 days)
-export const MAX_TIER_VALUES = 16; // 8 price levels, [price, qty, ...]
+export const MAX_TIERS = 8; // price levels per raw point
 export const MAX_LEDGER_ENTRIES = 5000;
 export const MAX_PRIVATE_DOC_BYTES = 450_000; // one snapshot / auctions / fishing document (a snapshot is ~60 KB)
 export const MAX_CHARACTERS = 50;

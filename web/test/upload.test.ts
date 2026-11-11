@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { MAX_PUBLIC_BYTES, UPLOADS_PER_MINUTE, WRITE_BUDGET } from "../src/limits";
-import { BOOTY, bearer, call, clearData, HORDE, houses, makeToken, now, upload } from "./helpers";
+import { body as shape, BOOTY, bearer, call, clearData, HORDE, houses, makeToken, now, upload } from "./helpers";
 
 const DAY = 86400;
 
@@ -53,7 +53,7 @@ beforeEach(async () => {
 
 describe("POST /api/upload: auth and limits", () => {
 	it("refuses a missing, malformed, unknown or revoked token", async () => {
-		const body = payload(now());
+		const body = shape(payload(now()));
 		expect((await call("POST", "/api/upload", { body })).status).toBe(401);
 		expect((await call("POST", "/api/upload", { body, headers: bearer("nope") })).status).toBe(401);
 		const unknown = "cw_" + "A".repeat(43);
@@ -61,7 +61,7 @@ describe("POST /api/upload: auth and limits", () => {
 		expect(res.status).toBe(401);
 		expect(await res.json()).toMatchObject({ error: "unauthorized" });
 		await env.DB.exec("UPDATE tokens SET revoked = 1");
-		expect((await upload(token, body)).status).toBe(401);
+		expect((await call("POST", "/api/upload", { body, headers: bearer(token) })).status).toBe(401);
 	});
 
 	it("refuses a token without the public scope", async () => {
@@ -86,7 +86,10 @@ describe("POST /api/upload: auth and limits", () => {
 		(body.prices[0]!.last as { min: unknown }).min = -5;
 		const res = await upload(token, body);
 		expect(res.status).toBe(400);
-		expect(await res.json()).toEqual({ error: "bad_shape", message: "prices[0].last.min: expected a non-negative integer" });
+		expect(await res.json()).toEqual({
+			error: "bad_shape",
+			message: `items["2589"]["${HORDE}"].last.min: expected a non-negative integer`,
+		});
 	});
 
 	it("rate-limits per token and minute", async () => {
@@ -213,8 +216,8 @@ describe("POST /api/upload: storage", () => {
 		await upload(token, { ...base, prices: [{ item: "2589", house: HORDE, last: { t: t + 1, min: 20, qty: 5 } }] });
 		expect(await one("SELECT src, lo, typ FROM daily WHERE item = 2589")).toEqual({ src: 1, lo: 50, typ: 60 });
 		// an aggregate over fewer points never replaces one over more
-		await upload(token, { ...base, prices: [{ item: "2589", house: HORDE, days: [{ ...days[0], typ: 99, n: 3 }] }] });
-		await upload(token, { ...base, prices: [{ item: "2589", house: HORDE, days: [{ ...days[0], typ: 1, n: 2 }] }] });
+		await upload(token, { ...base, prices: [{ item: "2589", house: HORDE, days: [{ ...days[0]!, typ: 99, n: 3 }] }] });
+		await upload(token, { ...base, prices: [{ item: "2589", house: HORDE, days: [{ ...days[0]!, typ: 1, n: 2 }] }] });
 		expect(await one("SELECT typ, n FROM daily WHERE item = 2589")).toEqual({ typ: 99, n: 3 });
 	});
 

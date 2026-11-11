@@ -9,28 +9,40 @@ const house = "Realm|H";
 
 // Worst case per request: scope items only (7 days, 7 raw points of 8 tiers), up to the 500 KB limit.
 function body(scope: boolean): string {
-	const prices: unknown[] = [];
-	const items: Record<string, unknown> = {};
+	const items: Record<string, Record<string, unknown>> = {};
+	const names: Record<string, string> = {};
+	const itemInfo: Record<string, unknown> = {};
 	let size = 0;
-	for (let i = 0; size < 470_000 && prices.length < 2000; i++) {
+	let entries = 0;
+	for (let i = 0; size < 470_000 && entries < 2000; i++) {
 		const id = String(100000 + i);
 		const min = 100 + i;
-		const entry: Record<string, unknown> = { item: id, house, last: { t: now, min, qty: 50, listings: 4 } };
+		const entry: Record<string, unknown> = { last: { t: now, min, qty: 50, listings: 4 } };
 		if (scope) {
 			entry.raw = Array.from({ length: 7 }, (_, k) => ({
 				t: now - k * 8 * 3600,
 				total: 300,
 				listings: 30,
 				m: min + 20,
-				tiers: Array.from({ length: 16 }, (_, j) => (j % 2 ? 5 : min + j * 7)),
+				tiers: Array.from({ length: 8 }, (_, j) => ({ price: min + j * 7, qty: 5 })),
 			}));
-			entry.days = Array.from({ length: 7 }, (_, d) => ({ day: today - d, lo: min, typ: min + 10, hi: min + 60, qtyMax: 400, listMax: 40, n: 6 }));
+			entry.days = Object.fromEntries(
+				Array.from({ length: 7 }, (_, d) => [String(today - d), { lo: min, typ: min + 10, hi: min + 60, qtyMax: 400, listMax: 40, n: 6 }]),
+			);
 		}
-		items[id] = { n: `Item number ${i}`, q: 1, i: 130000 + i, c: 7, s: 5 };
-		size += JSON.stringify(entry).length + 60;
-		prices.push(entry);
+		items[id] = { [house]: entry };
+		names[id] = `Item number ${i}`;
+		itemInfo[id] = { q: 1, i: 130000 + i, c: 7, s: 5, t: now };
+		size += JSON.stringify(entry).length + 90;
+		entries++;
 	}
-	return JSON.stringify({ v: 1, houses: { [house]: { realm: "Realm", kind: "faction", faction: "Horde", label: "Horde AH" } }, items, prices });
+	return JSON.stringify({
+		v: 1,
+		houses: { [house]: { realm: "Realm", kind: "faction", faction: "Horde", label: "Horde AH" } },
+		names,
+		itemInfo,
+		items,
+	});
 }
 
 for (const scope of [true, false]) {
@@ -44,7 +56,7 @@ for (const scope of [true, false]) {
 		times.push(performance.now() - start);
 	}
 	times.sort((a, b) => a - b);
-	const entries = (JSON.parse(text) as { prices: unknown[] }).prices.length;
+	const entries = Object.keys((JSON.parse(text) as { items: object }).items).length;
 	console.log(
 		`${scope ? "scope items " : "last only   "} ${(text.length / 1000).toFixed(0)} KB, ${entries} entries: median ${times[50]!.toFixed(1)} ms, 90th ${times[90]!.toFixed(1)} ms, min ${times[0]!.toFixed(1)} ms`,
 	);
