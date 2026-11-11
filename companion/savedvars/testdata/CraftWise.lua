@@ -23,6 +23,12 @@ CraftWiseDB = {
 },
 ["expectedMissing"] = 0,
 ["expectedTotal"] = 5225,
+["listedCounted"] = 1,
+["listedNoBuyout"] = 0,
+["listedNote"] = "5% cut (confirmed)",
+["listedTotal"] = 1567,
+["listedUnknownCut"] = 0,
+["listedUnpriced"] = 0,
 ["returning"] = {
 },
 ["sold"] = {

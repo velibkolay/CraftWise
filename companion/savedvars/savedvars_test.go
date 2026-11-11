@@ -230,7 +230,8 @@ func TestSnapshot(t *testing.T) {
 		t.Fatalf("fishing zones %+v", z)
 	}
 	a := s.Auctions
-	if len(a.Active) != 1 || !a.Active[0].Overdue || len(a.Sold) != 1 || i64(a.Sold[0].Expected) != 5225 || i64(a.ExpectedTotal) != 5225 {
+	if len(a.Active) != 1 || !a.Active[0].Overdue || len(a.Sold) != 1 || i64(a.Sold[0].Expected) != 5225 || i64(a.ExpectedTotal) != 5225 ||
+		i64(a.ListedTotal) != 1567 || i64(a.ListedCounted) != 1 || a.ListedNote != "5% cut (confirmed)" {
 		t.Fatalf("auctions %+v", a)
 	}
 	mk := s.Market

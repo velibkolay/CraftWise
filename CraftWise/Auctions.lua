@@ -211,16 +211,40 @@ end
 -- What the sale mail should bring: payout, cut text, sale price; payout nil with the reason when the
 -- price or the cut isn't known. The cut is rounded to whole copper (the client's rounding is checked
 -- against the sale mails' cut samples).
+local function AfterCut(price, house)
+	local cut, info = A.Cut(house)
+	if not cut then
+		return nil, info.text
+	end
+	return price - math.floor(price * cut + 0.5), info.text
+end
+
 function A.Expected(rec)
 	local price, why = A.SalePrice(rec)
 	if not price then
 		return nil, why
 	end
-	local cut, info = A.Cut(rec.h)
-	if not cut then
-		return nil, info.text, price
+	local payout, note = AfterCut(price, rec.h)
+	return payout, note, price
+end
+
+-- What a listed auction pays if it sells at its buyout (unit buyout x units), after the cut as in
+-- A.Expected: payout, cut text, buyout total; payout nil with why: "no buyout" (bid only), "price not
+-- recorded" (listed before tracking: the owned list's price may be per unit or per stack, #81) or the
+-- cut text when the cut is unverified.
+function A.IfSold(rec)
+	if rec.untracked and not rec.unit then
+		if not rec.ownedBuyout or rec.ownedBuyout <= 0 then
+			return nil, "no buyout"
+		end
+		return nil, "price not recorded"
 	end
-	return price - math.floor(price * cut + 0.5), info.text, price
+	if not rec.unit or rec.unit <= 0 then
+		return nil, "no buyout"
+	end
+	local price = rec.unit * rec.q
+	local payout, note = AfterCut(price, rec.h)
+	return payout, note, price
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -869,12 +893,25 @@ function A.Summary(charKey)
 	end
 	local now = time()
 	local s = { active = {}, sold = {}, returning = {}, uncertain = {}, expectedTotal = 0, expectedMissing = 0,
+		listedTotal = 0, listedCounted = 0, listedNoBuyout = 0, listedUnknownCut = 0, listedUnpriced = 0,
 		ownedListAt = c.ownedAt, ownedListHouse = c.ownedHouse }
+	local notes = {}
 	for _, rec in ipairs(c.list) do
 		local row
 		if rec.st == "active" then
 			row = A.Row(rec, now)
 			s.active[#s.active + 1] = row
+			local payout, note = A.IfSold(rec)
+			if payout then
+				s.listedTotal, s.listedCounted = s.listedTotal + payout, s.listedCounted + 1
+				notes[note] = true
+			elseif note == "no buyout" then
+				s.listedNoBuyout = s.listedNoBuyout + 1
+			elseif note == "price not recorded" then
+				s.listedUnpriced = s.listedUnpriced + 1
+			else
+				s.listedUnknownCut = s.listedUnknownCut + 1
+			end
 		elseif rec.st == "sold" then
 			row = A.Row(rec, now)
 			s.sold[#s.sold + 1] = row
@@ -888,6 +925,10 @@ function A.Summary(charKey)
 		elseif rec.st == "gone" then
 			s.uncertain[#s.uncertain + 1] = A.Row(rec, now)
 		end
+	end
+	-- The cut the listed total is after: one text when every counted listing shares it.
+	for note in pairs(notes) do
+		s.listedNote = s.listedNote and "each house's cut" or note
 	end
 	return s
 end
@@ -987,6 +1028,23 @@ function A.Print()
 			total = total .. (" plus %d sale%s with unknown payout"):format(s.expectedMissing, s.expectedMissing == 1 and "" or "s")
 		end
 		ns.Print(total)
+		if #s.active > 0 then
+			local listed = s.listedCounted > 0 and ("%s after %s"):format(Money(s.listedTotal), s.listedNote) or "unknown"
+			local left = {}
+			if s.listedNoBuyout > 0 then
+				left[#left + 1] = ("%d without buyout"):format(s.listedNoBuyout)
+			end
+			if s.listedUnknownCut > 0 then
+				left[#left + 1] = ("%d with cut unverified"):format(s.listedUnknownCut)
+			end
+			if s.listedUnpriced > 0 then
+				left[#left + 1] = ("%d with price not recorded"):format(s.listedUnpriced)
+			end
+			if #left > 0 then
+				listed = ("%s (not counted: %s)"):format(listed, table.concat(left, ", "))
+			end
+			ns.Print("  if all listed sell: " .. listed)
+		end
 	end)
 end
 
