@@ -152,6 +152,16 @@ Fishing log ranking (#69, #86), this character, last 90 days: `{ days, catches, 
 | `pools` | Up to 5 pool objects with the most ended visits (`morePools` = rest): `{ obj, name, visits, perVisit = "<min>-<max>, avg <avg>", going, seen, notFished }`. A visit = catches from one pool spawn; it has ended once a later catch came from elsewhere or the session gap passed (`going` = visits not ended). Its catch count is what the pool gave until it vanished **or the player left** (the client doesn't tell the two apart). `seen` = sightings without fishing (tooltip, interact target), `notFished` = sighted spawns never fished. |
 | `findFish` | `{ spellID = 43308, known, tracking }`: whether this character knows Find Fish and whether its tracking is on, missing when the client didn't say. |
 
+### `fishingZones`
+Fishing zones by value per catch (#88), the same ranking as the Fishing tab: `{ reference, ownMin, zones, more }`. `reference` = whether the local reference addon `CraftWise_FishingRef` is loaded (see `docs/fishing-reference.md`). Values are copper.
+
+| Field | Meaning |
+|---|---|
+| `zones` | Up to 5 zones, best value per catch first (`more` = zones left out): `{ zone, source, n, perCatch, perCatchHigh, perHour, unpriced }`. |
+| zone `source`, `n` | `"own"`: this character's catches, `n` = catches (used from `ownMin` catches on, or when the reference lacks the zone). `"ref"`: the local reference, `n` = fishing loots it recorded in the zone. |
+| zone `perCatch`, `perCatchHigh` | Value per catch: chance x units x unit value, summed. Unit value: containers by the mean of their contents (own openings, else the reference's contents table), else AH after cut at the profit house and basis, else vendor. The reference gives stacks as min-max, so `perCatch` uses the minimum and `perCatchHigh` the maximum (missing when equal). `unpriced` = items without any price, left out (missing when 0). |
+| zone `perHour` | Own catches per hour in this zone (timed catches, see `fishing`) x `perCatch`. Missing without own timed catches there. |
+
 ### `auctions`
 Auction tracker (#81), this character: `{ active, sold, returning, uncertain, expectedTotal, expectedMissing, ownedListAt, ownedListHouse }`. Each list holds rows (fields below). Money is copper.
 

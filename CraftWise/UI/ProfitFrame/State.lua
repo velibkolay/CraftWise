@@ -1,6 +1,6 @@
 -- Profit table window: shared constants, state and small helpers.
--- The window is split by responsibility (State, Data, Rows, Tooltips, SongPicker, Layout, Refresh, Frame,
--- Events). The files share their internals through ns.PF and load in the order CraftWise.toc lists them:
+-- The window is split by responsibility (State, Fishing, Data, Rows, Tooltips, SongPicker, Layout, Refresh,
+-- Frame, Events). The files share their internals through ns.PF and load in the order CraftWise.toc lists them:
 -- a file only uses what the files before it export.
 local _, ns = ...
 local Style = ns.Style
@@ -37,6 +37,12 @@ local COLUMN_DEFS = {
 	saleValue = { label = L["SALE"], align = "RIGHT" },
 	net = { label = L["NET / CRAFT"], align = "RIGHT" },
 	perPoint = { label = L["PER SKILL-UP"], align = "RIGHT" },
+	sample = { label = L["SAMPLE"], align = "RIGHT" },
+	topCatches = { label = L["TOP CATCHES"], align = "LEFT" },
+	perCatch = { label = L["PER CATCH"], align = "RIGHT" },
+	perHour = { label = L["PER HOUR"], align = "RIGHT" },
+	fishChance = { label = L["CHANCE"], align = "RIGHT" },
+	unitValue = { label = L["UNIT VALUE"], align = "RIGHT" },
 }
 local VIEWS = {
 	-- Profit: what to craft. The learn columns only show with unlearned recipes.
@@ -86,10 +92,25 @@ local VIEWS = {
 		{ key = "songText", width = 300 },
 		{ key = "modeText", width = 240 },
 	},
+	-- Fishing (#88): zones by value per catch; a zone's loot table (fishzone).
+	fishing = {
+		{ key = "name", width = 220 },
+		{ key = "sample", width = 95 },
+		{ key = "topCatches", width = 245 },
+		{ key = "perCatch", width = 120 },
+		{ key = "perHour", width = 85 },
+	},
+	fishzone = {
+		{ key = "name", width = 220 },
+		{ key = "fishChance", width = 110 },
+		{ key = "sample", width = 120 },
+		{ key = "unitValue", width = 195 },
+		{ key = "perCatch", width = 120 },
+	},
 }
 local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
 	"vendorValue", "ahValue", "deValue", "usedCount", "bestValue", "equippedText", "gain", "songText", "modeText",
-	"chance", "saleValue", "net", "perPoint" }
+	"chance", "saleValue", "net", "perPoint", "sample", "topCatches", "perCatch", "perHour", "fishChance", "unitValue" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
 local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"], junk = L["Junk"] }
@@ -181,7 +202,7 @@ end
 
 local function View()
 	local v = Settings().view
-	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music") and v or "profit"
+	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music" or v == "fishing") and v or "profit"
 end
 
 -- Upgrades view section: "craft" (Craftable, #16) or "ah" (General / AH, #50).
@@ -191,7 +212,7 @@ end
 
 -- Views that list items across all professions (no profession tabs).
 local function ItemView()
-	return View() == "bags" or View() == "upgrades" or View() == "music"
+	return View() == "bags" or View() == "upgrades" or View() == "music" or View() == "fishing"
 end
 
 -- Shared with the other ProfitFrame files.

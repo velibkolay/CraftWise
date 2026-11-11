@@ -334,7 +334,7 @@ function F.SnapshotSummary()
 end
 
 ----------------------------------------------------------------------------------------------------
--- /craftwise fishing [pools|open] [zone] | gap <minutes>
+-- /craftwise fishing [pools|open] [zone] | gap <minutes> | zones [zone] | ownmin <catches>
 ----------------------------------------------------------------------------------------------------
 
 local function Money(copper)
@@ -398,6 +398,15 @@ end
 
 function F.Slash(arg)
 	arg = arg or ""
+	-- zones [name] / ownmin <n>: zone ranking with the local reference (FishingZones.lua, #88)
+	local zonesArg = arg:match("^zones%s*(.-)$")
+	if zonesArg and ns.FishingZones then
+		return ns.FishingZones.Slash(zonesArg)
+	end
+	local ownMin = arg:match("^ownmin%s*(.-)$")
+	if ownMin and ns.FishingZones then
+		return ns.FishingZones.SetOwnMin(ownMin)
+	end
 	local gap = arg:match("^gap%s+(%d+)$")
 	if gap then
 		gap = tonumber(gap)

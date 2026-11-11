@@ -437,6 +437,8 @@ local function ShowTooltip(row)
 	end
 	if View() == "bags" then
 		return ShowBagTooltip(row, r)
+	elseif View() == "fishing" then
+		return PF.ShowFishingTooltip(row, r)
 	elseif View() == "upgrades" then
 		return ShowUpgradeTooltip(row, r)
 	elseif View() == "level" then

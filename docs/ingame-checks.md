@@ -418,3 +418,16 @@ New file `FishingTables.lua` in the TOC: **full game restart** needed (not `/rel
 - [ ] Value per hour: fish for a few minutes; `/craftwise fishing` shows "... per hour (n = <timed>, <minutes> min)" per row. `/craftwise fishing gap 10` changes the session gap (catches further apart start a new session; the first catch of a session is untimed).
 - [ ] Filters: `/craftwise fishing pools`, `/craftwise fishing open`, `/craftwise fishing pools <zone or subzone>`, `/craftwise fishing <zone>`.
 - [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].fishing` has `spots` (ranked, with `perCatch`, `perHour`, `top`), `pools` and `findFish` (`docs/snapshot.md`). The per-zone item lists of #69 are gone from the snapshot.
+
+## Fishing tab with the local reference (#88)
+New files `FishingZones.lua` and `UI\ProfitFrame\Fishing.lua` in the TOC: **full game restart** needed (not `/reload`). Build the reference first (`docs/fishing-reference.md`); the new addon also needs a restart the first time.
+- [ ] Character select > AddOns lists "CraftWise Fishing Reference (local)", enabled, no "missing dependency" or "out of date" warning.
+- [ ] `/craftwise`: the header has a **Fishing** button; the view buttons don't overlap the subtitle "Profit, gear, loot, fishing".
+- [ ] Fishing: one row per zone (fishing icon), best value per catch first, each with "reference · n = ..." or "own catches · n = ...". The summary says "reference: loaded (<date>)". Zone names from the pages match the client's names (a reference zone and your own catches in the same zone are **one** row; two rows with the same zone in different spelling or language means the pages don't match the client language).
+- [ ] Items only in the reference show their name and icon once the client has loaded them (the list refreshes by itself); report items that stay "item <id>" or without icon.
+- [ ] Values: a fish sold at the AH shows the AH value at the profit house after the cut, others the vendor value; containers (Iron Bound Trunk etc.) show "contents" and the contents per opening in the row tooltip. Stack ranges show "low - high".
+- [ ] Click a zone: its loot table (chance, count / recorded, unit value, per catch). "All zones" and right-click on a row go back; "Show own catches" / "Show reference" switches the source when the zone has both. Headers sort in both lists.
+- [ ] After fishing a few minutes in a zone: its row gets a value per hour (own catches per hour x value per catch).
+- [ ] `/craftwise fishing zones`, `/craftwise fishing zones <part of a zone name>`, `/craftwise fishing ownmin 20` (the zone's row switches to own catches once it has 20); `/craftwise fishing` still prints the #86 tables.
+- [ ] Without the reference addon (disable it, restart): the tab shows own zones only and "reference: not loaded", no Lua error.
+- [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].fishingZones` has up to 5 zones (`docs/snapshot.md`).

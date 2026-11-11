@@ -31,6 +31,7 @@ Merchant.lua
 Loot.lua
 Fishing.lua
 FishingTables.lua
+FishingZones.lua
 Crafts.lua
 Bags.lua
 Holdings.lua
@@ -52,6 +53,7 @@ UI\RecipeChance.lua
 UI\AHRule.lua
 UI\Settings.lua
 UI\ProfitFrame\State.lua
+UI\ProfitFrame\Fishing.lua
 UI\ProfitFrame\Data.lua
 UI\ProfitFrame\Rows.lua
 UI\ProfitFrame\Tooltips.lua
