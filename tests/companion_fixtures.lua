@@ -15,8 +15,10 @@
 --    not checked by the spec, so changes elsewhere in the addon don't force a regeneration; rerun this
 --    script when one of those tables changes shape.
 --
--- Written as the game writes SavedVariables: tab per depth, ["key"] = value, list items with -- [n].
--- Keys are sorted so the output only changes when the data does.
+-- Written in the layout of a real Forever SavedVariables file (checked on Veli's CraftWise.lua, PR #104):
+-- no indentation, one ["key"] = value or list item per line, no "-- [n]" comments. That file had CRLF
+-- line endings; these use LF (the parser takes both, companion/svparse tests). Keys are sorted so the
+-- output only changes when the data does.
 local G = {}
 
 G.GOLDEN = "companion/market/testdata/golden.lua"
@@ -80,7 +82,7 @@ local function SortedKeys(t, n)
 	return keys
 end
 
-local function Write(v, indent, out)
+local function Write(v, out)
 	if type(v) ~= "table" then
 		out[#out + 1] = Scalar(v)
 		return
@@ -88,16 +90,15 @@ local function Write(v, indent, out)
 	out[#out + 1] = "{\n"
 	local n = #v
 	for i = 1, n do
-		out[#out + 1] = indent .. "\t"
-		Write(v[i], indent .. "\t", out)
-		out[#out + 1] = ", -- [" .. i .. "]\n"
-	end
-	for _, k in ipairs(SortedKeys(v, n)) do
-		out[#out + 1] = indent .. "\t[" .. Scalar(k) .. "] = "
-		Write(v[k], indent .. "\t", out)
+		Write(v[i], out)
 		out[#out + 1] = ",\n"
 	end
-	out[#out + 1] = indent .. "}"
+	for _, k in ipairs(SortedKeys(v, n)) do
+		out[#out + 1] = "[" .. Scalar(k) .. "] = "
+		Write(v[k], out)
+		out[#out + 1] = ",\n"
+	end
+	out[#out + 1] = "}"
 end
 
 -- "Name = value" lines for { { name, value }, ... }, with a header comment.
@@ -105,7 +106,7 @@ function G.SavedVariablesText(header, globals)
 	local out = { "-- " .. header .. "\n" }
 	for _, g in ipairs(globals) do
 		out[#out + 1] = g[1] .. " = "
-		Write(g[2], "", out)
+		Write(g[2], out)
 		out[#out + 1] = "\n"
 	end
 	return table.concat(out)

@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-// The layout the game writes: tab-indented, ["key"] = value, list items with -- [n] comments.
+// Tab-indented, with -- [n] list comments: the layout the size specs in tests/ assume (the Forever
+// client checked on PR #104 writes the plain layout in TestParseForeverLayout). Both must parse.
 const sample = `
 CraftWiseDB = {
 	["v"] = 1,
@@ -245,5 +246,61 @@ func TestLargeFile(t *testing.T) {
 	items := f.Get("CraftWiseMarketDB").(*Table).Get("items").(*Table)
 	if items.Len() != 50000 || items.Get(69999).(*Table).Get("PvP|H") != "tqk7c0,1z,a,3||" {
 		t.Fatalf("items %d", items.Len())
+	}
+}
+
+// The layout a real Forever client wrote (Veli's CraftWise.lua, checked on PR #104; the content here
+// is made up): no indentation, no "-- [n]" comments, CRLF line endings, `\"` inside strings, item
+// links with raw pipes, short decimals.
+func TestParseForeverLayout(t *testing.T) {
+	src := strings.Join([]string{
+		"",
+		"CraftWiseDB = {",
+		`["snapshots"] = {`,
+		`["Some Realm-Name Surname"] = {`,
+		`["t"] = 1794000000,`,
+		`["location"] = {`,
+		`["x"] = 0.5235,`,
+		`["minutes"] = 13.5,`,
+		"},",
+		`["list"] = {`,
+		"12,",
+		"34,",
+		"{",
+		`["l"] = "|cffffffff|Hitem:9001::::::::20:::::::::|h[A \"Quoted\" Name]|h|r",`,
+		"},",
+		"},",
+		"},",
+		"},",
+		"}",
+		"CraftWiseMarketDB = {",
+		`["items"] = {`,
+		`[9001] = {`,
+		`["Some Realm|H"] = "to3n9c,28,q,3||",`,
+		"},",
+		`["9005:14300"] = {`,
+		`["Some Realm|H"] = "to3n9c,28,q,3,to3n9d||",`,
+		"},",
+		"},",
+		"}",
+		"",
+	}, "\r\n")
+	f, err := Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := f.Get("CraftWiseDB").(*Table).Get("snapshots").(*Table).Get("Some Realm-Name Surname").(*Table)
+	loc := snap.Get("location").(*Table)
+	if loc.Get("x") != 0.5235 || loc.Get("minutes") != 13.5 {
+		t.Fatalf("floats %v %v", loc.Get("x"), loc.Get("minutes"))
+	}
+	list := snap.Get("list").(*Table)
+	link := list.Get(3).(*Table).Get("l")
+	if list.ArrayLen() != 3 || list.Get(2) != 34.0 || link != `|cffffffff|Hitem:9001::::::::20:::::::::|h[A "Quoted" Name]|h|r` {
+		t.Fatalf("list %v link %q", list.Array(), link)
+	}
+	items := f.Get("CraftWiseMarketDB").(*Table).Get("items").(*Table)
+	if items.Get(9001).(*Table).Get("Some Realm|H") != "to3n9c,28,q,3||" || !items.Has("9005:14300") {
+		t.Fatalf("items %v", items.Fields())
 	}
 }
