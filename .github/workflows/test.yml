@@ -13,8 +13,9 @@ jobs:
       - name: Headless tests and Forever API audit
         run: lua5.1 tests/run.lua
   companion:
-    # Go packages of the companion app (#93): SavedVariables parser, market entry port (golden-tested
-    # against fixtures written by the Lua code, tests/companion_fixtures.lua), typed readers.
+    # Companion app (#93, #94): SavedVariables parser, market entry port (golden-tested against
+    # fixtures written by the Lua code, tests/companion_fixtures.lua), typed readers, upload app.
+    # The app is cross-compiled for Windows and macOS (no cgo); nothing is published here.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -31,6 +32,14 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test ./...
+      - name: go vet (windows)
+        run: GOOS=windows GOARCH=amd64 go vet ./...
+      - name: Cross-compile windows/amd64 and darwin/arm64
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui" -o /tmp/craftwise-companion.exe ./cmd/craftwise-companion
+          GOOS=darwin GOARCH=arm64 go build -o /tmp/craftwise-companion-macos ./cmd/craftwise-companion
   web:
     # wow.velikopter.com Worker (#95): typecheck and vitest in the Workers runtime (Miniflare).
     runs-on: ubuntu-latest
