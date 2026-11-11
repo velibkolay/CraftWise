@@ -331,3 +331,13 @@ New file `Merchant.lua` in the TOC: **full game restart** needed (not `/reload`)
 - [ ] `/craftwise where <shift-clicked item link>`, `/craftwise where 6530`, `/craftwise where nightcrawl`: vendors cheapest first with place, price, standing, stock and age. An unknown item: "no merchant you opened sells ...".
 - [ ] Item tooltip (bags or link): "Sold by" with up to 2 merchants and "+N more: /craftwise where". Settings: the "Sold by (merchants you opened)" checkbox turns it off; the Settings panel still fits.
 - [ ] Buying several items in a row at a vendor (each fires `MERCHANT_UPDATE`): no stutter.
+
+## Known flight paths in the snapshot (#68)
+New file `FlightPaths.lua` in the TOC: **full game restart** needed (not `/reload`). Field reference: `docs/snapshot.md`, `flightPaths`.
+- [ ] Talk to a flight master (e.g. Crossroads). Then `/dump CraftWiseDB.debug.taxi`: `nodes` = the number of flight points the map shows, no `why`. If `why` is set, report it (`no taxi map ID`, `flight master listed no nodes`: the client's flight map works differently than Blizzard's Forever UI code suggests).
+- [ ] Note which window opened: the newer zoomable flight map or the old flat "Flight Map" frame. Both should record.
+- [ ] `/craftwise snapshot`, `/reload`: `flightPaths.maps` has the continent (`mapID` 1414 Kalimdor / 1415 Eastern Kingdoms, `map` name) with `t` = now, and one node per flight point on the map with its name. The one you stand at has `state = "current"`, `current = true`.
+- [ ] Compare with the map: are flight points you have **not** discovered missing from `nodes`? (Expected: the flight master lists only known ones.) Each listed node should have `known = true`; report any `known = false` or a missing `known`.
+- [ ] `x`/`y` × 100 roughly match the flight point's place on the continent map.
+- [ ] Discover a new flight point, open that flight master: the continent's entry has the new node and a new `t`; the other continent's entry is unchanged.
+- [ ] Another character: its own `flightPaths` (per character), no mix-up.

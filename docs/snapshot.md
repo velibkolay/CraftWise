@@ -110,5 +110,28 @@ What CraftWise's holdings count (#49) sees. Item counts are `{ [itemID] = count 
 ### `ledger`
 Totals from the purchase and sale log (#46), no individual entries: `today` and `reset` (since the last `/craftwise ledger reset`), each `{ since, startMoney, money, change, spent, received, net, other }`. `spent`/`received`/`net` are logged AH and vendor trades; `other` is the money change they don't explain (loot, quests, repairs, fees, AH sales by mail). `startMoney`/`change`/`other` are missing when the start money wasn't seen.
 
+### `flightPaths`
+Known flight paths (#68), per character. Recorded when a flight master's map opens (`TAXIMAP_OPENED`): the nodes the flight master lists (`C_TaxiMap.GetAllTaxiNodes` on the taxi map the client opened, `GetTaxiMapID`). Each opening overwrites that map's entry; other maps stay as last seen, so `t` says how current each one is. Missing (`skipped.flightPaths = "no flight master map opened yet"`) until a flight master was used once with this version.
+
+`maps` is a list sorted by map ID, one entry per taxi map (continent):
+
+| Field | Meaning |
+|---|---|
+| `mapID`, `map` | Taxi map ID (e.g. 1414 Kalimdor) and its name (`C_Map.GetMapInfo`). |
+| `t` | When that flight master map was last opened. |
+| `nodes` | Flight points listed there, sorted by name (see below). |
+
+Per node:
+
+| Field | Meaning |
+|---|---|
+| `id` | Taxi node ID (`nodeID`). |
+| `name` | Name as the flight master shows it, e.g. `"Crossroads, The Barrens"`. |
+| `x`, `y` | Position on that taxi map, 0..1 from the top left, 4 decimals. |
+| `state` | From where it was read: `"current"` (this flight master), `"reachable"` (a route exists), `"unreachable"` (listed, no route from there). |
+| `current` | `true` for the flight master the map was opened at; missing otherwise. |
+| `known` | Discovered flag from the map's own node list (`C_TaxiMap.GetTaxiNodesForMap`, `isUndiscovered`): `true` = discovered. Missing when that list didn't have the node. |
+| `transition` | `true` for map-layer transition points (Blizzard's flight map shows them only on other map layers); missing otherwise. |
+
 ## Size
-A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations) is about 44 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations and holdings are roughly 12-13 KB each.
+A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents) is about 57 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations, holdings and flight paths are roughly 12-13 KB each.

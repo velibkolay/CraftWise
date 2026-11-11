@@ -25,7 +25,7 @@ local function ClientExtras(stub)
 	stub.zone, stub.subzone = "The Barrens", "The Crossroads"
 	C_Map = {
 		GetBestMapForUnit = function() return 1413 end,
-		GetMapInfo = function(id) return { mapID = id, name = "The Barrens" } end,
+		GetMapInfo = function(id) return { mapID = id, name = ({ [1413] = "The Barrens", [1414] = "Kalimdor", [1415] = "Eastern Kingdoms" })[id] } end,
 		GetPlayerMapPosition = function() return { x = 0.523456, y = 0.30111 } end,
 	}
 	-- Equipment links and durability.
@@ -95,6 +95,13 @@ local function ClientExtras(stub)
 	for i, label in ipairs({ "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }) do
 		_G["FACTION_STANDING_LABEL" .. i] = label
 	end
+	-- Flight master map (#68): stub.taxi = { mapID, nodes = TaxiNodeInfo list, mapNodes = MapTaxiNodeInfo list }.
+	stub.taxi = { mapID = 1414, nodes = {}, mapNodes = {} }
+	function GetTaxiMapID() return stub.taxi.mapID end
+	C_TaxiMap = {
+		GetAllTaxiNodes = function(mapID) assert(mapID == stub.taxi.mapID, "taxi map ID"); return stub.taxi.nodes end,
+		GetTaxiNodesForMap = function(mapID) assert(mapID == stub.taxi.mapID, "taxi map ID"); return stub.taxi.mapNodes end,
+	}
 	-- Hunter pet.
 	stub.pet = true
 	function HasPetUI() return stub.pet, stub.pet end
@@ -119,6 +126,19 @@ local function Faction(id, name, reaction, value, lo, hi, extra)
 end
 local function Header(name, extra)
 	return Faction(0, name, 0, 0, 0, 0, { isHeader = true, isCollapsed = extra and extra.collapsed or false })
+end
+
+-- TaxiNodeInfo as C_TaxiMap.GetAllTaxiNodes returns it (position is a Vector2DMixin: x, y, GetXY).
+local function TaxiNode(id, name, x, y, state, extra)
+	local n = { nodeID = id, name = name, state = state, slotIndex = id, textureKit = "", useSpecialIcon = false,
+		isMapLayerTransition = false, position = { x = x, y = y, GetXY = function(self) return self.x, self.y end } }
+	for k, v in pairs(extra or {}) do n[k] = v end
+	return n
+end
+-- MapTaxiNodeInfo as C_TaxiMap.GetTaxiNodesForMap returns it.
+local function MapNode(id, name, undiscovered)
+	return { nodeID = id, name = name, isUndiscovered = undiscovered, faction = 1, atlasName = "", textureKit = "",
+		position = { x = 0.5, y = 0.5 } }
 end
 
 -- A small character: two gear slots, a profession, two quests, three reputations, bags, bank and mail.
@@ -153,6 +173,13 @@ local function SmallCharacter(ns, stub)
 		Header("Other", { collapsed = true }),
 		Faction(470, "Ratchet", 4, 100, 0, 3000),
 	}
+	stub.taxi.nodes = {
+		TaxiNode(25, "Crossroads, The Barrens", 0.5165, 0.5512, 0),
+		TaxiNode(23, "Orgrimmar, Durotar", 0.5531, 0.3634, 1),
+	}
+	stub.taxi.mapNodes = { MapNode(25, "Crossroads, The Barrens", false), MapNode(23, "Orgrimmar, Durotar", false),
+		MapNode(80, "Ratchet, The Barrens", true) }
+	stub.Fire("TAXIMAP_OPENED", 1)
 end
 
 it("builds every section from the client", function()
@@ -290,6 +317,74 @@ it("professions: refreshed cap after Expert, Fishing without a window (#65)", fu
 	eq(fishing.line, 356); eq(fishing.cached, false); eq(fishing.recipesKnown, nil); eq(fishing.scanned, nil)
 end)
 
+it("records known flight paths when a flight master map opens, per character with time (#68)", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub) -- opened the Crossroads flight master on Kalimdor (1414)
+	local kalimdor = CraftWiseCharDB.flightPaths[1414]
+	assert(kalimdor, "stored per character")
+	eq(kalimdor.t, NOW); eq(kalimdor.map, "Kalimdor"); eq(#kalimdor.nodes, 2)
+	local xroads, org = kalimdor.nodes[1], kalimdor.nodes[2] -- sorted by name
+	eq(xroads.id, 25); eq(xroads.name, "Crossroads, The Barrens"); eq(xroads.x, 0.5165); eq(xroads.y, 0.5512)
+	eq(xroads.state, "current"); eq(xroads.current, true); eq(xroads.known, true); eq(xroads.transition, nil)
+	eq(org.id, 23); eq(org.state, "reachable"); eq(org.current, nil); eq(org.known, true)
+	-- Ratchet is on the map but undiscovered: the flight master doesn't list it, nothing is added
+	for _, n in ipairs(kalimdor.nodes) do assert(n.id ~= 80, "undiscovered node not recorded") end
+	-- Eastern Kingdoms flight master: its own entry; Kalimdor stays as last seen
+	stub.clock = NOW + 3600
+	stub.taxi.mapID = 1415
+	stub.taxi.nodes = { TaxiNode(11, "Undercity, Tirisfal", 0.42, 0.33, 0), TaxiNode(12, "Tarren Mill, Hillsbrad", 0.6, 0.4, 2) }
+	stub.taxi.mapNodes = {} -- no discovered flag from the map list: `known` stays missing
+	stub.Fire("TAXIMAP_OPENED", 1)
+	local ek = CraftWiseCharDB.flightPaths[1415]
+	eq(ek.t, NOW + 3600); eq(ek.map, "Eastern Kingdoms"); eq(ek.nodes[1].name, "Tarren Mill, Hillsbrad")
+	eq(ek.nodes[1].state, "unreachable"); eq(ek.nodes[1].known, nil); eq(ek.nodes[2].current, true)
+	eq(CraftWiseCharDB.flightPaths[1414].t, NOW)
+	-- back at a Kalimdor flight master with a new node learned: Kalimdor is overwritten
+	stub.clock = NOW + 7200
+	stub.taxi.mapID = 1414
+	stub.taxi.nodes = {
+		TaxiNode(25, "Crossroads, The Barrens", 0.5165, 0.5512, 0),
+		TaxiNode(23, "Orgrimmar, Durotar", 0.5531, 0.3634, 1),
+		TaxiNode(80, "Ratchet, The Barrens", 0.63, 0.37, 1),
+	}
+	stub.taxi.mapNodes = { MapNode(25, "Crossroads, The Barrens", false), MapNode(23, "Orgrimmar, Durotar", false),
+		MapNode(80, "Ratchet, The Barrens", false) }
+	stub.Fire("TAXIMAP_OPENED", 1)
+	kalimdor = CraftWiseCharDB.flightPaths[1414]
+	eq(kalimdor.t, NOW + 7200); eq(#kalimdor.nodes, 3); eq(kalimdor.nodes[3].name, "Ratchet, The Barrens")
+	eq(kalimdor.nodes[3].known, true)
+	-- snapshot: one entry per map, by map ID
+	local snap = ns.Snapshot.Build()
+	local maps = snap.flightPaths.maps
+	eq(#maps, 2); eq(maps[1].mapID, 1414); eq(maps[1].map, "Kalimdor"); eq(maps[1].t, NOW + 7200); eq(#maps[1].nodes, 3)
+	eq(maps[2].mapID, 1415); eq(maps[2].nodes[2].name, "Undercity, Tirisfal")
+	assert(maps[1].nodes ~= kalimdor.nodes, "snapshot holds a copy")
+end)
+
+it("flight paths: nothing listed, no map ID or no API keeps what was seen, without errors (#68)", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	stub.clock = NOW + 60
+	stub.taxi.nodes = {}
+	stub.Fire("TAXIMAP_OPENED", 1)
+	eq(CraftWiseCharDB.flightPaths[1414].t, NOW); eq(#CraftWiseCharDB.flightPaths[1414].nodes, 2)
+	eq(CraftWiseDB.debug.taxi.why, "flight master listed no nodes")
+	stub.taxi.mapID = nil
+	stub.Fire("TAXIMAP_OPENED", 1)
+	eq(CraftWiseDB.debug.taxi.why, "no taxi map ID")
+	C_TaxiMap.GetAllTaxiNodes = function() error("boom") end
+	stub.taxi.mapID = 1414
+	stub.Fire("TAXIMAP_OPENED", 1)
+	C_TaxiMap, GetTaxiMapID = nil, nil
+	stub.Fire("TAXIMAP_OPENED", 1)
+	eq(CraftWiseDB.debug.taxi.why, "C_TaxiMap.GetAllTaxiNodes/GetTaxiMapID not available")
+	eq(#CraftWiseCharDB.flightPaths[1414].nodes, 2)
+	-- a character that never opened a flight master: section skipped with the reason
+	CraftWiseCharDB.flightPaths = nil
+	local snap = ns.Snapshot.Build()
+	eq(snap.flightPaths, nil); eq(snap.skipped.flightPaths, "no flight master map opened yet"); eq(snap.errors, nil)
+end)
+
 -- SavedVariables as the client writes them: one ["key"] = value per line, tab-indented.
 local function Serialize(v, indent, out)
 	indent = indent or ""
@@ -369,9 +464,20 @@ it("a full character stays small and holds nothing about other players", functio
 			stub.factions[#stub.factions + 1] = Faction(hdr * 100 + i, "Some Faction Name " .. i, 4, 1500, 0, 3000)
 		end
 	end
+	-- Flight paths on both continents, 30 each.
+	for m, mapID in ipairs({ 1414, 1415 }) do
+		stub.taxi.mapID, stub.taxi.nodes, stub.taxi.mapNodes = mapID, {}, {}
+		for i = 1, 30 do
+			local nodeID = m * 100 + i
+			stub.taxi.nodes[i] = TaxiNode(nodeID, "Some Flight Point Name, Some Zone " .. nodeID, 0.123456, 0.654321, i == 1 and 0 or 1)
+			stub.taxi.mapNodes[i] = MapNode(nodeID, "x", false)
+		end
+		stub.Fire("TAXIMAP_OPENED", 1)
+	end
 	stub.Fire("PLAYER_LOGOUT")
 	local snap = CraftWiseDB.snapshots["Forever-EU-Veli"]
 	eq(snap.errors, nil); eq(snap.skipped, nil)
+	eq(#snap.flightPaths.maps, 2); eq(#snap.flightPaths.maps[2].nodes, 30)
 	eq(#snap.equipment.items, 18); eq(#snap.quests.list, 25); eq(#snap.reputations.list, 50)
 	local text = "CraftWiseDB = " .. table.concat(Serialize({ snapshots = CraftWiseDB.snapshots }))
 	print(("       full character snapshot: %d bytes as SavedVariables"):format(#text))

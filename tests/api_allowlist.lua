@@ -47,6 +47,7 @@ return {
 		GetGuildInfo = UI .. "Blizzard_UIPanels_Game/Mainline/TabardFrame.lua, Blizzard_HardcoreUI/HardcoreUI.lua (GetGuildInfo(\"player\"): guildName, rankName, rank)",
 		GetInventoryItemDurability = UI .. "Blizzard_FrameXML/Mainline/EquipmentManager.lua (durability, maxDurability = GetInventoryItemDurability(slot))",
 		HasPetUI = UI .. "Blizzard_UIPanels_Game/Mainline/PaperDollFrame.lua, Blizzard_FrameXML/PetHappiness.lua (hasPetUI, isHunterPet)",
+		GetTaxiMapID = UI .. "Blizzard_FlightMap/Blizzard_FlightMap.lua (FlightMapMixin:OnShow: mapID = GetTaxiMapID(), then C_TaxiMap.GetAllTaxiNodes(mapID) in FM_FlightPathDataProvider.lua)",
 		PlaySoundFile = GAME .. " (Music tab songs, 2026-10-01)",
 		StopSound = UI .. "Blizzard_HousingDashboardInitiatives.lua; " .. GAME .. " (music stops with the cast)",
 	},
