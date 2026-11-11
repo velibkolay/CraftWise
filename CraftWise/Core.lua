@@ -12,7 +12,11 @@ ns.unknownEvents = {}
 -- Forever has the reagent bag slot, seen 2026-10-06 with Big Bear Meat in it).
 ns.LAST_BAG = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
 
-function ns.On(event, fn)
+-- Handlers that run after every ns.On handler of the event, whatever the load order: Market packs
+-- its entries at PLAYER_LOGOUT once nothing reads prices any more (#105).
+local lastHandlers = {}
+
+local function Register(event)
 	if not handlers[event] then
 		handlers[event] = {}
 		local ok = pcall(frame.RegisterEvent, frame, event)
@@ -20,16 +24,39 @@ function ns.On(event, fn)
 			ns.unknownEvents[#ns.unknownEvents + 1] = event
 		end
 	end
+end
+
+function ns.On(event, fn)
+	Register(event)
 	table.insert(handlers[event], fn)
 end
 
+function ns.OnLast(event, fn)
+	Register(event)
+	lastHandlers[event] = lastHandlers[event] or {}
+	table.insert(lastHandlers[event], fn)
+end
+
+local function Run(list, event, ...)
+	for _, fn in ipairs(list) do
+		fn(event, ...)
+	end
+end
+
 function ns.Fire(event, ...)
-	local list = handlers[event]
+	local list, last = handlers[event], lastHandlers[event]
 	if not list then
 		return
 	end
-	for _, fn in ipairs(list) do
-		fn(event, ...)
+	if not last then
+		Run(list, event, ...)
+		return
+	end
+	-- A handler that raises must not skip the last ones; its error is raised again after them.
+	local ok, err = pcall(Run, list, event, ...)
+	Run(last, event, ...)
+	if not ok then
+		error(err, 0)
 	end
 end
 

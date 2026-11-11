@@ -2123,10 +2123,12 @@ ns.On("PLAYER_LOGIN", function()
 		M.FillItemInfo()
 	end)
 end)
+-- Names first, as a normal handler; packing last (#105): handlers loaded after Market read prices at
+-- logout (the snapshot values fishing catches), and a read unpacks the entry it touches.
 ns.On("PLAYER_LOGOUT", function()
 	pcall(FillNames)
-	PackAll()
 end)
+ns.OnLast("PLAYER_LOGOUT", PackAll)
 ns.On("BAG_UPDATE_DELAYED", ScanBags)
 ns.On("BANKFRAME_OPENED", ScanBank)
 ns.On("PLAYERBANKSLOTS_CHANGED", ScanBank)
