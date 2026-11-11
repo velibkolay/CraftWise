@@ -508,9 +508,27 @@ it("a full character stays small and holds nothing about other players", functio
 		end
 		stub.Fire("TAXIMAP_OPENED", 1)
 	end
+	-- Waylaid crates (#91): 26 crates with 5 bundles each, and a Favor merchant with 82 items (as many as
+	-- Pawani sold on 2026-11-11), each with a reputation requirement.
+	for i = 1, 26 do
+		local fill = {}
+		for k = 1, 5 do fill[k] = { n = 20, name = "Some Long Bundle Item Name " .. k } end
+		ns.db.crates[248680 + i] = { name = "Waylaid Crate: Journeyman Something Long " .. i, label = "Journeyman Something Long " .. i,
+			tier = "Journeyman", fill = fill, got = { { n = 30, t = NOW } }, lines = { "x" } }
+	end
+	local favorItems = {}
+	for i = 1, 82 do
+		favorItems[252700 + i] = { name = "Pattern: Some Long Leather Item Name " .. i, p = 0, s = 1, n = -1, unusable = i % 2 == 0 or nil,
+			c = { { currency = 3402, name = "Merchant's Favor", amount = 30 * (i % 3 + 1) } },
+			req = { faction = "Durotar Supply and Logistics", standing = 6, text = "Requires Durotar Supply and Logistics - Honored" } }
+	end
+	ns.db.merchants[248201] = { name = "Pawani", zone = "The Barrens", map = 1413, x = 49.6, y = 29.6, t = NOW,
+		faction = { id = 2587, name = "Durotar Supply and Logistics" }, standing = 4, items = favorItems }
+	C_CurrencyInfo = { GetCurrencyInfo = function() return { name = "Merchant's Favor", quantity = 45, maxQuantity = 0, totalEarned = 120 } end }
 	stub.Fire("PLAYER_LOGOUT")
 	local snap = CraftWiseDB.snapshots["Forever-EU-Veli"]
 	eq(snap.errors, nil); eq(snap.skipped, nil)
+	eq(#snap.crates.list, 26); eq(#snap.favor.vendors[1].items, 82); eq(snap.favor.balance, 45)
 	eq(#snap.flightPaths.maps, 2); eq(#snap.flightPaths.maps[2].nodes, 30)
 	eq(#snap.equipment.items, 18); eq(#snap.quests.list, 25); eq(#snap.reputations.list, 50)
 	eq(snap.fishing.catches, 12 * 2 * 3 * 20); eq(#snap.fishing.spots, 8); eq(snap.fishing.moreSpots, 12 * 2 * 3 - 8)
@@ -520,6 +538,8 @@ it("a full character stays small and holds nothing about other players", functio
 	local fishText = table.concat(Serialize(snap.fishing, "\t\t\t"))
 	print(("       of which fishing (#86, heavy log): %d bytes"):format(#fishText))
 	assert(#fishText < 5 * 1024, "fishing section too large: " .. #fishText)
-	assert(#text < 64 * 1024, "snapshot too large: " .. #text)
+	local crateText = table.concat(Serialize({ crates = snap.crates, favor = snap.favor }, "\t\t\t"))
+	print(("       of which crates and favor (#91): %d bytes"):format(#crateText))
+	assert(#text < 128 * 1024, "snapshot too large: " .. #text)
 	eq(text:find("Someone Else", 1, true), nil)
 end)

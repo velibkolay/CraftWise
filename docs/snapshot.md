@@ -203,6 +203,35 @@ Where the AH price data is (#90). The prices themselves are not copied into the 
 | `auctionator` | `label` ("Auctionator (house unknown)"), `house = "unknown"`, `items` (prices exported, see below). |
 | `names` | How many item names `CraftWiseMarketDB.names` holds. |
 
+### `crates`
+Waylaid crates (#91): every crate this account has seen (bags, auction house items, merchants), cheapest Merchant's Favor first. `{ list, best, bestHeld }`; `best` = item ID of the cheapest crate to buy and fill, `bestHeld` = the cheapest to fill among the crates this character carries. Money is copper, rounded to whole copper.
+
+| Field | Meaning |
+|---|---|
+| `id`, `name`, `tier` | Crate item, its name, the first word after the colon ("Apprentice"). |
+| `held` | Crates in this character's bags (missing when 0). |
+| `crate`, `crateFrom` | Price of one crate: the cheapest of vendor and AH, with the price label (house and basis, #26). Missing when there is none. |
+| `options` | The bundles the crate takes, any one of them, as its tooltip lists them: `{ n, name, id, cost, how, best }`. `id` missing = the name matched no item CraftWise knows; `cost` missing = no price; `how` = price label ("crafted" when a recipe this character knows makes it cheaper, #47); `best = true` on the cheapest. |
+| `fillCost` | Cost of the cheapest bundle. |
+| `reward`, `rewardFrom`, `observed` | Merchant's Favor per crate. `"tooltip"`: a line of the crate's tooltip states it. `"seen"`: measured when a Favor gain came with one such crate leaving the bags (the value seen most; `observed` = turn-ins measured). Missing until one of them was seen. |
+| `total`, `perFavor` | Crate + cheapest bundle, and that per Favor point. |
+| `fillPerFavor` | Cheapest bundle per Favor point (for a crate you already have). |
+| `missing` | What keeps a figure out: "fill list not read", "no price for any bundle", "reward not seen", "no crate price". |
+
+Raw tooltip lines, fill options and measured rewards are in `CraftWiseDB.crates[<itemID>]` (`lines`, `fill`, `reward`, `got`).
+
+### `favor`
+Merchant's Favor (currency 3402) and the merchants that take it (#91): `{ id, name, balance, max, earned, vendors }`. `balance` = this character's amount (`C_CurrencyInfo`), `max` missing when the client reports no cap, `earned` = total earned when the client reports it.
+
+`vendors`: each merchant this account opened that sells something for Favor (e.g. Pawani, Durotar Supply and Logistics, The Barrens), from the merchant recorder (#66): `{ npc, name, zone, sub, map, x, y, t, faction, factionID, standing, standingNow, rep, full, items }`. `standing` = this account's standing when the list was recorded, `standingNow` and `rep = { value, min, max }` = this character's standing now. `full = true` when the merchant window showed all items (its filter was "All"); otherwise the list may miss items.
+
+| Item field | Meaning |
+|---|---|
+| `id`, `name` | Item. |
+| `favor` | Favor cost. `p` = copper on top (missing when none), `other` = other currencies or items asked, `s` = stack bought (missing when 1). |
+| `req` | Reputation requirement as the item's tooltip states it: the standing alone ("Honored") when it is with the merchant's own faction, else the whole line. Missing when the tooltip has none (or the list was recorded before #91). |
+| `known`, `unusable`, `n` | "Already known" on the tooltip, shown in red, limited stock (missing when unlimited). |
+
 ## Market data (`CraftWiseMarketDB`, #26, #90)
 Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/reload` or quit, like the snapshot. Money is copper, times are Unix seconds.
 
@@ -215,4 +244,4 @@ Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/rel
 - `scans[<house key>]`: the last 30 recordings: `t`, `kind` (`full`, `search`, `gear`), `items` (scope items), `lastOnly` (other items), `source`.
 
 ## Size
-A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents) is about 57 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations, holdings and flight paths are roughly 12-13 KB each.
+A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each and a Favor merchant with 82 items) is about 98 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 128 KB). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, quests, reputations, holdings and flight paths roughly 12-13 KB each.

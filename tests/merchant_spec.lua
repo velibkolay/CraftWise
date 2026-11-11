@@ -544,3 +544,36 @@ it("the tooltip lists at most three characters per merchant", function()
 	local text = plain(ns.Merchant.TooltipLines(NIGHTCRAWLERS)[1][2])
 	assert(text:find("1s 1c Alt A %(Neutral%), 1s 2c Alt B %(Neutral%), 1s 3c Alt C %(Neutral%), %+2"), text)
 end)
+
+it("stores the reputation requirement a Favor item's tooltip states, as the client formats it (#91)", function()
+	local ns, stub = setup()
+	ITEM_REQ_REPUTATION = "Requires %s - %s"
+	FACTION_STANDING_LABEL6 = "Honored"
+	local lines = {
+		[1] = { "Pattern: Defender's Leather Hood", "|cffff2020Requires Durotar Supply and Logistics - Honored|r" },
+		[2] = { "Pattern: Totemic Leather Hood" },
+		[3] = { "Nightcrawlers", "Requires Thunder Bluff - Honored" },
+	}
+	C_TooltipInfo.GetMerchantItem = function(i)
+		local out = {}
+		for _, t in ipairs(lines[i]) do out[#out + 1] = { leftText = t } end
+		return { lines = out }
+	end
+	stub.mf = { { itemID = 252800, name = "Pattern: Defender's Leather Hood", price = 0, extended = true,
+		costs = { { 30, "|cff|Hcurrency:3402:0|h[Merchant's Favor]|h|r", "Merchant's Favor" } } },
+		{ itemID = 252801, name = "Pattern: Totemic Leather Hood", price = 0, extended = true,
+		costs = { { 30, "|cff|Hcurrency:3402:0|h[Merchant's Favor]|h|r", "Merchant's Favor" } } },
+		{ itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } }
+	open(stub, 248201, "Pawani")
+	local items = ns.db.merchants[248201].items
+	eq(items[252800].req.faction, "Durotar Supply and Logistics"); eq(items[252800].req.standing, 6)
+	eq(items[252800].req.text, "Requires Durotar Supply and Logistics - Honored")
+	eq(items[252801].req, nil)
+	-- Gold-only items that aren't recipes keep no tooltip read (as before).
+	eq(items[NIGHTCRAWLERS].req, nil)
+	-- The requirement is gone from the tooltip on the next visit: gone from the record too.
+	lines[1] = { "Pattern: Defender's Leather Hood" }
+	stub.Fire("MERCHANT_UPDATE")
+	eq(items[252800].req, nil)
+	ITEM_REQ_REPUTATION, FACTION_STANDING_LABEL6 = nil, nil
+end)
