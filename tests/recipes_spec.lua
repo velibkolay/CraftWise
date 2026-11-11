@@ -251,3 +251,122 @@ it("the profession tab list ignores nameless entries", function()
 	local ids = ns.PF.ProfessionIDs()
 	eq(#ids, 1); eq(ids[1], 165)
 end)
+
+-- #65: skill and max skill of every profession from the client's profession list, no window needed.
+-- clientProfs = list in GetProfessions order (prof1, prof2, archaeology, fishing, cooking, first aid):
+-- { [slot] = { name, icon, skill, max, line } }.
+local function ClientProfessions(clientProfs)
+	GetProfessions = function()
+		local out = {}
+		for slot = 1, 6 do out[slot] = clientProfs[slot] and slot or nil end
+		return out[1], out[2], out[3], out[4], out[5], out[6]
+	end
+	GetProfessionInfo = function(index)
+		local p = clientProfs[index]
+		if p then return p.name, p.icon, p.skill, p.max, 0, 0, p.line end
+	end
+end
+
+local function cooking(stub)
+	stub.profession = { id = 185, name = "Cooking", skill = 150, max = 150, recipes = {
+		[2538] = { info = { name = "Charred Wolf Meat", learned = true }, schematic = stub.Schematic({ { 2672, 1 } }, 2679) },
+		[2541] = { info = { name = "Coyote Steak", learned = false }, schematic = stub.Schematic({ { 2673, 1 } }, 2684) },
+	} }
+end
+
+it("refreshes skill and max skill of every profession without a window, Fishing included (#65)", function()
+	local ns, stub = LoadAddon()
+	cooking(stub)
+	stub.Fire("TRADE_SKILL_SHOW") -- the Cooking window was opened once, at 150/150
+	stub.profession = nil -- window closed
+	local client = {
+		[4] = { name = "Fishing", icon = 136245, skill = 149, max = 150, line = 356 },
+		[5] = { name = "Cooking", icon = 133971, skill = 150, max = 150, line = 185 },
+	}
+	ClientProfessions(client)
+	local notified = 0
+	ns.Listen("PROFESSIONS_CHANGED", function() notified = notified + 1 end)
+	stub.Fire("PLAYER_LOGIN")
+	local profs = ns.charDB.professions
+	eq(profs[356].name, "Fishing"); eq(profs[356].skill, 149); eq(profs[356].maxSkill, 150)
+	eq(profs[356].icon, 136245); eq(next(profs[356].recipes), nil, "no recipes for Fishing")
+	eq(notified, 1)
+	local cookingRecipes = profs[185].recipes
+	-- Expert learned at the trainer (no window opened) and a fish caught: the client's list changes.
+	client[4].skill, client[4].max, client[5].max = 150, 225, 225
+	stub.Fire("SKILL_LINES_CHANGED")
+	eq(profs[185].maxSkill, 225, "Cooking cap"); eq(profs[185].skill, 150)
+	eq(profs[356].maxSkill, 225, "Fishing cap"); eq(profs[356].skill, 150, "Fishing skill")
+	eq(notified, 2)
+	-- recipe cache untouched
+	assert(profs[185].recipes == cookingRecipes, "same recipe table")
+	eq(profs[185].recipes[2538].learned, true); eq(profs[185].recipes[2541].learned, false)
+	eq(profs[185].recipes[2538].reagents[1].itemID, 2672)
+	-- nothing new: no notification, no UI refresh
+	stub.Fire("SKILL_LINES_CHANGED")
+	eq(notified, 2)
+	local n = 0
+	for _ in pairs(profs) do n = n + 1 end
+	eq(n, 2, "one entry per profession")
+end)
+
+it("tabs show the refreshed cap; Fishing gets no tab; Learn uses the new skill (#65)", function()
+	local ns, stub = LoadAddon()
+	cooking(stub)
+	stub.Fire("TRADE_SKILL_SHOW")
+	stub.profession = nil
+	local client = {
+		[4] = { name = "Fishing", icon = 136245, skill = 149, max = 150, line = 356 },
+		[5] = { name = "Cooking", icon = 133971, skill = 150, max = 150, line = 185 },
+	}
+	ClientProfessions(client)
+	stub.Fire("PLAYER_LOGIN")
+	ns.ToggleProfitFrame()
+	local function TabLabels()
+		local out = {}
+		for _, f in ipairs(stub.frames) do
+			if f.label and f.icon and f.shown ~= false and f.label.text then out[#out + 1] = f.label.text end
+		end
+		return out
+	end
+	local labels = TabLabels()
+	eq(#labels, 1, "one tab: Cooking")
+	assert(labels[1]:find("Cooking", 1, true) and labels[1]:find("150/150", 1, true), labels[1])
+	client[5].max, client[5].skill = 225, 160
+	stub.Fire("SKILL_LINES_CHANGED") -- window open: refreshed without reopening anything
+	labels = TabLabels()
+	eq(#labels, 1)
+	assert(labels[1]:find("160/225", 1, true), labels[1])
+	eq(ns.charDB.professions[185].skill, 160) -- RecipeStatus/Learn read prof.skill
+end)
+
+it("ignores secret values and entries without a skill line (#65)", function()
+	local ns, stub = LoadAddon()
+	ClientProfessions({ [1] = { name = "Mining", icon = 1, skill = 30, max = 75, line = 186 },
+		[2] = { name = "Herbalism", icon = 2, skill = 10, max = 75 } })
+	issecretvalue = function(v) return v == 30 end
+	stub.Fire("PLAYER_LOGIN")
+	eq(next(ns.charDB.professions), nil, "nothing stored")
+	issecretvalue = nil
+	stub.Fire("SKILL_LINES_CHANGED")
+	eq(ns.charDB.professions[186].skill, 30)
+	eq(ns.charDB.professions[186].name, "Mining")
+end)
+
+it("a window opened after the refresh takes over its entry instead of listing it twice (#65)", function()
+	local ns, stub = LoadAddon()
+	ns.ProfessionSkillLines = { Cooking = 185 }
+	ClientProfessions({ [5] = { name = "Cooking", icon = 133971, skill = 150, max = 225, line = 185 } })
+	stub.Fire("PLAYER_LOGIN")
+	eq(ns.charDB.professions[185].maxSkill, 225)
+	-- the window reports another profession ID for the same skill line
+	cooking(stub)
+	stub.profession.id, stub.profession.max = 2548, 225
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.charDB.professions[185], nil, "refresh-only entry taken over")
+	local prof = ns.charDB.professions[2548]
+	eq(prof.name, "Cooking"); eq(prof.icon, 133971); eq(prof.recipes[2538].learned, true)
+	stub.Fire("SKILL_LINES_CHANGED") -- refresh now finds the scanned entry
+	eq(ns.charDB.professions[185], nil)
+	eq(ns.charDB.professions[2548].maxSkill, 225)
+end)

@@ -270,6 +270,26 @@ it("reads without changing quest log or reputation UI state", function()
 	eq(stub.uiChanges, 0)
 end)
 
+it("professions: refreshed cap after Expert, Fishing without a window (#65)", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub) -- Leatherworking scanned at 120/150, client list now 125/150
+	stub.profession = nil -- window closed; the client's list holds Leatherworking and Fishing
+	local client = {
+		[1] = { "Leatherworking", 136247, 125, 225, 165 },
+		[4] = { "Fishing", 136245, 149, 150, 356 },
+	}
+	GetProfessions = function() return 1, nil, nil, 4 end
+	GetProfessionInfo = function(i) local p = client[i]; if p then return p[1], p[2], p[3], p[4], 0, 0, p[5] end end
+	stub.Fire("SKILL_LINES_CHANGED")
+	GetProfessions = nil -- only the cache now: the snapshot shows what the refresh stored
+	local snap = ns.Snapshot.Build()
+	eq(#snap.professions, 2)
+	local lw, fishing = snap.professions[1], snap.professions[2]
+	eq(lw.name, "Leatherworking"); eq(lw.skill, 125); eq(lw.max, 225); eq(lw.recipesKnown, 1); eq(lw.cached, nil)
+	eq(fishing.name, "Fishing"); eq(fishing.kind, "secondary"); eq(fishing.skill, 149); eq(fishing.max, 150)
+	eq(fishing.line, 356); eq(fishing.cached, false); eq(fishing.recipesKnown, nil); eq(fishing.scanned, nil)
+end)
+
 -- SavedVariables as the client writes them: one ["key"] = value per line, tab-indented.
 local function Serialize(v, indent, out)
 	indent = indent or ""
