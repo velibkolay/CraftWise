@@ -341,3 +341,11 @@ New file `FlightPaths.lua` in the TOC: **full game restart** needed (not `/reloa
 - [ ] `x`/`y` × 100 roughly match the flight point's place on the continent map.
 - [ ] Discover a new flight point, open that flight master: the continent's entry has the new node and a new `t`; the other continent's entry is unchanged.
 - [ ] Another character: its own `flightPaths` (per character), no mix-up.
+
+## Market scope: recipe items and profession books (#67)
+No new files: `/reload` is enough.
+- [ ] Auctionator full scan at the Horde AH, then `/craftwise market <itemID>` of Recipe: Mithril Head Trout (link it from the AH or bags): it has a price at the Horde AH, not "not a recorded item".
+- [ ] Same for the Expert Cookbook (and Expert First Aid, if listed). If it shows "not a recorded item" after a full scan: `/dump C_Item.GetItemInfoInstant(<itemID>)` and report the 6th and 7th values (class, subclass). CraftWise takes a book only when the client files it as Recipe (9) with the profession's subclass (Cooking 5, First Aid 7, Fishing 9); a "Book" (0) subclass is not recorded and the book IDs then need verified data.
+- [ ] A Tailoring pattern (or any profession neither you nor the alt has) is still "not a recorded item" after the scan.
+- [ ] Profit view, Learn: a not-yet-learned recipe taught by an item that was on the AH shows "To learn" with the AH price and its label (e.g. "typical · Horde AH", or "current lowest, too little history" in the first days).
+- [ ] The full scan still finishes without a noticeable stall (each item outside the scope is checked once per session).

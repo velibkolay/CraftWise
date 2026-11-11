@@ -494,6 +494,13 @@ it("scope: bundled recipes of own professions plus the alt's, nothing else", fun
 	eq(M.InScope(reagent), true); eq(M.InScope(output), true)
 	reagent, output = sample(186) -- Mining, the alt's
 	eq(M.InScope(reagent), true); eq(M.InScope(output), true)
+	-- The bundled recipe item of a Leatherworking recipe (#67).
+	for recipeID, source in pairs(ns.SourceData) do
+		if ns.RecipeData[recipeID] and ns.RecipeData[recipeID].skillLine == 165 then
+			eq(M.InScope(source.item), true, "bundled recipe item")
+			break
+		end
+	end
 	local lines = CraftWiseMarketDB.scope.skillLines
 	eq(lines[165], true); eq(lines[202], true); eq(lines[186], true); eq(lines[197], nil)
 	-- A Tailoring-only output stays out.
@@ -510,6 +517,74 @@ it("scope: bundled recipes of own professions plus the alt's, nothing else", fun
 			break
 		end
 	end
+end)
+
+-- #67: recipe items and profession books. Stub data only: item IDs here are not real ones.
+it("scope: recipe items of own professions from bundled and recorded data, not others'", function()
+	local M, stub, ns = Market()
+	ns.ProfessionSkillLines = { Cooking = 185, Tailoring = 197, Engineering = 202, Mining = 186 }
+	ns.RecipeData = {
+		[501] = { skillLine = 185, reagents = { { itemID = 51, quantity = 1 } }, output = { itemID = 52, quantity = 1 } },
+		[502] = { skillLine = 197, reagents = { { itemID = 53, quantity = 1 } }, output = { itemID = 54, quantity = 1 } },
+		[503] = { skillLine = 185, reagents = { { itemID = 51, quantity = 2 } }, output = { itemID = 55, quantity = 1 } },
+	}
+	ns.SourceData = { [501] = { skill = 175, item = 601 }, [502] = { skill = 50, item = 602 } }
+	ns.db.sources[603] = { recipe = 503 } -- recorded in game (#37), no bundled item
+	ns.db.sources[604] = { recipe = 502 }
+	ns.charDB.professions[185] = { name = "Cooking", recipes = {} }
+	stub.Fire("PLAYER_LOGIN")
+	eq(M.InScope(601), true, "bundled recipe item of an own profession")
+	eq(M.InScope(603), true, "recorded recipe item of an own profession")
+	eq(M.InScope(602), false, "Tailoring is not a scope profession")
+	eq(M.InScope(604), false)
+end)
+
+it("scope: a recipe item and a profession book join from an Auctionator full scan", function()
+	local M, stub, ns = Market({ auctionator = true })
+	ns.ProfessionSkillLines = { Cooking = 185, Tailoring = 197, Engineering = 202, Mining = 186 }
+	ns.RecipeData = { [501] = { skillLine = 185, reagents = { { itemID = 51, quantity = 1 } }, output = { itemID = 52, quantity = 1 } } }
+	ns.SourceData = { [501] = { skill = 175, item = 601 } }
+	ns.charDB.professions[185] = { name = "Cooking", recipes = {} }
+	stub.Fire("PLAYER_LOGIN")
+	-- 701: a profession book the client files as Recipe / Cooking; not in any bundled table.
+	stub.itemClass[701], stub.itemSubclass[701] = 9, Enum.ItemRecipeSubclass.Cooking
+	-- 702: a Tailoring pattern; 703: a "Book" recipe (names no profession); 704: trade goods.
+	stub.itemClass[702], stub.itemSubclass[702] = 9, Enum.ItemRecipeSubclass.Tailoring
+	stub.itemClass[703], stub.itemSubclass[703] = 9, Enum.ItemRecipeSubclass.Book
+	stub.itemClass[704], stub.itemSubclass[704] = 7, 5
+	eq(M.InScope(701), false, "the book is not in scope before the AH shows it")
+	OpenAH(stub)
+	stub.replicate = Rows({
+		{ 601, 1, 2500 }, -- the recipe item at 25s
+		{ 601, 1, 3000 },
+		{ 701, 1, 90000 }, -- the profession book at 9g
+		{ 702, 1, 500 },
+		{ 703, 1, 500 },
+		{ 704, 1, 500 },
+	})
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	eq(M.Current(601, HORDE).min, 2500); eq(M.Current(601, HORDE).listings, 2)
+	eq(M.Current(701, HORDE).min, 90000)
+	eq(M.InScope(701), true, "the book stays in scope")
+	eq(CraftWiseMarketDB.items[702], nil, "another profession's pattern")
+	eq(CraftWiseMarketDB.items[703], nil, "Book subclass names no profession")
+	eq(CraftWiseMarketDB.items[704], nil)
+	eq(CraftWiseMarketDB.items[601][HORDE].raw[1].total, 2, "raw point, like any in-scope item")
+	eq(CraftWiseMarketDB.scans[HORDE][1].items, 2)
+	-- Learn cost (#16) reads the recorded price of the recipe item.
+	local cost, how, label = ns.LearnCost(501)
+	eq(cost, 2500); eq(how, "auction"); eq(label, "current lowest, too little history · Horde AH")
+end)
+
+it("scope: browse rows of a recipe of an own profession are recorded", function()
+	local M, stub, ns = Market()
+	ns.ProfessionSkillLines = { Cooking = 185 }
+	ns.charDB.professions[185] = { name = "Cooking", recipes = {} }
+	stub.Fire("PLAYER_LOGIN")
+	stub.itemClass[705], stub.itemSubclass[705] = 9, Enum.ItemRecipeSubclass.Cooking
+	OpenAH(stub)
+	stub.Fire("AUCTION_HOUSE_BROWSE_RESULTS_ADDED", { { itemKey = { itemID = 705 }, totalQuantity = 1, minPrice = 2500 } })
+	eq(M.Current(705, HORDE).min, 2500)
 end)
 
 it("scope survives a reload and remembers another character's professions", function()
