@@ -12,3 +12,22 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.1
       - name: Headless tests and Forever API audit
         run: lua5.1 tests/run.lua
+  companion:
+    # Go packages of the companion app (#93): SavedVariables parser, market entry port (golden-tested
+    # against fixtures written by the Lua code, tests/companion_fixtures.lua), typed readers.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/go.mod
+          cache: false
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
