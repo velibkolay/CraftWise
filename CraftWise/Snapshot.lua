@@ -417,12 +417,28 @@ function S.Market()
 	return ns.Market.SnapshotSummary()
 end
 
+-- Waylaid crates by cost per Merchant's Favor (#91), and the Favor balance with the merchants that take it.
+function S.Crates()
+	if not (ns.Crates and ns.Crates.SnapshotCrates) then
+		return nil, "Crates not loaded"
+	end
+	return ns.Crates.SnapshotCrates()
+end
+
+function S.Favor()
+	if not (ns.Crates and ns.Crates.SnapshotFavor) then
+		return nil, "Crates not loaded"
+	end
+	return ns.Crates.SnapshotFavor()
+end
+
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
 	{ "fishing", S.Fishing }, { "fishingZones", S.FishingZones }, { "auctions", S.Auctions },
 	{ "market", S.Market },
+	{ "crates", S.Crates }, { "favor", S.Favor },
 }
 
 ----------------------------------------------------------------------------------------------------

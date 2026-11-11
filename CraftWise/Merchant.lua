@@ -28,6 +28,8 @@
 --       n,                        stock: -1 unlimited, else the number available
 --       unusable = true,          the merchant shows it in red (not usable by this character)
 --       known = true,             the item's tooltip says "Already known"
+--       req = { faction, standing, text },  reputation requirement on the item's tooltip (#91), as the
+--                                 line reads; standing 1..8 when the label is a known standing
 --       ps = { [standing] = p },  price seen at each standing with the NPC's faction (discount evidence)
 --       pk = { [standing] = key },  character key that saw ps[standing] last (#75)
 --       pc = { [key] = { p, st, t } },  per character: the copper price it saw last, its standing with
@@ -200,23 +202,57 @@ local function Costs(index)
 	return #costs > 0 and costs or nil
 end
 
--- "Already known" on the item's merchant tooltip (recipes, mounts, toys). Only asked for recipe items.
-local function Known(index)
-	local known = Text(ITEM_SPELL_KNOWN)
-	if not (known and C_TooltipInfo and C_TooltipInfo.GetMerchantItem) then
+-- Standing number (1..8) of a standing label as the client names it (FACTION_STANDING_LABELn).
+local function StandingNumber(label)
+	for i = 1, 8 do
+		if label == (Text(_G["FACTION_STANDING_LABEL" .. i]) or M.STANDINGS[i]) then
+			return i
+		end
+	end
+end
+
+-- Lua pattern of the client's reputation requirement line, ITEM_REQ_REPUTATION ("Requires %s - %s" on
+-- an English client): faction and standing captured. nil when the client has no such string.
+local function ReqPattern()
+	local fmt = Text(ITEM_REQ_REPUTATION)
+	if not fmt then
 		return nil
+	end
+	local p = fmt:gsub("([%(%)%.%+%-%*%?%[%]%^%$])", "%%%1")
+	p = p:gsub("%%%d%$s", "(.+)"):gsub("%%s", "(.+)")
+	return "^" .. p .. "$"
+end
+
+-- The item's merchant tooltip (#66, #91): "Already known" (recipes, mounts, toys) and the reputation
+-- requirement { faction, standing = 1..8 | nil, text } exactly as the line reads. Returns read (the
+-- client gave a tooltip), known, req.
+local function ItemTooltip(index)
+	if not (C_TooltipInfo and C_TooltipInfo.GetMerchantItem) then
+		return false
 	end
 	local ok, data = pcall(C_TooltipInfo.GetMerchantItem, index)
 	if not (ok and data and data.lines) then
-		return nil
+		return false
 	end
+	local knownText, pattern = Text(ITEM_SPELL_KNOWN), ReqPattern()
+	local known, req
 	for _, line in ipairs(data.lines) do
-		if Text(line.leftText) == known then
-			return true
+		local text = Text(line.leftText)
+		text = text and (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+		if text then
+			if knownText and text == knownText then
+				known = true
+			elseif pattern and not req then
+				local faction, standing = text:match(pattern)
+				if faction then
+					req = { faction = faction, standing = StandingNumber(standing), text = text }
+				end
+			end
 		end
 	end
-	return nil
+	return true, known, req
 end
+M.ItemTooltip = ItemTooltip
 
 local function IsRecipe(itemID)
 	if not (C_Item and C_Item.GetItemInfoInstant) then
@@ -318,8 +354,16 @@ function M.Record()
 			item.c = info.extended and Costs(index) or nil
 			item.n = info.available
 			item.unusable = info.usable == false or nil
-			if IsRecipe(itemID) then
-				item.known = Known(index)
+			-- Tooltip only for recipes and items with currency/item costs (Favor vendors, #91).
+			local recipe = IsRecipe(itemID)
+			if recipe or info.extended then
+				local read, known, req = ItemTooltip(index)
+				if read then
+					if recipe then
+						item.known = known
+					end
+					item.req = req
+				end
 			end
 			if m.standing and item.p > 0 then
 				item.ps = item.ps or {}

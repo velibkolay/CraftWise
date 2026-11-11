@@ -54,6 +54,7 @@ local DB_DEFAULTS = {
 	vendor = {}, -- [itemID] = unit price in copper seen at a merchant
 	sources = {}, -- [recipe itemID] = { vendors, loot, quests } seen in game (SourceRecorder.lua, issue #37)
 	merchants = {}, -- [npcID] = full inventory of a merchant this account opened (Merchant.lua, issue #66)
+	crates = {}, -- [itemID] = Waylaid crate: tooltip lines, fill options, reward (Crates.lua, issue #91)
 	-- [recipeID] = { fee = copper, required = skill, at, name, icon, skill = profession name, line,
 	--   reagents, output, noItemOutput, recipeAt }: seen at a trainer (Trainer.lua; recipe fields #83)
 	trainer = {},
@@ -455,6 +456,12 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local fishingArg = msg:match("^fishing%s*(.*)$")
 	if fishingArg and ns.Fishing then
 		ns.Fishing.Slash(fishingArg)
+		return
+	end
+	if msg == "crates" or msg == "crate" then
+		if ns.Crates then
+			ns.Crates.Slash()
+		end
 		return
 	end
 	if msg == "snapshot" then

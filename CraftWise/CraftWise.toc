@@ -46,6 +46,7 @@ Leveling.lua
 Music.lua
 Video.lua
 FlightPaths.lua
+Crates.lua
 Snapshot.lua
 UI\Style.lua
 UI\ItemMenu.lua
