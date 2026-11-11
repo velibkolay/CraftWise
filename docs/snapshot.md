@@ -133,5 +133,8 @@ Per node:
 | `known` | Discovered flag from the map's own node list (`C_TaxiMap.GetTaxiNodesForMap`, `isUndiscovered`): `true` = discovered. Missing when that list didn't have the node. |
 | `transition` | `true` for map-layer transition points (Blizzard's flight map shows them only on other map layers); missing otherwise. |
 
+### `fishing`
+Fishing log summary (#69), this character, last 90 days: `{ days, catches, containersOpened, zones }`. `zones` is sorted by catches, each `{ zone, catches, valuePerCatch, unpricedUnits, subzones }`; each subzone `{ subzone, maps (uiMapIDs), catches, valuePerCatch, unpricedUnits, items }`; each item `{ itemID, name, count, unitValue, valueSource }`. Values are copper. `unitValue` is the item's best sell value (`valueSource` = the AH quote label, e.g. "typical · Horde AH", or "vendor"), or for a caught container without a price the mean value of its logged contents (`"contents of N opened"`); missing with `valueSource = "no price data"`. `valuePerCatch` leaves unpriced units out; `unpricedUnits` says how many. Raw catches are in `CraftWiseDB.fishing["<realm>-<name>"]` (see `CraftWise/Fishing.lua`).
+
 ## Size
 A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents) is about 57 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations, holdings and flight paths are roughly 12-13 KB each.

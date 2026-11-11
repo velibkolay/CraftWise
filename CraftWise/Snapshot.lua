@@ -383,10 +383,19 @@ function S.FlightPaths()
 	return ns.FlightPaths.Snapshot()
 end
 
+-- Fishing log per zone (#69): catches, value per catch, items, last 90 days.
+function S.Fishing()
+	if not (ns.Fishing and ns.Fishing.SnapshotSummary) then
+		return nil, "Fishing not loaded"
+	end
+	return ns.Fishing.SnapshotSummary()
+end
+
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
+	{ "fishing", S.Fishing },
 }
 
 ----------------------------------------------------------------------------------------------------

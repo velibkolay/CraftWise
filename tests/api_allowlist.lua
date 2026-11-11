@@ -22,6 +22,7 @@ return {
 		-- not yet seen working in Forever: see docs/ingame-checks.md "Source recorder". If absent, nothing is recorded.
 		GetLootSourceInfo = "UNVERIFIED in Forever, first in-game check in docs/ingame-checks.md (Source recorder)",
 		GetLootSlotInfo = UI .. "Mainline/LootFrame.lua (LootFrameMixin:Open; returns texture, item, quantity, currencyID, quality, locked, isQuestItem, questID, isActive, isCoin)",
+		IsFishingLoot = UI .. "Blizzard_UIPanels_Game/Mainline/LootFrame.lua (LootFrameMixin:OnEvent, LOOT_OPENED: elseif IsFishingLoot() then PlaySound(FISHING_REEL_IN))",
 		LootSlot = UI .. "Mainline/LootFrame.lua (item OnClick)",
 		IsModifiedClick = UI .. "Mainline/ContainerFrame.lua (IsModifiedClick(\"AUTOLOOTTOGGLE\")); Blizzard_SettingsDefinitions_Frame/Controls.lua registers the AUTOLOOTTOGGLE modifier",
 		GetQuestID = UI .. "Mainline/QuestFrame.lua",

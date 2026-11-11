@@ -349,3 +349,13 @@ No new files: `/reload` is enough.
 - [ ] A Tailoring pattern (or any profession neither you nor the alt has) is still "not a recorded item" after the scan.
 - [ ] Profit view, Learn: a not-yet-learned recipe taught by an item that was on the AH shows "To learn" with the AH price and its label (e.g. "typical · Horde AH", or "current lowest, too little history" in the first days).
 - [ ] The full scan still finishes without a noticeable stall (each item outside the scope is checked once per session).
+
+## Fishing log (#69)
+New file `Fishing.lua` in the TOC: **full game restart** needed (not `/reload`).
+- [ ] Fish a few times with fast auto-loot on (default), then `/craftwise fishing`: the zone and subzone are listed with the number of casts, each caught item with its count and value ("vendor", an AH label, or "no price data"). `/dump CraftWiseDB.fishing` shows one entry per cast with `t`, `zone`, `sub`, `map` and `items`.
+- [ ] Same with Shift held (or fast auto-loot off in Settings, or the loot window open by hand): still recorded once per cast, nothing twice.
+- [ ] Loot a mob or a chest: no catch is recorded (IsFishingLoot is false).
+- [ ] Fish in a pool and in open water and compare `obj` in `/dump CraftWiseDB.fishing`: report whether `obj` is set and whether it differs between the two (the GameObject the client names as the loot source; CraftWise doesn't interpret it yet). If `obj` is always missing, `GetLootSourceInfo` gives nothing for fishing loot.
+- [ ] Catch a container (trunk, crate, bloated fish), open it from the bags: `/dump CraftWiseDB.fishing["<realm>-<name>"].opened` has an entry with the container's item ID and its contents. `/craftwise fishing` then values the container by its contents ("contents of 1 opened") if it has no price itself. Coins from a container are not recorded.
+- [ ] `/craftwise fishing <zone>` (zone or subzone name, any case) lists only that zone.
+- [ ] `/craftwise snapshot`, `/reload`: the snapshot has `fishing` with the per-zone summary (`docs/snapshot.md`).
