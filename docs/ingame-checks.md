@@ -373,3 +373,10 @@ No new files: `/reload` is enough. Make a backup of `WTF/Account/<account>/Saved
 - [ ] `/reload`, then check the file: `CraftWiseDB.snapshots` has `"<realm>-Velikopter Tanner"` with `char.name = "Velikopter"`, `char.surname = "Tanner"`; `CraftWiseMarketDB.ledger.chars` and `CraftWiseDB.fishing` use the same key. Report the exact key (it shows which separator the client's `Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR` gives; expected a space).
 - [ ] Log in with Velikopter Wright, buy something at a vendor, fish once, `/reload`: Wright has its own `"<realm>-Velikopter Wright"` entries; Tanner's ledger (`/craftwise ledger`) and `/craftwise fishing` are unchanged when you switch back.
 - [ ] `/craftwise where <item>` (merchants, #75) shows the standing of the character you are on.
+
+## Subzone text and the line-0 profession (#78)
+No new files: `/reload` is enough.
+- [ ] Stand in a named place (e.g. Razor Hill, The Crossroads): `/craftwise snapshot`, `/reload`. `location.subzone` is that name and `location.minimapZone` matches the text over the minimap.
+- [ ] Stand in the open with no subzone over the minimap: `location.subzone = ""`, `minimapZone` = the zone. If `subzone` is `""` while the minimap shows a place name, report both texts: then `GetSubZoneText` and the minimap disagree on Forever.
+- [ ] Fish at a named spot and in open water: `/dump CraftWiseDB.fishing` catches have `sub` with the name, or `sub = ""`; `/craftwise fishing` lists the open-water casts as "(no subzone)".
+- [ ] After login the "? 0/0" profession tab is gone, and `/dump CraftWiseCharDB.professions[0]` is `nil`. Open and close every profession window: it does not come back.

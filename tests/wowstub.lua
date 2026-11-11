@@ -311,6 +311,8 @@ function UnitFactionGroup() return stub.faction end
 function GetRealmName() return stub.realm end
 function GetRealZoneText() return stub.zone end
 function GetSubZoneText() return stub.subzone end
+-- Blizzard's Minimap_Update text: the subzone, else the zone.
+function GetMinimapZoneText() return stub.subzone ~= "" and stub.subzone or stub.zone end
 function GetLocale() return stub.locale end
 stub.guids = {} -- unit token -> GUID
 function UnitGUID(unit) return stub.guids[unit] or "Player-1-SELF" end

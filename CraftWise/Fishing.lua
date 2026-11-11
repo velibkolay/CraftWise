@@ -129,7 +129,9 @@ end
 
 local function Where()
 	local zone = GetRealZoneText and Text(GetRealZoneText())
-	local sub = GetSubZoneText and Text(GetSubZoneText())
+	-- "" = the client names no subzone here (kept, #78; nil only when the text isn't readable).
+	local sub = GetSubZoneText and Safe(GetSubZoneText())
+	sub = type(sub) == "string" and sub or nil
 	local map = C_Map and C_Map.GetBestMapForUnit and Safe(C_Map.GetBestMapForUnit("player"))
 	return zone, sub, map
 end
@@ -309,7 +311,7 @@ function F.Summary(zoneFilter, key)
 			local subName = c.sub or ""
 			local s = z.bySub[subName]
 			if not s then
-				s = { sub = c.sub, catches = 0, counts = {}, maps = {}, mapSeen = {} }
+				s = { sub = subName, catches = 0, counts = {}, maps = {}, mapSeen = {} }
 				z.bySub[subName] = s
 				z.subzones[#z.subzones + 1] = s
 			end
@@ -444,7 +446,7 @@ function F.Slash(arg)
 			ns.Print(("%s: %d catches, %s per catch"):format(z.zone, z.catches, perCatch))
 			for _, s in ipairs(z.subzones) do
 				local sPer = s.value == 0 and s.unpriced > 0 and F.NO_PRICE or Money(s.perCatch)
-				ns.Print(("  %s: %d catches, %s per catch (total %s)"):format(s.sub or "(no subzone)", s.catches, sPer,
+				ns.Print(("  %s: %d catches, %s per catch (total %s)"):format(s.sub ~= "" and s.sub or "(no subzone)", s.catches, sPer,
 					ValueText(s.value, s.unpriced)))
 				for _, item in ipairs(s.items) do
 					local value = item.unit and ("%s each (%s)"):format(Money(item.unit.copper), item.unit.label) or F.NO_PRICE

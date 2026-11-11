@@ -39,7 +39,8 @@ Times (`t`, `scanned`, `since`) are Unix seconds (`time()`). Money is in copper 
 ### `location`
 | Field | Meaning |
 |---|---|
-| `zone`, `subzone` | Zone and subzone text (`GetRealZoneText`, `GetSubZoneText`); `subzone` missing when there is none. |
+| `zone`, `subzone` | Zone and subzone text (`GetRealZoneText`, `GetSubZoneText`); `subzone = ""` where the client names no subzone (#78). |
+| `minimapZone` | The text over the minimap (`GetMinimapZoneText`, as Blizzard's Minimap_Update shows it): the subzone, else the zone. |
 | `mapID`, `map` | UI map the player is on (`C_Map.GetBestMapForUnit`) and its name. |
 | `x`, `y` | Position on that map, 0..1 from the top left, 4 decimals (multiply by 100 for the usual map coordinates). Missing where the client gives no position (instances). |
 | `resting` | In a city or inn (`IsResting`). |
@@ -137,7 +138,7 @@ Per node:
 | `transition` | `true` for map-layer transition points (Blizzard's flight map shows them only on other map layers); missing otherwise. |
 
 ### `fishing`
-Fishing log summary (#69), this character, last 90 days: `{ days, catches, containersOpened, zones }`. `zones` is sorted by catches, each `{ zone, catches, valuePerCatch, unpricedUnits, subzones }`; each subzone `{ subzone, maps (uiMapIDs), catches, valuePerCatch, unpricedUnits, items }`; each item `{ itemID, name, count, unitValue, valueSource }`. Values are copper. `unitValue` is the item's best sell value (`valueSource` = the AH quote label, e.g. "typical · Horde AH", or "vendor"), or for a caught container without a price the mean value of its logged contents (`"contents of N opened"`); missing with `valueSource = "no price data"`. `valuePerCatch` leaves unpriced units out; `unpricedUnits` says how many. Raw catches are in `CraftWiseDB.fishing["<realm>-<name>"]` (see `CraftWise/Fishing.lua`).
+Fishing log summary (#69), this character, last 90 days: `{ days, catches, containersOpened, zones }`. `zones` is sorted by catches, each `{ zone, catches, valuePerCatch, unpricedUnits, subzones }`; each subzone `{ subzone (`""` = none), maps (uiMapIDs), catches, valuePerCatch, unpricedUnits, items }`; each item `{ itemID, name, count, unitValue, valueSource }`. Values are copper. `unitValue` is the item's best sell value (`valueSource` = the AH quote label, e.g. "typical · Horde AH", or "vendor"), or for a caught container without a price the mean value of its logged contents (`"contents of N opened"`); missing with `valueSource = "no price data"`. `valuePerCatch` leaves unpriced units out; `unpricedUnits` says how many. Raw catches are in `CraftWiseDB.fishing[<character key>]` (see `CraftWise/Fishing.lua`).
 
 ## Size
 A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents) is about 57 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations, holdings and flight paths are roughly 12-13 KB each.
