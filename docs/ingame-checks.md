@@ -318,3 +318,16 @@ No new file: `/reload` is enough.
 - [ ] Fishing, Herbalism, Mining and Skinning get no tab. A profession whose window was never opened (e.g. First Aid) gets its tab only after opening the window once, as before.
 - [ ] Open a profession window afterwards: `/craftwise debug` lists that profession once, not twice, with its recipes.
 - [ ] Weapon skill-ups in combat (they also send `SKILL_LINES_CHANGED`) cause no stutter.
+
+## Merchant recorder and "who sells X" (#66)
+New file `Merchant.lua` in the TOC: **full game restart** needed (not `/reload`).
+- [ ] Open any vendor (e.g. a fishing supplier), then `/dump CraftWiseDB.merchants[<npcID>]` (NPC ID from the GUID, `/dump UnitGUID("npc")` while the window is open): `name`, `zone`, `sub`, `map`, `x`/`y` (match the world map coordinates within a few tenths), `group`, `t`, and `items` with every item of every page: `p` = price in copper as shown, `s` = stack size, `n` = -1 for unlimited items.
+- [ ] **Faction (unverified):** at Sewa Mistrunner (Thunder Bluff) `faction` = `{ id, name = "Thunder Bluff" }` and `standing` = your standing (6 = Honored). This relies on the NPC's tooltip showing the faction name as a line; if `faction` is missing, hover the NPC and report the tooltip lines (`/dump C_TooltipInfo.GetUnit("npc")` while the window is open). `reaction` is `UnitReaction("npc", "player")`: report whether it equals your standing with the vendor's faction (e.g. 6 at Honored) or stays at 4/5.
+- [ ] `items[<itemID>].ps` holds the price per standing: Nightcrawlers at Sewa should show `ps[6] = 90`. A vendor of a faction where you are Neutral (e.g. Orgrimmar at Neutral) selling Nightcrawlers for 1s: `/craftwise where nightcrawlers` ends with "base price seen at Neutral: 1s". If you see the same item at a Friendly vendor, report its price next to the Neutral one (a Friendly discount is not assumed).
+- [ ] Limited stock (e.g. Strong Fishing Pole): `n` = the count on the button; `log` has `{ n, first, last, realm }`. Buy one: a new log entry with the lower count. Come back after it restocked: `/craftwise where strong fishing pole` shows "count rose 0 -> 1 between <time> and <time> (within ..., may be another layer)". Forever layers may have separate stock, so a rise is not proven to be a restock: report if counts jump between visits minutes apart.
+- [ ] Merchant filter: the window opens on your class filter. `filter`/`full`: switch the filter dropdown to "All": `full = true`, and items hidden by the class filter appear. With the class filter, items not shown are kept (not deleted).
+- [ ] A recipe you know: `known = true` (tooltip "Already known"). An item shown in red: `unusable = true`.
+- [ ] A currency/token vendor: `c` lists the costs with `currency` or `item` IDs; `p = 0` when only currency is asked.
+- [ ] `/craftwise where <shift-clicked item link>`, `/craftwise where 6530`, `/craftwise where nightcrawl`: vendors cheapest first with place, price, standing, stock and age. An unknown item: "no merchant you opened sells ...".
+- [ ] Item tooltip (bags or link): "Sold by" with up to 2 merchants and "+N more: /craftwise where". Settings: the "Sold by (merchants you opened)" checkbox turns it off; the Settings panel still fits.
+- [ ] Buying several items in a row at a vendor (each fires `MERCHANT_UPDATE`): no stutter.
