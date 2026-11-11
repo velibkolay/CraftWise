@@ -18,7 +18,7 @@
 			"binding": "DB",
 			"database_name": "craftwise",
 			// Placeholder: replace with the ID of the D1 database created in docs/web-deploy.md.
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "bdc6530b-02bc-4f88-a41b-5e03e68249e8",
 			"migrations_dir": "migrations"
 		}
 	],
