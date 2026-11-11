@@ -171,14 +171,19 @@ function S.Professions()
 	local list, byLine = {}, {}
 	for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
 		local line = ns.SkillLineOf and ns.SkillLineOf(professionID) or professionID
-		local learned = 0
-		for _, r in pairs(prof.recipes or {}) do
-			if r.learned then
-				learned = learned + 1
+		local known = {}
+		for recipeID, r in pairs(prof.recipes or {}) do
+			if r.learned and type(recipeID) == "number" then
+				known[#known + 1] = recipeID
 			end
 		end
+		-- Known recipe IDs (#107), ascending, as one "id,id,..." string: a character with every recipe of
+		-- two crafts known lists over 1,000, and names for all of them would not fit the snapshot's size
+		-- (measured in snapshot_spec). Names of recently learned recipes are in `recipesLearned`.
+		table.sort(known)
 		local p = { name = prof.name, skill = prof.skill, max = prof.maxSkill, line = line,
-			kind = SECONDARY[line] and "secondary" or "primary", recipesKnown = learned, scanned = prof.scannedAt }
+			kind = SECONDARY[line] and "secondary" or "primary", recipesKnown = #known, scanned = prof.scannedAt,
+			known = known[1] and table.concat(known, ",") or nil }
 		-- Only skill from the client's list (#65 refresh), no profession window read yet.
 		if not prof.scannedAt and next(prof.recipes or {}) == nil then
 			p.cached, p.recipesKnown = false, nil
@@ -214,6 +219,29 @@ function S.Professions()
 		return tostring(a.name) < tostring(b.name)
 	end)
 	return list
+end
+
+-- Recipes learned recently (#107), newest first, from CraftWiseCharDB.learned (Recipes.lua):
+-- { id, name, profession, t, how = "event" | "scan", after }. how "scan": learned between after and t.
+function S.RecipesLearned()
+	if not ns.charDB then
+		return nil, "character data not loaded"
+	end
+	local log = ns.charDB.learned or {} -- empty: none seen learned since this was installed
+	local profByLine = {}
+	for professionID, prof in pairs(ns.charDB.professions or {}) do
+		profByLine[ns.SkillLineOf and ns.SkillLineOf(professionID) or professionID] = prof
+	end
+	local out = {}
+	for i = #log, 1, -1 do
+		local e = log[i]
+		local prof = e.line and profByLine[e.line]
+		local cached = prof and prof.recipes and prof.recipes[e.id]
+		out[#out + 1] = { id = e.id, t = e.t, how = e.how, after = e.after,
+			name = (cached and cached.name) or (e.line and ns.BundledName and ns.BundledName(e.line, e.id)) or nil,
+			profession = prof and prof.name or nil }
+	end
+	return out
 end
 
 function S.Quests()
@@ -434,7 +462,7 @@ end
 
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
-	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
+	{ "professions", S.Professions }, { "recipesLearned", S.RecipesLearned }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
 	{ "fishing", S.Fishing }, { "fishingZones", S.FishingZones }, { "auctions", S.Auctions },
 	{ "market", S.Market },

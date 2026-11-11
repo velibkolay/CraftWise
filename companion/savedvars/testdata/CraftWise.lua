@@ -279,6 +279,7 @@ CraftWiseDB = {
 ["professions"] = {
 {
 ["kind"] = "primary",
+["known"] = "1",
 ["line"] = 165,
 ["max"] = 150,
 ["name"] = "Leatherworking",
@@ -323,6 +324,15 @@ CraftWiseDB = {
 },
 },
 ["read"] = 2,
+},
+["recipesLearned"] = {
+{
+["how"] = "event",
+["id"] = 1,
+["name"] = "Test Armor Kit",
+["profession"] = "Leatherworking",
+["t"] = 1794005520,
+},
 },
 ["reputations"] = {
 ["collapsedHeaders"] = {

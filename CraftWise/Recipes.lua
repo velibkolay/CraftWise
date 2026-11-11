@@ -76,6 +76,31 @@ local function ProfessionContext()
 	return base
 end
 
+-- Recipes learned recently (#107), newest last, in CraftWiseCharDB.learned:
+--   { id = recipeID, t, how = "event" | "scan", after, line }
+-- how "event": NEW_RECIPE_LEARNED fired at t (the time it was learned). how "scan": a profession scan at
+-- t found it learned and the scan before (at `after`) had it unlearned or not listed, so it was learned
+-- between after and t. A recipe is listed once (the first time it was seen learned). line = its skill line.
+ns.LEARNED_MAX = 20
+
+function ns.NoteLearned(recipeID, how, t, after, line)
+	if not (ns.charDB and type(recipeID) == "number") then
+		return false
+	end
+	ns.charDB.learned = ns.charDB.learned or {}
+	local log = ns.charDB.learned
+	for _, e in ipairs(log) do
+		if e.id == recipeID then
+			return false
+		end
+	end
+	log[#log + 1] = { id = recipeID, t = t, how = how, after = after, line = line }
+	while #log > ns.LEARNED_MAX do
+		table.remove(log, 1)
+	end
+	return true
+end
+
 -- Scans the open profession. Returns the cached profession table, or nil if nothing to scan.
 function ns.ScanProfession()
 	if not ns.charDB then
@@ -124,6 +149,9 @@ function ns.ScanProfession()
 	end
 	local prof = profs[base.professionID] or { recipes = {} }
 	profs[base.professionID] = prof
+	-- Learned since the last scan (#107): only against a scan that read recipes, so the first scan
+	-- of a profession doesn't list everything known as new.
+	local after = next(prof.recipes) ~= nil and prof.scannedAt or nil
 	prof.name = base.professionName
 	prof.skill = base.skillLevel or prof.skill
 	prof.maxSkill = base.maxSkillLevel or prof.maxSkill
@@ -134,9 +162,13 @@ function ns.ScanProfession()
 		local info = SafeCall(C_TradeSkillUI.GetRecipeInfo, recipeID)
 		if info and not info.isDummyRecipe then
 			local recipe = prof.recipes[recipeID] or {}
+			local was = recipe.learned
 			recipe.name = info.name or recipe.name
 			recipe.icon = info.icon or recipe.icon
 			recipe.learned = info.learned and true or false
+			if after and recipe.learned and not was then
+				ns.NoteLearned(recipeID, "scan", prof.scannedAt, after, line)
+			end
 			recipe.difficulty = info.relativeDifficulty
 			local reagents, output = ns.ReadSchematic(recipeID)
 			if reagents then
@@ -188,6 +220,24 @@ end
 ns.On("TRADE_SKILL_SHOW", RequestScan)
 ns.On("TRADE_SKILL_LIST_UPDATE", RequestScan)
 ns.On("TRADE_SKILL_DATA_SOURCE_CHANGED", RequestScan)
+
+-- A recipe learned (pattern used, trainer), window open or not (#107): logged with the time, and the
+-- cached recipe marked learned so the profit view and the snapshot show it before the next scan.
+-- Whether Forever fires this for every way of learning is an in-game check (docs/ingame-checks.md).
+ns.On("NEW_RECIPE_LEARNED", function(_, recipeID)
+	if not (ns.charDB and type(recipeID) == "number") then
+		return
+	end
+	local line = ns.RecipeLine(recipeID)
+	ns.NoteLearned(recipeID, "event", time(), nil, line)
+	for professionID, prof in pairs(ns.charDB.professions or {}) do
+		local recipe = prof.recipes and prof.recipes[recipeID]
+		if recipe and not recipe.learned and (line == nil or ns.SkillLineOf(professionID) == line) then
+			recipe.learned = true
+			ns.Notify("RECIPES_CHANGED", professionID)
+		end
+	end
+end)
 
 -- Skill, max skill, name and icon of every profession the character has (primary, secondary,
 -- gathering, Fishing), from the client's profession list (#65): no window needed, so learning Expert

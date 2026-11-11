@@ -388,6 +388,7 @@ local function SnapshotClient(stub)
 		[1] = { info = { name = "Test Armor Kit", learned = true }, schematic = stub.Schematic({ { HIDE, 1 } }, POTION) },
 	} }
 	stub.Fire("TRADE_SKILL_SHOW")
+	stub.Fire("NEW_RECIPE_LEARNED", 1) -- recently learned (#107)
 end
 
 -- Loads the addon (loadAddon = run.lua's LoadAddon), plays the scenario, returns the file's text.

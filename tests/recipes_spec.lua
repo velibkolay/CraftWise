@@ -409,3 +409,64 @@ it("never creates a skill line 0 or empty-name entry (#78)", function()
 	C_TradeSkillUI.GetBaseProfessionInfo = base
 	eq(profs[0], nil); eq(profs[165], nil)
 end)
+
+-- #107: which recipes were learned recently, with the time.
+local TUNIC, GLOVES, BOOTS = 1255102, 1255129, 2149 -- Brawler's Leather Tunic, Trapper's Leather Gloves (Leatherworking)
+local function patterns(stub, tunic, gloves)
+	stub.profession = { id = 165, name = "Leatherworking", skill = 120, max = 150, recipes = {
+		[BOOTS] = { info = { name = "Handstitched Leather Boots", learned = true } },
+		[TUNIC] = { info = { name = "Brawler's Leather Tunic", learned = tunic } },
+		[GLOVES] = gloves ~= nil and { info = { name = "Trapper's Leather Gloves", learned = gloves } } or nil,
+	} }
+end
+
+it("#107: the first scan lists nothing as learned; a later scan logs what became learned with its window", function()
+	local ns, stub = LoadAddon()
+	local clock = 1000000
+	time = function() return clock end
+	patterns(stub, false, nil)
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(ns.charDB.learned, nil, "first scan: everything known is not new")
+	clock = clock + 600
+	patterns(stub, true, true) -- tunic learned, gloves newly listed and learned
+	stub.Fire("TRADE_SKILL_LIST_UPDATE")
+	local log = ns.charDB.learned
+	eq(#log, 2)
+	local byID = {}
+	for _, e in ipairs(log) do byID[e.id] = e end
+	eq(byID[TUNIC].how, "scan"); eq(byID[TUNIC].t, 1000600); eq(byID[TUNIC].after, 1000000); eq(byID[TUNIC].line, 165)
+	eq(byID[GLOVES].how, "scan"); eq(byID[BOOTS], nil)
+	clock = clock + 600
+	stub.Fire("TRADE_SKILL_LIST_UPDATE")
+	eq(#ns.charDB.learned, 2, "a rescan adds nothing")
+end)
+
+it("#107: NEW_RECIPE_LEARNED logs the exact time and marks the cached recipe learned; no double entry", function()
+	local ns, stub = LoadAddon()
+	local clock = 2000000
+	time = function() return clock end
+	patterns(stub, false, false)
+	stub.Fire("TRADE_SKILL_SHOW")
+	clock = clock + 30
+	stub.Fire("NEW_RECIPE_LEARNED", TUNIC)
+	local log = ns.charDB.learned
+	eq(#log, 1); eq(log[1].id, TUNIC); eq(log[1].how, "event"); eq(log[1].t, 2000030); eq(log[1].after, nil); eq(log[1].line, 165)
+	eq(ns.charDB.professions[165].recipes[TUNIC].learned, true)
+	stub.Fire("NEW_RECIPE_LEARNED", TUNIC)
+	clock = clock + 60
+	patterns(stub, true, false)
+	stub.Fire("TRADE_SKILL_LIST_UPDATE")
+	eq(#ns.charDB.learned, 1, "the scan after the event adds no second entry")
+	-- A recipe that isn't cached yet is still logged.
+	stub.Fire("NEW_RECIPE_LEARNED", GLOVES)
+	eq(#ns.charDB.learned, 2); eq(ns.charDB.learned[2].id, GLOVES)
+end)
+
+it("#107: the learned log keeps the newest entries only", function()
+	local ns = LoadAddon()
+	for i = 1, ns.LEARNED_MAX + 5 do
+		ns.NoteLearned(900000 + i, "event", i)
+	end
+	eq(#ns.charDB.learned, ns.LEARNED_MAX); eq(ns.charDB.learned[1].id, 900006)
+	eq(ns.charDB.learned[ns.LEARNED_MAX].id, 900000 + ns.LEARNED_MAX + 5)
+end)

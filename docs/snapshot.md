@@ -67,8 +67,20 @@ A list, primary professions first. Built from the profession cache and the clien
 | `skill`, `max` | Skill and current maximum (from the client's list when it has the profession, else from the cache). |
 | `line` | Parent skill line ID (e.g. 165 Leatherworking). |
 | `recipesKnown` | Learned recipes in the cache. Missing when `cached = false`. |
+| `known` | Learned recipe IDs in the cache (#107), ascending, as one string `"2149,1255102,..."` (recipe spell IDs, as `C_TradeSkillUI` and Wowhead's `spell=` use them). Names are not repeated here: every recipe of two crafts known is over 1,000 IDs, and names for all of them would not fit the snapshot's size. The names of recently learned recipes are in `recipesLearned`. Missing when no recipe is known or `cached = false`. |
 | `scanned` | When the recipe cache was last filled from the profession window. |
 | `cached` | `false` when no profession window has been read for it (Fishing, gathering professions, or a window never opened): skill and max are known, recipes are not. Missing otherwise. |
+
+### `recipesLearned`
+Recipes this character learned recently (#107), newest first, at most 20. Empty when none was seen learned since this was installed (older ones are not reconstructed).
+
+| Field | Meaning |
+|---|---|
+| `id` | Recipe spell ID. |
+| `name` | Name from the profession cache, else from the bundled client data (`Data/Recipes.lua`). Missing when neither has it. |
+| `profession` | Cached profession it belongs to. Missing when the recipe's profession isn't cached. |
+| `how` | `"event"`: the client announced it (`NEW_RECIPE_LEARNED`) and `t` is when it was learned. `"scan"`: a profession window scan at `t` found it learned while the scan before (at `after`) had it unlearned or not listed, so it was learned between `after` and `t`. |
+| `t`, `after` | Unix times as above; `after` only for `"scan"`. |
 
 ### `quests`
 | Field | Meaning |
@@ -253,4 +265,4 @@ Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/rel
 ## Size
 `CraftWiseMarketDB.itemInfo` for 10,000 items is about 0.34 MB (measured headless, `tests/item_info_spec.lua`); it is per item, not per house. With the names map and one full scan of 10,000 items at one house, the market data is about 1.4 MB.
 
-A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each and a Favor merchant with 82 items) is about 98 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 128 KB). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, quests, reputations, holdings and flight paths roughly 12-13 KB each.
+A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each, a Favor merchant with 82 items, every recipe of Leatherworking, Blacksmithing, Cooking and First Aid known and 20 recently learned recipes) is about 111 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 128 KB). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, `professions` with `recipesLearned` about 14 KB, quests, reputations, holdings and flight paths roughly 12-13 KB each.
