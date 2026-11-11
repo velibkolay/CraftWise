@@ -8,7 +8,7 @@
 --     kind: "ahbuy" (w = house key), "vbuy" (w = merchant name), "vsell" (w = merchant name),
 --           "buyback" (w = merchant name; takes back a vendor sale). Kept 30 days (decision 3).
 --     AH sales arrive by mail; they are #26 phase 3 and will be added here as kind "ahsell".
---   chars[charKey] = {
+--   chars[charKey] = {          charKey = ns.CharKey(), "<realm>-<name> <surname>" (#77)
 --     reset   = { t, money },   since the last `/craftwise ledger reset` (or since the log started)
 --     session = { t, money },   since login (kept across /reload)
 --     days    = { ["YYYY-MM-DD"] = money at the start of that day },  30 days
@@ -49,12 +49,9 @@ local store -- CraftWiseMarketDB.ledger
 -- Keys and time
 ----------------------------------------------------------------------------------------------------
 
+-- "<realm>-<name> <surname>" (#77, ns.CharKey in Core.lua).
 function L.CharKey()
-	local name, realm = UnitName("player"), GetRealmName()
-	if not name or name == "" then
-		return nil
-	end
-	return (realm or "") .. "-" .. name
+	return ns.CharKey()
 end
 
 function L.DayKey(t)

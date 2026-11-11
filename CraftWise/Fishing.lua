@@ -12,7 +12,7 @@
 --     bag slot whose item has loot) logs its contents against the container's item ID. Only item IDs this
 --     character caught count; another copy of the same item (bought, looted) can't be told apart.
 --
--- CraftWiseDB.fishing["<realm>-<name>"] (account-wide, per character), kept 90 days (Scout default, #69):
+-- CraftWiseDB.fishing["<realm>-<name> <surname>"] (account-wide, per character), kept 90 days (Scout default, #69):
 --   catches = { { t, zone, sub, map, obj, items = { [itemID] = count } }, ... }   one per loot window
 --   opened  = { { t, item = container itemID, items = { [itemID] = count } }, ... }
 --
@@ -40,15 +40,9 @@ local function Text(value)
 	return type(value) == "string" and value ~= "" and value or nil
 end
 
+-- "<realm>-<name> <surname>", the key the ledger and the snapshot use too (#77).
 function F.CharKey()
-	if ns.Ledger and ns.Ledger.CharKey then
-		return ns.Ledger.CharKey()
-	end
-	local name = UnitName and Text(UnitName("player"))
-	if not name then
-		return nil
-	end
-	return ((GetRealmName and Text(GetRealmName())) or "") .. "-" .. name
+	return ns.CharKey()
 end
 
 -- This character's log, created on first use; nil before the DB is loaded.

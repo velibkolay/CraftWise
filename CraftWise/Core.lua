@@ -60,8 +60,8 @@ local DB_DEFAULTS = {
 	sellAH = {}, -- [itemID] = true: items marked to sell on the auction house
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
-	snapshots = {}, -- ["<realm>-<name>"] = character snapshot for Claude (Snapshot.lua, issue #63)
-	fishing = {}, -- ["<realm>-<name>"] = { catches, opened }, 90 days (Fishing.lua, issue #69)
+	snapshots = {}, -- [ns.CharKey()] (= "<realm>-<name> <surname>", #77) = character snapshot for Claude (Snapshot.lua, issue #63)
+	fishing = {}, -- [ns.CharKey()] = { catches, opened }, 90 days (Fishing.lua, issue #69)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
@@ -111,11 +111,211 @@ ns.On("ADDON_LOADED", function(_, loaded)
 	ns.db, ns.charDB = CraftWiseDB, CraftWiseCharDB
 	ns.db.debug = { unknownEvents = ns.unknownEvents }
 	ns.Notify("DB_READY")
+	ns.MigrateCharKey() -- "pending" when the client doesn't know the character yet: retried below
 end)
 
 function ns.Print(msg)
 	print("|cff4fb3ffCraftWise|r: " .. tostring(msg))
 end
+
+----------------------------------------------------------------------------------------------------
+-- Character key (#77). Forever characters have a surname: UnitName("player") returns name, surname
+-- ("Velikopter", "Tanner"; snapshot of 2026-11-11). Blizzard's Forever UI joins the two with
+-- Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR (Blizzard_FrameXMLUtil/Camelot/
+-- NameUtil.lua, loaded for the camelot game type; Blizzard_GlueXML/Mainline/CharacterServicesShared.lua).
+-- The constant is a client table, not in the API docs; " " where a client lacks it (Syndicator on
+-- Forever stores "Velikopter Tanner-PvP"). Every per-character key (ledger, snapshot, fishing log,
+-- merchants) is ns.CharKey() = "<realm>-<name> <surname>", "<realm>-<name>" without a surname.
+----------------------------------------------------------------------------------------------------
+
+local function NameText(value)
+	if value ~= nil and issecretvalue and issecretvalue(value) then
+		return nil
+	end
+	return type(value) == "string" and value ~= "" and value or nil
+end
+
+local function SurnameSeparator()
+	local consts = Constants and Constants.CharacterNameSeparatorConsts
+	local sep = consts and consts.CHARACTERNAME_SURNAME_SEPARATOR
+	return type(sep) == "string" and sep ~= "" and sep or " "
+end
+
+-- Full name, first name, surname (nil without one); nil while the client doesn't know the name.
+function ns.CharName()
+	if not UnitName then
+		return nil
+	end
+	local name, surname = UnitName("player")
+	name, surname = NameText(name), NameText(surname)
+	if not name then
+		return nil
+	end
+	if surname then
+		return name .. SurnameSeparator() .. surname, name, surname
+	end
+	return name, name, nil
+end
+
+function ns.CharKey()
+	local full = ns.CharName()
+	if not full then
+		return nil
+	end
+	return (GetRealmName and NameText(GetRealmName()) or "") .. "-" .. full
+end
+
+-- Before #77 the key was "<realm>-<name>" without the surname, so characters with the same first name
+-- shared one ledger, snapshot and fishing log. That old entry goes to the current character only when
+-- the old snapshot's class and race match it; otherwise it stays under the old key, marked
+-- legacy = true, and one message says what could not be assigned. The owner is never guessed.
+-- Runs at load and again at login and on entering the world until the client knows the character.
+-- Returns "moved", "legacy", "none" or "pending".
+local migration -- result of this session, once settled
+
+local function LedgerStore()
+	local market = CraftWiseMarketDB
+	local ledger = type(market) == "table" and market.ledger
+	if type(ledger) == "table" and type(ledger.chars) == "table" and type(ledger.entries) == "table" then
+		return ledger
+	end
+end
+
+-- The ledger character of the old key merged into the one the current character started already
+-- (only when something was recorded before the client knew the character): what the new one doesn't
+-- have yet (days it hasn't seen, items without a position), and the older reset point.
+local function MergeLedgerChar(into, from)
+	for k, v in pairs(from) do
+		if k == "days" or k == "pos" then
+			into[k] = into[k] or {}
+			for id, value in pairs(v) do
+				if into[k][id] == nil then
+					into[k][id] = value
+				end
+			end
+		elseif into[k] == nil then
+			into[k] = v
+		end
+	end
+	if from.reset and into.reset and (from.reset.t or 0) < (into.reset.t or 0) then
+		into.reset = from.reset
+	end
+end
+
+local function AppendList(into, from)
+	for _, e in ipairs(from or {}) do
+		into[#into + 1] = e
+	end
+	table.sort(into, function(a, b) return (a.t or 0) < (b.t or 0) end)
+end
+
+function ns.MigrateCharKey()
+	if migration then
+		return migration
+	end
+	if not ns.db then
+		return "pending"
+	end
+	local full, first, surname = ns.CharName()
+	if not full then
+		return "pending"
+	end
+	if not surname then
+		migration = "none" -- the key has no surname, nothing changed
+		return migration
+	end
+	local oldKey = (GetRealmName and NameText(GetRealmName()) or "") .. "-" .. first
+	local newKey = ns.CharKey()
+	local snapshots, fishing, ledger = ns.db.snapshots or {}, ns.db.fishing or {}, LedgerStore()
+	local inLedger = ledger and ledger.chars[oldKey] ~= nil
+	for _, e in ipairs(ledger and ledger.entries or {}) do
+		inLedger = inLedger or e.c == oldKey
+	end
+	local found = {}
+	if snapshots[oldKey] then found[#found + 1] = "snapshot" end
+	if inLedger then found[#found + 1] = "ledger" end
+	if fishing[oldKey] then found[#found + 1] = "fishing log" end
+	if #found == 0 then
+		migration = "none"
+		return migration
+	end
+	local class = UnitClass and NameText((UnitClass("player")))
+	local race = UnitRace and NameText((UnitRace("player")))
+	if not (class and race) then
+		return "pending"
+	end
+	local old = snapshots[oldKey] and snapshots[oldKey].char
+	local oldClass, oldRace = old and old.class, old and old.race
+	if oldClass and oldRace and oldClass == class and oldRace == race then
+		local snap = snapshots[oldKey]
+		snapshots[oldKey] = nil
+		if snap then
+			snap.legacy = nil
+			if not snapshots[newKey] or (snapshots[newKey].t or 0) < (snap.t or 0) then
+				snapshots[newKey] = snap
+			end
+		end
+		local log = fishing[oldKey]
+		fishing[oldKey] = nil
+		if log then
+			log.legacy = nil
+			local into = fishing[newKey]
+			if into then
+				into.catches, into.opened = into.catches or {}, into.opened or {}
+				AppendList(into.catches, log.catches)
+				AppendList(into.opened, log.opened)
+			else
+				fishing[newKey] = log
+			end
+		end
+		if ledger then
+			local c = ledger.chars[oldKey]
+			ledger.chars[oldKey] = nil
+			if c then
+				c.legacy = nil
+				if ledger.chars[newKey] then
+					MergeLedgerChar(ledger.chars[newKey], c)
+				else
+					ledger.chars[newKey] = c
+				end
+			end
+			for _, e in ipairs(ledger.entries) do
+				if e.c == oldKey then
+					e.c = newKey
+				end
+			end
+		end
+		ns.Print(("%s saved for %s before surnames were part of the key now belong to %s (same class and race)."):format(
+			table.concat(found, ", "), oldKey, full))
+		migration = "moved"
+		return migration
+	end
+	if inLedger and not ledger.chars[oldKey] then -- entries only: the mark needs a place
+		ledger.chars[oldKey] = { days = {}, pos = {} }
+	end
+	local newlyMarked = false
+	for _, t in pairs({ snapshot = snapshots[oldKey], fishing = fishing[oldKey], ledger = inLedger and ledger.chars[oldKey] or nil }) do
+		if not t.legacy then
+			t.legacy = true
+			newlyMarked = true
+		end
+	end
+	if newlyMarked then
+		local why = old and ("its snapshot is a %s %s, this character a %s %s"):format(
+			tostring(oldRace), tostring(oldClass), race, class) or "no snapshot to compare class and race"
+		ns.Print(("%s saved under %s (before surnames were part of the key) could not be assigned to %s: %s. Kept under the old key, marked legacy."):format(
+			table.concat(found, ", "), oldKey, full, why))
+	end
+	migration = "legacy"
+	return migration
+end
+
+ns.On("PLAYER_LOGIN", function()
+	ns.MigrateCharKey()
+end)
+ns.On("PLAYER_ENTERING_WORLD", function()
+	ns.MigrateCharKey()
+end)
 
 ----------------------------------------------------------------------------------------------------
 -- Items in chat (#59): a clickable link when the client has one, else the name, else "item <id>".
