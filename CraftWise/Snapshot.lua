@@ -375,10 +375,18 @@ function S.Ledger()
 	return out
 end
 
+-- Known flight paths (#68): recorded when a flight master's map opens (FlightPaths.lua).
+function S.FlightPaths()
+	if not (ns.FlightPaths and ns.FlightPaths.Snapshot) then
+		return nil, "FlightPaths not loaded"
+	end
+	return ns.FlightPaths.Snapshot()
+end
+
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
-	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger },
+	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
 }
 
 ----------------------------------------------------------------------------------------------------
