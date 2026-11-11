@@ -317,6 +317,19 @@ it("professions: refreshed cap after Expert, Fishing without a window (#65)", fu
 	eq(fishing.line, 356); eq(fishing.cached, false); eq(fishing.recipesKnown, nil); eq(fishing.scanned, nil)
 end)
 
+it("location: subzone and the minimap's zone text; no subzone is stored as \"\" (#78)", function()
+	local ns, stub = Load()
+	SmallCharacter(ns, stub)
+	local l = ns.Snapshot.Build().location
+	eq(l.subzone, "The Crossroads"); eq(l.minimapZone, "The Crossroads")
+	stub.subzone = ""
+	l = ns.Snapshot.Build().location
+	eq(l.subzone, "", "kept, not dropped"); eq(l.minimapZone, "The Barrens")
+	GetSubZoneText, GetMinimapZoneText = nil, nil
+	l = ns.Snapshot.Build().location
+	eq(l.subzone, nil); eq(l.minimapZone, nil); eq(l.zone, "The Barrens")
+end)
+
 it("records known flight paths when a flight master map opens, per character with time (#68)", function()
 	local ns, stub = Load()
 	SmallCharacter(ns, stub) -- opened the Crossroads flight master on Kalimdor (1414)

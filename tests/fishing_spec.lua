@@ -193,3 +193,22 @@ it("Fishing.lua is in the TOC after Loot.lua", function()
 	f:close()
 	assert(toc:find("Loot.lua\nFishing.lua\n", 1, true), "Fishing.lua right after Loot.lua")
 end)
+
+it("#78: the subzone is stored on every catch; no subzone is stored as \"\"", function()
+	local ns, stub = setup()
+	cast(stub, { { link = "item:" .. FISH } })
+	stub.zone, stub.subzone = "Tanaris", ""
+	cast(stub, { { link = "item:" .. FISH } })
+	local catches = log(ns).catches
+	eq(catches[1].sub, "Nek'mani Wellspring")
+	eq(catches[2].sub, "", "empty subzone kept, not dropped")
+	-- Old catches without the field and new ones with "" are one "(no subzone)" row.
+	catches[3] = { t = NOW, zone = "Tanaris", map = 1446, items = { [FISH] = 1 } }
+	local tanaris
+	for _, z in ipairs(ns.Fishing.Summary().zones) do if z.zone == "Tanaris" then tanaris = z end end
+	eq(#tanaris.subzones, 1); eq(tanaris.subzones[1].sub, ""); eq(tanaris.subzones[1].catches, 2)
+	stub.printed = {}
+	ns.Fishing.Slash("tanaris")
+	has(printed(stub), "(no subzone)")
+	eq(ns.Fishing.SnapshotSummary().zones[1].subzones[1].subzone ~= nil, true)
+end)

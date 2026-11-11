@@ -370,3 +370,42 @@ it("a window opened after the refresh takes over its entry instead of listing it
 	eq(ns.charDB.professions[185], nil)
 	eq(ns.charDB.professions[2548].maxSkill, 225)
 end)
+
+-- #78: the client can report skill line 0 with an empty name (Veli's CraftWiseCharDB, scanned
+-- 2026-11-02): the "? 0/0" tab. Dropped at login, never created.
+it("login clean-up drops skill line 0 and empty-name entries (#78)", function()
+	local ns, stub = LoadAddon()
+	leatherworking(stub)
+	stub.Fire("TRADE_SKILL_SHOW")
+	local profs = ns.charDB.professions
+	profs[0] = { name = "", skill = 0, maxSkill = 0, scannedAt = 1793577600, recipes = {} }
+	profs[777] = { name = "", recipes = { [1] = { learned = true } } }
+	ns.Notify("DB_READY")
+	eq(profs[0], nil, "line 0"); eq(profs[777], nil, "empty name")
+	eq(profs[165].name, "Leatherworking", "real professions stay")
+	ns.ToggleProfitFrame()
+	local ids = ns.PF.ProfessionIDs()
+	eq(#ids, 1); eq(ids[1], 165)
+	local snap = ns.Snapshot.Build()
+	for _, p in ipairs(snap.professions or {}) do
+		assert(p.line ~= 0 and p.name ~= "", "no line-0 profession in the snapshot")
+	end
+end)
+
+it("never creates a skill line 0 or empty-name entry (#78)", function()
+	local ns, stub = LoadAddon()
+	ClientProfessions({
+		[1] = { name = "", icon = 0, skill = 0, max = 0, line = 0 },
+		[4] = { name = "Fishing", icon = 136245, skill = 10, max = 75, line = 356 },
+	})
+	stub.Fire("PLAYER_LOGIN")
+	local profs = ns.charDB.professions
+	eq(profs[0], nil); eq(profs[356].name, "Fishing")
+	local base = C_TradeSkillUI.GetBaseProfessionInfo
+	C_TradeSkillUI.GetBaseProfessionInfo = function() return { professionID = 0, professionName = "", skillLevel = 0, maxSkillLevel = 0 } end
+	eq(ns.ScanProfession(), nil, "window reporting line 0 is not scanned")
+	C_TradeSkillUI.GetBaseProfessionInfo = function() return { professionID = 165, professionName = "" } end
+	eq(ns.ScanProfession(), nil, "nor one without a name")
+	C_TradeSkillUI.GetBaseProfessionInfo = base
+	eq(profs[0], nil); eq(profs[165], nil)
+end)

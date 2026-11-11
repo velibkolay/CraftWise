@@ -90,9 +90,15 @@ function S.Location()
 	if GetRealZoneText then
 		l.zone = GetRealZoneText()
 	end
+	-- "" = the client names no subzone where the character stands (kept, #78).
 	if GetSubZoneText then
 		local sub = GetSubZoneText()
-		l.subzone = sub ~= "" and sub or nil
+		l.subzone = type(sub) == "string" and sub or nil
+	end
+	-- The text over the minimap (subzone, else zone), as Blizzard's Forever Minimap_Update shows it.
+	if GetMinimapZoneText then
+		local text = GetMinimapZoneText()
+		l.minimapZone = type(text) == "string" and text ~= "" and text or nil
 	end
 	if IsResting then
 		l.resting = IsResting() and true or false

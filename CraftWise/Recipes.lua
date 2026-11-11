@@ -56,6 +56,12 @@ function ns.ProfessionIconFromClient(name)
 	end
 end
 
+-- A profession worth a cache entry: a skill line other than 0 and a name (#78). The client can report
+-- line 0 with an empty name (seen in Veli's CraftWiseCharDB, scanned 2026-11-02): the "? 0/0" tab.
+function ns.IsProfessionEntry(professionID, name)
+	return type(professionID) == "number" and professionID ~= 0 and type(name) == "string" and name ~= ""
+end
+
 local function ProfessionContext()
 	if C_TradeSkillUI.IsTradeSkillLinked and C_TradeSkillUI.IsTradeSkillLinked() then
 		return nil
@@ -64,7 +70,7 @@ local function ProfessionContext()
 		return nil
 	end
 	local base = SafeCall(C_TradeSkillUI.GetBaseProfessionInfo)
-	if not (base and base.professionID and base.professionName) then
+	if not (base and ns.IsProfessionEntry(base.professionID, base.professionName)) then
 		return nil
 	end
 	return base
@@ -211,7 +217,8 @@ function ns.RefreshProfessionSkills()
 		local index = indices[i]
 		if index then
 			local ok, name, icon, skill, maxSkill, _, _, skillLine = pcall(GetProfessionInfo, index)
-			if ok and name and skillLine and not (Secret(name) or Secret(skill) or Secret(maxSkill) or Secret(skillLine)) then
+			if ok and name and skillLine and not (Secret(name) or Secret(skill) or Secret(maxSkill) or Secret(skillLine))
+				and ns.IsProfessionEntry(skillLine, name) then
 				local line = ns.SkillLineOf(skillLine, name)
 				local key = CachedKey(profs, line)
 				if not key then
@@ -329,7 +336,8 @@ end
 
 -- Login clean-up (#44): a recipe filed under a profession it doesn't belong to moves to the cached
 -- profession that owns it (kept there if that one already has it), otherwise it is dropped. Entries
--- with no name and no recipes (the "?" 0/0 tab) go. Recorded crafts (db.skillups) are not touched.
+-- with no name and no recipes (the "?" 0/0 tab) go, and so does every entry under skill line 0 or with
+-- an empty name (#78). Recorded crafts (db.skillups) are not touched.
 function ns.CleanProfessions()
 	local profs = ns.charDB and ns.charDB.professions
 	if not profs then
@@ -357,7 +365,7 @@ function ns.CleanProfessions()
 		changed = changed + 1
 	end
 	for professionID, prof in pairs(profs) do
-		if not prof.name and next(prof.recipes or {}) == nil then
+		if professionID == 0 or prof.name == "" or (prof.name == nil and next(prof.recipes or {}) == nil) then
 			profs[professionID] = nil
 			changed = changed + 1
 		end
