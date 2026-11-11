@@ -35,10 +35,16 @@ GOOS=darwin GOARCH=arm64 go build -o craftwise-companion ./cmd/craftwise-compani
 3. "Upload now", or `/reload` in game.
 
 On Windows it runs in the notification area. The menu shows the last check and its result, and has
-Upload now, Open wow.velikopter.com, Open my page, Open settings, Open log and Quit. On macOS (and
-with `-no-tray`) it runs in the terminal and logs there; there is no menu bar icon (a tray on macOS
-needs cgo and would stop the cross-compiled build). For autostart on Windows put a shortcut to the
-exe into `shell:startup`.
+Upload now, Open wow.velikopter.com, Open my page, Open settings, Open log, Start with Windows and
+Quit. On macOS (and with `-no-tray`) it runs in the terminal and logs there; there is no menu bar
+icon (a tray on macOS needs cgo and would stop the cross-compiled build).
+
+Autostart on Windows: tick "Start with Windows" in the menu (or `-autostart on`). It writes the value
+`CraftWise Companion` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` with the quoted
+path of the running exe; unticking removes it. The tick shows only when that value starts this exe:
+after moving the exe it shows unticked, and ticking it again writes the new path. A shortcut to the
+exe in `shell:startup` works too (then leave the menu item unticked, or it starts twice; the second
+one exits because one is already running).
 
 Command line:
 
@@ -48,7 +54,8 @@ Command line:
 | `-dry-run` | build the requests and log their size, send nothing, change no state |
 | `-dump <dir>` | dry run, and write the request bodies as JSON into `<dir>` |
 | `-full` | with `-once`: send everything again |
-| `-status` | print the file locations and the last upload |
+| `-status` | print the file locations, the last upload and (Windows) whether it starts with Windows |
+| `-autostart on\|off` | Windows: start with Windows or not (same as the menu item), then exit; elsewhere it prints "only on Windows" and exits with 1 |
 | `-open site\|me\|config\|log` | open one of them and exit |
 | `-no-tray` | run in the foreground (Windows) |
 | `-dir <dir>` | settings, state and log directory |

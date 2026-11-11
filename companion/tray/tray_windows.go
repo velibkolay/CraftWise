@@ -60,6 +60,7 @@ const (
 
 	mfString    = 0x0000
 	mfGrayed    = 0x0001
+	mfChecked   = 0x0008
 	mfSeparator = 0x0800
 
 	tpmRightButton = 0x0002
@@ -279,13 +280,17 @@ func (s *state) showMenu() {
 	ids := map[uintptr]Item{}
 	for i, it := range items {
 		id := uintptr(i + 1)
+		var flags uintptr = mfString
+		if it.Checked {
+			flags |= mfChecked
+		}
 		switch {
 		case it.Separator:
 			pAppendMenuW.Call(menu, mfSeparator, 0, 0)
 		case it.Action == nil && !it.Quit:
-			pAppendMenuW.Call(menu, mfString|mfGrayed, id, uintptr(unsafe.Pointer(utf16(it.Label))))
+			pAppendMenuW.Call(menu, flags|mfGrayed, id, uintptr(unsafe.Pointer(utf16(it.Label))))
 		default:
-			pAppendMenuW.Call(menu, mfString, id, uintptr(unsafe.Pointer(utf16(it.Label))))
+			pAppendMenuW.Call(menu, flags, id, uintptr(unsafe.Pointer(utf16(it.Label))))
 			ids[id] = it
 		}
 	}
