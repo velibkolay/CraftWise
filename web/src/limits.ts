@@ -46,6 +46,9 @@ export const SCANS_MAX = 100;
 export const MOVERS_LIMIT = 10;
 export const MOVERS_MAX = 25;
 export const MOVERS_MAX_AGE = 2 * DAY; // current price must be this recent
+export const BROWSE_MAX = 500; // items per /api/browse answer (more: true beyond)
+export const BROWSE_IDS_MAX = 100; // ids=... (the site's favourites)
+export const BROWSE_DAYS = 9; // daily rows per item: enough for a change against the same day a week ago
 export const PUBLIC_MAX_AGE = 60; // Cache-Control for public reads, seconds
 
 // The same rules as CraftWise/Market.lua.

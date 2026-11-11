@@ -1,0 +1,6 @@
+# Security headers for the static pages (Workers static assets). The script hash is the inline skin
+# script in index.html, item.html and 404.html (test/site.test.ts checks it).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-HXF2BSiwha4cb040xX9t24f5ZrwfdKiIDOajUqGVbck='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin

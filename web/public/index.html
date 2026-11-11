@@ -1,14 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-skin="classic">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CraftWise prices</title>
-<meta name="color-scheme" content="light dark">
+<title>Velikopter Market: WoW: Forever auction house prices</title>
+<meta name="description" content="Auction house prices from WoW: Forever, recorded by the CraftWise addon: market price, lowest price, change and listings per item.">
+<script>try{if(localStorage.getItem("cw-skin")==="velikopter")document.documentElement.dataset.skin="velikopter"}catch(e){}</script>
+<link rel="preload" href="/fonts/asul-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/site.css">
+<script type="module" src="/assets/list.js"></script>
 </head>
 <body>
-<!-- Placeholder until the frontend (#97) exists. The API is described in web/docs/api.md. -->
-<h1>CraftWise prices</h1>
-<p>Auction house prices from WoW: Forever, coming soon.</p>
+<div id="app" class="app"><noscript><p class="notice">The price list needs JavaScript. The raw prices are at <a href="/api/houses">/api/houses</a>.</p></noscript></div>
 </body>
 </html>

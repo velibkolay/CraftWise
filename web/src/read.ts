@@ -90,22 +90,25 @@ export async function scans(env: Env, url: URL): Promise<Response> {
 	);
 }
 
+// Items whose name matches every word of `q` (word prefixes), or the item with that ID.
+async function findItems(env: Env, q: string, limit: number): Promise<ItemRow[]> {
+	if (/^[1-9][0-9]{0,9}$/.test(q)) {
+		return (await env.DB.prepare("SELECT * FROM items WHERE id = ?1").bind(Number(q)).all<ItemRow>()).results;
+	}
+	const words = nameWords(q).slice(0, 5);
+	if (words.join("").length < 2) {
+		throw new HttpError(400, "bad_query", "q needs at least 2 letters or an item ID");
+	}
+	const where = words.map((_, i) => `id IN (SELECT item FROM item_words WHERE word >= ?${2 * i + 2} AND word < ?${2 * i + 3})`).join(" AND ");
+	const params: (string | number)[] = [limit];
+	for (const w of words) params.push(w, w + "\u{10FFFF}");
+	return (await env.DB.prepare(`SELECT * FROM items WHERE ${where} ORDER BY name LIMIT ?1`).bind(...params).all<ItemRow>()).results;
+}
+
 export async function search(env: Env, url: URL): Promise<Response> {
 	const q = (url.searchParams.get("q") ?? "").trim();
 	const limit = intParam(url, "limit", L.SEARCH_LIMIT, 1, L.SEARCH_MAX);
-	let items: ItemRow[];
-	if (/^[1-9][0-9]{0,9}$/.test(q)) {
-		items = (await env.DB.prepare("SELECT * FROM items WHERE id = ?1").bind(Number(q)).all<ItemRow>()).results;
-	} else {
-		const words = nameWords(q).slice(0, 5);
-		if (words.join("").length < 2) {
-			throw new HttpError(400, "bad_query", "q needs at least 2 letters or an item ID");
-		}
-		const where = words.map((_, i) => `id IN (SELECT item FROM item_words WHERE word >= ?${2 * i + 2} AND word < ?${2 * i + 3})`).join(" AND ");
-		const params: (string | number)[] = [limit];
-		for (const w of words) params.push(w, w + "\u{10FFFF}");
-		items = (await env.DB.prepare(`SELECT * FROM items WHERE ${where} ORDER BY name LIMIT ?1`).bind(...params).all<ItemRow>()).results;
-	}
+	const items = await findItems(env, q, limit);
 	const hs = await allHouses(env);
 	const byId = new Map(hs.map((h) => [h.id, h]));
 	const prices = items.length
@@ -319,6 +322,158 @@ export async function movers(env: Env, url: URL, now: number): Promise<Response>
 	}
 	return json(
 		{ house: house.key, label: house.label, computedAt: result.computedAt, up: result.up.slice(0, limit), down: result.down.slice(0, limit) },
+		200,
+		CACHE,
+	);
+}
+
+// ------------------------------------------------------------------------------------------
+// Browse (#97): the site's item list, one house at a time.
+// ------------------------------------------------------------------------------------------
+
+async function houseParam(env: Env, url: URL): Promise<HouseRow> {
+	const key = url.searchParams.get("house");
+	if (!key) throw new HttpError(400, "bad_query", "house is required");
+	const house = await env.DB.prepare("SELECT * FROM houses WHERE key = ?1").bind(key).first<HouseRow>();
+	if (!house) throw new HttpError(404, "not_found", "unknown house");
+	return house;
+}
+
+// Item class and subclass (null without item info) -> the items priced at the house (suffix 0).
+type CategoryList = [number | null, number | null, number[]][];
+interface CategoryIndex {
+	computedAt: number;
+	cats: CategoryList;
+}
+
+// Built from every price row of the house (one read per item and its info), so it is cached in D1
+// until the house's next scan or the next UTC day, like the top movers.
+async function categoryIndex(env: Env, house: HouseRow, now: number): Promise<CategoryIndex> {
+	const db = env.DB;
+	const cacheKey = `categories:${house.id}`;
+	const cached = await db.prepare("SELECT t, data FROM cache WHERE key = ?1").bind(cacheKey).first<{ t: number; data: string }>();
+	if (cached && cached.t >= (house.last_scan ?? 0) && dayNumber(cached.t) === dayNumber(now)) {
+		return JSON.parse(cached.data) as CategoryIndex;
+	}
+	const { results } = await db
+		.prepare(
+			`SELECT p.item, i.class, i.subclass FROM prices p LEFT JOIN items i ON i.id = p.item
+			WHERE p.house = ?1 AND p.suffix = 0 ORDER BY i.class, i.subclass, p.item`,
+		)
+		.bind(house.id)
+		.all<{ item: number; class: number | null; subclass: number | null }>();
+	const cats: CategoryList = [];
+	let last: CategoryList[number] | undefined;
+	for (const r of results) {
+		if (!last || last[0] !== r.class || last[1] !== r.subclass) {
+			last = [r.class, r.subclass, []];
+			cats.push(last);
+		}
+		last[2].push(r.item);
+	}
+	const index: CategoryIndex = { computedAt: now, cats };
+	await db
+		.prepare("INSERT INTO cache (key, t, data) VALUES (?1, ?2, ?3) ON CONFLICT (key) DO UPDATE SET t = excluded.t, data = excluded.data")
+		.bind(cacheKey, now, JSON.stringify(index))
+		.run();
+	return index;
+}
+
+export async function categories(env: Env, url: URL, now: number): Promise<Response> {
+	const house = await houseParam(env, url);
+	const index = await categoryIndex(env, house, now);
+	return json(
+		{
+			house: house.key,
+			label: house.label,
+			lastScan: house.last_scan,
+			computedAt: index.computedAt,
+			categories: index.cats.map(([c, s, ids]) => ({ class: c, subclass: s, items: ids.length })),
+		},
+		200,
+		CACHE,
+	);
+}
+
+function classParam(raw: string | null, name: string): number | null | undefined {
+	if (raw === null) return undefined;
+	if (raw === "none") return null;
+	if (!/^(0|[1-9][0-9]{0,4})$/.test(raw)) throw new HttpError(400, "bad_query", `${name} must be a number or "none"`);
+	return Number(raw);
+}
+
+// One of: class (+ subclass), q (as /api/items), ids (comma-separated). Every item with its info,
+// its current price at the house, its typical price and the daily rows of the last BROWSE_DAYS days.
+export async function browse(env: Env, url: URL, now: number): Promise<Response> {
+	const house = await houseParam(env, url);
+	const today = dayNumber(now);
+	const q = url.searchParams.get("q");
+	const idsRaw = url.searchParams.get("ids");
+	const cls = classParam(url.searchParams.get("class"), "class");
+	const sub = classParam(url.searchParams.get("subclass"), "subclass");
+	if (Number(q !== null) + Number(idsRaw !== null) + Number(cls !== undefined) !== 1) {
+		throw new HttpError(400, "bad_query", "give exactly one of class, q or ids");
+	}
+	let ids: number[];
+	if (q !== null) {
+		ids = (await findItems(env, q.trim(), L.SEARCH_MAX)).map((i) => i.id);
+	} else if (idsRaw !== null) {
+		const parts = idsRaw.split(",").filter((p) => p !== "");
+		if (parts.length > L.BROWSE_IDS_MAX || !parts.every((p) => /^[1-9][0-9]{0,9}$/.test(p))) {
+			throw new HttpError(400, "bad_query", `ids: at most ${L.BROWSE_IDS_MAX} item IDs, comma-separated`);
+		}
+		ids = [...new Set(parts.map(Number))];
+	} else {
+		const index = await categoryIndex(env, house, now);
+		ids = index.cats.filter(([c, s]) => c === cls && (sub === undefined || s === sub)).flatMap(([, , list]) => list);
+	}
+	const more = ids.length > L.BROWSE_MAX;
+	if (more) ids = ids.slice(0, L.BROWSE_MAX);
+
+	const db = env.DB;
+	const list = JSON.stringify(ids);
+	const [items, prices, daily] = ids.length
+		? await db.batch([
+				db.prepare("SELECT * FROM items WHERE id IN (SELECT value FROM json_each(?1))").bind(list),
+				db.prepare("SELECT * FROM prices WHERE house = ?1 AND suffix = 0 AND item IN (SELECT value FROM json_each(?2))").bind(house.id, list),
+				db.prepare(
+					`SELECT item, day, src, lo, typ, hi, qty_max FROM daily
+					WHERE house = ?1 AND suffix = 0 AND item IN (SELECT value FROM json_each(?2)) AND day > ?3 ORDER BY item, day`,
+				).bind(house.id, list, today - L.BROWSE_DAYS),
+			])
+		: [{ results: [] }, { results: [] }, { results: [] }];
+	const info = new Map((items!.results as unknown as ItemRow[]).map((i) => [i.id, i]));
+	const price = new Map((prices!.results as unknown as PriceRow[]).map((p) => [p.item, p]));
+	const days = new Map<number, (DailyRow & { item: number })[]>();
+	for (const d of daily!.results as unknown as (DailyRow & { item: number })[]) {
+		let l = days.get(d.item);
+		if (!l) days.set(d.item, (l = []));
+		l.push(d);
+	}
+	return json(
+		{
+			house: house.key,
+			label: house.label,
+			lastScan: house.last_scan,
+			today,
+			more,
+			items: ids.map((id) => {
+				const i = info.get(id);
+				const p = price.get(id) ?? null;
+				const d = days.get(id) ?? [];
+				return {
+					id,
+					name: i?.name ?? null,
+					quality: i?.quality ?? null,
+					icon: i?.icon ?? null,
+					class: i?.class ?? null,
+					subclass: i?.subclass ?? null,
+					current: p ? currentOut(p) : null,
+					typical: typical(d, today, Boolean(p || d.length)),
+					days: d.map((r) => ({ day: r.day, src: r.src === 1 ? "craftwise" : "last", lo: r.lo, typ: r.typ, hi: r.hi, qtyMax: r.qty_max })),
+				};
+			}),
+		},
 		200,
 		CACHE,
 	);

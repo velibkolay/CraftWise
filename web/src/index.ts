@@ -7,6 +7,7 @@ import { errorResponse, HttpError, json } from "./http";
 import * as L from "./limits";
 import * as me from "./me";
 import * as read from "./read";
+import { PAGE_HEADERS } from "./pages";
 import { assertJson, privateUpload, publicUpload } from "./upload";
 
 function nowSeconds(): number {
@@ -92,14 +93,26 @@ async function route(request: Request, env: Env): Promise<Response> {
 	}
 
 	if (request.method !== "GET" && request.method !== "HEAD") methodNotAllowed("GET");
+	// The item page: one static page for every item; its script reads the ID from the path.
+	if (path.startsWith("/item/")) return itemPage(request, env, url);
 	if (path === "/api/houses") return read.houses(env);
 	if (path === "/api/scans") return read.scans(env, url);
 	if (path === "/api/items") return read.search(env, url);
 	const item = /^\/api\/items\/([1-9][0-9]{0,9})$/.exec(path);
 	if (item) return read.itemDetail(env, url, Number(item[1]), now);
 	if (path === "/api/movers") return read.movers(env, url, now);
+	if (path === "/api/categories") return read.categories(env, url, now);
+	if (path === "/api/browse") return read.browse(env, url, now);
 	if (path.startsWith("/api/")) throw new HttpError(404, "not_found", "no such endpoint");
 	return env.ASSETS.fetch(request);
+}
+
+async function itemPage(request: Request, env: Env, url: URL): Promise<Response> {
+	const ok = /^\/item\/[1-9][0-9]{0,9}$/.test(url.pathname);
+	const res = await env.ASSETS.fetch(new Request(new URL(ok ? "/item" : "/404", url), request));
+	const out = new Response(res.body, { status: ok ? res.status : 404, headers: res.headers });
+	for (const [k, v] of Object.entries(PAGE_HEADERS)) out.headers.set(k, v);
+	return out;
 }
 
 // Daily retention: raw points (30 days), scan log, usage and cache rows.

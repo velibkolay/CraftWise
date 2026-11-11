@@ -6,12 +6,15 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-15",
 	"keep_vars": true,
+	// The site's scripts (site/*.ts) are bundled into public/assets by esbuild before every deploy and dev run.
+	"build": { "command": "npm run build", "watch_dir": "site" },
 	"assets": {
 		"directory": "./public",
 		"binding": "ASSETS",
 		"not_found_handling": "404-page",
-		// The Worker answers the API and checks the Access login before serving /me.
-		"run_worker_first": ["/api/*", "/me", "/me/*"]
+		// The Worker answers the API, checks the Access login before serving /me, and serves the
+		// item page (public/item.html) for /item/<id>.
+		"run_worker_first": ["/api/*", "/me", "/me/*", "/item/*"]
 	},
 	"d1_databases": [
 		{

@@ -141,6 +141,8 @@ Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledg
 | `/api/items?q=<text or item ID>&limit=20` | `{ query, items: [{ id, name, quality, icon, class, subclass, prices: [{ house, label, suffix, t, min, qty, listings, off, listed }] }] }`. Every word of `q` matches the start of a word of the name (`lot` finds Purple Lotus); "of", "the" and the like are ignored; at least 2 letters. |
 | `/api/items/<id>?days=90&hours=48` | `{ id, item, markets: [...] }`, one market per house (and random suffix), see below |
 | `/api/movers?house=<key>&limit=10` | `{ house, label, computedAt, up: [...], down: [...] }`, see below |
+| `/api/categories?house=<key>` | `{ house, label, lastScan, computedAt, categories: [{ class, subclass, items }] }`: items priced at the house (no random suffix) per item class and subclass; `class` and `subclass` are `null` for items without item info yet |
+| `/api/browse?house=<key>&class=<id>[&subclass=<id>]`, `...&q=<text>`, `...&ids=<id>,<id>` | `{ house, label, lastScan, today, more, items: [...] }`, the site's item list (#97), see below |
 
 A market of `/api/items/<id>`:
 
@@ -171,6 +173,15 @@ price is furthest above / below their typical price, as
 of CraftWise history) and a listed price seen in the last 2 days. `qty` and `listings` come with
 every price: a jump at a thin market is no trend. Cached in D1 until the house's next scan or the
 next UTC day.
+
+`/api/browse` takes exactly one of `class` (an item class ID, or `none` for items without info; optionally
+`subclass`), `q` (as `/api/items`, at most 50 items) or `ids` (at most 100 item IDs, the site's favourites). Each
+item: `{ id, name, quality, icon, class, subclass, current, typical, days }` with `current` and `typical` as on
+`/api/items/<id>` (house of the request, suffix 0; `current` `null` when the house has no price) and `days` the
+daily rows of the last 9 days (`{ day, src, lo, typ, hi, qtyMax }`), enough for a 24 h and a 7 day change and a
+7 day sparkline. At most 500 items (`more: true` beyond). The class index behind `/api/categories` and
+`class=` reads one row per priced item and its info, so it is cached in D1 like the top movers (until the house's
+next scan or the next UTC day); a browse then reads about 10 rows per item.
 
 ## Private API (`/api/me/*`, Cloudflare Access)
 
@@ -233,7 +244,8 @@ per request (a batch counts as one), 100 bound parameters per statement.
   ```
 
 - **Reads:** a search reads the matching words plus 1 row per item and house; an item page about
-  100 rows per house; top movers about 10 rows per item with history, once per scan and day.
+  100 rows per house; top movers about 10 rows per item with history, once per scan and day; the
+  category index 2 rows per priced item, once per scan and day; a browse about 10 rows per item listed.
 - Daily cron (03:17 UTC) deletes expired raw points, scans, usage and cache rows.
 
 ## Development

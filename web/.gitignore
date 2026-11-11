@@ -1,3 +1,5 @@
 node_modules/
 .wrangler/
 .dev.vars*
+# Built by npm run build (wrangler runs it before deploy and dev)
+public/assets/
