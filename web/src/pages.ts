@@ -1,4 +1,4 @@
-// Headers of the pages the Worker serves itself (/item/<id>); the same as public/_headers gives the
+// Headers of the pages the Worker serves itself (/item/<id>, /me); the same as public/_headers gives the
 // static pages (test/site.test.ts keeps the two equal).
 export const PAGE_HEADERS: Record<string, string> = {
 	"content-security-policy":

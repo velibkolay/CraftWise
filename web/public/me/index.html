@@ -1,15 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-skin="classic">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CraftWise private</title>
-<meta name="color-scheme" content="light dark">
+<title>My Characters: Velikopter Market</title>
 <meta name="robots" content="noindex">
+<script>try{if(localStorage.getItem("cw-skin")==="velikopter")document.documentElement.dataset.skin="velikopter"}catch(e){}</script>
+<link rel="preload" href="/fonts/asul-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/site.css">
+<script type="module" src="/assets/me.js"></script>
 </head>
 <body>
-<!-- Placeholder until the private page (#98) exists. -->
-<h1>CraftWise private</h1>
-<p>Private page placeholder.</p>
+<div id="app" class="app"><noscript><p class="notice">The private page needs JavaScript. The raw data is at <a href="/api/me/characters">/api/me/characters</a>.</p></noscript></div>
 </body>
 </html>

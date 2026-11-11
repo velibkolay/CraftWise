@@ -13,6 +13,7 @@ import {
 	serveAccessKeys,
 	type AccessKey,
 } from "./helpers";
+import { PAGE_HEADERS } from "../src/pages";
 
 const CHAR = "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner";
 
@@ -76,11 +77,20 @@ describe("Cloudflare Access check", () => {
 		expect(calls.n).toBe(1);
 	});
 
-	it("serves the private page only with Access", async () => {
-		const res = await call("GET", "/me/", { headers: access(await accessJwt(key)) });
-		expect(res.status).toBe(200);
-		expect(res.headers.get("cache-control")).toBe("private, no-store");
-		expect(await res.text()).toContain("CraftWise private");
+	it("serves the private page only with Access, with the page's security headers", async () => {
+		const jwt = await accessJwt(key);
+		for (const path of ["/me", "/me/", "/me/index.html"]) {
+			const res = await call("GET", path, { headers: access(jwt) });
+			expect(res.status).toBe(200);
+			expect(res.headers.get("cache-control")).toBe("private, no-store");
+			for (const [k, v] of Object.entries(PAGE_HEADERS)) expect(res.headers.get(k)).toBe(v);
+			expect(await res.text()).toContain('<script type="module" src="/assets/me.js"></script>');
+		}
+		const missing = await call("GET", "/me/other", { headers: access(jwt) });
+		expect(missing.status).toBe(404);
+		expect(missing.headers.get("cache-control")).toBe("private, no-store");
+		expect((await call("POST", "/me", { headers: access(jwt, { origin: ORIGIN }) })).status).toBe(405);
+		expect((await call("GET", "/me/index.html")).status).toBe(403);
 	});
 
 	it("fails closed when ACCESS_AUD is not set", async () => {
