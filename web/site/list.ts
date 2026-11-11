@@ -1,8 +1,8 @@
 // Item list (/): category tree, search, filters, sortable table, favourites (#97).
 import { type Browse, type BrowseItem, type Categories, get, type House, mainHouse } from "./lib/api";
-import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, rotor, s, slot, statusBar, topBar, type View } from "./lib/dom";
+import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, slot, statusBar, topBar, type View } from "./lib/dom";
 import { favourites, isFavourite, toggleFavourite } from "./lib/favs";
-import { changeClass, changes, className, pct, pctSpoken, qualityClass, qualityName, sparkPath, sparkValues, subclassName } from "./lib/format";
+import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sparkPath, sparkValues, subclassName } from "./lib/format";
 
 const PAGE = 25;
 // Classes listed first in the tree (the materials the site is about), the rest by ID.
@@ -137,8 +137,11 @@ function shell(): void {
 			histBtn,
 		),
 	);
-	clear(app, topBar(subline), h("main", { class: "shell" }, frame, bottomTabs(st.view), footnote));
+	clear(app, topBar(subline, st.view), h("main", { class: "shell" }, frame, bottomTabs(st.view), footnote));
+}
 
+// Listeners of the shell's lasting controls, added once (shell() runs again when the skin changes).
+function wire(): void {
 	treeToggle.addEventListener("click", () => {
 		const open = treeToggle.getAttribute("aria-expanded") !== "true";
 		treeToggle.setAttribute("aria-expanded", String(open));
@@ -333,9 +336,9 @@ async function load(): Promise<void> {
 	}
 }
 
-// Keeps the bottom tab bar in step with the view (browse, favourites, crates).
+// Keeps the tab bars in step with the view (browse, favourites, crates).
 function syncTabs(): void {
-	for (const a of app.querySelectorAll<HTMLAnchorElement>(".btabs a")) {
+	for (const a of app.querySelectorAll<HTMLAnchorElement>("a[data-view]")) {
 		if (a.dataset.view === st.view) a.setAttribute("aria-current", "page");
 		else a.removeAttribute("aria-current");
 	}
@@ -358,6 +361,7 @@ function title(): string {
 
 function renderMessage(head: string, text: string, isError = false): void {
 	rows = [];
+	data = null; // the message stays when the table is drawn again (skin change, filters)
 	clear(heading, head);
 	clear(tableWrap, isError ? errorBox(text) : h("p", { class: "notice" }, text));
 	clear(pager);
@@ -480,7 +484,7 @@ function rowEl(r: Row, fav: boolean, today: number): HTMLElement {
 }
 
 function changeCell(v: number | null, span: string): HTMLElement {
-	return h("td", { class: "r num" }, h("span", { class: changeClass(v), "aria-hidden": "true" }, pct(v)), h("span", { class: "sr" }, `${span}: ${pctSpoken(v)}`));
+	return h("td", { class: "r num" }, h("span", { class: changeClass(v), "aria-hidden": "true" }, pctText(v)), h("span", { class: "sr" }, `${span}: ${pctSpoken(v)}`));
 }
 
 function setSelection(id: number | null): void {
@@ -524,4 +528,10 @@ window.addEventListener("popstate", () => {
 });
 
 shell();
+wire();
+onSkinChange(() => {
+	shell();
+	syncTabs();
+	renderTable();
+});
 void load();

@@ -1,7 +1,7 @@
 // Price history chart (#97): hand-written SVG, drawn at the box's real pixel size so text stays legible.
 // Band = the low-high range, solid line = typical price, dashed line = lowest price where no typical
 // is known, bars = units listed. Pointer and arrow keys pick a point; the tooltip shows its values.
-import { h, s } from "./lib/dom";
+import { currentSkin, h, s, skinMoney } from "./lib/dom";
 import { moneyAxis, money, ticks } from "./lib/format";
 
 export interface Point {
@@ -109,7 +109,7 @@ export function chart(series: Series): HTMLElement {
 			"svg",
 			{ width, height: H, viewBox: `0 0 ${width} ${H}`, "aria-hidden": "true" },
 			yt.map((v) => s("line", { x1: L, x2: width - R, y1: f(Y(v)), y2: f(Y(v)), class: "grid" })),
-			yt.map((v) => s("text", { x: L - 8, y: f(Y(v) + 4), "text-anchor": "end", class: "ylab" }, moneyAxis(v))),
+			yt.map((v) => s("text", { x: L - 8, y: f(Y(v) + 4), "text-anchor": "end", class: "ylab" }, moneyAxis(v, currentSkin() === "velikopter"))),
 			s("path", { d: band, class: "band" }),
 			s("path", { d: loD, class: "loline" }),
 			s("path", { d: typD, class: "typline" }),
@@ -152,7 +152,7 @@ export function chart(series: Series): HTMLElement {
 
 	function row(label: string, v: number | null): HTMLElement | null {
 		if (v === null) return null;
-		const m = money(v);
+		const m = skinMoney(v);
 		return h("p", { class: "row" }, h("span", { class: "lbl" }, label), h("span", { class: "m" }, h("span", { class: "mp" }, m.parts.map((q) => h("span", { class: q.k }, q.v)))));
 	}
 

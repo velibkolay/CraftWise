@@ -1,7 +1,7 @@
 // Item page (/item/<id>): tooltip, cheapest listings, price history (#97).
 import { chart, type Point, type Series } from "./chart";
 import { ApiError, get, type House, type ItemDetail, type Market, mainHouse } from "./lib/api";
-import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, nowSeconds, s, slot, statusBar, topBar } from "./lib/dom";
+import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, pctText, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
 import { isFavourite, toggleFavourite } from "./lib/favs";
 import {
 	age,
@@ -11,8 +11,6 @@ import {
 	className,
 	DAY,
 	dayLabel,
-	money,
-	pct,
 	pctSpoken,
 	qualityClass,
 	subclassName,
@@ -57,7 +55,7 @@ function frame(title: string, body: Node[], foot: Node[], back: string): HTMLEle
 function page(crumbs: Node | string, section: HTMLElement, house: House | null): void {
 	clear(
 		app,
-		topBar(crumbs),
+		topBar(crumbs, "browse"),
 		h(
 			"main",
 			{ class: "shell" },
@@ -68,14 +66,20 @@ function page(crumbs: Node | string, section: HTMLElement, house: House | null):
 	);
 }
 
+// What the page shows now, drawn again when the skin changes.
+let redraw: (() => void) | null = null;
+onSkinChange(() => redraw?.());
+
 function fail(text: string, house: House | null = null): void {
+	redraw = () => fail(text, house);
 	document.title = "Item - Velikopter Market";
 	page("WoW: Forever", frame("Item", [h("div", { class: "statusrow" }, h("a", { class: "wbtn", href: "/" }, "Back")), errorBox(text)], [], "/"), house);
 }
 
 async function main(): Promise<void> {
 	if (!Number.isInteger(id)) return fail("No item chosen. Pick one from the list.");
-	page("WoW: Forever", frame("Loading", [h("p", { class: "notice", "aria-busy": "true" }, "Loading prices")], [], "/"), null);
+	redraw = () => page("WoW: Forever", frame("Loading", [h("p", { class: "notice", "aria-busy": "true" }, "Loading prices")], [], "/"), null);
+	redraw();
 	let house: House | null = null;
 	let detail: ItemDetail;
 	try {
@@ -88,6 +92,7 @@ async function main(): Promise<void> {
 }
 
 function render(d: ItemDetail, house: House | null): void {
+	redraw = () => render(d, house);
 	const it = d.item;
 	const name = it?.name ?? `Item ${d.id}`;
 	const q = qualityClass(it?.quality ?? null);
@@ -132,9 +137,9 @@ function render(d: ItemDetail, house: House | null): void {
 			h(
 				"span",
 				{},
-				h("span", { class: changeClass(ch.c24), "aria-hidden": "true" }, pct(ch.c24)),
+				h("span", { class: changeClass(ch.c24), "aria-hidden": "true" }, pctText(ch.c24)),
 				h("span", { "aria-hidden": "true" }, " 24 h "),
-				h("span", { class: changeClass(ch.c7), "aria-hidden": "true" }, pct(ch.c7)),
+				h("span", { class: changeClass(ch.c7), "aria-hidden": "true" }, pctText(ch.c7)),
 				h("span", { "aria-hidden": "true" }, " 7 d"),
 				h("span", { class: "sr" }, `24 hours ${pctSpoken(ch.c24)}, 7 days ${pctSpoken(ch.c7)}`),
 			),
@@ -211,9 +216,11 @@ function render(d: ItemDetail, house: House | null): void {
 		clear(chartSlot, chart(series));
 		clear(
 			legend,
-			range === "48h"
-				? "Red line: lowest price at each scan. Shaded band: the cheapest 8 price levels. Bars: units listed."
-				: "Red line: typical price of the day. Dashed line: lowest price, where no typical price is known. Shaded band: the day's low to high. Bars: most units listed.",
+			// The Velikopter skin draws the line in ink, not red.
+			(currentSkin() === "velikopter" ? "Line" : "Red line") +
+				(range === "48h"
+					? ": lowest price at each scan. Shaded band: the cheapest 8 price levels. Bars: units listed."
+					: ": typical price of the day. Dashed line: lowest price, where no typical price is known. Shaded band: the day's low to high. Bars: most units listed."),
 		);
 	};
 	drawRange();
@@ -233,7 +240,7 @@ function render(d: ItemDetail, house: House | null): void {
 	const foot: Node[] = [favFoot];
 	if (others.length) {
 		const o = others[0]!;
-		foot.push(h("span", { class: "hint" }, `Also seen at ${o.label}: lowest ${money(o.current!.min!).short}, ${age(now - o.current!.t)}.`));
+		foot.push(h("span", { class: "hint" }, `Also seen at ${o.label}: lowest ${skinMoney(o.current!.min!).short}, ${age(now - o.current!.t)}.`));
 	}
 	foot.push(h("span", { class: "grow" }), h("a", { class: "wbtn", href: back }, sub && it?.class !== null ? `Back to ${sub}` : "Back to the list"));
 
@@ -288,7 +295,7 @@ function listings(m: Market | null): HTMLElement | null {
 			"p",
 			{ class: "hint padx" },
 			`From the scan ${age(nowSeconds() - m.depth!.t)}`,
-			cost !== null ? `. Buying ${buyN} costs about ${money(cost).short} each.` : ".",
+			cost !== null ? `. Buying ${buyN} costs about ${skinMoney(cost).short} each.` : ".",
 		),
 	);
 }

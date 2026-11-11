@@ -39,9 +39,25 @@ export function money(copper: number): Money {
 	return { parts, label: words.join(" "), short: short.join(" ") };
 }
 
-// Axis labels: the two largest coins, "1g 40s", "90s", "45c".
-export function moneyAxis(copper: number): string {
-	return money(copper).short.split(" ").slice(0, 2).join(" ");
+// The Velikopter skin's money (brand kit): silver and copper zero-padded once a larger coin shows, so
+// columns line up: "1g 08s 40c", "82g 00s 00c", "98s 05c", "6c". The spoken label skips empty coins.
+export function moneyPadded(copper: number): Money {
+	const c = Math.max(0, Math.round(copper));
+	const g = Math.floor(c / 10000);
+	const s = Math.floor(c / 100) % 100;
+	const k = c % 100;
+	const pad = (n: number) => String(n).padStart(2, "0");
+	const parts: Money["parts"] = [];
+	if (g) parts.push({ v: g.toLocaleString("en-US"), k: "mg" });
+	if (g || s) parts.push({ v: g ? pad(s) : String(s), k: "ms" });
+	parts.push({ v: g || s ? pad(k) : String(k), k: "mc" });
+	const label = money(c).label;
+	return { parts, label, short: parts.map((p) => `${p.v}${p.k.charAt(1)}`).join(" ") };
+}
+
+// Axis labels: the two largest coins, "1g 40s", "90s", "45c" (padded: "1g 05s").
+export function moneyAxis(copper: number, padded = false): string {
+	return (padded ? moneyPadded(copper) : money(copper)).short.split(" ").slice(0, 2).join(" ");
 }
 
 // ---- Change ---------------------------------------------------------------------------------
@@ -54,6 +70,15 @@ export function pct(change: number | null): string {
 	const p = change * 100;
 	if (Math.abs(p) < 0.05) return "0.0%";
 	return `${p > 0 ? "+" : "-"}${Math.abs(p).toFixed(1)}%`;
+}
+
+// The same change as the Velikopter skin writes it (brand kit): an arrow and a sign, a real minus and a
+// thin space before the percent sign, "▲ +3.9 %", "▼ −2.0 %", "0.0 %".
+export function pctMarked(change: number | null): string {
+	if (change === null || !Number.isFinite(change)) return "–";
+	const p = change * 100;
+	if (Math.abs(p) < 0.05) return "0.0\u2009%";
+	return `${p > 0 ? "▲ +" : "▼ \u2212"}${Math.abs(p).toFixed(1)}\u2009%`;
 }
 
 export function changeClass(change: number | null): ChangeClass {
