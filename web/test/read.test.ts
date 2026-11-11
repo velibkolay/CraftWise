@@ -145,3 +145,45 @@ describe("public read API", () => {
 		expect(await res.text()).toContain('src="/assets/list.js"');
 	});
 });
+
+describe("random-suffix variants in the read API (#118)", () => {
+	it("merges packed variants with the rows stored before them", async () => {
+		const horde = (await env.DB.prepare("SELECT id FROM houses WHERE key = ?1").bind(HORDE).first<{ id: number }>())!.id;
+		// rows written before migration 0002: one older and one newer than the packed variant
+		await env.DB.batch([
+			env.DB.prepare("INSERT INTO prices (house, item, suffix, t, min, qty) VALUES (?1, 15210, 1017, ?2, 4000, 1)").bind(horde, t0 - 7200),
+			env.DB.prepare("INSERT INTO prices (house, item, suffix, t, min, qty) VALUES (?1, 15210, 1018, ?2, 3000, 1)").bind(horde, t0),
+			env.DB.prepare("INSERT INTO daily (house, item, suffix, day, src, lo, hi, qty_max) VALUES (?1, 15210, 1017, ?2, 0, 4000, 4000, 1)").bind(horde, today),
+		]);
+		const token = await makeToken("public");
+		const res = await upload(token, {
+			v: 1,
+			houses: houses(),
+			items: { "15210": { n: "Burnished Leggings", q: 2 } },
+			prices: [
+				{ item: "15210:1017", house: HORDE, last: { t: t0, min: 5000, qty: 2 } },
+				{ item: "15210:1018", house: HORDE, last: { t: t0 - 3600, min: 3500, qty: 1 } },
+				{ item: "15210:1019", house: HORDE, last: { t: t0, min: 6000, qty: 1 } },
+			],
+		});
+		expect(res.status).toBe(200);
+
+		const detail = await (await call("GET", "/api/items/15210")).json<{ markets: Record<string, any>[] }>();
+		expect(detail.markets.map((m) => [m.suffix, m.current.t, m.current.min, m.current.listed])).toEqual([
+			[1017, t0, 5000, true],
+			[1018, t0, 3000, true],
+			[1019, t0, 6000, true],
+		]);
+		const m1017 = detail.markets[0]!;
+		expect(m1017).toMatchObject({ house: HORDE, depth: null, typical: { status: "too_little_history" } });
+		expect(m1017.days).toEqual([{ day: today, src: "last", lo: 4000, typ: null, hi: 5000, qtyMax: 2, listMax: null, n: null, gone: null }]);
+		expect(detail.markets[2]!.days).toEqual([{ day: today, src: "last", lo: 6000, typ: null, hi: 6000, qtyMax: 1, listMax: null, n: null, gone: null }]);
+
+		const found = await (await call("GET", "/api/items?q=burnished")).json<{ items: { prices: Record<string, unknown>[] }[] }>();
+		expect(found.items[0]!.prices.map((p) => [p.house, p.suffix, p.min])).toEqual([
+			[HORDE, 1017, 5000],
+			[HORDE, 1018, 3000],
+			[HORDE, 1019, 6000],
+		]);
+	});
+});

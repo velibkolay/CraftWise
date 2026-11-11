@@ -68,21 +68,80 @@ const POINTS_SQL = `INSERT OR IGNORE INTO points (house, item, suffix, t, total,
 const SCANS_SQL = `INSERT OR IGNORE INTO scans (house, t, kind, items, last_only, source)
 	SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5 FROM json_each(?1)`;
 
+// Random-suffix variants (#118, migrations/0002_variants.sql), one row per item and house holding
+// every variant: {"<suffix>": [t, min, qty, listings, off]}. Per variant the newer `t` wins, or the
+// same `t` with another `off` (as PRICES_SQL). The row is written only when a variant changes.
+const VARIANT_WINS = `n.value->>0 > o.value->>0 OR (n.value->>0 = o.value->>0 AND n.value->>4 IS NOT o.value->>4)`;
+const VARIANTS_SQL = `INSERT INTO variants (house, item, data)
+	SELECT value->>0, value->>1, value->>2 FROM json_each(?1) WHERE true
+	ON CONFLICT (house, item) DO UPDATE SET data = (
+		SELECT json_group_object(k, json(v)) FROM (
+			SELECT o.key AS k, CASE WHEN n.key IS NOT NULL AND (${VARIANT_WINS}) THEN n.value ELSE o.value END AS v
+			FROM json_each(variants.data) o LEFT JOIN json_each(excluded.data) n ON n.key = o.key
+			UNION ALL
+			SELECT n.key, n.value FROM json_each(excluded.data) n WHERE n.key NOT IN (SELECT key FROM json_each(variants.data))))
+	WHERE EXISTS (SELECT 1 FROM json_each(excluded.data) n LEFT JOIN json_each(variants.data) o ON o.key = n.key
+		WHERE o.key IS NULL OR ${VARIANT_WINS})`;
+
+// Their daily rows, as DAILY_LAST_SQL per variant: {"<suffix>": [lo, hi, qtyMax, listMax]}.
+const VARIANT_WIDER = `n.value->>0 < o.value->>0 OR n.value->>1 > o.value->>1 OR n.value->>2 > o.value->>2
+	OR (n.value->>3 IS NOT NULL AND (o.value->>3 IS NULL OR n.value->>3 > o.value->>3))`;
+const VARIANT_DAYS_SQL = `INSERT INTO variant_days (house, item, day, data)
+	SELECT value->>0, value->>1, value->>2, value->>3 FROM json_each(?1) WHERE true
+	ON CONFLICT (house, item, day) DO UPDATE SET data = (
+		SELECT json_group_object(k, json(v)) FROM (
+			SELECT o.key AS k, CASE WHEN n.key IS NULL THEN o.value ELSE json_array(
+				min(o.value->>0, n.value->>0), max(o.value->>1, n.value->>1), max(o.value->>2, n.value->>2),
+				CASE WHEN n.value->>3 IS NULL THEN o.value->>3 WHEN o.value->>3 IS NULL THEN n.value->>3
+					ELSE max(o.value->>3, n.value->>3) END) END AS v
+			FROM json_each(variant_days.data) o LEFT JOIN json_each(excluded.data) n ON n.key = o.key
+			UNION ALL
+			SELECT n.key, n.value FROM json_each(excluded.data) n WHERE n.key NOT IN (SELECT key FROM json_each(variant_days.data))))
+	WHERE EXISTS (SELECT 1 FROM json_each(excluded.data) n LEFT JOIN json_each(variant_days.data) o ON o.key = n.key
+		WHERE o.key IS NULL OR ${VARIANT_WIDER})`;
+
+// Variants that keep their rows in `prices` although this record has no raw points: their stored
+// row has a depth (a scope item). Looked up for every suffix record without raw points.
+const DEPTH_ROWS_SQL = `SELECT h.key AS house, p.item, p.suffix FROM json_each(?1) j
+	JOIN houses h ON h.key = j.value->>0
+	JOIN prices p ON p.house = h.id AND p.item = j.value->>1 AND p.suffix = j.value->>2
+	WHERE p.depth_t IS NOT NULL`;
+
+// A record goes to `variants` when it has a suffix, a `last`, no raw points and no stored depth.
+export function packedVariant(p: PublicUpload["prices"][number], depth?: Set<string>): boolean {
+	return p.suffix !== 0 && p.last !== null && p.raw.length === 0 && !depth?.has(`${p.house}\x1f${p.item}:${p.suffix}`);
+}
+
 // Rows for the bulk statements below, one JSON array per row (pure; also used by tools/bench).
-export function priceRows(data: PublicUpload, hid: (key: string) => number) {
+// `depth`: "<house key>\x1f<item>:<suffix>" of variants whose `prices` row has a depth.
+export function priceRows(data: PublicUpload, hid: (key: string) => number, depth?: Set<string>) {
 	const prices: unknown[][] = [];
 	const dailyLast: unknown[][] = [];
 	const dailyDays: unknown[][] = [];
 	const points: unknown[][] = [];
+	// "<suffix>":[...] parts per item and house (and day); a variant comes once per request
+	const variants = new Map<string, [number, number, string[]]>();
+	const variantDays = new Map<string, [number, number, number, string[]]>();
 	for (const p of data.prices) {
 		const h = hid(p.house);
+		for (const d of p.days) {
+			dailyDays.push([h, p.item, p.suffix, d.day, d.lo, d.typ, d.hi, d.qtyMax, d.listMax, d.n, d.gone]);
+		}
+		if (packedVariant(p, depth)) {
+			const l = p.last!;
+			const day = Math.floor(l.t / 86400);
+			let v = variants.get(`${h}:${p.item}`);
+			if (!v) variants.set(`${h}:${p.item}`, (v = [h, p.item, []]));
+			v[2].push(`"${p.suffix}":[${l.t},${l.min},${l.qty},${l.listings},${l.off}]`);
+			let d = variantDays.get(`${h}:${p.item}:${day}`);
+			if (!d) variantDays.set(`${h}:${p.item}:${day}`, (d = [h, p.item, day, []]));
+			d[3].push(`"${p.suffix}":[${l.min},${l.min},${l.qty},${l.listings}]`);
+			continue;
+		}
 		let latest = null;
 		for (const r of p.raw) {
 			points.push([h, p.item, p.suffix, r.t, r.total, r.listings, r.m, r.tiers]);
 			if (!latest || r.t > latest.t) latest = r;
-		}
-		for (const d of p.days) {
-			dailyDays.push([h, p.item, p.suffix, d.day, d.lo, d.typ, d.hi, d.qtyMax, d.listMax, d.n, d.gone]);
 		}
 		if (p.last) {
 			const l = p.last;
@@ -91,7 +150,15 @@ export function priceRows(data: PublicUpload, hid: (key: string) => number) {
 		}
 	}
 	const scans = data.scans.map((s) => [hid(s.house), s.t, s.kind, s.items, s.lastOnly, s.source]);
-	return { prices, dailyLast, dailyDays, points, scans };
+	return {
+		prices,
+		dailyLast,
+		dailyDays,
+		points,
+		scans,
+		variants: [...variants.values()].map(([h, item, parts]) => [h, item, `{${parts.join(",")}}`]),
+		variantDays: [...variantDays.values()].map(([h, item, day, parts]) => [h, item, day, `{${parts.join(",")}}`]),
+	};
 }
 
 export async function publicUpload(request: Request, env: Env, now: number): Promise<Response> {
@@ -102,7 +169,8 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 	// 1. Houses (insert or update their names) and the stored info of the uploaded items.
 	const houseRows = JSON.stringify(data.houses.map((h) => [h.key, h.realm, h.kind, h.faction, h.label]));
 	const itemIds = JSON.stringify(data.items.map((i) => i.id));
-	const [houseWrite, houseIds, stored] = await db.batch([
+	const suffixed = data.prices.filter((p) => packedVariant(p)).map((p) => [p.house, p.item, p.suffix]);
+	const [houseWrite, houseIds, stored, depthRows] = await db.batch([
 		db.prepare(
 			`INSERT INTO houses (key, realm, kind, faction, label)
 			SELECT value->>0, value->>1, value->>2, value->>3, value->>4 FROM json_each(?1) WHERE true
@@ -111,6 +179,7 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 		).bind(houseRows),
 		db.prepare("SELECT id, key FROM houses WHERE key IN (SELECT value->>0 FROM json_each(?1))").bind(houseRows),
 		db.prepare("SELECT id, name, quality, icon, class, subclass FROM items WHERE id IN (SELECT value FROM json_each(?1))").bind(itemIds),
+		db.prepare(DEPTH_ROWS_SQL).bind(JSON.stringify(suffixed)),
 	]);
 	const houseId = new Map<string, number>();
 	for (const r of (houseIds!.results as { id: number; key: string }[])) houseId.set(r.key, r.id);
@@ -142,13 +211,15 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 		}
 	}
 
-	// 3. Prices, daily rows, raw points, scans.
-	const { prices, dailyLast, dailyDays, points, scans } = priceRows(data, hid);
+	// 3. Prices, daily rows, raw points, scans; suffix variants packed per item.
+	const depth = new Set((depthRows!.results as { house: string; item: number; suffix: number }[]).map((r) => `${r.house}\x1f${r.item}:${r.suffix}`));
+	const { prices, dailyLast, dailyDays, points, scans, variants, variantDays } = priceRows(data, hid, depth);
 
 	checkBudget(
 		today,
-		// an upsert that updates a row can count twice (measured locally), inserts once
-		2 * (itemRows.length + prices.length + dailyLast.length + dailyDays.length + scans.length) +
+		// an upper bound: every upserted row counted twice (a daily aggregate costs 2 with daily_typ, the
+		// others 1); a packed variant row never counts more than the companion's 4 per `last`-only entry
+		2 * (itemRows.length + prices.length + dailyLast.length + dailyDays.length + scans.length + variants.length + variantDays.length) +
 			renamed.length * 12 + wordRows.length + points.length,
 		now,
 	);
@@ -170,6 +241,8 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 	add(POINTS_SQL, points);
 	add(DAILY_LAST_SQL, dailyLast); // before the aggregates, so a CraftWise aggregate wins
 	add(DAILY_DAYS_SQL, dailyDays);
+	add(VARIANTS_SQL, variants);
+	add(VARIANT_DAYS_SQL, variantDays);
 	add(SCANS_SQL, scans);
 	// Houses: latest scan, latest full scan.
 	const latest = new Map<number, { any: number; full?: { t: number; items: number | null } }>();

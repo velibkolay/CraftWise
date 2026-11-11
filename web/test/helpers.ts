@@ -111,7 +111,7 @@ export function access(jwt: string, extra: Record<string, string> = {}): Record<
 
 // Empties every table (storage is shared by the tests of one file).
 export async function clearData(): Promise<void> {
-	const tables = ["houses", "items", "item_words", "prices", "points", "daily", "scans", "cache", "tokens", "usage", "characters", "snapshots", "auctions", "fishing", "ledger"];
+	const tables = ["houses", "items", "item_words", "prices", "points", "daily", "scans", "cache", "tokens", "usage", "characters", "snapshots", "auctions", "fishing", "ledger", "variants", "variant_days"];
 	await env.DB.batch(tables.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
 }
 

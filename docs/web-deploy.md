@@ -21,7 +21,10 @@ value set in the dashboard is the Access audience tag.
    npx wrangler d1 migrations apply craftwise --remote
    ```
    `wrangler login` opens the browser once. Run the last line again whenever a PR adds a file to
-   `web/migrations/` (Workers Builds' default token has no D1 permission, so builds don't migrate).
+   `web/migrations/`, **before merging it**: the Worker deployed from the merge reads the new tables
+   at once, and Workers Builds' default token has no D1 permission, so builds don't migrate.
+   Migrating first is safe: the running Worker ignores tables it doesn't know. To see what is still
+   pending: `npx wrangler d1 migrations list craftwise --remote`.
    Don't paste the SQL into the D1 console instead: wrangler would not know it ran and would try
    again.
 

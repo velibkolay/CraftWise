@@ -89,9 +89,15 @@ are ignored on this endpoint.
 stored before; only items whose info changed are written. An entry needs at least one of `last`,
 `raw`, `days`. Times must lie between 2020-09-13 and now + 1 day.
 
-How it is stored (schema: `web/migrations/0001_init.sql`):
+How it is stored (schema: `web/migrations/`):
 - `prices`: one row per item and house: the latest `last` (an older one never replaces a newer one)
   and the cheapest tiers of the latest raw point.
+- Random-suffix variants (`"<itemID>:<suffixID>"`) without raw points (#118, `0002_variants.sql`):
+  packed per item, `variants` (one row per item and house, the latest `last` of every variant) and
+  `variant_days` (one row per item, house and day, the `src` 0 day of every variant). A variant
+  stays in `prices` / `daily` when its record has raw points or its stored `prices` row has a depth
+  (a scope item). The read API merges both, so this is invisible to readers: per variant the newer
+  `t` is current, a CraftWise aggregate wins a day, two `last` days are combined.
 - `points`: the raw points, kept 30 days.
 - `daily`: one row per item, house and day, kept forever. Scope items: CraftWise's own aggregate
   (`src` 1). Items outside the scope: built from `last` (`src` 0): lowest and highest minimum seen
@@ -214,37 +220,62 @@ per request (a batch counts as one), 100 bound parameters per statement.
   is a few statements in one batch whatever its size, and the Worker's CPU time is parsing,
   checking and re-serializing the body.
 - Price tables are `WITHOUT ROWID` without secondary indexes (one upsert = one row written), houses
-  are integer IDs.
+  are integer IDs. Upserts carry a `WHERE` that skips rows that would not change (D1 counts an
+  updated row even when its values stay the same, measured locally), so re-sending costs nothing.
+- Random-suffix variants are packed per item (see "How it is stored"): a full browse is mostly gear
+  with a random suffix (the first real upload: 16,465 of 21,117 entries, over 1,333 items), and
+  packing them turns one `prices` and one `daily` row per variant into about one of each per item.
+  The merge runs in SQLite (`json_each`), the Worker only groups the variants of a request.
 - **CPU** (`npm run bench`, Node on the dev container, 101 runs): a 475 KB body of scope items
   (7 days, 7 raw points of 8 tiers each) 4 to 6 ms median, 6 to 9 ms at the 90th percentile; 2,000
-  entries with `last` only (324 KB) 4.5 to 5 ms median, 7 to 8 ms at the 90th. Hence the 500 KB
-  body limit. A cold isolate (first request after a deploy or idle time) is slower.
-- **Rows written**, measured (`test/budget.test.ts`, 10,000 items at one house, 1,500 of them scope
-  items, bodies of at most 450 KB):
+  entries with `last` only (324 KB) 4.5 to 5 ms median, 7 to 8 ms at the 90th; 2,000 random-suffix
+  variants (183 KB) 4.5 to 5.5 ms median. Hence the 500 KB body limit. A cold isolate (first
+  request after a deploy or idle time) is slower.
+- **Rows written** (#118), measured on Veli's first real upload (a dry-run dump of the companion:
+  21,117 entries at one house, 4,652 without a suffix of which 155 scope items, 16,465 random-suffix
+  variants of 1,333 items; uploaded locally, D1's `meta.rows_written` per statement; the later rows
+  replay the same entries with newer times, a third of them with a new price):
 
-  | Upload | Requests | Rows written | Database size after |
+  | Upload | Requests | Before #118 | Now |
   |---|---|---|---|
-  | First sync (item info, search words, 7 days of history, 6 raw points per scope item) | 16 | 81,999 | 2.9 MB |
-  | Another full scan the same day (half the prices moved) | 16 | 18,769 | 3.0 MB |
-  | The next day's first full scan | 16 | 27,519 | 3.4 MB |
+  | First upload (5,651 item infos, 14,463 search words, prices, history) | 14 | 63,451 | 33,212 |
+  | A /reload while browsing: 1,000 entries, a third changed | 2 to 11 | 1,321 to 1,427 | 523 to 1,372 |
+  | A second full browse the same day | 11 | 27,490 | 8,520 |
+  | The next day's first full browse | 11 | 42,251 | 12,014 |
+  | Private: snapshot, auctions, fishing, the ledger | 1 | 823 | 823 |
 
-  So a day holds about 3 to 4 full scans of 10,000 items. Uploads stop with `429 write_budget` when
-  the next request could take the day over 90,000 rows (an upper bound per request: an upsert that
-  changes a row is counted twice); the remaining 10,000 cover the cron job, token checks and the
-  movers cache. The first sync of a full history may take two days.
+  So a day with a full browse, a second one and half a dozen reloads in between takes about
+  24,000 to 29,000 rows (before: about 78,000). The first upload of a fresh install is the largest
+  (item info and search words are written once). `test/budget.test.ts` checks the same shape with
+  invented data (5,000 items, 500 of them scope items, plus 15,000 variants of 1,250 items):
+  42,131 / 11,295 / 15,055 rows for the first upload, a second browse and the next day's (before
+  #118: 69,611 / 31,275 / 42,525).
+
+  What a row costs: an insert or an update of a `prices`, `points`, `variants` or `variant_days`
+  row and of a `daily` row built from `last` 1 (no secondary index); a CraftWise daily aggregate 2
+  (the row and `daily_typ`, which the top movers need); an item 1 plus one per search word (2.6
+  words per item on average); a ledger entry 2 (the row and `ledger_by_char`); a house 2 (`key` is
+  unique). The two indexes stay: without them the top movers and the ledger page would read every
+  row of a house's history or of the ledger. Uploads stop with `429 write_budget` when the next
+  request could take the day over 90,000 rows (an upper bound per request: every upserted row is
+  counted twice, a packed row too, so a variant never counts more than the companion's estimate of 4
+  rows per `last`-only entry); the remaining 10,000 cover the cron job, token checks and the movers
+  cache.
 - **Retention (decision):** raw points 30 days (as the issue proposed; they cost a write each to add
   and to delete), scan log 90 days, daily rows, prices, items and private data forever. Measured
   growth: about 0.43 MB per 10,000 items per house and day, so about 155 MB a year for one house
-  scanned daily, 310 MB for two. `GET /api/me/usage` shows the database size; when it passes
-  400 MB, thin out the `src` 0 daily rows older than a year (items outside the scope, where only the
-  minimum is known):
+  scanned daily, 310 MB for two. With random-suffix variants (`test/budget.test.ts`, 20,000 entries)
+  about 0.56 MB per house and day, about 200 MB a year for one house browsed daily.
+  `GET /api/me/usage` shows the database size; when it passes 400 MB, thin out the `src` 0 daily
+  rows older than a year (items outside the scope, where only the minimum is known):
 
   ```sql
   DELETE FROM daily WHERE src = 0 AND day < (strftime('%s', 'now') / 86400) - 365;
+  DELETE FROM variant_days WHERE day < (strftime('%s', 'now') / 86400) - 365;
   ```
 
-- **Reads:** a search reads the matching words plus 1 row per item and house; an item page about
-  100 rows per house; top movers about 10 rows per item with history, once per scan and day; the
+- **Reads:** a search reads the matching words plus 1 row per item and house (and variant); an
+  item page about 100 rows per house (plus one `variant_days` row per day with variants); top movers about 10 rows per item with history, once per scan and day; the
   category index 2 rows per priced item, once per scan and day; a browse about 10 rows per item listed.
 - Daily cron (03:17 UTC) deletes expired raw points, scans, usage and cache rows.
 

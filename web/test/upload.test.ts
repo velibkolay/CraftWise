@@ -122,8 +122,8 @@ describe("POST /api/upload: storage", () => {
 			HORDE,
 		);
 		expect(h).toMatchObject({ last_scan: t, last_full_scan: t, last_full_scan_items: 3 });
-		const booty = await one<{ last_full_scan: number | null; faction: string | null }>("SELECT * FROM houses WHERE key = ?1", BOOTY);
-		expect(booty).toMatchObject({ last_full_scan: null, faction: null });
+		const bootyHouse = await one<{ last_full_scan: number | null; faction: string | null }>("SELECT * FROM houses WHERE key = ?1", BOOTY);
+		expect(bootyHouse).toMatchObject({ last_full_scan: null, faction: null });
 
 		expect(await one("SELECT name, quality, icon, class, subclass FROM items WHERE id = 2589")).toEqual({
 			name: "Linen Cloth",
@@ -139,8 +139,11 @@ describe("POST /api/upload: storage", () => {
 		const p = await one<Record<string, unknown>>("SELECT * FROM prices WHERE house = ?1 AND item = 2589", h!.id);
 		expect(p).toMatchObject({ t, min: 95, qty: 400, listings: 6, off: null, depth_t: t, depth_total: 400 });
 		expect(JSON.parse(p!.depth as string)).toEqual([95, 10, 100, 40, 120, 150]);
-		const gear = await one<Record<string, unknown>>("SELECT * FROM prices WHERE item = 15210");
-		expect(gear).toMatchObject({ suffix: 1017, min: 25000, qty: 1, listings: null, depth: null });
+		// A random-suffix variant without history is packed per item (#118).
+		expect(await one("SELECT * FROM prices WHERE item = 15210")).toBeNull();
+		const booty = (await one<{ id: number }>("SELECT id FROM houses WHERE key = ?1", BOOTY))!.id;
+		expect(await one("SELECT house, data FROM variants WHERE item = 15210")).toEqual({ house: booty, data: `{"1017":[${t - 600},25000,1,null,null]}` });
+		expect(await one("SELECT day, data FROM variant_days WHERE item = 15210")).toEqual({ day: Math.floor((t - 600) / DAY), data: '{"1017":[25000,25000,1,null]}' });
 		expect(await one("SELECT off FROM prices WHERE item = 8831")).toEqual({ off: t });
 
 		const points = await env.DB.prepare("SELECT t, total, m, tiers FROM points WHERE item = 2589 ORDER BY t").all();
@@ -231,5 +234,65 @@ describe("POST /api/upload: storage", () => {
 		expect(await one("SELECT name, quality, icon FROM items WHERE id = 8831")).toEqual({ name: "Black Lotus", quality: 1, icon: 134200 });
 		const words = await env.DB.prepare("SELECT word FROM item_words WHERE item = 8831 ORDER BY word").all();
 		expect(words.results).toEqual([{ word: "black" }, { word: "lotus" }]);
+	});
+});
+
+describe("POST /api/upload: random-suffix variants (#118)", () => {
+	const base = { v: 1, houses: houses() };
+	const gear = (t: number, min: number, suffixes = [1017, 1018, 1019], extra: Record<string, unknown> = {}) =>
+		suffixes.map((s, i) => ({ item: `15210:${s}`, house: HORDE, last: { t, min: min + i, qty: 1 + i, ...extra } }));
+	const variants = async () => JSON.parse((await one<{ data: string }>("SELECT data FROM variants WHERE item = 15210"))!.data);
+	const dayRow = async (day: number) => JSON.parse((await one<{ data: string }>("SELECT data FROM variant_days WHERE item = 15210 AND day = ?1", day))!.data);
+
+	it("packs the variants of an item into one row per house and one per day", async () => {
+		const t = now() - 60;
+		await upload(token, base); // the houses
+		const res = await upload(token, { ...base, prices: gear(t, 5000) });
+		// one variants row, one variant_days row, the token's rate-limit row
+		expect((await res.json<{ rowsWritten: number }>()).rowsWritten).toBe(3);
+		expect(await variants()).toEqual({ "1017": [t, 5000, 1, null, null], "1018": [t, 5001, 2, null, null], "1019": [t, 5002, 3, null, null] });
+		expect(await dayRow(Math.floor(t / DAY))).toEqual({ "1017": [5000, 5000, 1, null], "1018": [5001, 5001, 2, null], "1019": [5002, 5002, 3, null] });
+		expect(await one("SELECT count(*) n FROM prices")).toEqual({ n: 0 });
+		expect(await one("SELECT count(*) n FROM daily")).toEqual({ n: 0 });
+		// the same body again writes nothing but the rate-limit row
+		const again = await upload(token, { ...base, prices: gear(t, 5000) });
+		expect((await again.json<{ rowsWritten: number }>()).rowsWritten).toBe(1);
+	});
+
+	it("keeps the newer observation per variant and widens its day", async () => {
+		const t = now() - 600;
+		const day = Math.floor(t / DAY);
+		await upload(token, { ...base, prices: gear(t, 5000, [1017, 1018]) });
+		// older for 1017 (ignored as current, widens the day), newer for 1018, new variant 1020
+		await upload(token, {
+			...base,
+			prices: [
+				{ item: "15210:1017", house: HORDE, last: { t: t - 60, min: 4000, qty: 9 } },
+				{ item: "15210:1018", house: HORDE, last: { t: t + 60, min: 6000, qty: 1, listings: 2 } },
+				{ item: "15210:1020", house: HORDE, last: { t: t + 60, min: 7000, qty: 1 } },
+			],
+		});
+		expect(await variants()).toEqual({
+			"1017": [t, 5000, 1, null, null],
+			"1018": [t + 60, 6000, 1, 2, null],
+			"1020": [t + 60, 7000, 1, null, null],
+		});
+		if (Math.floor((t - 60) / DAY) === day && Math.floor((t + 60) / DAY) === day) {
+			expect(await dayRow(day)).toEqual({ "1017": [4000, 5000, 9, null], "1018": [5001, 6000, 2, 2], "1020": [7000, 7000, 1, null] });
+		}
+		// a later full scan didn't list 1017: same time, `off` set
+		await upload(token, { ...base, prices: [{ item: "15210:1017", house: HORDE, last: { t, min: 5000, qty: 1, off: t + 120 } }] });
+		expect((await variants())["1017"]).toEqual([t, 5000, 1, null, t + 120]);
+	});
+
+	it("keeps a variant with raw points (a scope item) in prices, also for its later `last`", async () => {
+		const t = now() - 600;
+		const raw = [{ t, total: 2, listings: 2, tiers: [9000, 1, 9500, 1] }];
+		await upload(token, { ...base, prices: [{ item: "15210:1017", house: HORDE, last: { t, min: 9000, qty: 2 }, raw }, ...gear(t, 5000, [1018])] });
+		expect(await one("SELECT suffix, min, depth_t FROM prices WHERE item = 15210")).toEqual({ suffix: 1017, min: 9000, depth_t: t });
+		expect(await variants()).toEqual({ "1018": [t, 5000, 1, null, null] });
+		await upload(token, { ...base, prices: [{ item: "15210:1017", house: HORDE, last: { t: t + 60, min: 8000, qty: 1 } }] });
+		expect(await one("SELECT suffix, t, min, depth_t FROM prices WHERE item = 15210")).toEqual({ suffix: 1017, t: t + 60, min: 8000, depth_t: t });
+		expect(Object.keys(await variants())).toEqual(["1018"]);
 	});
 });
