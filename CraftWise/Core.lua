@@ -437,6 +437,12 @@ SlashCmdList.CRAFTWISE = function(msg)
 		ns.Ledger.Slash(ledgerArg)
 		return
 	end
+	if msg == "auctions" or msg == "auction" then
+		if ns.Auctions then
+			ns.Auctions.Slash()
+		end
+		return
+	end
 	local fishingArg = msg:match("^fishing%s*(.*)$")
 	if fishingArg and ns.Fishing then
 		ns.Fishing.Slash(fishingArg)

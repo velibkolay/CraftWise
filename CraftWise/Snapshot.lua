@@ -392,11 +392,19 @@ function S.Fishing()
 	return ns.Fishing.SnapshotSummary()
 end
 
+-- Auctions (#81): listed, sold awaiting mail with expected gold, returning by mail, uncertain.
+function S.Auctions()
+	if not (ns.Auctions and ns.Auctions.SnapshotSummary) then
+		return nil, "Auctions not loaded"
+	end
+	return ns.Auctions.SnapshotSummary()
+end
+
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
-	{ "fishing", S.Fishing },
+	{ "fishing", S.Fishing }, { "auctions", S.Auctions },
 }
 
 ----------------------------------------------------------------------------------------------------
