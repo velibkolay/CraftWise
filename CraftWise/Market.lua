@@ -29,6 +29,9 @@
 -- into items[]. t = when CraftWise read it, age = days since Auctionator saw it (its API).
 -- names = { [itemID] = name } for the items above, from the client, so the saved file can be read
 -- without the game (#90). Not part of any record; rebuilt from the client's cache at logout.
+-- itemInfo = { [itemID] = "q,i,c,s,t" } for the same items (#92): quality, icon file ID, class and
+-- subclass ID as the client returns them, t = when read; base 36, an unknown field empty. The name
+-- stays in names (one name store). Read again after INFO_REFRESH; dropped with the records.
 --
 -- Never stored: seller names, bids, per-auction rows beyond the tiers.
 local _, ns = ...
@@ -59,6 +62,10 @@ local PRUNE_ALL_SECONDS = 3600 -- packed entries are revisited this often; entri
 local SEARCH_SETTLE_SECONDS = 0.3
 local LINK_RETRIES = 10
 local LINK_RETRY_SECONDS = 0.5
+local INFO_PER_FRAME = 500 -- item info (#92): items checked per frame
+local INFO_LOAD_BATCH = 100 -- load requests per batch, as the sell prices of #83
+local INFO_LOAD_SECONDS = 0.2
+local INFO_REFRESH = 30 * 86400 -- stored item info is read from the client again after this
 
 M.TOO_LITTLE_HISTORY = "too little history"
 M.NO_DATA = "no price data"
@@ -980,7 +987,8 @@ end
 -- Every row is read (#90). Items in the scope collect their price levels for a raw point; the rest
 -- only what `last` holds (lowest unit price, units, listings).
 local function CollectRow(scan, index)
-	local name, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
+	local name, texture, count, quality, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID, hasAllInfo =
+		C_AuctionHouse.GetReplicateItemInfo(index)
 	if not ((count or 0) > 0 and (buyout or 0) > 0 and itemID) then
 		return true
 	end
@@ -995,6 +1003,11 @@ local function CollectRow(scan, index)
 	end
 	if type(name) == "string" and name ~= "" then
 		scan.names[itemID] = name
+	end
+	-- Quality and icon of the row, for items the client cache doesn't hold yet (#92). The docs mark
+	-- qualityID as never nil, so it is only taken from rows the client says are complete.
+	if hasAllInfo and type(quality) == "number" and not scan.info[itemID] then
+		scan.info[itemID] = { q = quality, i = type(texture) == "number" and texture or nil }
 	end
 	local suffix
 	if CanHaveSuffix(itemID) then
@@ -1037,6 +1050,7 @@ local function FinishScan(scan)
 	for itemID, name in pairs(scan.names) do
 		db.names[itemID] = name
 	end
+	M.FillItemInfo(scan.info)
 	ns.Notify("PRICES_CHANGED")
 	if not currentHouse then
 		M.Prune()
@@ -1176,6 +1190,7 @@ local function OnReplicateList()
 		light = {},
 		scope = {},
 		names = {},
+		info = {},
 		waiting = {},
 		unread = {},
 		recorded = 0,
@@ -1234,6 +1249,11 @@ local function PruneExtras(now)
 	for itemID in pairs(db.names) do
 		if not (used[itemID] or exported[itemID]) then
 			db.names[itemID] = nil
+		end
+	end
+	for itemID in pairs(db.itemInfo) do
+		if not (used[itemID] or exported[itemID]) then
+			db.itemInfo[itemID] = nil
 		end
 	end
 end
@@ -1366,32 +1386,197 @@ function M.ExportAuctionatorScope()
 end
 
 ----------------------------------------------------------------------------------------------------
--- Names and the snapshot (#90): the saved file holds item IDs; names come from the client.
+-- Names, item info and the snapshot. The saved file holds item IDs; names (#90) and item info (#92:
+-- quality, icon, class, subclass) come from the client, so the file (and the price site of #100) can
+-- show items without the game or a third-party database.
 ----------------------------------------------------------------------------------------------------
 
-local function ItemIDOf(key)
-	return type(key) == "number" and key or ItemIDOfKey(key)
+local function InfoNum(v)
+	return type(v) == "number" and v or nil
 end
 
--- Names of every item with a record that the client has cached now. Runs at logout.
-local function FillNames()
-	local getName = C_Item and C_Item.GetItemNameByID
-	if not (db and getName) then
+-- "q,i,c,s,t" in base 36; an unknown field stays empty. Negative numbers aren't expected from the
+-- client; one would be stored as unknown rather than as a wrong 0.
+function M.EncodeItemInfo(info, t)
+	local function field(v)
+		v = InfoNum(v)
+		return v and v >= 0 and Base36(v) or ""
+	end
+	return table.concat({ field(info.q), field(info.i), field(info.c), field(info.s), field(t) }, ",")
+end
+
+-- { n, q, i, c, s, t } for an item, nil when nothing is stored. n comes from names; any field the
+-- client didn't give is nil.
+function M.ItemInfo(itemID)
+	local packed = db and db.itemInfo[itemID]
+	if type(packed) ~= "string" then
+		return nil
+	end
+	local f = Split(packed, ",")
+	return { n = db.names[itemID], q = Num(f[1]), i = Num(f[2]), c = Num(f[3]), s = Num(f[4]), t = Num(f[5]) }
+end
+
+local function InfoTime(packed)
+	return type(packed) == "string" and Num(packed:match("([^,]*)$")) or nil
+end
+
+-- What the client says about an item now: its name (nil when not cached) and { q, i, c, s }, nil
+-- while the quality is unknown. hint = { q, i } from a complete full-scan row, used when the cache
+-- doesn't have the item yet. Class, subclass and icon come from GetItemInfoInstant, which the client
+-- answers without loading the item.
+local function ClientItemInfo(itemID, hint)
+	local name, quality, texture, classID, subclassID
+	if C_Item and C_Item.GetItemInfo then
+		local r = { C_Item.GetItemInfo(itemID) }
+		name, quality, texture, classID, subclassID = r[1], r[3], r[10], r[12], r[13]
+	end
+	local icon, iClass, iSubclass
+	if C_Item and C_Item.GetItemInfoInstant then
+		local _, _, _, _, ic, c, sc = C_Item.GetItemInfoInstant(itemID)
+		icon, iClass, iSubclass = ic, c, sc
+	end
+	quality = InfoNum(quality) or (hint and InfoNum(hint.q))
+	if type(name) ~= "string" or name == "" then
+		name = nil
+	end
+	if quality == nil then
+		return name, nil
+	end
+	return name, {
+		q = quality,
+		i = InfoNum(icon) or InfoNum(texture) or (hint and InfoNum(hint.i)),
+		c = InfoNum(iClass) or InfoNum(classID),
+		s = InfoNum(iSubclass) or InfoNum(subclassID),
+	}
+end
+
+-- Writes what the client knows now. Returns true when the info was stored.
+local function StoreItemInfo(itemID, hint, now)
+	local name, info = ClientItemInfo(itemID, hint)
+	if name and db.names[itemID] == nil then
+		db.names[itemID] = name
+	end
+	if not info then
+		return false
+	end
+	db.itemInfo[itemID] = M.EncodeItemInfo(info, now or time())
+	return true
+end
+
+-- Every item ID with a price: per-house records (suffix variants count once) and Auctionator exports.
+local function PricedItemIDs()
+	local list, seen = {}, {}
+	local function add(itemID)
+		if type(itemID) == "number" and not seen[itemID] then
+			seen[itemID] = true
+			list[#list + 1] = itemID
+		end
+	end
+	for key in pairs(db.items) do
+		add(type(key) == "number" and key or ItemIDOfKey(key))
+	end
+	for itemID in pairs(db.auctionator.items) do
+		add(itemID)
+	end
+	return list
+end
+
+-- infoWaiting: requested, stored when GET_ITEM_INFO_RECEIVED names it. infoQueue / inInfoQueue: not
+-- requested yet. An item whose load never answers is requested again by the next pass.
+local infoWaiting, infoQueue, inInfoQueue, infoQueued = {}, {}, {}, false
+
+-- Load requests a batch at a time, as for the sell prices (#83), so thousands of items never flood
+-- the client.
+local function RunInfoQueue()
+	infoQueued = false
+	local n = 0
+	while n < INFO_LOAD_BATCH and #infoQueue > 0 do
+		local itemID = table.remove(infoQueue)
+		inInfoQueue[itemID] = nil
+		if db and not StoreItemInfo(itemID) then
+			infoWaiting[itemID] = true
+			if C_Item and C_Item.RequestLoadItemDataByID then
+				C_Item.RequestLoadItemDataByID(itemID)
+			end
+			n = n + 1
+		end
+	end
+	if #infoQueue > 0 then
+		infoQueued = true
+		C_Timer.After(INFO_LOAD_SECONDS, RunInfoQueue)
+	end
+end
+
+function M.OnItemInfoReceived(itemID, success)
+	if not (db and itemID and infoWaiting[itemID]) then
 		return
 	end
-	local function fill(itemID)
-		if itemID and db.names[itemID] == nil then
+	infoWaiting[itemID] = nil
+	if success ~= false then
+		StoreItemInfo(itemID)
+	end
+end
+
+-- Fills item info for every priced item that has none or whose info is older than INFO_REFRESH: from
+-- the client cache (or the full-scan row in hints[itemID]) a few hundred per frame, and requests the
+-- rest in batches. Runs after a full scan, on AH close and after login.
+local filling, fillAgain = false, nil
+function M.FillItemInfo(hints)
+	if not db then
+		return
+	end
+	if filling then
+		fillAgain = fillAgain or {}
+		for itemID, hint in pairs(hints or {}) do
+			fillAgain[itemID] = hint
+		end
+		return
+	end
+	filling = true
+	hints = hints or {}
+	local list = PricedItemIDs()
+	local now = time()
+	Chunked(#list, INFO_PER_FRAME, function(i)
+		local itemID = list[i]
+		local t = InfoTime(db.itemInfo[itemID])
+		if t and now - t < INFO_REFRESH then
+			return
+		end
+		if not StoreItemInfo(itemID, hints[itemID], now) and not inInfoQueue[itemID] then
+			inInfoQueue[itemID] = true
+			infoQueue[#infoQueue + 1] = itemID
+		end
+	end, function()
+		filling = false
+		if not infoQueued and #infoQueue > 0 then
+			RunInfoQueue()
+		end
+		if fillAgain then
+			local again = fillAgain
+			fillAgain = nil
+			M.FillItemInfo(again)
+		end
+	end)
+end
+
+-- Names and item info of every item with a record that the client has cached now. Runs at logout,
+-- so it only reads the cache and requests nothing.
+local function FillNames()
+	if not (db and C_Item) then
+		return
+	end
+	local getName = C_Item.GetItemNameByID
+	local now = time()
+	for _, itemID in ipairs(PricedItemIDs()) do
+		if db.names[itemID] == nil and getName then
 			local name = getName(itemID)
 			if type(name) == "string" and name ~= "" then
 				db.names[itemID] = name
 			end
 		end
-	end
-	for key in pairs(db.items) do
-		fill(ItemIDOf(key))
-	end
-	for itemID in pairs(db.auctionator.items) do
-		fill(itemID)
+		if db.itemInfo[itemID] == nil then
+			StoreItemInfo(itemID, nil, now)
+		end
 	end
 end
 M.FillNames = FillNames
@@ -1427,14 +1612,17 @@ function M.SnapshotSummary()
 			end
 		end
 	end
-	local exported, named = 0, 0
+	local exported, named, described = 0, 0, 0
 	for _ in pairs(db.auctionator.items) do
 		exported = exported + 1
 	end
 	for _ in pairs(db.names) do
 		named = named + 1
 	end
-	return { where = "CraftWiseMarketDB", houses = houses, names = named,
+	for _ in pairs(db.itemInfo) do
+		described = described + 1
+	end
+	return { where = "CraftWiseMarketDB", houses = houses, names = named, itemInfo = described,
 		auctionator = { label = db.auctionator.label, house = M.AUCTIONATOR_HOUSE, items = exported } }
 end
 
@@ -1916,6 +2104,7 @@ ns.Listen("DB_READY", function()
 	db.scope.items = db.scope.items or {}
 	db.scope.skillLines = db.scope.skillLines or {}
 	db.names = db.names or {}
+	db.itemInfo = db.itemInfo or {}
 	db.auctionator = db.auctionator or {}
 	db.auctionator.source = "auctionator"
 	db.auctionator.house = M.AUCTIONATOR_HOUSE
@@ -1930,6 +2119,9 @@ ns.On("PLAYER_LOGIN", function()
 	ScanBags()
 	M.Prune()
 	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, M.ExportAuctionatorScope)
+	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, function()
+		M.FillItemInfo()
+	end)
 end)
 ns.On("PLAYER_LOGOUT", function()
 	pcall(FillNames)
@@ -1968,6 +2160,10 @@ ns.On("AUCTION_HOUSE_CLOSED", function()
 		M.Prune()
 	end
 	M.ExportAuctionatorScope() -- Auctionator's own scans during the visit changed its prices
+	M.FillItemInfo() -- items a search or browse list added
+end)
+ns.On("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
+	M.OnItemInfoReceived(itemID, success)
 end)
 
 ns.On("REPLICATE_ITEM_LIST_UPDATE", OnReplicateList)

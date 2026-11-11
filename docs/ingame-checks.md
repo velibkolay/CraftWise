@@ -452,3 +452,11 @@ New file `Crates.lua` in the TOC: **full game restart** needed (not `/reload`). 
 - [ ] Bundle names that match no item: shown as "(item not identified)". Report any (e.g. "Handful of Copper Bolts", "Copper Modulator"); they resolve once the item is in the client cache (bags, AH, merchant).
 - [ ] Open Pawani (Durotar Supply and Logistics vendor) with the filter on "All": `/dump CraftWiseDB.merchants[248201].items[<itemID>].req` for an item that shows "Requires Durotar Supply and Logistics - <standing>" on its tooltip has `faction`, `standing` (1..8) and `text`; items without that line have no `req`.
 - [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].crates` and `.favor` as in `docs/snapshot.md`; `favor.balance` matches the currency tab, `favor.vendors` lists Pawani with all items, Favor costs and requirements.
+
+## Item info for every priced item (#92)
+`/reload` is enough (no new file, no TOC change).
+- [ ] After a full scan and about 10 seconds more: no extra stutter. `/reload`, then in `CraftWise.lua` (copy it with the game closed) `CraftWiseMarketDB.itemInfo` has an entry for (nearly) every item with a record. Report how many records have no `itemInfo` entry.
+- [ ] Pick three entries and compare with the game: `/dump C_Item.GetItemInfoInstant(<id>)` (icon is the 5th value, class 6th, subclass 7th) and `/dump C_Item.GetItemQualityByID(<id>)` must match the decoded `q,i,c,s` (base 36: in Lua `tonumber("2vji", 36)` = 134190).
+- [ ] An item searched or browsed only (no full scan) has an entry after closing the AH.
+- [ ] A Waylaid Crate or an item you never saw before the scan: present after the scan or after the next login (the client loads it on request).
+- [ ] With a non-English client (if available): `names` are in that language; `itemInfo` is the same numbers.

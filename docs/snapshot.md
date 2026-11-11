@@ -202,6 +202,7 @@ Where the AH price data is (#90). The prices themselves are not copied into the 
 | `houses[<house key>]` | Per auction house seen (`"<realm>|H"`, `"<realm>|N:BootyBay"`, ...): `label`, `kind` (`faction`/`neutral`), `items` (items with a price there), `withHistory` (of those, items in the market scope with history), `lastRecorded` (last scan, search or browse), `lastFullScan`, `lastFullScanSource`, `lastFullScanItems` (scope items stored), `lastFullScanLastOnly` (items outside the scope stored with `last` only). |
 | `auctionator` | `label` ("Auctionator (house unknown)"), `house = "unknown"`, `items` (prices exported, see below). |
 | `names` | How many item names `CraftWiseMarketDB.names` holds. |
+| `itemInfo` | How many items `CraftWiseMarketDB.itemInfo` describes (#92). |
 
 ### `crates`
 Waylaid crates (#91): every crate this account has seen (bags, auction house items, merchants), cheapest Merchant's Favor first. `{ list, best, bestHeld }`; `best` = item ID of the cheapest crate to buy and fill, `bestHeld` = the cheapest to fill among the crates this character carries. Money is copper, rounded to whole copper.
@@ -239,9 +240,17 @@ Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/rel
   - `last` = `t,min,qty,listings[,off]`: the latest observation: when, lowest unit price, units listed, listings (price levels for commodities). `off` = time of a later full scan at that house that didn't list it.
   - Items in the market scope (own professions' reagents, products and recipes, items you interacted with) also keep `raw` (48 h of scans with the cheapest 8 price levels) and `days` (30 days of daily low, typical, high, ...).
   - Every other item of a full scan or browse list has `last` only: the string ends in `||` (#90).
-- `names[<itemID>]`: the item's name as the client gave it (full-scan rows, else the client cache at logout). Missing when the client hadn't loaded the item; not part of any price record.
+- `names[<itemID>]`: the item's name as the client gave it, in the client's language (full-scan rows, else the client cache after a scan, on AH close, after login and at logout). Missing when the client hadn't loaded the item; not part of any price record. A plain string, unchanged since #90.
+- `itemInfo[<itemID>]` (#92): `"q,i,c,s,t"`, numbers in base 36 like the price records, for every item ID that has a record in `items` (suffix variants share their item ID's entry) or in `auctionator.items`. Dropped together with the last of those records.
+  - `q` quality (`Enum.ItemQuality`: 0 poor, 1 common, 2 uncommon, 3 rare, 4 epic, 5 legendary, ...), `i` icon file ID, `c` class ID and `s` subclass ID (`Enum.ItemClass` and its subclass enums), all as the client returns them (`C_Item.GetItemInfoInstant`, `C_Item.GetItemInfo`, or the complete full-scan row for quality and icon). `t` = Unix time CraftWise read them.
+  - An entry exists only once the client gave the quality; any other field the client didn't give is empty (e.g. `"1,,7,9,tmz8w0"` has no icon): missing, never a default.
+  - The name is not repeated here: it is `names[<itemID>]` (one name store). Together they give `{ n, q, i, c, s, t }` as issue #92 lists it; `Market.ItemInfo(itemID)` in Lua returns exactly that.
+  - Read again from the client when older than 30 days (after a scan, on AH close or after login); items the client cache doesn't hold are requested 100 at a time.
+  - Example (made-up item): `itemInfo = { [12345] = "1,2vji,7,9,tmz8w0" }` with `names = { [12345] = "Some Herb" }` = `{ n = "Some Herb", q = 1 (common), i = 134190, c = 7 (Tradegoods), s = 9, t = 1792115136 }`.
 - `auctionator`: `{ source = "auctionator", house = "unknown", label = "Auctionator (house unknown)", items = { [<itemID>] = "t,copper,age" } }`. Auctionator's price for items CraftWise had no price for at the profit house when it looked (`t` = when CraftWise read it, `age` = days since Auctionator saw it). Auctionator mixes houses (#26), so this is never mixed into `items` and never wins over CraftWise's own prices. Kept 30 days.
 - `scans[<house key>]`: the last 30 recordings: `t`, `kind` (`full`, `search`, `gear`), `items` (scope items), `lastOnly` (other items), `source`.
 
 ## Size
+`CraftWiseMarketDB.itemInfo` for 10,000 items is about 0.34 MB (measured headless, `tests/item_info_spec.lua`); it is per item, not per house. With the names map and one full scan of 10,000 items at one house, the market data is about 1.4 MB.
+
 A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each and a Favor merchant with 82 items) is about 98 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 128 KB). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, quests, reputations, holdings and flight paths roughly 12-13 KB each.

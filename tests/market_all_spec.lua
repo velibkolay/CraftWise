@@ -149,8 +149,9 @@ it("#90: storing a large scan takes several frames; last-only items cost less pe
 	end
 	C_Timer.After = after
 	eq(CraftWiseMarketDB.scans[HORDE][1].lastOnly, 3000)
-	-- reading: 3001 rows at 500 a frame (7 frames); storing: 3000 light + 1 full entry at 1000 a frame (4)
-	assert(frames >= 9 and frames <= 12, "frames: " .. frames)
+	-- reading: 3001 rows at 500 a frame (7 frames); storing: 3000 light + 1 full entry at 1000 a frame (4);
+	-- item info (#92): 3001 items at 500 a frame (7)
+	assert(frames >= 14 and frames <= 18, "frames: " .. frames)
 end)
 
 it("#90: pruning checks the age of last-only entries without decoding them; 30 days kept", function()
@@ -174,10 +175,10 @@ end)
 it("#90: names come from the scan rows and the client cache; the file keeps IDs only in records", function()
 	local M, stub = Market()
 	OpenAH(stub)
-	stub.items[8] = { name = "Silverleaf" }
 	Scan(stub, { { 7, 1, 100, "Waylaid Crate" }, { 8, 1, 100 } })
 	eq(CraftWiseMarketDB.names[7], "Waylaid Crate")
 	eq(CraftWiseMarketDB.names[8], nil, "the row had no name")
+	stub.items[8] = { name = "Silverleaf" } -- the client loads it later
 	stub.Fire("PLAYER_LOGOUT")
 	eq(CraftWiseMarketDB.names[8], "Silverleaf", "filled from the client at logout")
 	assert(not CraftWiseMarketDB.items[7][HORDE]:find("Waylaid", 1, true))
