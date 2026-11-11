@@ -134,6 +134,19 @@ describe("upload tokens on the private page", () => {
 		const ok = await call("POST", "/api/me/tokens", { body: { name: "both" }, headers });
 		expect((await ok.json<{ scopes: string[] }>()).scopes).toEqual(["public", "private"]);
 	});
+
+	it("lets an Access service token read but not change anything", async () => {
+		const jwt = await accessJwt(key, { email: undefined, sub: "", common_name: "abc.access" });
+		const headers = access(jwt, { origin: ORIGIN });
+		const me = await call("GET", "/api/me", { headers });
+		expect(me.status).toBe(200);
+		expect(await me.json()).toEqual({ email: null });
+		expect((await call("GET", "/api/me/tokens", { headers })).status).toBe(200);
+		const post = await call("POST", "/api/me/tokens", { body: { name: "x" }, headers });
+		expect(post.status).toBe(403);
+		expect((await post.json<{ error: string }>()).error).toBe("read_only");
+		expect((await call("DELETE", "/api/me/tokens/1", { headers })).status).toBe(403);
+	});
 });
 
 describe("private upload and read", () => {
