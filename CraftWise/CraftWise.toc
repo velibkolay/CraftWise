@@ -22,6 +22,7 @@ Money.lua
 Prices.lua
 Market.lua
 Ledger.lua
+Auctions.lua
 Profit.lua
 Recipes.lua
 Trainer.lua

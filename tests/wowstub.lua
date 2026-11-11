@@ -355,6 +355,41 @@ C_AuctionHouse = {
 	RequestMoreBrowseResults = function() stub.moreRequests = stub.moreRequests + 1 end,
 }
 stub.browseQueries, stub.throttleReady, stub.moreRequests = {}, true, 0
+-- Posting (#81, restricted in game; Auctions.lua only hooks them). ItemLocations in specs are
+-- { itemID, link }. stub.deposit = what CalculateItem/CommodityDeposit return.
+C_AuctionHouse.PostItem = function() return false end
+C_AuctionHouse.PostCommodity = function() return false end
+C_AuctionHouse.ConfirmPostItem = noop
+C_AuctionHouse.ConfirmPostCommodity = noop
+C_AuctionHouse.CalculateItemDeposit = function() return stub.deposit end
+C_AuctionHouse.CalculateCommodityDeposit = function() return stub.deposit end
+C_Item.GetItemID = function(location) return location and location.itemID end
+C_Item.GetItemLink = function(location) return location and location.link end
+-- Owned auctions: stub.owned = { OwnedAuctionInfo, ... }, stub.ownedFull (default true).
+stub.owned = {}
+C_AuctionHouse.GetNumOwnedAuctions = function() return #stub.owned end
+C_AuctionHouse.GetOwnedAuctionInfo = function(i) return stub.owned[i] end
+C_AuctionHouse.HasFullOwnedAuctionResults = function() return stub.ownedFull ~= false end
+-- Values from Blizzard's AuctionHouseDocumentation.lua / AuctionHouseEnumsDocumentation.lua (forever).
+Enum.AuctionStatus = { Active = 0, Sold = 1 }
+Enum.AuctionHouseNotification = { BidPlaced = 0, AuctionRemoved = 1, AuctionWon = 2, AuctionOutbid = 3, AuctionSold = 4, AuctionExpired = 5 }
+-- Mail (#81): stub.inbox[index] = { subject, money, invoice = { type, itemName, buyer, bid, buyout, deposit,
+-- consignment, count }, items = { { itemID, count } } }. Taking only records the call; specs move
+-- money and items themselves.
+stub.inbox, stub.mailTakes = {}, {}
+function GetInboxHeaderInfo(i)
+	local m = stub.inbox[i]
+	if not m then return nil end
+	return nil, nil, "Auction House", m.subject, m.money or 0, 0, 30, m.items and #m.items or nil
+end
+function GetInboxInvoiceInfo(i)
+	local v = stub.inbox[i] and stub.inbox[i].invoice
+	if not v then return nil end
+	return v.type, v.itemName, v.buyer, v.bid, v.buyout, v.deposit, v.consignment, 0, nil, nil, v.count
+end
+function TakeInboxMoney(i) table.insert(stub.mailTakes, { "money", i }) end
+function TakeInboxItem(i, a) table.insert(stub.mailTakes, { "item", i, a }) end
+function AutoLootMailItem(i) table.insert(stub.mailTakes, { "auto", i }) end
 Enum.ItemClass = { Weapon = 2, Armor = 4, Recipe = 9 }
 -- Values from Blizzard's ItemConstantsDocumentation.lua (Gethe/wow-ui-source, branch forever).
 Enum.ItemRecipeSubclass = { Book = 0, Leatherworking = 1, Tailoring = 2, Engineering = 3, Blacksmithing = 4,

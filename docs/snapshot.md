@@ -140,5 +140,36 @@ Per node:
 ### `fishing`
 Fishing log summary (#69), this character, last 90 days: `{ days, catches, containersOpened, zones }`. `zones` is sorted by catches, each `{ zone, catches, valuePerCatch, unpricedUnits, subzones }`; each subzone `{ subzone (`""` = none), maps (uiMapIDs), catches, valuePerCatch, unpricedUnits, items }`; each item `{ itemID, name, count, unitValue, valueSource }`. Values are copper. `unitValue` is the item's best sell value (`valueSource` = the AH quote label, e.g. "typical · Horde AH", or "vendor"), or for a caught container without a price the mean value of its logged contents (`"contents of N opened"`); missing with `valueSource = "no price data"`. `valuePerCatch` leaves unpriced units out; `unpricedUnits` says how many. Raw catches are in `CraftWiseDB.fishing[<character key>]` (see `CraftWise/Fishing.lua`).
 
+### `auctions`
+Auction tracker (#81), this character: `{ active, sold, returning, uncertain, expectedTotal, expectedMissing, ownedListAt, ownedListHouse }`. Each list holds rows (fields below). Money is copper.
+
+| Field | Meaning |
+|---|---|
+| `active` | Listed auctions. |
+| `sold` | Sold, money not collected from the mailbox yet. |
+| `expectedTotal` | Sum of `expected` over `sold`: gold on its way. Sales without an expected payout are left out and counted in `expectedMissing`. |
+| `returning` | Expired or cancelled: the item is on its way back by mail. |
+| `uncertain` | Missing from the owned list before its expiry with no message seen: sold or cancelled, which is unknown. |
+| `ownedListAt`, `ownedListHouse` | When the client's owned-auctions list (AH "Auctions" tab) was last read, and at which house. CraftWise never asks for that list itself. |
+
+Row fields:
+
+| Field | Meaning |
+|---|---|
+| `id` | Auction ID; missing until the client named it. |
+| `item`, `name`, `q` | Item ID, name (from the link, so random suffixes are kept), units in this auction. |
+| `house`, `houseLabel` | House key and label (#26), e.g. `"<realm>|H"`, `"Horde AH"`. Missing when the house couldn't be told (non-English client). |
+| `status`, `statusText` | `active` "listed", `sold` "sold, awaiting mail", `gone` "sold or cancelled (uncertain)", `expired` / `cancelled` "... returned via mail". |
+| `posted`, `expires`, `durText` | Post time, expiry time (from the owned list's time left, else the duration's hours on an English client), the duration as the client names it. Missing for auctions listed before tracking (`untracked = true`). |
+| `overdue` | `true` when a listed auction's time is up but no outcome was seen yet. |
+| `unitBuyout`, `unitBid`, `deposit` | Prices per unit as posted, and the deposit the client calculated for that post. |
+| `soldAt`, `soldVia` | When the sale was seen and how: `"message"`, `"owned list"`, `"owned list (quantity dropped)"`. |
+| `unitsSold` | `"some or all"`: a sold message for a commodity auction doesn't say how many units sold. |
+| `expected`, `expectedNote`, `salePrice` | What the sale mail should bring: sale price minus the house cut, only where the cut is confirmed or measured (`expectedNote`, e.g. `"5% cut (confirmed)"`). Missing with the reason in `expectedNote`: `"cut unverified"` (neutral houses), `"bid and buyout: sale price unknown"`, `"units sold unknown"`, `"price not recorded (listed before tracking)"`. The deposit, if the mail refunds it, is not included. |
+| `uncertain` | Matched by item name among several open auctions of the item (`"matched by name among 2 auctions of this item"`); the outcome may belong to the other one. |
+| `why` | How an inferred status was reached. |
+
+Full records (also settled sales with `received`, `sale`, `cut`, `saleDeposit`) are in `CraftWiseMarketDB.auctions.chars[<character key>]`, kept 30 days after they finish.
+
 ## Size
 A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents) is about 57 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`). Most of it is the file's indentation; quests, reputations, holdings and flight paths are roughly 12-13 KB each.
