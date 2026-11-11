@@ -4,15 +4,17 @@
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
+    "build": "esbuild site/list.ts site/item.ts --bundle --minify --format=esm --target=es2022 --outdir=public/assets --log-level=warning",
     "dev": "wrangler dev",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p site",
     "db:migrate:local": "wrangler d1 migrations apply craftwise --local",
     "bench": "esbuild scripts/bench-upload.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.bench/bench.mjs && node node_modules/.bench/bench.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.4.7",
     "@cloudflare/workers-types": "5.20261022.1",
+    "esbuild": "0.28.2",
     "typescript": "6.0.3",
     "vitest": "4.1.12",
     "wrangler": "4.152.0"

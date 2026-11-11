@@ -1,0 +1,186 @@
+/* wow.velikopter.com skin tokens (#96, #97): every colour, font, size and radius a skin sets lives here.
+   The skin is chosen on <html data-skin="classic|velikopter"> (localStorage "cw-skin", set before first paint).
+   site.css uses only these variables, plus the drawn chrome of the Classic skin (bevels, rims, textures).
+   Fonts are self-hosted under /fonts (SIL Open Font License, see the *-OFL.txt files next to them). */
+
+@font-face {
+	font-family: "Asul";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url(/fonts/asul-400.woff2) format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: "Archivo Narrow";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url(/fonts/archivo-narrow-400.woff2) format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: "Archivo Narrow";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url(/fonts/archivo-narrow-500.woff2) format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ===== Classic: the WoW: Forever client UI (design W2d) =====
+   Asul stands in for Friz Quadrata (titles, labels, rows, tooltips, money); Archivo Narrow for Arial Narrow
+   (edit boxes, status bars, chart axes). */
+:root,
+:root[data-skin="classic"] {
+	color-scheme: dark;
+	--font-ui: "Asul", "Friz Quadrata TT", Georgia, serif;
+	--font-display: "Asul", "Friz Quadrata TT", Georgia, serif;
+	--font-num: "Asul", "Friz Quadrata TT", Georgia, serif;
+	--font-narrow: "Arial Narrow", "Liberation Sans Narrow", "Archivo Narrow", sans-serif;
+	--track: 0.02em;
+	--weight-head: 400;
+	--shadow: 1px 1px 0 #000;
+	--num-shadow: 1px 1px 0 #000, -1px 0 0 rgba(0, 0, 0, 0.55), 0 -1px 0 rgba(0, 0, 0, 0.55);
+
+	--bg: #120c08;
+	--surface: #2a2725;
+	--surface-2: #1f1c1a;
+	--inset: #121110;
+	--line: rgba(255, 255, 255, 0.055);
+	--line-strong: #4d4741;
+	--bronze-hi: #d79a57;
+	--bronze: #9a5a24;
+	--bronze-mid: #6e3a14;
+	--bronze-lo: #3a1a06;
+	--title-bg: #1a0f08;
+
+	--text: #ffffff;
+	--label: #ffd100;
+	--text-2: #e2ded8;
+	--text-3: #a69f95;
+	--accent: #ffd100;
+	--blue: #4fa3ff;
+
+	--btn-red-1: #a92312;
+	--btn-red-2: #780f06;
+	--btn-red-3: #4e0702;
+	--btn-red-edge: #a8793a;
+	--btn-dark-1: #4b4744;
+	--btn-dark-2: #2c2927;
+	--btn-dark-3: #1d1b19;
+	--btn-dark-edge: #7a736b;
+	--btn-dark-text: #e9e5df;
+	--sel-1: #a9841f;
+	--sel-2: #7a5c12;
+	--tab-on-1: #a47c22;
+	--tab-on-2: #5e4410;
+
+	--tooltip-bg-1: rgba(19, 23, 41, 0.97);
+	--tooltip-bg-2: rgba(13, 16, 30, 0.97);
+	--tooltip-border: #c9b08c;
+
+	--parch: #c9a66e;
+	--parch-hi: #dcc093;
+	--parch-lo: #8a5a34;
+	--ink: #2e1c10;
+	--ink-2: #5c3d22;
+	--ink-3: #4a2e18;
+	--ink-red: #7a1e0e;
+	--chart-band: rgba(122, 30, 14, 0.13);
+	--chart-bar: rgba(62, 36, 16, 0.26);
+	--chart-bar-edge: rgba(62, 36, 16, 0.55);
+	--chart-grid: rgba(62, 36, 16, 0.45);
+	--chart-hot: #ffd100;
+
+	--coin-g: #f2c14e;
+	--coin-s: #c3c9d2;
+	--coin-c: #db8a5c;
+	--money-text: #ffffff;
+	--q-poor: #9d9d9d;
+	--q-common: #ffffff;
+	--q-uncommon: #1eff00;
+	--q-rare: #3d9bff;
+	--q-epic: #c17bf7;
+	--q-legendary: #ff8000;
+	--q-heirloom: #00ccff;
+	--rise: #ff5a45;
+	--fall: #3fe04f;
+	--spark: #e9c65a;
+	--spark-under: rgba(0, 0, 0, 0.8);
+
+	--radius: 4px;
+	--row: 34px;
+	--ui-size: 14px;
+	--num-size: 14px;
+	--page-max: 1352px;
+}
+
+/* ===== Velikopter: placeholder until the Velikopter brand kit is final (V1c starter values). =====
+   Change values here only. Its brand fonts are not shipped yet, so it uses the system sans. */
+:root[data-skin="velikopter"] {
+	color-scheme: light;
+	--font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-num: system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-narrow: system-ui, -apple-system, "Segoe UI", sans-serif;
+	--track: 0;
+	--weight-head: 700;
+	--shadow: none;
+	--num-shadow: none;
+
+	--bg: #f3f0e9;
+	--surface: #fbfaf6;
+	--surface-2: #ece8df;
+	--inset: #fbfaf6;
+	--line: #d9d4c8;
+	--line-strong: #0e0f12;
+
+	--text: #0e0f12;
+	--label: #4a4740;
+	--text-2: #2e2c28;
+	--text-3: #6b675f;
+	--accent: #ea580c;
+	--accent-text: #b03a08;
+	--blue: #0059b8;
+
+	--sel-1: #f6dcc9;
+	--sel-2: #f6dcc9;
+
+	--tooltip-bg-1: #fbfaf6;
+	--tooltip-bg-2: #fbfaf6;
+	--tooltip-border: #0e0f12;
+
+	--parch: #fbfaf6;
+	--ink: #0e0f12;
+	--ink-2: #4a4740;
+	--ink-3: #6b675f;
+	--ink-red: #ea580c;
+	--chart-band: rgba(234, 88, 12, 0.16);
+	--chart-bar: #d9d4c8;
+	--chart-bar-edge: #b9b2a4;
+	--chart-grid: #d9d4c8;
+	--chart-hot: #ea580c;
+
+	--coin-g: #8a5f00;
+	--coin-s: #5b626c;
+	--coin-c: #9c4a1c;
+	--money-text: #0e0f12;
+	--q-poor: #666666;
+	--q-common: #0e0f12;
+	--q-uncommon: #166b0c;
+	--q-rare: #0059b8;
+	--q-epic: #7e22c9;
+	--q-legendary: #a34a00;
+	--q-heirloom: #00708a;
+	--rise: #b3261e;
+	--fall: #1d7348;
+	--spark: #4a4740;
+	--spark-under: transparent;
+
+	--radius: 2px;
+	--row: 44px;
+	--ui-size: 15px;
+	--num-size: 15px;
+	--page-max: 1352px;
+}

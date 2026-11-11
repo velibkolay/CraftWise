@@ -33,6 +33,10 @@ value set in the dashboard is the Access audience tag.
 4. Optional: **Build watch paths** include `web/*`, so pushes that only change the addon don't build.
 5. Save and deploy. Pushes to `main` deploy again (no GitHub Actions change).
 
+The site's page scripts (`web/site/`, #97) are bundled when wrangler deploys: `wrangler.jsonc` has
+`build.command` = `npm run build` (esbuild, installed by `npm ci`), which writes `web/public/assets/` (ignored by
+git) before the upload. Nothing to change in the build settings; `npm run dev` runs the same build.
+
 ## 3. Custom domain
 Worker `craftwise-web` > **Settings > Domains & Routes > Add > Custom domain**: `wow.velikopter.com`.
 Cloudflare creates the DNS record and the certificate.
@@ -54,8 +58,8 @@ Worker `craftwise-web` > **Settings > Variables and Secrets > Add**:
 `ACCESS_AUD` the private API answers 503 and stays closed.
 
 ## 6. Check
-- `https://wow.velikopter.com/` shows the placeholder page; `https://wow.velikopter.com/api/houses`
-  answers `{"houses":[]}`.
+- `https://wow.velikopter.com/` shows the price list (empty until the first upload);
+  `https://wow.velikopter.com/api/houses` answers `{"houses":[]}` before the first upload.
 - `https://wow.velikopter.com/me` asks for the One-time PIN, then shows the private placeholder.
 - `https://wow.velikopter.com/api/me` (after the PIN) shows your e-mail.
 - `https://wow.velikopter.com/api/upload` without a token answers 401.

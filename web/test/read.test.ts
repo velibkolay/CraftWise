@@ -139,9 +139,9 @@ describe("public read API", () => {
 		expect((await call("GET", "/api/movers")).status).toBe(400);
 	});
 
-	it("serves the static placeholder page", async () => {
+	it("serves the static list page", async () => {
 		const res = await call("GET", "/");
 		expect(res.status).toBe(200);
-		expect(await res.text()).toContain("CraftWise prices");
+		expect(await res.text()).toContain('src="/assets/list.js"');
 	});
 });
