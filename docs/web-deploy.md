@@ -1,0 +1,78 @@
+# Deploying wow.velikopter.com (#99)
+
+Steps for Veli in the Cloudflare dashboard (first draft from #95; #99 finalizes them). Everything here
+is on free plans: Workers Free, D1 Free, Zero Trust Free (Access), custom domain, cron trigger,
+Workers Logs. **If any screen asks for a paid plan or a payment method, stop and ask first.**
+
+The Worker lives in `web/` (code and API: `web/docs/api.md`). The repo holds no secrets; the only
+value set in the dashboard is the Access audience tag.
+
+## 1. D1 database
+1. Dashboard > **Storage & Databases > D1 SQL Database > Create**. Name `craftwise`, location
+   *Western Europe* (or automatic).
+2. Copy its **Database ID** and put it into `web/wrangler.jsonc` under `d1_databases[0].database_id`
+   (replacing the zeros). The ID is not a secret; commit it through a PR (or give it to the Scout).
+   Deploys fail until it is in.
+3. Create the tables, from PowerShell on the PC (Node 22 or newer):
+   ```powershell
+   cd <CraftWise checkout>\web
+   npm ci
+   npx wrangler login
+   npx wrangler d1 migrations apply craftwise --remote
+   ```
+   `wrangler login` opens the browser once. Run the last line again whenever a PR adds a file to
+   `web/migrations/` (Workers Builds' default token has no D1 permission, so builds don't migrate).
+   Don't paste the SQL into the D1 console instead: wrangler would not know it ran and would try
+   again.
+
+## 2. Worker with Workers Builds
+1. **Workers & Pages > Create > Import a repository**, GitHub `velibkolay/CraftWise`.
+2. Project name `craftwise-web` (must match `name` in `web/wrangler.jsonc`).
+3. Build settings: **Root directory** `web`, **Build command** `npm ci`, **Deploy command**
+   `npx wrangler deploy`, production branch `main`. Builds for other branches: off.
+4. Optional: **Build watch paths** include `web/*`, so pushes that only change the addon don't build.
+5. Save and deploy. Pushes to `main` deploy again (no GitHub Actions change).
+
+## 3. Custom domain
+Worker `craftwise-web` > **Settings > Domains & Routes > Add > Custom domain**: `wow.velikopter.com`.
+Cloudflare creates the DNS record and the certificate.
+
+## 4. Access for the private part
+1. **Zero Trust > Access > Applications > Add an application > Self-hosted**.
+2. Name `CraftWise private`. Add the public hostnames, all on `wow.velikopter.com`, with the paths
+   `me`, `me/*`, `api/me`, `api/me/*`.
+   Do **not** cover `/api/upload` or `/api/private/upload`: the companion app authenticates with its
+   upload token, not with Access.
+3. Policy: *Allow*, Include > Emails > Veli's address. Login method: One-time PIN (the existing one).
+4. Save, then open the application again and copy the **Application Audience (AUD) Tag**.
+
+## 5. Variables
+Worker `craftwise-web` > **Settings > Variables and Secrets > Add**:
+- `ACCESS_AUD` = the AUD tag from step 4, type **Secret** (deploys never overwrite it).
+
+`ACCESS_TEAM_DOMAIN` (`velikopter.cloudflareaccess.com`) is already in `wrangler.jsonc`. Without
+`ACCESS_AUD` the private API answers 503 and stays closed.
+
+## 6. Check
+- `https://wow.velikopter.com/` shows the placeholder page; `https://wow.velikopter.com/api/houses`
+  answers `{"houses":[]}`.
+- `https://wow.velikopter.com/me` asks for the One-time PIN, then shows the private placeholder.
+- `https://wow.velikopter.com/api/me` (after the PIN) shows your e-mail.
+- `https://wow.velikopter.com/api/upload` without a token answers 401.
+
+## 7. Upload token for the companion
+Until the private page (#98) has a button: open `https://wow.velikopter.com/me`, press F12 >
+Console and run
+
+```js
+fetch("/api/me/tokens", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Companion PC" }) }).then((r) => r.json()).then(console.log)
+```
+
+The answer holds `token` (`cw_...`); it is shown only once. Put it into the companion app (#94).
+`GET /api/me/tokens` lists tokens, `DELETE /api/me/tokens/<id>` revokes one.
+
+## Watching the free limits
+- `https://wow.velikopter.com/api/me/usage`: rows written today (uploads stop at 90,000 of D1's
+  100,000) and the database size (free: 500 MB). See "Budget" in `web/docs/api.md`.
+- Errors and logs: Worker > **Observability** (Workers Logs, free tier).
+- Rollback: Worker > **Deployments** > an earlier version > Rollback.

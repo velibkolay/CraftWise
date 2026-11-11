@@ -1,0 +1,31 @@
+// wow.velikopter.com (#95). Deploy steps: docs/web-deploy.md (#99).
+// No secrets here. ACCESS_AUD is set in the Cloudflare dashboard (keep_vars keeps it on deploy).
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "craftwise-web",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-15",
+	"keep_vars": true,
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "404-page",
+		// The Worker answers the API and checks the Access login before serving /me.
+		"run_worker_first": ["/api/*", "/me", "/me/*"]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "craftwise",
+			// Placeholder: replace with the ID of the D1 database created in docs/web-deploy.md.
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	"vars": {
+		"ACCESS_TEAM_DOMAIN": "velikopter.cloudflareaccess.com"
+	},
+	// Daily retention (raw points, scan log, rate-limit and usage rows). Cron triggers are free.
+	"triggers": { "crons": ["17 3 * * *"] },
+	"observability": { "enabled": true }
+}
