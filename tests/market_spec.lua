@@ -252,7 +252,7 @@ it("a partial list is used only when it runs from the cheapest row", function()
 	eq(M.Depth(9, HORDE).total, 40)
 end)
 
-it("browse rows update the latest price only, in scope only", function()
+it("browse rows update the latest price only, every item (#90)", function()
 	local M, stub = Market()
 	InScope({ 5 })
 	OpenAH(stub)
@@ -265,8 +265,11 @@ it("browse rows update the latest price only, in scope only", function()
 	eq(M.Current(5, HORDE).qty, 28)
 	eq(M.Current(5, HORDE).listings, nil)
 	eq(#CraftWiseMarketDB.items[5][HORDE].raw, 0, "no tiers, so no raw point")
-	eq(CraftWiseMarketDB.items[6], nil)
+	eq(M.Current(6, HORDE).min, 1, "outside the scope: latest price too (#90)")
+	eq(#CraftWiseMarketDB.items[6][HORDE].raw, 0)
 	eq(M.InScope(6), false, "seeing an item in a browse list isn't interacting with it")
+	local log = CraftWiseMarketDB.scans[HORDE][1]
+	eq(log.items, 1); eq(log.lastOnly, 1)
 	stub.Fire("AUCTION_HOUSE_BROWSE_RESULTS_ADDED", { { itemKey = { itemID = 5, itemSuffix = 0 }, minPrice = 240, totalQuantity = 30 } })
 	eq(M.Current(5, HORDE).min, 240)
 	eq(#CraftWiseMarketDB.scans[HORDE], 2)
@@ -304,9 +307,10 @@ it("full scan: unit price per stack, scope filter, tiers, source, log", function
 	eq(depth[2].price, 150); eq(depth[2].qty, 3)
 	eq(M.Current(1, HORDE).listings, 3)
 	eq(M.Current(2, HORDE).min, 7)
-	eq(CraftWiseMarketDB.items[3], nil)
+	eq(M.IsLastOnly(CraftWiseMarketDB.items[3][HORDE]), true, "out of scope: last only (#90)")
+	eq(M.Current(3, HORDE).min, 1)
 	local log = CraftWiseMarketDB.scans[HORDE][1]
-	eq(log.kind, "full"); eq(log.items, 2); eq(log.source, "auctionator"); eq(log.t, NOW)
+	eq(log.kind, "full"); eq(log.items, 2); eq(log.lastOnly, 1); eq(log.source, "auctionator"); eq(log.t, NOW)
 end)
 
 it("full scan reads across frames, not all at once", function()
@@ -566,9 +570,13 @@ it("scope: a recipe item and a profession book join from an Auctionator full sca
 	eq(M.Current(601, HORDE).min, 2500); eq(M.Current(601, HORDE).listings, 2)
 	eq(M.Current(701, HORDE).min, 90000)
 	eq(M.InScope(701), true, "the book stays in scope")
-	eq(CraftWiseMarketDB.items[702], nil, "another profession's pattern")
-	eq(CraftWiseMarketDB.items[703], nil, "Book subclass names no profession")
-	eq(CraftWiseMarketDB.items[704], nil)
+	-- Outside the scope: latest price only (#90), no history.
+	eq(M.InScope(702), false, "another profession's pattern")
+	eq(M.InScope(703), false, "Book subclass names no profession")
+	eq(M.InScope(704), false)
+	for _, id in ipairs({ 702, 703, 704 }) do
+		eq(M.IsLastOnly(CraftWiseMarketDB.items[id][HORDE]), true, "last only: " .. id)
+	end
 	eq(CraftWiseMarketDB.items[601][HORDE].raw[1].total, 2, "raw point, like any in-scope item")
 	eq(CraftWiseMarketDB.scans[HORDE][1].items, 2)
 	-- Learn cost (#16) reads the recorded price of the recipe item.

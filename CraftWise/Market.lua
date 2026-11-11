@@ -8,7 +8,8 @@
 --   v, houses[houseKey], scans[houseKey] (last 30), cutSamples, prunedAt, scope = { items, skillLines }
 --   items[itemKey][houseKey] = entry, where itemKey is the itemID or "itemID:suffixID"
 --   entry = {
---     last = { t, min, qty, listings },                 latest observation (browse has no listings)
+--     last = { t, min, qty, listings, off },            latest observation (browse has no listings);
+--                                                        off: a later full scan didn't list it (#90)
 --     raw  = { { t, total, listings, tiers, m }, ... }, 48 h; tiers = { p1, q1, ... } first 8 prices
 --     days = { [dayNumber] = { lo, typ, hi, qtyMax, listMax, n, gone } },  30 days
 --   }
@@ -18,6 +19,16 @@
 -- On disk an entry is one compact string (see Encode): as plain tables the expected load is about
 -- 30 MB, as strings under 5 MB (measured on #26, tested in market_spec). Entries become tables when
 -- first used and strings again on prune and logout, so a saved file can hold both.
+--
+-- Every item of a full scan or a browse list is stored (#90): items in the scope get the history
+-- above, items outside it only `last` (on disk "t,min,qty,listings[,off]||", no raw, no days).
+--
+-- auctionator = { source, house = "unknown", label, items = { [itemID] = "t,copper,age" } } (#90):
+-- Auctionator's price for items CraftWise has no price for at the profit house, read through its
+-- public API. Auctionator mixes houses (evidence on #26), so it is kept apart and never read back
+-- into items[]. t = when CraftWise read it, age = days since Auctionator saw it (its API).
+-- names = { [itemID] = name } for the items above, from the client, so the saved file can be read
+-- without the game (#90). Not part of any record; rebuilt from the client's cache at logout.
 --
 -- Never stored: seller names, bids, per-auction rows beyond the tiers.
 local _, ns = ...
@@ -36,8 +47,14 @@ local DEDUPE_SECONDS = 60 -- the same result set fires several events; identical
 local SCANS_KEPT = 30
 local ROWS_PER_FRAME = 500 -- Auctionator's full scan reads 250 rows with a link lookup per step
 -- Decoding, updating and packing an entry costs 0.2 ms (expected) to 0.5 ms (full) on Lua 5.1.
+-- An entry with `last` only is a short string written or checked without decoding: it counts as
+-- 1/LIGHT_SHARE of a full entry in a frame's budget (#90).
 local COMMIT_PER_FRAME = 40
 local PRUNE_PER_FRAME = 20
+local LIGHT_SHARE = 25
+local AUCTIONATOR_PER_FRAME = 200
+local AUCTIONATOR_REFRESH = 3600 -- an unchanged Auctionator price is written again at most hourly
+local AUCTIONATOR_LOGIN_DELAY = 5 -- Auctionator sets up its price database during login
 local PRUNE_ALL_SECONDS = 3600 -- packed entries are revisited this often; entries in use on every prune
 local SEARCH_SETTLE_SECONDS = 0.3
 local LINK_RETRIES = 10
@@ -369,6 +386,9 @@ function M.EncodeEntry(entry)
 	if entry.last then
 		local l = entry.last
 		last = Base36(l.t) .. "," .. Base36(l.min) .. "," .. Base36(l.qty) .. "," .. Base36(l.listings)
+		if l.off then
+			last = last .. "," .. Base36(l.off)
+		end
 	end
 
 	local points, prevT = {}, 0
@@ -413,7 +433,7 @@ function M.DecodeEntry(s)
 	local entry = { raw = {}, days = {} }
 	if parts[1] ~= "" then
 		local f = Split(parts[1], ",")
-		entry.last = { t = Num(f[1]), min = Num(f[2]), qty = Num(f[3]), listings = Num(f[4]) }
+		entry.last = { t = Num(f[1]), min = Num(f[2]), qty = Num(f[3]), listings = Num(f[4]), off = Num(f[5]) }
 	end
 	if parts[2] ~= "" then
 		local prevT = 0
@@ -470,6 +490,40 @@ local function GetEntry(itemKey, houseKey, create)
 	return entry
 end
 
+-- An entry with `last` and no history (#90): no raw points, no days. Packed it ends in "||".
+local function IsLastOnly(entry)
+	if type(entry) == "string" then
+		return entry:sub(-2) == "||"
+	end
+	return type(entry) == "table" and entry.raw[1] == nil and next(entry.days) == nil
+end
+M.IsLastOnly = IsLastOnly
+
+-- `last` of a packed last-only entry, without building the whole entry.
+local function PackedLast(s)
+	local f = Split(s:sub(1, -3), ",")
+	if not Num(f[1]) then
+		return nil
+	end
+	return { t = Num(f[1]), min = Num(f[2]), qty = Num(f[3]), listings = Num(f[4]), off = Num(f[5]) }
+end
+
+-- Stores `last` for an item at a house. A last-only entry is written as its packed string directly;
+-- an entry with history keeps it and gets the new `last`.
+local function StoreLast(itemKey, houseKey, last)
+	local perItem = db.items[itemKey]
+	if not perItem then
+		perItem = {}
+		db.items[itemKey] = perItem
+	end
+	local entry = perItem[houseKey]
+	if entry == nil or (type(entry) == "string" and IsLastOnly(entry)) then
+		perItem[houseKey] = M.EncodeEntry({ last = last })
+	else
+		GetEntry(itemKey, houseKey).last = last
+	end
+end
+
 ----------------------------------------------------------------------------------------------------
 -- Keys, house detection
 ----------------------------------------------------------------------------------------------------
@@ -515,8 +569,9 @@ end
 
 ----------------------------------------------------------------------------------------------------
 -- Scope (decision 4): reagents and products of known and learnable recipes of the player's
--- professions, plus every item the player interacted with. Nothing outside it is stored. It only
--- grows. Buying and selling at a merchant and posting on the AH all pass through the bags.
+-- professions, plus every item the player interacted with. Only scope items keep a history; the rest
+-- of a full scan or browse list keeps `last` only (#90). The scope only grows. Buying and selling at
+-- a merchant and posting on the AH all pass through the bags.
 -- #67 adds the recipe items (recipe, pattern, plans, formula, schematic) of those professions:
 --   1. the item that teaches a bundled recipe of a scope profession (ns.SourceData, client DB2),
 --   2. recipe items recorded in game for such a recipe (CraftWiseDB.sources, #37),
@@ -707,26 +762,30 @@ local lastScan -- { count, t } of the last list read to the end
 local pending = {} -- search results waiting to settle
 local settleTimer
 
-local function LogScan(houseKey, kind, items, source)
+-- items: entries recorded with history (the scope); lastOnly: entries outside it that got `last`.
+local function LogScan(houseKey, kind, items, source, lastOnly)
 	local list = db.scans[houseKey] or {}
 	db.scans[houseKey] = list
-	list[#list + 1] = { t = time(), kind = kind, items = items, source = source }
+	list[#list + 1] = { t = time(), kind = kind, items = items, source = source,
+		lastOnly = lastOnly and lastOnly > 0 and lastOnly or nil }
 	while #list > SCANS_KEPT do
 		table.remove(list, 1)
 	end
 end
 
--- Runs step(i) for i = 1..count, perFrame calls per frame.
-local function Chunked(count, perFrame, step, done, isCancelled)
+-- Runs step(i) for i = 1..count, up to `budget` per frame. A step costs 1 unless it returns a number.
+local function Chunked(count, budget, step, done, isCancelled)
 	local index = 1
 	local function run()
 		if isCancelled and isCancelled() then
 			return
 		end
-		for i = index, math.min(index + perFrame - 1, count) do
-			step(i)
+		local spent = 0
+		while index <= count and spent < budget do
+			local cost = step(index)
+			spent = spent + (type(cost) == "number" and cost or 1)
+			index = index + 1
 		end
-		index = index + perFrame
 		if index > count then
 			done()
 		else
@@ -835,33 +894,40 @@ local function OnItemSearch(_, itemKeyInfo)
 	end)
 end
 
--- Browse rows have no tiers, only the lowest price and total, so they update `last` and nothing else.
+-- Browse rows have no tiers, only the lowest price and total, so they update `last` and nothing else,
+-- for every item in the list (#90), in the scope or not.
 local function RecordBrowse(results)
 	if not (db and currentHouse and results) then
 		return
 	end
-	local now, recorded = time(), 0
+	local now, recorded, lastOnly = time(), 0, 0
 	for _, row in ipairs(results) do
 		local key = row.itemKey
 		local itemID = key and key.itemID
-		if (row.totalQuantity or 0) > 0 and (row.minPrice or 0) > 0 and InScopeOrRecipe(itemID) then
+		if itemID and (row.totalQuantity or 0) > 0 and (row.minPrice or 0) > 0 then
+			local inScope = InScopeOrRecipe(itemID)
 			local entry = GetEntry(M.ItemKey(itemID, key.itemSuffix), currentHouse, true)
 			local last = entry.last
 			local repeated = last and now - last.t < DEDUPE_SECONDS and last.min == row.minPrice and last.qty == row.totalQuantity
 			if not repeated then
 				entry.last = { t = now, min = row.minPrice, qty = row.totalQuantity }
-				recorded = recorded + 1
+				if inScope then
+					recorded = recorded + 1
+				else
+					lastOnly = lastOnly + 1
+				end
 			end
 		end
 	end
-	if recorded > 0 then
-		LogScan(currentHouse, "search", recorded, "ui")
+	if recorded + lastOnly > 0 then
+		LogScan(currentHouse, "search", recorded, "ui", lastOnly)
 	end
 end
 
 -- Gear found by the Upgrades view's AH search (#50, decision 1): items outside the scope get their
--- browse price as `last` only, no history (no raw points, no days). In-scope rows are already recorded
--- by RecordBrowse. Returns how many were stored.
+-- browse price as `last` only, no history (no raw points, no days). Since #90 RecordBrowse stores
+-- them as well from the same browse event, so this only stores what that missed. Returns how many
+-- were stored.
 function M.RecordGear(results)
 	if not (db and currentHouse and results) then
 		return 0
@@ -911,14 +977,24 @@ local function CanHaveSuffix(itemID)
 	return classID == nil or classID == 2 or classID == 4 -- unknown, weapon, armor
 end
 
+-- Every row is read (#90). Items in the scope collect their price levels for a raw point; the rest
+-- only what `last` holds (lowest unit price, units, listings).
 local function CollectRow(scan, index)
-	local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
-	if not ((count or 0) > 0 and (buyout or 0) > 0 and InScopeOrRecipe(itemID)) then
+	local name, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
+	if not ((count or 0) > 0 and (buyout or 0) > 0 and itemID) then
 		return true
 	end
 	-- Auctionator's comment: the list sometimes holds rows with no item data. It skips them too.
 	if not C_Item.DoesItemExistByID(itemID) then
 		return true
+	end
+	local inScope = scan.scope[itemID]
+	if inScope == nil then
+		inScope = InScopeOrRecipe(itemID) -- once per item and scan, so all its rows go the same way
+		scan.scope[itemID] = inScope
+	end
+	if type(name) == "string" and name ~= "" then
+		scan.names[itemID] = name
 	end
 	local suffix
 	if CanHaveSuffix(itemID) then
@@ -930,12 +1006,24 @@ local function CollectRow(scan, index)
 		suffix = SuffixFromLink(link)
 	end
 	local key = M.ItemKey(itemID, suffix)
+	local unit = math.max(1, math.floor(buyout / count + 0.5))
+	if not inScope then
+		local light = scan.light[key]
+		if not light then
+			scan.light[key] = { min = unit, qty = count, listings = 1 }
+		else
+			light.min = math.min(light.min, unit)
+			light.qty = light.qty + count
+			light.listings = light.listings + 1
+		end
+		return true
+	end
 	local rows = scan.rows[key]
 	if not rows then
 		rows = { prices = {}, listings = 0 }
 		scan.rows[key] = rows
 	end
-	AddRow(rows.prices, math.max(1, math.floor(buyout / count + 0.5)), count)
+	AddRow(rows.prices, unit, count)
 	rows.listings = rows.listings + 1
 	return true
 end
@@ -945,7 +1033,10 @@ local function FinishScan(scan)
 		job = nil
 	end
 	lastScan = { count = scan.count, t = scan.t }
-	LogScan(scan.house, "full", scan.recorded, scan.source)
+	LogScan(scan.house, "full", scan.recorded, scan.source, scan.lastOnly)
+	for itemID, name in pairs(scan.names) do
+		db.names[itemID] = name
+	end
 	ns.Notify("PRICES_CHANGED")
 	if not currentHouse then
 		M.Prune()
@@ -954,6 +1045,8 @@ end
 
 -- An item with no row in a finished scan is really off the market, which a search can't show.
 -- Only for items whose rows were all read.
+-- Items outside the scope have no raw point to say so: their `last` gets `off` = the scan's time.
+-- Steps return their cost: an entry with history 1 unit, a last-only one 1/LIGHT_SHARE (#90).
 local function CommitScan(scan)
 	scan.phase = "commit"
 	local keys, seen = {}, {}
@@ -961,29 +1054,54 @@ local function CommitScan(scan)
 		keys[#keys + 1] = key
 		seen[key] = true
 	end
+	for key in pairs(scan.light) do
+		if not seen[key] then
+			keys[#keys + 1] = key
+			seen[key] = true
+		end
+	end
 	for key, perItem in pairs(db.items) do
 		if not seen[key] and perItem[scan.house] then
 			keys[#keys + 1] = key
 		end
 	end
-	Chunked(#keys, COMMIT_PER_FRAME, function(i)
+	Chunked(#keys, COMMIT_PER_FRAME * LIGHT_SHARE, function(i)
 		local key = keys[i]
 		if scan.unread[ItemIDOfKey(key)] then
-			return
+			return 1
 		end
-		local rows = scan.rows[key]
+		local rows, light = scan.rows[key], scan.light[key]
 		if rows then
 			local obs = M.BuildObservation(rows.prices, rows.listings)
 			if M.ApplyObservation(GetEntry(key, scan.house, true), obs, scan.t) then
 				scan.recorded = scan.recorded + 1
 			end
-		else
-			local entry = GetEntry(key, scan.house)
-			local prev = entry and entry.raw[#entry.raw]
-			if prev and prev.total > 0 then
-				M.ApplyObservation(entry, { tiers = {}, total = 0, listings = 0 }, scan.t)
-			end
+			return LIGHT_SHARE
+		elseif light then
+			StoreLast(key, scan.house, { t = scan.t, min = light.min, qty = light.qty, listings = light.listings })
+			scan.lastOnly = scan.lastOnly + 1
+			return 1
 		end
+		local perItem = db.items[key]
+		local stored = perItem and perItem[scan.house]
+		if stored == nil then
+			return 1 -- pruned meanwhile
+		elseif IsLastOnly(stored) then
+			local last = type(stored) == "string" and PackedLast(stored) or stored.last
+			if last and last.t < scan.t and not (last.off and last.off >= last.t) then
+				last.off = scan.t
+				if type(stored) == "string" then
+					perItem[scan.house] = M.EncodeEntry({ last = last })
+				end
+			end
+			return 1
+		end
+		local entry = GetEntry(key, scan.house)
+		local prev = entry and entry.raw[#entry.raw]
+		if prev and prev.total > 0 then
+			M.ApplyObservation(entry, { tiers = {}, total = 0, listings = 0 }, scan.t)
+		end
+		return LIGHT_SHARE
 	end, function()
 		FinishScan(scan)
 	end)
@@ -1055,9 +1173,13 @@ local function OnReplicateList()
 		count = count,
 		t = time(),
 		rows = {},
+		light = {},
+		scope = {},
+		names = {},
 		waiting = {},
 		unread = {},
 		recorded = 0,
+		lastOnly = 0,
 		source = ns.HasAuctionator() and "auctionator" or "ui",
 	}
 	job = scan
@@ -1087,6 +1209,35 @@ local pruning = false
 
 -- Aggregates, applies retention and packs entries again, a few per frame. Entries left packed since
 -- the last prune have nothing new, so several AH visits in an hour only cost what they recorded.
+-- Packed last-only entries (#90) are only checked for age, without decoding: 1/LIGHT_SHARE of the cost.
+-- The full pass also drops Auctionator prices and names nothing refers to any more.
+local function DropEntry(itemKey, houseKey)
+	local perItem = db.items[itemKey]
+	perItem[houseKey] = nil
+	if next(perItem) == nil then
+		db.items[itemKey] = nil
+	end
+end
+
+local function PruneExtras(now)
+	local exported = db.auctionator.items
+	for itemID, packed in pairs(exported) do
+		local t = Num(Split(packed, ",")[1])
+		if not t or now - t > KEEP_DAYS * DAY_SECONDS then
+			exported[itemID] = nil
+		end
+	end
+	local used = {}
+	for key in pairs(db.items) do
+		used[type(key) == "number" and key or ItemIDOfKey(key) or key] = true
+	end
+	for itemID in pairs(db.names) do
+		if not (used[itemID] or exported[itemID]) then
+			db.names[itemID] = nil
+		end
+	end
+end
+
 function M.Prune()
 	if not db or pruning then
 		return
@@ -1105,21 +1256,30 @@ function M.Prune()
 	if all then
 		db.prunedAt = now
 	end
-	Chunked(#list, PRUNE_PER_FRAME, function(i)
+	Chunked(#list, PRUNE_PER_FRAME * LIGHT_SHARE, function(i)
 		local itemKey, houseKey = list[i][1], list[i][2]
-		local entry = GetEntry(itemKey, houseKey)
+		local perItem = db.items[itemKey]
+		local stored = perItem and perItem[houseKey]
+		if type(stored) == "string" and IsLastOnly(stored) then
+			local last = PackedLast(stored)
+			if not (last and now - last.t <= KEEP_DAYS * DAY_SECONDS) then
+				DropEntry(itemKey, houseKey)
+			end
+			return 1
+		end
+		local entry = stored and GetEntry(itemKey, houseKey)
 		if entry then
-			local perItem = db.items[itemKey]
 			if M.AggregateEntry(entry, now) then
 				perItem[houseKey] = M.EncodeEntry(entry)
 			else
-				perItem[houseKey] = nil
-				if next(perItem) == nil then
-					db.items[itemKey] = nil
-				end
+				DropEntry(itemKey, houseKey)
 			end
 		end
+		return LIGHT_SHARE
 	end, function()
+		if all then
+			PruneExtras(now)
+		end
 		pruning = false
 	end)
 end
@@ -1143,6 +1303,142 @@ local function PackAll()
 end
 
 ----------------------------------------------------------------------------------------------------
+-- Auctionator fallback export (#90). Auctionator keeps one bucket per realm and mixes the houses
+-- (evidence on #26), so its price is stored apart, labelled "house unknown", and never read back
+-- into the per-house data or the profit numbers (those read Auctionator live, Prices.lua).
+----------------------------------------------------------------------------------------------------
+
+M.AUCTIONATOR_HOUSE = "unknown"
+
+-- Stores Auctionator's price for an item CraftWise has no price for. Returns true when written. An
+-- unchanged price is written again at most hourly, so a tooltip shown often costs a string compare.
+function M.ExportAuctionator(itemID, copper, age)
+	if not (db and type(itemID) == "number" and type(copper) == "number" and copper > 0) then
+		return false
+	end
+	age = type(age) == "number" and math.floor(age) or nil
+	local now, items = time(), db.auctionator.items
+	local old = items[itemID]
+	if old then
+		local f = Split(old, ",")
+		if Num(f[2]) == math.floor(copper) and Num(f[3]) == age and now - (Num(f[1]) or 0) < AUCTIONATOR_REFRESH then
+			return false
+		end
+	end
+	items[itemID] = Base36(now) .. "," .. Base36(copper) .. "," .. Base36(age)
+	return true
+end
+
+-- { t (read by CraftWise), copper, age (days, Auctionator's), label, house = "unknown" } or nil.
+function M.AuctionatorExport(itemID)
+	local packed = db and db.auctionator.items[itemID]
+	if not packed then
+		return nil
+	end
+	local f = Split(packed, ",")
+	return { t = Num(f[1]), copper = Num(f[2]), age = Num(f[3]), label = db.auctionator.label, house = M.AUCTIONATOR_HOUSE }
+end
+
+-- Every scope item with no record at the profit house gets Auctionator's price, a few per frame.
+-- Items looked up elsewhere (ns.AuctionQuote) are exported when they fall back to Auctionator.
+local exporting = false
+function M.ExportAuctionatorScope()
+	if not db or exporting or not (ns.HasAuctionator and ns.HasAuctionator()) then
+		return
+	end
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	local list = {}
+	for itemID in pairs(db.scope.items) do
+		local perItem = db.items[itemID]
+		if type(itemID) == "number" and not (house and perItem and perItem[house]) then
+			list[#list + 1] = itemID
+		end
+	end
+	exporting = true
+	Chunked(#list, AUCTIONATOR_PER_FRAME, function(i)
+		local copper, age = ns.GetAuctionPrice(list[i])
+		if copper then
+			M.ExportAuctionator(list[i], copper, age)
+		end
+	end, function()
+		exporting = false
+	end)
+end
+
+----------------------------------------------------------------------------------------------------
+-- Names and the snapshot (#90): the saved file holds item IDs; names come from the client.
+----------------------------------------------------------------------------------------------------
+
+local function ItemIDOf(key)
+	return type(key) == "number" and key or ItemIDOfKey(key)
+end
+
+-- Names of every item with a record that the client has cached now. Runs at logout.
+local function FillNames()
+	local getName = C_Item and C_Item.GetItemNameByID
+	if not (db and getName) then
+		return
+	end
+	local function fill(itemID)
+		if itemID and db.names[itemID] == nil then
+			local name = getName(itemID)
+			if type(name) == "string" and name ~= "" then
+				db.names[itemID] = name
+			end
+		end
+	end
+	for key in pairs(db.items) do
+		fill(ItemIDOf(key))
+	end
+	for itemID in pairs(db.auctionator.items) do
+		fill(itemID)
+	end
+end
+M.FillNames = FillNames
+
+-- What the character snapshot says about the market data: per house, the last full scan and how
+-- many items have a price (with history or `last` only). The prices are in CraftWiseMarketDB.
+function M.SnapshotSummary()
+	if not db then
+		return nil, "market data not loaded"
+	end
+	local houses = {}
+	for houseKey, house in pairs(db.houses) do
+		local h = { label = house.label, kind = house.kind, items = 0, withHistory = 0 }
+		local list = db.scans[houseKey] or {}
+		h.lastRecorded = list[#list] and list[#list].t or nil
+		for i = #list, 1, -1 do
+			if list[i].kind == "full" then
+				h.lastFullScan, h.lastFullScanSource = list[i].t, list[i].source
+				h.lastFullScanItems, h.lastFullScanLastOnly = list[i].items, list[i].lastOnly or 0
+				break
+			end
+		end
+		houses[houseKey] = h
+	end
+	for _, perItem in pairs(db.items) do
+		for houseKey, entry in pairs(perItem) do
+			local h = houses[houseKey]
+			if h then
+				h.items = h.items + 1
+				if not IsLastOnly(entry) then
+					h.withHistory = h.withHistory + 1
+				end
+			end
+		end
+	end
+	local exported, named = 0, 0
+	for _ in pairs(db.auctionator.items) do
+		exported = exported + 1
+	end
+	for _ in pairs(db.names) do
+		named = named + 1
+	end
+	return { where = "CraftWiseMarketDB", houses = houses, names = named,
+		auctionator = { label = db.auctionator.label, house = M.AUCTIONATOR_HOUSE, items = exported } }
+end
+
+----------------------------------------------------------------------------------------------------
 -- Read API for later phases
 ----------------------------------------------------------------------------------------------------
 
@@ -1160,14 +1456,15 @@ function M.Typical(itemKey, house)
 end
 
 -- Latest observation { t, min, qty, listings, listed }, nil when never seen. listed is false when a
--- later full scan found none of it.
+-- later full scan found none of it: a raw point with no units, or `off` on a last-only entry (#90).
 function M.Current(itemKey, house)
 	local entry = db and GetEntry(itemKey, house)
 	if not (entry and entry.last) then
 		return nil
 	end
 	local l, latest = entry.last, entry.raw[#entry.raw]
-	return { t = l.t, min = l.min, qty = l.qty, listings = l.listings, listed = not (latest and latest.total == 0 and latest.t >= l.t) }
+	local absent = (latest and latest.total == 0 and latest.t >= l.t) or (l.off and l.off >= l.t)
+	return { t = l.t, min = l.min, qty = l.qty, listings = l.listings, listed = not absent }
 end
 
 -- Cheapest n price tiers of the latest observation with depth: { t, total, { price, qty }, ... }.
@@ -1536,6 +1833,11 @@ local function PrintHouse(itemKey, house)
 		end
 		ns.Print("  cheapest: " .. table.concat(parts, " · "))
 	end
+	local entry = GetEntry(itemKey, house.key)
+	if entry and IsLastOnly(entry) and not M.InScope(ItemIDOfKey(itemKey)) then
+		ns.Print("  history: none (outside the market scope, latest price only)")
+		return
+	end
 	local typical = M.Typical(itemKey, house.key)
 	if typical.status == "ok" then
 		ns.Print(("  typical: %s (%d days)"):format(ns.FormatMoney(typical.price), typical.days))
@@ -1571,9 +1873,17 @@ function M.Slash(arg)
 	end
 	-- The item's link or name (#59); a suffix variant adds its key.
 	ns.WithItemNames({ itemID }, function()
-		local item = ns.ItemChatText(itemID)
+		local item = ns.ItemChatText(itemID, { name = db.names[itemID] })
+		local exported = M.AuctionatorExport(itemID)
+		local function printExport()
+			if exported then
+				ns.Print(("%s: %s, read %s ago%s"):format(db.auctionator.label, ns.FormatMoney(exported.copper),
+					M.FormatAge(time() - exported.t), exported.age and (", Auctionator saw it %d days ago"):format(exported.age) or ""))
+			end
+		end
 		if not keys[1] then
 			ns.Print(("%s: %s%s"):format(item, M.NO_DATA, M.InScope(itemID) and "" or " (not a recorded item)"))
+			printExport()
 			return
 		end
 		for _, key in ipairs(keys) do
@@ -1586,6 +1896,7 @@ function M.Slash(arg)
 				PrintHouse(key, house)
 			end
 		end
+		printExport()
 	end)
 end
 
@@ -1604,6 +1915,12 @@ ns.Listen("DB_READY", function()
 	db.scope = db.scope or {}
 	db.scope.items = db.scope.items or {}
 	db.scope.skillLines = db.scope.skillLines or {}
+	db.names = db.names or {}
+	db.auctionator = db.auctionator or {}
+	db.auctionator.source = "auctionator"
+	db.auctionator.house = M.AUCTIONATOR_HOUSE
+	db.auctionator.label = ns.AUCTIONATOR_LABEL or "Auctionator (house unknown)"
+	db.auctionator.items = db.auctionator.items or {}
 end)
 
 ns.Listen("RECIPES_CHANGED", M.RefreshScope)
@@ -1612,8 +1929,12 @@ ns.On("PLAYER_LOGIN", function()
 	M.RefreshScope()
 	ScanBags()
 	M.Prune()
+	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, M.ExportAuctionatorScope)
 end)
-ns.On("PLAYER_LOGOUT", PackAll)
+ns.On("PLAYER_LOGOUT", function()
+	pcall(FillNames)
+	PackAll()
+end)
 ns.On("BAG_UPDATE_DELAYED", ScanBags)
 ns.On("BANKFRAME_OPENED", ScanBank)
 ns.On("PLAYERBANKSLOTS_CHANGED", ScanBank)
@@ -1646,6 +1967,7 @@ ns.On("AUCTION_HOUSE_CLOSED", function()
 	if not job then -- a scan still being stored prunes when it finishes
 		M.Prune()
 	end
+	M.ExportAuctionatorScope() -- Auctionator's own scans during the visit changed its prices
 end)
 
 ns.On("REPLICATE_ITEM_LIST_UPDATE", OnReplicateList)

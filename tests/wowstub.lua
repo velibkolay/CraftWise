@@ -324,7 +324,7 @@ function GetLocale() return stub.locale end
 stub.guids = {} -- unit token -> GUID
 function UnitGUID(unit) return stub.guids[unit] or "Player-1-SELF" end
 
--- Auction house. stub.replicate = { { itemID, count, buyout, link, owner } } (the client's list is
+-- Auction house. stub.replicate = { { itemID, count, buyout, link, owner, name } } (the client's list is
 -- 0-based). stub.commodity[itemID] = { rows = { { unitPrice, quantity, owners } }, total, full }.
 -- stub.itemSearch[itemID or "itemID:suffix"] = { rows = { { buyoutAmount, quantity } }, total, full }.
 stub.replicate, stub.commodity, stub.itemSearch, stub.browse = {}, {}, {}, {}
@@ -338,7 +338,7 @@ C_AuctionHouse = {
 	GetNumReplicateItems = function() return #stub.replicate end,
 	GetReplicateItemInfo = function(i)
 		local r = stub.replicate[i + 1]
-		return nil, nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, r.owner, r.owner, 0, r.itemID, r.link ~= nil
+		return r.name, nil, r.count, 1, true, 1, nil, 0, 0, r.buyout, 0, nil, nil, r.owner, r.owner, 0, r.itemID, r.link ~= nil
 	end,
 	GetReplicateItemLink = function(i) return stub.replicate[i + 1].link end,
 	GetNumCommoditySearchResults = function(id) return #(stub.commodity[id] or { rows = {} }).rows end,
