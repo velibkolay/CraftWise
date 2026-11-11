@@ -63,27 +63,9 @@ local function Number(value)
 	return type(value) == "number" and value or nil
 end
 
--- The only place this file builds a character key: ns.CharKey() (Core.lua, #77) when it exists, else
--- the same formula: realm .. "-" .. full name, where Forever's full name is name .. separator ..
--- surname (UnitName returns both; the separator is Blizzard's CHARACTERNAME_SURNAME_SEPARATOR, a space
--- in the names Syndicator stores for Forever, see #77).
+-- The only place this file builds a character key: ns.CharKey() (Core.lua, #77), "<realm>-<name> <surname>".
 local function CharKey()
-	if ns.CharKey then
-		return ns.CharKey()
-	end
-	if not UnitName then
-		return nil
-	end
-	local name, surname = UnitName("player")
-	name, surname = Text(name), Text(surname)
-	if not name then
-		return nil
-	end
-	if surname then
-		local consts = Constants and Constants.CharacterNameSeparatorConsts
-		name = name .. (consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " ") .. surname
-	end
-	return (Text(GetRealmName and GetRealmName()) or "") .. "-" .. name
+	return ns.CharKey()
 end
 M.CharKey = CharKey
 

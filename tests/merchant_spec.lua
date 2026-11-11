@@ -374,7 +374,7 @@ end
 
 local TANNER, WRIGHT = "PvP-Velikopter Tanner", "PvP-Velikopter Wright"
 
-it("the character key has the surname, from ns.CharKey when Core provides it", function()
+it("the character key has the surname, from ns.CharKey (Core.lua)", function()
 	local ns, stub = setup()
 	asChar(stub, "Velikopter Tanner", 6)
 	eq(ns.Merchant.CharKey(), TANNER)
@@ -383,9 +383,10 @@ it("the character key has the surname, from ns.CharKey when Core provides it", f
 	Constants = nil
 	asChar(stub, "Solo", 6)
 	eq(ns.Merchant.CharKey(), "PvP-Solo")
+	local coreKey = ns.CharKey
 	ns.CharKey = function() return "Core-Key" end
 	eq(ns.Merchant.CharKey(), "Core-Key")
-	ns.CharKey = nil
+	ns.CharKey = coreKey
 	eq(ns.Merchant.CharDisplay(TANNER), "Velikopter Tanner")
 	eq(ns.Merchant.CharDisplay("Forever-EU-Velikopter Tanner"), "Velikopter Tanner-Forever-EU")
 end)
