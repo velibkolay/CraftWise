@@ -309,3 +309,12 @@ New file `Snapshot.lua` in the TOC: **full game restart** needed (not `/reload`)
 - [ ] `ledger.today` / `ledger.reset` totals match `/craftwise ledger today` / `/craftwise ledger all`.
 - [ ] Logout and `/reload` don't take noticeably longer than before; no Lua error on logout (BugSack keeps it for the next login).
 - [ ] The file has nothing about other players (party members, whisper partners, guild members).
+
+## Profession skill refresh without the window (#65)
+No new file: `/reload` is enough.
+- [ ] After `/reload`, without opening any profession window: `/craftwise debug` lists every profession of the spellbook, Fishing and gathering ones included, with the skill and max shown there (Fishing and gathering professions with 0 recipes cached).
+- [ ] Learn Expert (or Journeyman) of a profession at a trainer, then open `/craftwise` without opening the profession window: the tab shows the new cap (e.g. `Cooking 150/225`). Same at once if the CraftWise window was already open.
+- [ ] Catch a fish that gives a skill point: `/craftwise debug` shows the new Fishing skill; `/craftwise snapshot` then `/reload`: `professions` has Fishing with that skill, `cached = false`.
+- [ ] Fishing, Herbalism, Mining and Skinning get no tab. A profession whose window was never opened (e.g. First Aid) gets its tab only after opening the window once, as before.
+- [ ] Open a profession window afterwards: `/craftwise debug` lists that profession once, not twice, with its recipes.
+- [ ] Weapon skill-ups in combat (they also send `SKILL_LINES_CHANGED`) cause no stutter.

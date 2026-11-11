@@ -56,7 +56,7 @@ Times (`t`, `scanned`, `since`) are Unix seconds (`time()`). Money is in copper 
 | `dur`, `durMax` | Durability now / maximum. Missing for items without durability. |
 
 ### `professions`
-A list, primary professions first. Built from the recipe cache (filled whenever a profession window is opened) and the client's profession list (`GetProfessions`/`GetProfessionInfo`, read without opening anything), so gathering professions without a window also appear.
+A list, primary professions first. Built from the profession cache and the client's profession list (`GetProfessions`/`GetProfessionInfo`, read without opening anything), so gathering professions and Fishing appear without a window. Recipes are cached whenever a profession window is opened; skill, max skill, name and icon of every profession are refreshed from the client's list at login and whenever the client's skill lines change (#65), so a new cap (Expert learned) or a Fishing skill-up shows without opening anything.
 
 | Field | Meaning |
 |---|---|
@@ -64,9 +64,9 @@ A list, primary professions first. Built from the recipe cache (filled whenever 
 | `kind` | `"primary"` or `"secondary"` (Cooking, First Aid, Fishing). |
 | `skill`, `max` | Skill and current maximum (from the client's list when it has the profession, else from the cache). |
 | `line` | Parent skill line ID (e.g. 165 Leatherworking). |
-| `recipesKnown` | Learned recipes in the cache. |
+| `recipesKnown` | Learned recipes in the cache. Missing when `cached = false`. |
 | `scanned` | When the recipe cache was last filled from the profession window. |
-| `cached` | `false` when the profession is only in the client's list (no window opened yet: no recipes known to CraftWise). |
+| `cached` | `false` when no profession window has been read for it (Fishing, gathering professions, or a window never opened): skill and max are known, recipes are not. Missing otherwise. |
 
 ### `quests`
 | Field | Meaning |

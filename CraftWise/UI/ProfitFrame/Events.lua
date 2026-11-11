@@ -4,6 +4,7 @@ local PF = ns.PF
 local View, ItemView, Refresh = PF.View, PF.ItemView, PF.Refresh
 
 ns.Listen("RECIPES_CHANGED", Refresh)
+ns.Listen("PROFESSIONS_CHANGED", Refresh) -- skill and max skill from the client (#65): tab labels, Learn/Level
 ns.Listen("PRICES_CHANGED", Refresh)
 ns.Listen("SKILLUPS_CHANGED", function()
 	if PF.frame and PF.frame:IsShown() and View() == "level" then

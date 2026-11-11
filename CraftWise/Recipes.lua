@@ -104,6 +104,18 @@ function ns.ScanProfession()
 	end
 	ids = mine
 	local profs = ns.charDB.professions
+	-- An entry the skill refresh (#65) made before the window was ever opened, under another key of
+	-- the same skill line, is taken over so the profession is not listed twice.
+	if not profs[base.professionID] then
+		for otherID, other in pairs(profs) do
+			if ns.SkillLineOf(otherID, other.name) == line and next(other.recipes or {}) == nil then
+				profs[otherID] = nil
+				other.recipes = {}
+				profs[base.professionID] = other
+				break
+			end
+		end
+	end
 	local prof = profs[base.professionID] or { recipes = {} }
 	profs[base.professionID] = prof
 	prof.name = base.professionName
@@ -170,6 +182,67 @@ end
 ns.On("TRADE_SKILL_SHOW", RequestScan)
 ns.On("TRADE_SKILL_LIST_UPDATE", RequestScan)
 ns.On("TRADE_SKILL_DATA_SOURCE_CHANGED", RequestScan)
+
+-- Skill, max skill, name and icon of every profession the character has (primary, secondary,
+-- gathering, Fishing), from the client's profession list (#65): no window needed, so learning Expert
+-- or skilling Fishing shows at once. Recipes are not touched; they still come from the window. A
+-- profession not cached yet gets an entry with no recipes (no tab: tabs need recipes). Returns true
+-- when something changed; then PROFESSIONS_CHANGED is sent.
+local function Secret(v)
+	return issecretvalue and issecretvalue(v)
+end
+
+local function CachedKey(profs, line)
+	for professionID, prof in pairs(profs) do
+		if ns.SkillLineOf(professionID, prof.name) == line then
+			return professionID
+		end
+	end
+end
+
+function ns.RefreshProfessionSkills()
+	if not (ns.charDB and GetProfessions and GetProfessionInfo) then
+		return false
+	end
+	local profs = ns.charDB.professions
+	local indices = { GetProfessions() }
+	local changed = false
+	for i = 1, 6 do -- primary 1, primary 2, archaeology, fishing, cooking, first aid; nil where none
+		local index = indices[i]
+		if index then
+			local ok, name, icon, skill, maxSkill, _, _, skillLine = pcall(GetProfessionInfo, index)
+			if ok and name and skillLine and not (Secret(name) or Secret(skill) or Secret(maxSkill) or Secret(skillLine)) then
+				local line = ns.SkillLineOf(skillLine, name)
+				local key = CachedKey(profs, line)
+				if not key then
+					key = line
+					profs[key] = { recipes = {} }
+					changed = true
+				end
+				local prof = profs[key]
+				prof.recipes = prof.recipes or {}
+				local new = { name = name, icon = icon, skill = skill, maxSkill = maxSkill }
+				for field, value in pairs(new) do
+					if prof[field] ~= value then
+						prof[field] = value
+						changed = true
+					end
+				end
+			end
+		end
+	end
+	if changed then
+		ns.Notify("PROFESSIONS_CHANGED")
+	end
+	return changed
+end
+
+ns.On("PLAYER_LOGIN", function()
+	ns.RefreshProfessionSkills()
+end)
+ns.On("SKILL_LINES_CHANGED", function()
+	ns.RefreshProfessionSkills()
+end)
 
 -- Bundled data (Data/*.lua, generated from the Forever client's own DB2 tables by
 -- cjber/skillup-forever, GPL-3.0): reagents, outputs, vendor prices, item sell prices.

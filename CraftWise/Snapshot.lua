@@ -162,9 +162,10 @@ function S.Equipment()
 	return { items = out, empty = empty }
 end
 
--- From the recipe cache (Recipes.lua, filled when a profession window opens) plus the client's
--- profession list (GetProfessions/GetProfessionInfo, no scan), which also has gathering professions
--- and the current skill. `scanned` = when the recipe cache was last filled.
+-- From the profession cache (Recipes.lua: recipes filled when a profession window opens; skill, max
+-- skill, name and icon refreshed from the client's list at login and on SKILL_LINES_CHANGED, #65)
+-- plus the client's profession list read now (GetProfessions/GetProfessionInfo, no scan), which also
+-- has gathering professions and Fishing. `scanned` = when the recipe cache was last filled.
 function S.Professions()
 	local list, byLine = {}, {}
 	for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
@@ -177,6 +178,10 @@ function S.Professions()
 		end
 		local p = { name = prof.name, skill = prof.skill, max = prof.maxSkill, line = line,
 			kind = SECONDARY[line] and "secondary" or "primary", recipesKnown = learned, scanned = prof.scannedAt }
+		-- Only skill from the client's list (#65 refresh), no profession window read yet.
+		if not prof.scannedAt and next(prof.recipes or {}) == nil then
+			p.cached, p.recipesKnown = false, nil
+		end
 		list[#list + 1] = p
 		byLine[line] = p
 	end
