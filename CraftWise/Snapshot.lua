@@ -290,19 +290,6 @@ function S.Reputations()
 	return { list = list, collapsedHeaders = collapsed }
 end
 
--- The reaction (1..8) of the character `key` with factionID as its last snapshot listed it, and the
--- snapshot's time. nil when there is no snapshot or the faction wasn't listed (e.g. under a collapsed
--- header). Used by the merchant lookup for characters that never opened a merchant (#75).
-function S.Standing(key, factionID)
-	local snap = ns.db and ns.db.snapshots and ns.db.snapshots[key]
-	local reps = snap and snap.reputations
-	for _, f in ipairs(reps and reps.list or {}) do
-		if f.id == factionID then
-			return f.reaction, snap.t
-		end
-	end
-end
-
 -- Hunter pet while it is summoned; missing otherwise (dismissed, dead, stabled, not a hunter).
 function S.Pet()
 	if not HasPetUI then

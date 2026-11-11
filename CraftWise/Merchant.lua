@@ -16,7 +16,7 @@
 --     reaction = 1..8,            UnitReaction("npc", "player"): what the client reports for this NPC, always
 --                                 stored, also when no faction matched
 --     realm,                      realm of the last visit (limited stock is per realm)
---     char,                       "<realm>-<name>" of the character that opened it last (#75; missing in
+--     char,                       character key ("<realm>-<name> <surname>", #77) that opened it last (#75; missing in
 --                                 records from before #75)
 --     filter, full,               merchant filter (GetMerchantFilter) and whether it showed everything
 --                                 (LE_LOOT_FILTER_ALL). A filtered view keeps items it did not show.
@@ -29,7 +29,7 @@
 --       unusable = true,          the merchant shows it in red (not usable by this character)
 --       known = true,             the item's tooltip says "Already known"
 --       ps = { [standing] = p },  price seen at each standing with the NPC's faction (discount evidence)
---       pk = { [standing] = key },  character ("<realm>-<name>") that saw ps[standing] last (#75)
+--       pk = { [standing] = key },  character key that saw ps[standing] last (#75)
 --       pc = { [key] = { p, st, t } },  per character: the copper price it saw last, its standing with
 --                                 the NPC's faction then (missing when no faction matched) and when (#75).
 --                                 Records from before #75 have no pc/pk; they still show as before.
@@ -63,15 +63,29 @@ local function Number(value)
 	return type(value) == "number" and value or nil
 end
 
--- "<realm>-<name>" of the character logged in: the ledger and snapshot key (#46, #63).
-function M.CharKey()
-	if ns.Ledger and ns.Ledger.CharKey then
-		return ns.Ledger.CharKey()
+-- The only place this file builds a character key: ns.CharKey() (Core.lua, #77) when it exists, else
+-- the same formula: realm .. "-" .. full name, where Forever's full name is name .. separator ..
+-- surname (UnitName returns both; the separator is Blizzard's CHARACTERNAME_SURNAME_SEPARATOR, a space
+-- in the names Syndicator stores for Forever, see #77).
+local function CharKey()
+	if ns.CharKey then
+		return ns.CharKey()
 	end
-	if ns.Snapshot and ns.Snapshot.Key then
-		return ns.Snapshot.Key()
+	if not UnitName then
+		return nil
 	end
+	local name, surname = UnitName("player")
+	name, surname = Text(name), Text(surname)
+	if not name then
+		return nil
+	end
+	if surname then
+		local consts = Constants and Constants.CharacterNameSeparatorConsts
+		name = name .. (consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " ") .. surname
+	end
+	return (Text(GetRealmName and GetRealmName()) or "") .. "-" .. name
 end
+M.CharKey = CharKey
 
 local function Store()
 	if not ns.db then
@@ -299,7 +313,7 @@ function M.Record()
 	end
 	m.reaction = UnitReaction and Number(UnitReaction("npc", "player")) or nil
 	m.realm = Text(GetRealmName and GetRealmName())
-	local key = M.CharKey()
+	local key = CharKey()
 	m.char = key or m.char
 	local filter = GetMerchantFilter and Number(GetMerchantFilter()) or nil
 	m.filter = filter
@@ -381,9 +395,21 @@ local function Unit(item)
 	return item.p and item.p > 0 and item.p / math.max(item.s or 1, 1) or nil
 end
 
+-- Account snapshots (#63) whose owner is known: a pre-#77 key kept as `legacy` may mix characters.
+local function Snapshots()
+	local out = {}
+	for key, snap in pairs(ns.db and ns.db.snapshots or {}) do
+		if type(snap) == "table" and not snap.legacy then
+			out[key] = snap
+		end
+	end
+	return out
+end
+
 -- The standing of an account character with a faction: live for the character logged in, else from
--- its #63 snapshot. Returns reaction (1..8) or nil when neither has it (never guessed).
-local function StandingOf(key, factionID, current)
+-- its #63 snapshot's reputation list. Returns reaction (1..8) or nil when neither has it (never guessed;
+-- a faction under a collapsed header is not in the snapshot).
+local function StandingOf(key, factionID, current, snaps)
 	if key == current and C_Reputation and C_Reputation.GetFactionDataByID then
 		local f = C_Reputation.GetFactionDataByID(factionID)
 		local reaction = f and Number(f.reaction)
@@ -391,8 +417,11 @@ local function StandingOf(key, factionID, current)
 			return reaction
 		end
 	end
-	if ns.Snapshot and ns.Snapshot.Standing then
-		return (ns.Snapshot.Standing(key, factionID))
+	local reps = snaps[key] and snaps[key].reputations
+	for _, f in ipairs(reps and reps.list or {}) do
+		if f.id == factionID then
+			return Number(f.reaction)
+		end
 	end
 end
 
@@ -411,9 +440,10 @@ function M.CharPrices(m, item)
 	end
 	local factionID = m.faction and m.faction.id
 	if factionID and item.ps then
-		local current = M.CharKey()
+		local current = CharKey()
+		local snaps = Snapshots()
 		local keys = {}
-		for key in pairs(ns.db and ns.db.snapshots or {}) do
+		for key in pairs(snaps) do
 			keys[key] = true
 		end
 		if current then
@@ -421,7 +451,7 @@ function M.CharPrices(m, item)
 		end
 		for key in pairs(keys) do
 			if not have[key] then
-				local st = StandingOf(key, factionID, current)
+				local st = StandingOf(key, factionID, current, snaps)
 				local p = st and item.ps[st]
 				if p and p > 0 then
 					out[#out + 1] = { key = key, p = p, st = st, seen = true }
@@ -606,18 +636,21 @@ function M.StockText(item)
 	return item.n == 0 and "sold out" or ("%d in stock"):format(item.n)
 end
 
--- One character's price: "90c with Realm-Tanner (Honored)", "1s with Realm-Wright (seen at Neutral)".
--- short: name only when the character is on the realm logged in, no "with".
-function M.CharPriceText(e, item, short, plain)
-	local who = e.key
-	if short then
-		local name = e.key:match("([^-]+)$") or e.key
-		local realm = e.key:sub(1, #e.key - #name - 1)
-		if realm == (Text(GetRealmName and GetRealmName()) or "") then
-			who = name
-		end
+-- A character key as people read it: the full name ("Velikopter Tanner"), with "-<realm>" only when the
+-- character is on another realm than the one logged in. Names have no "-"; realms may.
+function M.CharDisplay(key)
+	local name = key:match("([^-]+)$") or key
+	local realm = key:sub(1, #key - #name - 1)
+	if realm == "" or realm == (Text(GetRealmName and GetRealmName()) or "") then
+		return name
 	end
-	local text = M.PriceText({ p = e.p, s = item.s, c = item.c }, plain) .. (short and " " or " with ") .. who
+	return name .. "-" .. realm
+end
+
+-- One character's price: "90c with Velikopter Tanner (Honored)", "1s with Velikopter Wright (seen at
+-- Neutral)". short (tooltip): without "with".
+function M.CharPriceText(e, item, short, plain)
+	local text = M.PriceText({ p = e.p, s = item.s, c = item.c }, plain) .. (short and " " or " with ") .. M.CharDisplay(e.key)
 	local label = M.StandingLabel(e.st)
 	if e.seen then
 		return text .. (" (seen at %s)"):format(label or "?")

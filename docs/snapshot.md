@@ -87,7 +87,7 @@ Per quest: `id` (quest ID), `title`, `level`, `zone` (the header it sits under),
 
 Per faction: `id` (faction ID), `name`, `header` (the header above it), `reaction` (1 Hated .. 8 Exalted), `standing` (the client's label for it, e.g. "Honored"), `value` (raw reputation), `min` / `max` (raw values where this standing starts and the next one begins; progress = `value - min` of `max - min`), `atWar` (true when at war, else missing).
 
-Also read by the merchant lookup (#75): for a character that never opened a merchant, `/craftwise where` and the "Sold by" tooltip line show the price another character saw at the same standing with that merchant's faction, marked "seen at <standing>". A faction missing from `list` (collapsed header, no snapshot yet) gives no such line. The character logged in uses its live standing instead.
+Also read by the merchant lookup (#75): for a character that never opened a merchant, `/craftwise where` and the "Sold by" tooltip line show the price another character saw at the same standing with that merchant's faction, marked "seen at <standing>". A faction missing from `list` (collapsed header, no snapshot yet) gives no such line. The character logged in uses its live standing instead; a snapshot marked `legacy` (old key without surname, #77) is not used.
 
 ### `pet`
 Only while a hunter pet is summoned (dismissed, dead or stabled: missing, `skipped.pet` says why).
