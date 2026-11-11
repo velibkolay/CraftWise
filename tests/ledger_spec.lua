@@ -387,3 +387,19 @@ it("#59: an item that never arrives prints as item <id> after the timeout; a fai
 	local text = stop()
 	has(text, "item 4289: bought 1"); has(text, "item 15003: sold 1")
 end)
+
+it("#123: at logout the ledger uses the money last seen; a new day doesn't start at 0", function()
+	local ns, stub = Load() -- 100000 on entering the world
+	stub.money = 90000
+	stub.Fire("PLAYER_MONEY")
+	stub.clock = NOW + 86400 -- past midnight, no money change since
+	stub.money = 0
+	stub.Fire("PLAYER_LOGOUT")
+	local today = ns.Ledger.Summary("today")
+	eq(today.money, 90000); eq(today.startMoney, 90000); eq(today.change, 0)
+	local c = CraftWiseMarketDB.ledger.chars["PvP-Veli"]
+	eq(c.days[os.date("%Y-%m-%d", NOW + 86400)], 90000)
+	local days = ns.Ledger.Days()
+	eq(days[1].endMoney, 90000); eq(days[2].startMoney, 100000); eq(days[2].change, -10000)
+	eq(ns.Ledger.Summary("login").money, 90000)
+end)

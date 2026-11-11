@@ -499,3 +499,12 @@ Needs a full game restart (new file `LootToast.lua` in the TOC). On by default; 
 - [ ] `/craftwise loottoast duration 8`: lines stay 8 s. `duration 0` and `duration 50` are refused with a usage line. `/craftwise loottoast off`: nothing shows on loot; `on` again.
 - [ ] Non-English client (if available): lines still appear (the client's own `LOOT_ITEM_SELF` / `LOOT_ITEM_SELF_MULTIPLE` strings are used).
 - [ ] Fast auto-loot (#41) on and off, and with another loot addon: the toast shows the same either way (it reads what arrived, not who looted).
+
+## Money and XP in the logout snapshot (#123)
+`/reload` is enough (no new file, no TOC change). Read the snapshot in `CraftWise.lua` (copy it with the game closed, or read it after logging out) under `CraftWiseDB.snapshots["<realm>-<name> <surname>"]`.
+- [ ] Note gold, XP (`xp / xpMax` on the XP bar tooltip), rested XP and level, then `/reload`. `char.money`, `char.xp`, `char.xpMax`, `char.rested` and `char.level` match what you noted (not 0), and `ledger.today.money` equals `char.money`.
+- [ ] Earn or spend some copper and gain some XP (kill a mob), then log out to the character screen. The snapshot has the new money and XP. Do the same with a quit (`/quit`).
+- [ ] `/craftwise snapshot` then `/reload`: the values are the live ones as well (the manual snapshot is overwritten by the logout one, which must agree).
+- [ ] Level up, then `/reload`: `char.level` is the new level and `xp`/`xpMax` are the new level's.
+- [ ] `ledger.today.change` and `other` are plausible: `money - startMoney`, not `-startMoney`. `/craftwise ledger today` after logging back in shows no day starting at 0.
+- [ ] While there, compare `holdings.bags` and `favor.balance` in the logout snapshot with the bags and the Favor shown in game. If either is empty or 0 at logout, the client clears more than money and XP by then: report it on #123.

@@ -7,6 +7,7 @@ A per-character state snapshot that a Claude session reads from disk to answer q
 - Key: `CraftWiseDB.snapshots["<realm>-<name> <surname>"]` (#77; Forever characters have a surname), e.g. `CraftWiseDB.snapshots["CAMWOW EU4 Realm 8 PvP-Velikopter Tanner"]`; `"<realm>-<name>"` for a character without a surname. One entry per character, overwritten each time; no history.
 - Before #77 the key had no surname, so characters with the same first name shared one entry. At login such an old entry moves to the current character only if its `char.class` and `char.race` match; otherwise it stays under the old key with `legacy = true` (its owner is unknown) and CraftWise prints once what it could not assign. The ledger and the fishing log move with it.
 - Written by `/craftwise snapshot` (prints "snapshot saved, /reload to write it to disk") and automatically on `PLAYER_LOGOUT` (logout, `/reload`, quit).
+- At `PLAYER_LOGOUT` the Forever client returns 0 for money and XP (#123). The logout snapshot therefore uses the values CraftWise last saw while the character was in the world (`char.level`, `xp`, `xpMax`, `rested`, `money` and the ledger's current money; refreshed on entering the world and on every money, XP, level-up and rested change). A field the client returned as 0 or nothing at logout, with no value seen before, is missing instead of 0. `/craftwise snapshot` always reads the live values.
 - **The file is only current after `/reload`, logout or quit.** The game writes SavedVariables to disk only then; `/craftwise snapshot` alone updates the table in memory. Check `t` against the current time before trusting it.
 
 ## Rules
@@ -31,9 +32,9 @@ Times (`t`, `scanned`, `since`) are Unix seconds (`time()`). Money is in copper 
 | `faction` | `"Horde"` / `"Alliance"` (`UnitFactionGroup`). |
 | `race`, `class` | Localized race and class (`UnitRace`, `UnitClass`). |
 | `level` | Character level. |
-| `xp`, `xpMax` | XP in the current level and XP needed for the next (`UnitXP`, `UnitXPMax`). |
-| `rested` | Rested XP bonus pool (`GetXPExhaustion`); `0` = no rested XP. |
-| `money` | Money carried, copper. |
+| `xp`, `xpMax` | XP in the current level and XP needed for the next (`UnitXP`, `UnitXPMax`). Missing only in a logout snapshot where none was seen (#123). |
+| `rested` | Rested XP bonus pool (`GetXPExhaustion`); `0` = no rested XP. Missing only in a logout snapshot where none was seen (#123). |
+| `money` | Money carried, copper. Missing only in a logout snapshot where none was seen (#123). |
 | `guild` | Guild name; `false` = not in a guild; missing = in a guild but the client hasn't sent its name yet. |
 
 ### `location`
@@ -124,7 +125,7 @@ What CraftWise's holdings count (#49) sees. Item counts are `{ [itemID] = count 
 | `notCounted` | Places not in the counts (bank or mail never seen, account bank not read). |
 
 ### `ledger`
-Totals from the purchase and sale log (#46), no individual entries: `today` and `reset` (since the last `/craftwise ledger reset`), each `{ since, startMoney, money, change, spent, received, net, other }`. `spent`/`received`/`net` are logged AH and vendor trades; `other` is the money change they don't explain (loot, quests, repairs, fees, AH sales by mail). `startMoney`/`change`/`other` are missing when the start money wasn't seen.
+Totals from the purchase and sale log (#46), no individual entries: `today` and `reset` (since the last `/craftwise ledger reset`), each `{ since, startMoney, money, change, spent, received, net, other }`. `spent`/`received`/`net` are logged AH and vendor trades; `other` is the money change they don't explain (loot, quests, repairs, fees, AH sales by mail). `startMoney`/`change`/`other` are missing when the start money wasn't seen. `money` is the money carried (at logout the money last seen in the world, #123); the section is missing when money was never seen.
 
 ### `flightPaths`
 Known flight paths (#68), per character. Recorded when a flight master's map opens (`TAXIMAP_OPENED`): the nodes the flight master lists (`C_TaxiMap.GetAllTaxiNodes` on the taxi map the client opened, `GetTaxiMapID`). Each opening overwrites that map's entry; other maps stay as last seen, so `t` says how current each one is. Missing (`skipped.flightPaths = "no flight master map opened yet"`) until a flight master was used once with this version.
