@@ -28,6 +28,7 @@ Trainer.lua
 SourceRecorder.lua
 Merchant.lua
 Loot.lua
+Fishing.lua
 Crafts.lua
 Bags.lua
 Holdings.lua

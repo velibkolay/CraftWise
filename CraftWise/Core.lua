@@ -61,6 +61,7 @@ local DB_DEFAULTS = {
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	snapshots = {}, -- ["<realm>-<name>"] = character snapshot for Claude (Snapshot.lua, issue #63)
+	fishing = {}, -- ["<realm>-<name>"] = { catches, opened }, 90 days (Fishing.lua, issue #69)
 	music = { enabled = true, channel = "Master", professions = {}, position = {} }, -- issue #17
 	minimap = { hide = false, angle = 215 },
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
@@ -234,6 +235,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local ledgerArg = msg:match("^ledger%s*(.*)$")
 	if ledgerArg and ns.Ledger then
 		ns.Ledger.Slash(ledgerArg)
+		return
+	end
+	local fishingArg = msg:match("^fishing%s*(.*)$")
+	if fishingArg and ns.Fishing then
+		ns.Fishing.Slash(fishingArg)
 		return
 	end
 	if msg == "snapshot" then

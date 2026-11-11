@@ -130,6 +130,10 @@ local busy = false
 
 -- autoloot: LOOT_READY's payload, the client's decision at click time (#57).
 local function OnReady(_, autoloot)
+	-- Fishing log (#69): read the window before anything can leave it, whoever loots it.
+	if ns.Fishing and ns.Fishing.Capture then
+		ns.Fishing.Capture()
+	end
 	if autoloot == nil then
 		autoloot = Loot.AutoLootApplies()
 	end
