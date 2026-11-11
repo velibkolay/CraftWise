@@ -1,6 +1,6 @@
 // Small DOM helpers and the page chrome both pages share. Text always goes in as text nodes.
 import type { House } from "./api";
-import { age, freshness, money } from "./format";
+import { age, freshness, type Money, money, moneyPadded, pct, pctMarked } from "./format";
 
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, string | number | boolean | null | undefined | ((e: Event) => void)>;
@@ -44,13 +44,23 @@ export function clear(el: Element, ...children: Child[]): void {
 // Money with spoken text: screen readers read "1 gold 12 silver", the eye sees coins.
 export function moneyEl(copper: number | null, empty = "–"): HTMLElement {
 	if (copper === null) return h("span", { class: "m none" }, h("span", { "aria-hidden": "true" }, empty), h("span", { class: "sr" }, "no price"));
-	const m = money(copper);
+	const m = skinMoney(copper);
 	return h(
 		"span",
 		{ class: "m" },
 		h("span", { class: "sr" }, m.label),
 		h("span", { class: "mp", "aria-hidden": "true" }, m.parts.map((p) => h("span", { class: p.k }, p.v))),
 	);
+}
+
+// Money and change as the current skin writes them: Classic as the client ("1g 8s 40c", "+3.9%"), Velikopter
+// as the brand kit ("1g 08s 40c", "▲ +3.9 %"). Pages draw again when the skin changes (onSkinChange).
+export function skinMoney(copper: number): Money {
+	return currentSkin() === "velikopter" ? moneyPadded(copper) : money(copper);
+}
+
+export function pctText(change: number | null): string {
+	return currentSkin() === "velikopter" ? pctMarked(change) : pct(change);
 }
 
 export function nowSeconds(): number {
@@ -66,7 +76,15 @@ export function currentSkin(): Skin {
 	return document.documentElement.dataset.skin === "velikopter" ? "velikopter" : "classic";
 }
 
+const skinListeners: (() => void)[] = [];
+
+// The page's own redraw, run after the skin changes (money, change and the header differ per skin).
+export function onSkinChange(fn: () => void): void {
+	skinListeners.push(fn);
+}
+
 export function setSkin(skin: Skin): void {
+	const changed = currentSkin() !== skin;
 	document.documentElement.dataset.skin = skin;
 	try {
 		localStorage.setItem(SKIN_KEY, skin);
@@ -75,6 +93,10 @@ export function setSkin(skin: Skin): void {
 	}
 	for (const b of document.querySelectorAll<HTMLButtonElement>(".skinswitch button")) {
 		b.setAttribute("aria-pressed", String(b.dataset.skin === skin));
+	}
+	if (changed) {
+		for (const fn of skinListeners) fn();
+		document.querySelector<HTMLButtonElement>(`.skinswitch button[data-skin="${skin}"]`)?.focus();
 	}
 }
 
@@ -99,7 +121,8 @@ export function rotor(size = 26): SVGElement {
 	);
 }
 
-export function topBar(sub: Node | string): HTMLElement {
+export function topBar(sub: Node | string, view: View | null = null): HTMLElement {
+	if (currentSkin() === "velikopter") return keyBar(sub, view);
 	return h(
 		"header",
 		{ class: "top" },
@@ -107,6 +130,27 @@ export function topBar(sub: Node | string): HTMLElement {
 		h("span", { class: "hint crumbs" }, sub),
 		h("span", { class: "grow" }),
 		skinSwitch(),
+	);
+}
+
+// The Velikopter skin's header: the app key and the site name, the views with the nokta on the current one,
+// the skin switch and the private page; the crumbs (or the page's subline) under its rule.
+function keyBar(sub: Node | string, view: View | null): HTMLElement {
+	const tab = (v: View, href: string, label: string, cls = "ntab") =>
+		h("a", { class: cls, href, "data-view": v, "aria-current": view === v ? "page" : null }, label);
+	return h(
+		"header",
+		{ class: "top" },
+		h(
+			"div",
+			{ class: "keybar" },
+			h("a", { href: "/", class: "brand" }, h("img", { src: "/img/key-wow-32.svg", width: 32, height: 32, alt: "" }), h("span", {}, "wow.velikopter.com")),
+			h("nav", { class: "vnav", "aria-label": "Views" }, tab("browse", "/", "All items"), tab("favourites", "/?view=favourites", "Favourites"), tab("crates", "/?view=crates", "Waylaid crates")),
+			h("span", { class: "grow" }),
+			skinSwitch(),
+			tab("me", "/me", "Me", "ntab me"),
+		),
+		h("p", { class: "hint crumbs" }, sub),
 	);
 }
 

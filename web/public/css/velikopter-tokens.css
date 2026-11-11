@@ -1,0 +1,227 @@
+/* Copied unchanged from the Velikopter brand kit: repo velibkolay/velikopter-brand, tokens/velikopter-tokens.css at commit 061f41a.
+   Do not edit here: change the kit, then copy the file again. tokens.css imports it and maps the site skin onto these names;
+   its font URLs (../fonts/) resolve to web/public/fonts, which holds the kit's fonts/ (OFL, see AtkinsonHyperlegible*-OFL.txt). */
+/* Velikopter tokens as CSS custom properties. Generated from tokens.json (v2). */
+/* Light is the default; dark via [data-theme="dark"] or the OS setting unless [data-theme="light"] is set. */
+
+:root, [data-theme="light"] {
+  --brand-ink: #141517;
+  --brand-paper: #F4F4F1;
+  --brand-nokta: #12B5A9;
+  --brand-red: #E5432F;
+  --key-velikopter: #E5432F;
+  --key-lyricopter: #12B5A9;
+  --key-clipkopter: #FF8A2A;
+  --key-tokenkopter: #EE6FA3;
+  --key-todokopter: #3FA34D;
+  --key-gridkopter: #2A5BD7;
+  --key-wow: #F2C14E;
+  --bg: #F4F4F1;
+  --surface: #FFFFFF;
+  --surface-2: #EAEAE5;
+  --rule: #D7D8D4;
+  --rule-strong: #7A7D82;
+  --text: #141517;
+  --text-2: #4B4E54;
+  --text-3: #62656A;
+  --nokta-ink: #0A6F68;
+  --inverse: #141517;
+  --on-inverse: #F4F4F1;
+  --action: #C8341F;
+  --on-action: #FFFFFF;
+  --danger: #B42A18;
+  --live: #A34000;
+  --chart-1: #141517;
+  --chart-2: #0A6F68;
+  --chart-3: #C25100;
+  --chart-4: #7A7D82;
+  --chart-grid: #D7D8D4;
+  --coin-gold: #7A5300;
+  --coin-silver: #5B626C;
+  --coin-copper: #9C4A1C;
+  --q-poor: #666666;
+  --q-common: #141517;
+  --q-uncommon: #166B0C;
+  --q-rare: #0059B8;
+  --q-epic: #7E22C9;
+  --rise: #B42A18;
+  --fall: #0A6F68;
+  --shadow-none: none;
+  --shadow-key: 0 3px 0 0 #141517;
+  --shadow-pop: 0 0 0 1px #141517;
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --brand-ink: #141517;
+  --brand-paper: #F4F4F1;
+  --brand-nokta: #12B5A9;
+  --brand-red: #E5432F;
+  --key-velikopter: #E5432F;
+  --key-lyricopter: #12B5A9;
+  --key-clipkopter: #FF8A2A;
+  --key-tokenkopter: #EE6FA3;
+  --key-todokopter: #3FA34D;
+  --key-gridkopter: #2A5BD7;
+  --key-wow: #F2C14E;
+  --bg: #121314;
+  --surface: #1B1C1F;
+  --surface-2: #25272B;
+  --rule: #2E3034;
+  --rule-strong: #6F7378;
+  --text: #ECEDEA;
+  --text-2: #A7AAA6;
+  --text-3: #8E918D;
+  --nokta-ink: #2CC9BC;
+  --inverse: #ECEDEA;
+  --on-inverse: #121314;
+  --action: #E5432F;
+  --on-action: #141517;
+  --danger: #FF7A63;
+  --live: #FF8A2A;
+  --chart-1: #ECEDEA;
+  --chart-2: #2CC9BC;
+  --chart-3: #FF8A2A;
+  --chart-4: #6F7378;
+  --chart-grid: #2E3034;
+  --coin-gold: #F2C14E;
+  --coin-silver: #C3C9D2;
+  --coin-copper: #DB8A5C;
+  --q-poor: #9D9D9D;
+  --q-common: #ECEDEA;
+  --q-uncommon: #3BD45A;
+  --q-rare: #4EA2FF;
+  --q-epic: #B86CF5;
+  --rise: #FF7A63;
+  --fall: #2CC9BC;
+  --shadow-none: none;
+  --shadow-key: 0 3px 0 0 #000000;
+  --shadow-pop: 0 0 0 1px #ECEDEA;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --brand-ink: #141517;
+    --brand-paper: #F4F4F1;
+    --brand-nokta: #12B5A9;
+    --brand-red: #E5432F;
+    --key-velikopter: #E5432F;
+    --key-lyricopter: #12B5A9;
+    --key-clipkopter: #FF8A2A;
+    --key-tokenkopter: #EE6FA3;
+    --key-todokopter: #3FA34D;
+    --key-gridkopter: #2A5BD7;
+    --key-wow: #F2C14E;
+    --bg: #121314;
+    --surface: #1B1C1F;
+    --surface-2: #25272B;
+    --rule: #2E3034;
+    --rule-strong: #6F7378;
+    --text: #ECEDEA;
+    --text-2: #A7AAA6;
+    --text-3: #8E918D;
+    --nokta-ink: #2CC9BC;
+    --inverse: #ECEDEA;
+    --on-inverse: #121314;
+    --action: #E5432F;
+    --on-action: #141517;
+    --danger: #FF7A63;
+    --live: #FF8A2A;
+    --chart-1: #ECEDEA;
+    --chart-2: #2CC9BC;
+    --chart-3: #FF8A2A;
+    --chart-4: #6F7378;
+    --chart-grid: #2E3034;
+    --coin-gold: #F2C14E;
+    --coin-silver: #C3C9D2;
+    --coin-copper: #DB8A5C;
+    --q-poor: #9D9D9D;
+    --q-common: #ECEDEA;
+    --q-uncommon: #3BD45A;
+    --q-rare: #4EA2FF;
+    --q-epic: #B86CF5;
+    --rise: #FF7A63;
+    --fall: #2CC9BC;
+    --shadow-none: none;
+    --shadow-key: 0 3px 0 0 #000000;
+    --shadow-pop: 0 0 0 1px #ECEDEA;
+    color-scheme: dark;
+  }
+}
+:root {
+  --font-sans: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, Consolas, monospace;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --radius-0: 0;
+  --radius-key: 16%;
+  --radius-key-top: 10%;
+  --radius-keybutton: 6px;
+  --control: 40px;
+  --control-sm: 32px;
+  --touch: 44px;
+  --row: 40px;
+  --row-dense: 32px;
+  --nokta-ui: 8px;
+  --rule-w: 1px;
+  --rule-heavy-w: 2px;
+  --page-max: 1200px;
+  --dur-press: 80ms;
+  --dur-hop: 160ms;
+  --dur-panel: 200ms;
+  --dur-blink: 900ms;
+  --ease-hop: cubic-bezier(0.3, 0, 0, 1);
+  --ease-press: cubic-bezier(0.5, 0, 0.5, 1);
+}
+
+.vk-type-display { font-family: var(--font-sans); font-size: 56px; line-height: 58px; font-weight: 800; letter-spacing: -0.01em; }
+.vk-type-h1 { font-family: var(--font-sans); font-size: 40px; line-height: 44px; font-weight: 800; letter-spacing: -0.005em; }
+.vk-type-h2 { font-family: var(--font-sans); font-size: 28px; line-height: 34px; font-weight: 700; }
+.vk-type-h3 { font-family: var(--font-sans); font-size: 20px; line-height: 26px; font-weight: 700; }
+.vk-type-body { font-family: var(--font-sans); font-size: 16px; line-height: 25px; font-weight: 400; }
+.vk-type-body-strong { font-family: var(--font-sans); font-size: 16px; line-height: 25px; font-weight: 700; }
+.vk-type-small { font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 400; }
+.vk-type-label { font-family: var(--font-sans); font-size: 13px; line-height: 18px; font-weight: 700; }
+.vk-type-caption { font-family: var(--font-sans); font-size: 12px; line-height: 16px; font-weight: 400; }
+.vk-type-data { font-family: var(--font-mono); font-size: 14px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.vk-type-data-lg { font-family: var(--font-mono); font-size: 24px; line-height: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Self-hosted fonts (paths relative to this file). */
+@font-face { font-family: "Atkinson Hyperlegible Next"; src: url("../fonts/AtkinsonHyperlegibleNext-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Atkinson Hyperlegible Next"; src: url("../fonts/AtkinsonHyperlegibleNext-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Atkinson Hyperlegible Next"; src: url("../fonts/AtkinsonHyperlegibleNext-ExtraBold.woff2") format("woff2"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Atkinson Hyperlegible Mono"; src: url("../fonts/AtkinsonHyperlegibleMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Atkinson Hyperlegible Mono"; src: url("../fonts/AtkinsonHyperlegibleMono-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+
+/* Skin bridge for wow.velikopter.com (CraftWise project/skins.css, section 1).
+   Replace the body of .app[data-skin="velikopter"] with this block; the variable names are the skin's own. */
+.app[data-skin="velikopter"] {
+  --font-ui: var(--font-sans);
+  --font-display: var(--font-sans);
+  --font-num: var(--font-mono);
+  --bg: #F4F4F1; --surface: #FFFFFF; --inset: #EAEAE5;
+  --line: #D7D8D4; --line-strong: #7A7D82;
+  --text: #141517; --label: #4B4E54; --text-2: #4B4E54; --text-3: #62656A;
+  --accent: #0A6F68; --accent-text: #0A6F68;
+  --action: #C8341F; --on-action: #FFFFFF; --live: #A34000; --danger: #B42A18;
+  --coin-g: #7A5300; --coin-s: #5B626C; --coin-c: #9C4A1C;
+  --q-poor: #666666; --q-common: #141517; --q-uncommon: #166B0C; --q-rare: #0059B8; --q-rare-text: #0059B8; --q-epic: #7E22C9; --q-epic-text: #7E22C9;
+  --rise: #B42A18; --fall: #0A6F68;
+  --radius: 0px; --row: 40px; --ui-size: 15px; --num-size: 14px;
+}
+[data-theme="dark"] .app[data-skin="velikopter"] {
+  --bg: #121314; --surface: #1B1C1F; --inset: #25272B;
+  --line: #2E3034; --line-strong: #6F7378;
+  --text: #ECEDEA; --label: #A7AAA6; --text-2: #A7AAA6; --text-3: #8E918D;
+  --accent: #2CC9BC; --accent-text: #2CC9BC;
+  --action: #E5432F; --on-action: #141517; --live: #FF8A2A; --danger: #FF7A63;
+  --coin-g: #F2C14E; --coin-s: #C3C9D2; --coin-c: #DB8A5C;
+  --q-poor: #9D9D9D; --q-common: #ECEDEA; --q-uncommon: #3BD45A; --q-rare: #4EA2FF; --q-rare-text: #4EA2FF; --q-epic: #B86CF5; --q-epic-text: #B86CF5;
+  --rise: #FF7A63; --fall: #2CC9BC;
+}

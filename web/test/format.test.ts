@@ -11,7 +11,9 @@ import {
 	humanize,
 	money,
 	moneyAxis,
+	moneyPadded,
 	pct,
+	pctMarked,
 	pctSpoken,
 	qualityClass,
 	sparkPath,
@@ -49,6 +51,29 @@ describe("money", () => {
 	});
 });
 
+describe("money, Velikopter skin", () => {
+	it("pads silver and copper once a larger coin shows and drops empty leading coins", () => {
+		expect(moneyPadded(10840).parts).toEqual([
+			{ v: "1", k: "mg" },
+			{ v: "08", k: "ms" },
+			{ v: "40", k: "mc" },
+		]);
+		expect(moneyPadded(820000).short).toBe("82g 00s 00c");
+		expect(moneyPadded(9805).short).toBe("98s 05c");
+		expect(moneyPadded(6).short).toBe("6c");
+		expect(moneyPadded(0).short).toBe("0c");
+		expect(moneyPadded(12_345_678).parts[0]).toEqual({ v: "1,234", k: "mg" });
+	});
+	it("keeps the spoken label of the client format", () => {
+		expect(moneyPadded(10840).label).toBe("1 gold 8 silver 40 copper");
+		expect(moneyPadded(820000).label).toBe("82 gold");
+	});
+	it("pads the axis labels too", () => {
+		expect(moneyAxis(10500, true)).toBe("1g 05s");
+		expect(moneyAxis(10500)).toBe("1g 5s");
+	});
+});
+
 describe("change", () => {
 	it("formats a fraction as a signed percentage", () => {
 		expect(pct(0.039)).toBe("+3.9%");
@@ -78,6 +103,15 @@ describe("change", () => {
 		expect(changes([day(today - 1, 100), day(today - 2, 50)], today).c24).toBeCloseTo(1);
 		expect(changes([day(today - 2, 100), day(today - 3, 50)], today)).toEqual({ c24: null, c7: null });
 		expect(changes([day(today, 100)], today)).toEqual({ c24: null, c7: null });
+	});
+});
+
+describe("change, Velikopter skin", () => {
+	it("writes an arrow, a sign, a real minus and a thin space before the percent sign", () => {
+		expect(pctMarked(0.039)).toBe("▲ +3.9\u2009%");
+		expect(pctMarked(-0.02)).toBe("▼ \u22122.0\u2009%");
+		expect(pctMarked(0.0001)).toBe("0.0\u2009%");
+		expect(pctMarked(null)).toBe("–");
 	});
 });
 

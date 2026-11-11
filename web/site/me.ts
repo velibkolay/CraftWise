@@ -1,7 +1,7 @@
 // Private page /me (#98): characters, ledger, auctions, fishing, upload tokens and usage, from the
 // private API behind Cloudflare Access. Desktop shows every pane; a phone shows one section at a time.
 import { type Browse, get, type House, pickHouse } from "./lib/api";
-import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, nowSeconds, s, slot, topBar } from "./lib/dom";
+import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, s, slot, topBar } from "./lib/dom";
 import { age, qualityClass } from "./lib/format";
 import * as M from "./lib/me";
 
@@ -89,13 +89,14 @@ function signOf(v: number): 1 | -1 | 0 {
 	return v > 0 ? 1 : v < 0 ? -1 : 0;
 }
 
-// Money with a + or - in front (green in, red out); the sign is spoken as "plus" / "minus".
+// Money with a + or - in front (green in, red out; the Velikopter skin writes a real minus); the sign is spoken
+// as "plus" / "minus".
 function signed(copper: number | null, sign: 1 | -1 | 0): HTMLElement {
 	if (copper === null) return moneyEl(null);
 	return h(
 		"span",
 		{ class: "signed" },
-		sign ? h("span", { class: sign > 0 ? "sg-in" : "sg-out", "aria-hidden": "true" }, sign > 0 ? "+" : "-") : null,
+		sign ? h("span", { class: sign > 0 ? "sg-in" : "sg-out", "aria-hidden": "true" }, sign > 0 ? "+" : currentSkin() === "velikopter" ? "\u2212" : "-") : null,
 		sign ? h("span", { class: "sr" }, sign > 0 ? "plus" : "minus") : null,
 		moneyEl(Math.abs(copper)),
 	);
@@ -733,7 +734,12 @@ function setSection(sec: Section, push: boolean): void {
 
 // ---- Page --------------------------------------------------------------------------------------------
 
+// What the page shows now, drawn again when the skin changes: the shell as it is, or render() once loaded.
+let redraw: (() => void) | null = null;
+onSkinChange(() => redraw?.());
+
 function shell(title: string, medal: Node, parts: Node[]): void {
+	redraw = () => shell(title, medal, parts);
 	const frame = h(
 		"section",
 		{ class: "frame me", "aria-labelledby": "me-title" },
@@ -744,7 +750,7 @@ function shell(title: string, medal: Node, parts: Node[]): void {
 	);
 	clear(
 		app,
-		topBar(st.readOnly ? "Private: read-only access" : "Private: signed in with Cloudflare Access"),
+		topBar(st.readOnly ? "Private: read-only access" : "Private: signed in with Cloudflare Access", "me"),
 		h("main", { class: "shell me-shell" }, frame, bottomTabs("me")),
 	);
 }
@@ -804,6 +810,7 @@ function render(): void {
 			h("div", { class: "merow" }, pane("p-tokens", "tokens", tokenBox), usagePane()),
 		);
 		shell("My Characters", h("span", { class: "medal-letter" }, "?"), [body]);
+		redraw = render;
 		return;
 	}
 	const v = st.view ?? M.charView(null);
@@ -833,6 +840,7 @@ function render(): void {
 		h("div", { class: "merow r3" }, charactersPane(now), usagePane()),
 	);
 	shell(M.fullName(c), h("span", { class: `medal-letter cls-${M.classKey(c.class)}` }, (c.name ?? c.key).charAt(0)), [...header(c, v, now), body]);
+	redraw = render;
 }
 
 function loading(text: string): void {

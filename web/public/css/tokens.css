@@ -1,7 +1,11 @@
 /* wow.velikopter.com skin tokens (#96, #97): every colour, font, size and radius a skin sets lives here.
    The skin is chosen on <html data-skin="classic|velikopter"> (localStorage "cw-skin", set before first paint).
-   site.css uses only these variables, plus the drawn chrome of the Classic skin (bevels, rims, textures).
+   site.css uses only these variables, plus the drawn chrome of each skin.
    Fonts are self-hosted under /fonts (SIL Open Font License, see the *-OFL.txt files next to them). */
+
+/* The Velikopter brand kit's own tokens (copied from the kit, see the file's header). It declares them on :root;
+   the Classic block below outranks it, so only the Velikopter skin sees the kit's values. */
+@import url("velikopter-tokens.css");
 
 @font-face {
 	font-family: "Asul";
@@ -31,8 +35,8 @@
 /* ===== Classic: the WoW: Forever client UI (design W2d) =====
    Asul stands in for Friz Quadrata (titles, labels, rows, tooltips, money); Archivo Narrow for Arial Narrow
    (edit boxes, status bars, chart axes). */
-:root,
-:root[data-skin="classic"] {
+/* :not(velikopter) keeps Classic the default and lets it outrank the kit's :root and dark-theme rules. */
+:root:not([data-skin="velikopter"]) {
 	color-scheme: dark;
 	--font-ui: "Asul", "Friz Quadrata TT", Georgia, serif;
 	--font-display: "Asul", "Friz Quadrata TT", Georgia, serif;
@@ -118,73 +122,71 @@
 	--page-max: 1352px;
 }
 
-/* ===== Velikopter: placeholder until the Velikopter brand kit is final (V1c starter values). =====
-   Change values here only. Its brand fonts are not shipped yet, so it uses the system sans. */
+/* ===== Velikopter: the brand kit (velikopter-tokens.css), light first, dark with the OS setting =====
+   The kit's own names (--bg, --surface, --surface-2, --text, --text-2, --text-3, --q-*, --rise, --fall, --chart-grid,
+   --inverse, --on-inverse, --action, --danger, --live, --nokta-ink, --coin-gold/silver/copper, --font-sans/mono) are
+   used as they are; this block maps the site's other names onto them, as the kit's skin bridge does. */
 :root[data-skin="velikopter"] {
-	color-scheme: light;
-	--font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
-	--font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
-	--font-num: system-ui, -apple-system, "Segoe UI", sans-serif;
-	--font-narrow: system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-ui: var(--font-sans);
+	--font-display: var(--font-sans);
+	--font-num: var(--font-mono);
+	--font-narrow: var(--font-sans);
 	--track: 0;
 	--weight-head: 700;
 	--shadow: none;
 	--num-shadow: none;
 
-	--bg: #f3f0e9;
-	--surface: #fbfaf6;
-	--surface-2: #ece8df;
-	--inset: #fbfaf6;
-	--line: #d9d4c8;
-	--line-strong: #0e0f12;
+	--inset: var(--surface-2);
+	--line: var(--rule);
+	--line-strong: var(--rule-strong);
+	--label: var(--text-2);
+	--accent: var(--nokta-ink);
+	--blue: var(--nokta-ink);
 
-	--text: #0e0f12;
-	--label: #4a4740;
-	--text-2: #2e2c28;
-	--text-3: #6b675f;
-	--accent: #ea580c;
-	--accent-text: #b03a08;
-	--blue: #0059b8;
+	--coin-g: var(--coin-gold);
+	--coin-s: var(--coin-silver);
+	--coin-c: var(--coin-copper);
+	--money-text: var(--text);
+	--money-in: var(--fall);
+	--money-out: var(--rise);
+	/* Not in the kit yet (Classic-era items rarely have them): legendary takes the kit's orange, heirloom the rare blue. */
+	--q-legendary: var(--live);
+	--q-heirloom: var(--q-rare);
 
-	--sel-1: #f6dcc9;
-	--sel-2: #f6dcc9;
-
-	--tooltip-bg-1: #fbfaf6;
-	--tooltip-bg-2: #fbfaf6;
-	--tooltip-border: #0e0f12;
-
-	--parch: #fbfaf6;
-	--ink: #0e0f12;
-	--ink-2: #4a4740;
-	--ink-3: #6b675f;
-	--ink-red: #ea580c;
-	--chart-band: rgba(234, 88, 12, 0.16);
-	--chart-bar: #d9d4c8;
-	--chart-bar-edge: #b9b2a4;
-	--chart-grid: #d9d4c8;
-	--chart-hot: #ea580c;
-
-	--coin-g: #8a5f00;
-	--coin-s: #5b626c;
-	--coin-c: #9c4a1c;
-	--money-text: #0e0f12;
-	--q-poor: #666666;
-	--q-common: #0e0f12;
-	--q-uncommon: #166b0c;
-	--q-rare: #0059b8;
-	--q-epic: #7e22c9;
-	--q-legendary: #a34a00;
-	--q-heirloom: #00708a;
-	--rise: #b3261e;
-	--fall: #1d7348;
-	--spark: #4a4740;
+	/* chart: chart-1 (text) for the line, chart-4 (rule-strong) for bars and the band's edge, the nokta for the picked day */
+	--ink: var(--text);
+	--ink-2: var(--text-2);
+	--ink-3: var(--text-3);
+	--ink-red: var(--chart-1);
+	--parch: var(--bg);
+	--chart-band: color-mix(in srgb, var(--chart-1) 8%, transparent);
+	--chart-bar: var(--chart-4);
+	--chart-bar-edge: var(--chart-4);
+	--chart-hot: var(--nokta-ink);
+	--spark: var(--text);
 	--spark-under: transparent;
-	--money-in: #1d7348;
-	--money-out: #b3261e;
 
-	--radius: 2px;
-	--row: 44px;
+	/* tooltips are the inverse ground, so their money takes the other theme's coin colours */
+	--tooltip-bg-1: var(--inverse);
+	--tooltip-bg-2: var(--inverse);
+	--tooltip-border: var(--inverse);
+	--tip-text: var(--on-inverse);
+	--tip-2: #a7aaa6;
+	--tip-coin-g: #f2c14e;
+	--tip-coin-s: #c3c9d2;
+	--tip-coin-c: #db8a5c;
+
+	--radius: 0px;
+	--row: 40px;
 	--ui-size: 15px;
-	--num-size: 15px;
-	--page-max: 1352px;
+	--num-size: 14px;
+	--page-max: 1344px;
+}
+@media (prefers-color-scheme: dark) {
+	:root[data-skin="velikopter"] {
+		--tip-2: #4b4e54;
+		--tip-coin-g: #7a5300;
+		--tip-coin-s: #5b626c;
+		--tip-coin-c: #9c4a1c;
+	}
 }
