@@ -81,6 +81,8 @@ local DB_DEFAULTS = {
 		-- "BootyBay" | "Gadgetzan" | "Everlook".
 		priceBasis = "typical", priceHouse = "faction",
 		fishingSessionGap = 5, -- minutes: fishing catches closer than this are one session (value per hour, #86)
+		fishingOwnMin = 50, -- Fishing zones (#88): own catches count from this n, below it the local reference shows
+		fishSortKey = "perCatch", fishSortDesc = true, -- Fishing view (#88)
 		ledgerView = "reset",
 		-- Reagent cost per view (#47): "ah" | "paid" (paid cost from the ledger, else AH per reagent).
 		costBasis = { profit = "ah", learn = "ah", level = "ah", upgrades = "ah" } }, -- /craftwise ledger: "reset" (since last reset) | "today" | "login" (#46) -- ahMin*: Bags, AH only when it pays this much more than a vendor

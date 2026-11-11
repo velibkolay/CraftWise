@@ -16,13 +16,15 @@ local function BuildHeader()
 	title:SetText("|cffffffffCraftWise|r")
 	local subtitle = PF.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
-	subtitle:SetText(Muted("Profit, learning, leveling, gear and loot"))
+	subtitle:SetText(Muted("Profit, gear, loot, fishing"))
 
-	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Upgrades | Bags.
-	local musicBtn = Style.Button(PF.frame, 70, 24, L["Music"])
+	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Level | Upgrades | Bags | Fishing | Music.
+	local musicBtn = Style.Button(PF.frame, 64, 24, L["Music"])
 	musicBtn:SetPoint("TOPRIGHT", -66, -14)
-	local bagsBtn = Style.Button(PF.frame, 70, 24, L["Bags"])
-	bagsBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
+	local fishingBtn = Style.Button(PF.frame, 70, 24, L["Fishing"])
+	fishingBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
+	local bagsBtn = Style.Button(PF.frame, 60, 24, L["Bags"])
+	bagsBtn:SetPoint("RIGHT", fishingBtn, "LEFT", -6, 0)
 	local upgradesBtn = Style.Button(PF.frame, 86, 24, L["Upgrades"])
 	upgradesBtn:SetPoint("RIGHT", bagsBtn, "LEFT", -6, 0)
 	local levelBtn = Style.Button(PF.frame, 64, 24, L["Level"])
@@ -33,6 +35,7 @@ local function BuildHeader()
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
 	viewButtons.profit, viewButtons.learn, viewButtons.bags = profitBtn, learnBtn, bagsBtn
 	viewButtons.upgrades, viewButtons.music, viewButtons.level = upgradesBtn, musicBtn, levelBtn
+	viewButtons.fishing = fishingBtn
 	for key, button in pairs(viewButtons) do
 		button:SetScript("OnClick", function()
 			Settings().view, state.offset = key, 0
@@ -166,6 +169,25 @@ local function BuildHeader()
 		self:SetSelected(false)
 	end)
 	PF.frame.searchAH = searchAH
+
+	-- Fishing (#88): back from a zone's loot table, and switch it between own catches and the reference.
+	local fishBack = Style.Button(PF.frame, 90, 22, L["All zones"])
+	fishBack:SetPoint("TOPLEFT", PAD + 222, -98)
+	fishBack:SetScript("OnClick", function()
+		state.fishZone, state.fishPrefer, state.offset = nil, nil, 0
+		Refresh()
+	end)
+	PF.frame.fishBack = fishBack
+	local fishSource = Style.Button(PF.frame, 130, 22, L["Show reference"])
+	fishSource:SetPoint("LEFT", fishBack, "RIGHT", 6, 0)
+	fishSource:SetScript("OnClick", function()
+		local z = state.fishOpen
+		if z then
+			state.fishPrefer, state.offset = z.source == "own" and "ref" or "own", 0
+			Refresh()
+		end
+	end)
+	PF.frame.fishSource = fishSource
 	local musicOn = Style.Check(PF.frame, L["Music on"], ns.db.music.enabled, function(v)
 		ns.db.music.enabled = v
 		if not v then
@@ -223,6 +245,16 @@ local function BuildColumns()
 			local ascending = key == "name" or key == "whereText" or key == "required"
 			if View() == "music" then
 				return
+			elseif View() == "fishing" then
+				local keyName, descName = "fishSortKey", "fishSortDesc"
+				if state.fishZone then
+					keyName, descName = "fishItemSortKey", "fishItemSortDesc"
+				end
+				if (s[keyName] or "perCatch") == key then
+					s[descName] = not (s[descName] ~= false)
+				else
+					s[keyName], s[descName] = key, key ~= "name"
+				end
 			elseif View() == "level" then
 				if (s.levelSortKey or "perPoint") == key then
 					s.levelSortDesc = not s.levelSortDesc
@@ -314,7 +346,10 @@ local function BuildRows()
 			if not r then
 				return
 			end
-			if View() == "bags" then
+			if View() == "fishing" then
+				GameTooltip:Hide()
+				PF.FishingClick(r, mouse)
+			elseif View() == "bags" then
 				GameTooltip:Hide()
 				ns.ShowItemMenu(r.itemID, self)
 			elseif View() == "music" then

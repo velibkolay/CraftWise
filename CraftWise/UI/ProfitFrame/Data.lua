@@ -6,6 +6,9 @@ local state, Settings, View, ItemName = PF.state, PF.Settings, PF.View, PF.ItemN
 -- Rows after the search box and the view's filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
+	if View() == "fishing" then
+		return PF.FishingRows()
+	end
 	if View() == "music" then
 		local out = {}
 		local music = ns.db.music
@@ -127,6 +130,8 @@ local function SortSettings()
 		return s.upgradeSortKey or "gain", s.upgradeSortDesc ~= false
 	elseif View() == "music" then
 		return "name", false
+	elseif View() == "fishing" then
+		return PF.FishingSort()
 	end
 	return s.sortKey, s.sortDesc
 end

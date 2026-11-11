@@ -392,6 +392,14 @@ function S.Fishing()
 	return ns.Fishing.SnapshotSummary()
 end
 
+-- Fishing zones by value per catch (#88): own catches or the local reference, top zones only.
+function S.FishingZones()
+	if not (ns.FishingZones and ns.FishingZones.SnapshotRanking) then
+		return nil, "FishingZones not loaded"
+	end
+	return ns.FishingZones.SnapshotRanking()
+end
+
 -- Auctions (#81): listed, sold awaiting mail with expected gold, returning by mail, uncertain.
 function S.Auctions()
 	if not (ns.Auctions and ns.Auctions.SnapshotSummary) then
@@ -404,7 +412,7 @@ S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
-	{ "fishing", S.Fishing }, { "auctions", S.Auctions },
+	{ "fishing", S.Fishing }, { "fishingZones", S.FishingZones }, { "auctions", S.Auctions },
 }
 
 ----------------------------------------------------------------------------------------------------

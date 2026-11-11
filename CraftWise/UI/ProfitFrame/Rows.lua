@@ -49,7 +49,9 @@ end
 
 local function RenderSummary(ids)
 	local text
-	if View() == "music" then
+	if View() == "fishing" then
+		text = PF.FishingSummary()
+	elseif View() == "music" then
 		local songs = #ns.Music.SongNames()
 		if songs == 0 then
 			text = C.warn .. "No songs yet.|r " .. Muted("Put .mp3 or .ogg files in ") .. ns.Music.FOLDER_TEXT
@@ -394,6 +396,8 @@ local function RenderRow(row, r, index)
 	row.stripe:SetShown(index % 2 == 0)
 	if View() == "music" then
 		return RenderMusicRow(row, r)
+	elseif View() == "fishing" then
+		return PF.RenderFishingRow(row, r)
 	end
 	if View() == "bags" then
 		return RenderBagRow(row, r)

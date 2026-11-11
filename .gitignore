@@ -3,3 +3,6 @@
 dist/
 tools/.cache/
 __pycache__/
+
+# Local fishing reference built by tools/fishing_ref.py from saved pages (#88): never commit
+CraftWise_FishingRef/

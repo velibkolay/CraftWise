@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<!-- Synthetic test page for tools/fishing_ref.py (issue #88). Made up names and numbers, not real game data. -->
+<html><head><title>Testwater Bay - Zone - Test Site</title>
+<link rel="canonical" href="https://example.invalid/forever/zone=9001/testwater-bay">
+</head><body>
+<h1 class="heading-size-1">Testwater Bay</h1>
+<script>
+var g_pageInfo = {type: 7, typeId: 9001, name: 'Testwater Bay'};
+new Listview({template: 'npc', id: 'npcs', data: [{"id": 1, "name": "Not a fish", "count": 5}]});
+new Listview({"template":"item","id":"fishing","name":"Fishing","extraCols":[Listview.extraCols.count,Listview.extraCols.percent],
+  "note":"Tricky text: ] } ) and \"quotes\" and 'single'","computeDataFunc":Listview.funcBox.initLootTable,"_totalCount":200,
+  "data":[{"classs":7,"id":9101,"name":"Test Snapper","quality":1,"count":120,"stack":[1,1]},
+          {"id":9102,"name":"Test Eel [big]","quality":1,"count":60,"stack":[1,3]},
+          {"id":9103,"name":"Test Trunk","quality":2,"count":20,"stack":[1,1]},
+          {"id":9104,"name":"Rare Test Pearl","quality":3,"count":0}]});
+</script></body></html>
