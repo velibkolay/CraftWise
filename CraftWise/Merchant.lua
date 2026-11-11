@@ -16,6 +16,8 @@
 --     reaction = 1..8,            UnitReaction("npc", "player"): what the client reports for this NPC, always
 --                                 stored, also when no faction matched
 --     realm,                      realm of the last visit (limited stock is per realm)
+--     char,                       character key ("<realm>-<name> <surname>", #77) that opened it last (#75; missing in
+--                                 records from before #75)
 --     filter, full,               merchant filter (GetMerchantFilter) and whether it showed everything
 --                                 (LE_LOOT_FILTER_ALL). A filtered view keeps items it did not show.
 --     first, t,                   first and last visit (Unix time)
@@ -27,6 +29,10 @@
 --       unusable = true,          the merchant shows it in red (not usable by this character)
 --       known = true,             the item's tooltip says "Already known"
 --       ps = { [standing] = p },  price seen at each standing with the NPC's faction (discount evidence)
+--       pk = { [standing] = key },  character key that saw ps[standing] last (#75)
+--       pc = { [key] = { p, st, t } },  per character: the copper price it saw last, its standing with
+--                                 the NPC's faction then (missing when no faction matched) and when (#75).
+--                                 Records from before #75 have no pc/pk; they still show as before.
 --       log = { { n, first, last, realm } },  limited stock: each count seen, first and last time
 --       t }                       last seen
 --   }
@@ -36,6 +42,7 @@ local M = {}
 ns.Merchant = M
 
 M.LOG_MAX = 20 -- stock observations kept per limited item
+M.TOOLTIP_CHARS = 3 -- characters per merchant on the "Sold by" tooltip line (#75)
 M.NEUTRAL = 4 -- FactionData.reaction: 1 Hated .. 4 Neutral .. 8 Exalted
 M.STANDINGS = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
 
@@ -55,6 +62,30 @@ local function Number(value)
 	value = Safe(value)
 	return type(value) == "number" and value or nil
 end
+
+-- The only place this file builds a character key: ns.CharKey() (Core.lua, #77) when it exists, else
+-- the same formula: realm .. "-" .. full name, where Forever's full name is name .. separator ..
+-- surname (UnitName returns both; the separator is Blizzard's CHARACTERNAME_SURNAME_SEPARATOR, a space
+-- in the names Syndicator stores for Forever, see #77).
+local function CharKey()
+	if ns.CharKey then
+		return ns.CharKey()
+	end
+	if not UnitName then
+		return nil
+	end
+	local name, surname = UnitName("player")
+	name, surname = Text(name), Text(surname)
+	if not name then
+		return nil
+	end
+	if surname then
+		local consts = Constants and Constants.CharacterNameSeparatorConsts
+		name = name .. (consts and consts.CHARACTERNAME_SURNAME_SEPARATOR or " ") .. surname
+	end
+	return (Text(GetRealmName and GetRealmName()) or "") .. "-" .. name
+end
+M.CharKey = CharKey
 
 local function Store()
 	if not ns.db then
@@ -282,6 +313,8 @@ function M.Record()
 	end
 	m.reaction = UnitReaction and Number(UnitReaction("npc", "player")) or nil
 	m.realm = Text(GetRealmName and GetRealmName())
+	local key = CharKey()
+	m.char = key or m.char
 	local filter = GetMerchantFilter and Number(GetMerchantFilter()) or nil
 	m.filter = filter
 	m.full = (filter ~= nil and filter == LE_LOOT_FILTER_ALL) or nil
@@ -309,6 +342,14 @@ function M.Record()
 			if m.standing and item.p > 0 then
 				item.ps = item.ps or {}
 				item.ps[m.standing] = item.p
+				if key then
+					item.pk = item.pk or {}
+					item.pk[m.standing] = key
+				end
+			end
+			if key and item.p > 0 then
+				item.pc = item.pc or {}
+				item.pc[key] = { p = item.p, st = m.standing, t = now }
 			end
 			if item.n and item.n >= 0 then
 				LogStock(item, item.n, now, m.realm)
@@ -354,14 +395,96 @@ local function Unit(item)
 	return item.p and item.p > 0 and item.p / math.max(item.s or 1, 1) or nil
 end
 
--- Every recorded merchant that sold itemID: { npcID, merchant, item, unit }, cheapest copper price first,
--- currency-only offers after them.
+-- Account snapshots (#63) whose owner is known: a pre-#77 key kept as `legacy` may mix characters.
+local function Snapshots()
+	local out = {}
+	for key, snap in pairs(ns.db and ns.db.snapshots or {}) do
+		if type(snap) == "table" and not snap.legacy then
+			out[key] = snap
+		end
+	end
+	return out
+end
+
+-- The standing of an account character with a faction: live for the character logged in, else from
+-- its #63 snapshot's reputation list. Returns reaction (1..8) or nil when neither has it (never guessed;
+-- a faction under a collapsed header is not in the snapshot).
+local function StandingOf(key, factionID, current, snaps)
+	if key == current and C_Reputation and C_Reputation.GetFactionDataByID then
+		local f = C_Reputation.GetFactionDataByID(factionID)
+		local reaction = f and Number(f.reaction)
+		if reaction then
+			return reaction
+		end
+	end
+	local reps = snaps[key] and snaps[key].reputations
+	for _, f in ipairs(reps and reps.list or {}) do
+		if f.id == factionID then
+			return Number(f.reaction)
+		end
+	end
+end
+
+-- Price per account character at one merchant (#75), cheapest first:
+-- { { key, p, st, t, seen = true } }. Characters that opened the merchant give what they saw (pc).
+-- A character that never opened it is listed with seen = true only when its standing with the
+-- merchant's faction is known (live or snapshot) and a price at exactly that standing was observed
+-- here (ps, by any character). No price is ever derived from a discount.
+function M.CharPrices(m, item)
+	local out, have = {}, {}
+	for key, o in pairs(item.pc or {}) do
+		if o.p and o.p > 0 then
+			out[#out + 1] = { key = key, p = o.p, st = o.st, t = o.t }
+			have[key] = true
+		end
+	end
+	local factionID = m.faction and m.faction.id
+	if factionID and item.ps then
+		local current = CharKey()
+		local snaps = Snapshots()
+		local keys = {}
+		for key in pairs(snaps) do
+			keys[key] = true
+		end
+		if current then
+			keys[current] = true
+		end
+		for key in pairs(keys) do
+			if not have[key] then
+				local st = StandingOf(key, factionID, current, snaps)
+				local p = st and item.ps[st]
+				if p and p > 0 then
+					out[#out + 1] = { key = key, p = p, st = st, seen = true }
+				end
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.p ~= b.p then
+			return a.p < b.p
+		end
+		if (a.seen or false) ~= (b.seen or false) then
+			return not a.seen -- observed by that character first
+		end
+		return a.key < b.key
+	end)
+	return out
+end
+
+-- Every recorded merchant that sold itemID: { npcID, merchant, item, unit, chars }, cheapest copper price
+-- first (the cheapest any account character gets, #75), currency-only offers after them.
 function M.Sellers(itemID)
 	local out = {}
 	for npcID, m in pairs(Store() or {}) do
 		local item = m.items and m.items[itemID]
 		if item then
-			out[#out + 1] = { npcID = npcID, merchant = m, item = item, unit = Unit(item) }
+			local chars = M.CharPrices(m, item)
+			local unit = Unit(item)
+			if chars[1] then
+				local best = chars[1].p / math.max(item.s or 1, 1)
+				unit = unit and math.min(unit, best) or best
+			end
+			out[#out + 1] = { npcID = npcID, merchant = m, item = item, unit = unit, chars = chars }
 		end
 	end
 	table.sort(out, function(a, b)
@@ -513,6 +636,42 @@ function M.StockText(item)
 	return item.n == 0 and "sold out" or ("%d in stock"):format(item.n)
 end
 
+-- A character key as people read it: the full name ("Velikopter Tanner"), with "-<realm>" only when the
+-- character is on another realm than the one logged in. Names have no "-"; realms may.
+function M.CharDisplay(key)
+	local name = key:match("([^-]+)$") or key
+	local realm = key:sub(1, #key - #name - 1)
+	if realm == "" or realm == (Text(GetRealmName and GetRealmName()) or "") then
+		return name
+	end
+	return name .. "-" .. realm
+end
+
+-- One character's price: "90c with Velikopter Tanner (Honored)", "1s with Velikopter Wright (seen at
+-- Neutral)". short (tooltip): without "with".
+function M.CharPriceText(e, item, short, plain)
+	local text = M.PriceText({ p = e.p, s = item.s, c = item.c }, plain) .. (short and " " or " with ") .. M.CharDisplay(e.key)
+	local label = M.StandingLabel(e.st)
+	if e.seen then
+		return text .. (" (seen at %s)"):format(label or "?")
+	elseif label then
+		return text .. (" (%s)"):format(label)
+	end
+	return text
+end
+
+function M.CharPricesText(chars, item, short, max)
+	local parts = {}
+	for i, e in ipairs(chars) do
+		if max and i > max then
+			parts[#parts + 1] = ("+%d"):format(#chars - max)
+			break
+		end
+		parts[#parts + 1] = M.CharPriceText(e, item, short)
+	end
+	return table.concat(parts, ", ")
+end
+
 -- "Honored with Thunder Bluff", or the reaction the client reports when no faction was matched.
 function M.StandingText(m)
 	if m.faction and m.standing then
@@ -540,8 +699,15 @@ function M.SellerLines(itemID, now)
 	local lines = {}
 	for _, s in ipairs(M.Sellers(itemID)) do
 		local m, item = s.merchant, s.item
-		local parts = { ("%s - %s"):format(m.name or ("NPC " .. s.npcID), PlaceText(m)), M.PriceText(item) }
-		parts[#parts + 1] = M.StandingText(m)
+		local parts = { ("%s - %s"):format(m.name or ("NPC " .. s.npcID), PlaceText(m)) }
+		if s.chars and s.chars[1] then
+			-- Per character (#75); the standings are in the list, the faction once.
+			parts[#parts + 1] = M.CharPricesText(s.chars, item)
+			parts[#parts + 1] = m.faction and ("faction " .. (m.faction.name or "?")) or M.StandingText(m)
+		else
+			parts[#parts + 1] = M.PriceText(item)
+			parts[#parts + 1] = M.StandingText(m)
+		end
 		local stock = M.StockText(item)
 		if stock then
 			parts[#parts + 1] = stock
@@ -577,9 +743,14 @@ function M.TooltipLines(itemID, now)
 			break
 		end
 		local m, item = s.merchant, s.item
-		local parts = { m.name or ("NPC " .. s.npcID), M.PriceText(item) }
-		if m.faction and m.standing then
-			parts[#parts + 1] = M.StandingLabel(m.standing)
+		local parts = { m.name or ("NPC " .. s.npcID) }
+		if s.chars and s.chars[1] then
+			parts[#parts + 1] = M.CharPricesText(s.chars, item, true, M.TOOLTIP_CHARS)
+		else
+			parts[#parts + 1] = M.PriceText(item)
+			if m.faction and m.standing then
+				parts[#parts + 1] = M.StandingLabel(m.standing)
+			end
 		end
 		local stock = M.StockText(item)
 		if stock then

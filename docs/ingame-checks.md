@@ -332,6 +332,13 @@ New file `Merchant.lua` in the TOC: **full game restart** needed (not `/reload`)
 - [ ] Item tooltip (bags or link): "Sold by" with up to 2 merchants and "+N more: /craftwise where". Settings: the "Sold by (merchants you opened)" checkbox turns it off; the Settings panel still fits.
 - [ ] Buying several items in a row at a vendor (each fires `MERCHANT_UPDATE`): no stutter.
 
+## Merchant prices per character (#75)
+No new file: `/reload` is enough. Needs two characters on the account with different standings with one merchant's faction (e.g. Thunder Bluff: Velikopter Tanner Honored, Velikopter Wright Neutral). Keys include the surname (#77): `"<realm>-Velikopter Tanner"`.
+- [ ] On Tanner, open Sewa Mistrunner (Thunder Bluff). `/dump CraftWiseDB.merchants[3027].char` = `"<realm>-Velikopter Tanner"` (with the surname; if it is only `"<realm>-Velikopter"`, report it); `items[6530].pc["<realm>-Velikopter Tanner"]` = `{ p = 90, st = 6, t = ... }`; `items[6530].pk[6]` = the same key.
+- [ ] Log Wright in, open the same merchant: `pc` now has both characters with their own price and standing; `char` is Wright's key. `/craftwise where nightcrawlers`: "90c with Velikopter Tanner (Honored), 1s with Velikopter Wright (Neutral) · faction Thunder Bluff", cheaper first. Item tooltip "Sold by": "Sewa Mistrunner · 90c Velikopter Tanner (Honored), 1s Velikopter Wright (Neutral) · ...". A character on another realm shows as "Name Surname-Realm".
+- [ ] A third character that never opened Sewa: `/craftwise snapshot` on it (or log out once), then on any character `/craftwise where nightcrawlers`: it shows with "(seen at <its standing>)" only when a price at exactly that standing was seen at Sewa; otherwise it is not listed. Log that character in: its live standing is used (no new snapshot needed). A snapshot kept under an old key without surname (`legacy = true`, #77) is not used.
+- [ ] Merchants recorded before this change (no `pc`): `/craftwise where` and the tooltip look as before until a character opens them again.
+
 ## Known flight paths in the snapshot (#68)
 New file `FlightPaths.lua` in the TOC: **full game restart** needed (not `/reload`). Field reference: `docs/snapshot.md`, `flightPaths`.
 - [ ] Talk to a flight master (e.g. Crossroads). Then `/dump CraftWiseDB.debug.taxi`: `nodes` = the number of flight points the map shows, no `why`. If `why` is set, report it (`no taxi map ID`, `flight master listed no nodes`: the client's flight map works differently than Blizzard's Forever UI code suggests).
