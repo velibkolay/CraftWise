@@ -28,6 +28,7 @@
 .cr-tags { display: flex; gap: 4px; margin: 2px 0 0 38px; }
 .cr-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; font-size: 12px; line-height: 1; color: var(--accent); border: 1px solid currentColor; border-radius: var(--radius); }
 .cr-tag.held { color: var(--text-2); }
+[data-skin="velikopter"] .cr-tag { --fill: var(--tag-fill); --flap: var(--tag-flap); --cut: var(--cut-s); padding: 0 9px 0 7px; border: 0; } /* a paper tag (site.css section 3) */
 .cr-src { display: inline-block; width: 10px; margin-left: 2px; font-size: 11px; text-align: left; }
 .r .m + .cr-src { vertical-align: top; }
 .cr-how { font-size: 12.5px; }
