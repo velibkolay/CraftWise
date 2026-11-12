@@ -17,8 +17,13 @@
 --                                  sort (true = the header sorts by row[key]), text(row) -> text, color }
 --   rowHeight, InitRow(row, data, ctx), SortRows(rows, key, desc),
 --   Open(content, data, ctx) + OpenHeight(data, ctx)   rows that open in place
---   Hero(card, hero, ctx)         draws into the hero card's middle (rails); label/name/sub/figure are
---                                  filled by the shell from model.hero
+--   Hero(card, hero, ctx, slot)   draws into the hero card's middle (rails); label/name/sub/figure are
+--                                  filled by the shell from model.hero. slot = the page's own frame
+--                                  over the middle (hidden while other pages show). hero.full = true:
+--                                  the middle is the whole card inside its padding; hero.bare = true:
+--                                  no card, the slot is the whole hero area (the page draws its cards)
+--   noHeader = true               no header row (group rows carry the rule, board "Bags")
+--   OnClick(row, ctx)             a left click on a row of a page without Open
 --   Tools(slot, ctx), ListTools(slot, ctx), FooterTools(slot, ctx)   build once; Update*(slot, ctx)
 --   Build(body, ctx), Refresh(body, ctx)   custom pages
 -- }

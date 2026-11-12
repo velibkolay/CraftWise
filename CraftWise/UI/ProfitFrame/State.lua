@@ -24,11 +24,6 @@ local COLUMN_DEFS = {
 	breakEven = { label = L["PAYS OFF"], align = "RIGHT" },
 	required = { label = L["SKILL"], align = "RIGHT" },
 	whereText = { label = L["WHERE TO GET IT"], align = "LEFT" },
-	vendorValue = { label = L["VENDOR"], align = "RIGHT" },
-	ahValue = { label = L["AUCTION"], align = "RIGHT" },
-	deValue = { label = L["DISENCHANT"], align = "RIGHT" },
-	usedCount = { label = L["USED IN"], align = "LEFT" },
-	bestValue = { label = L["BEST"], align = "LEFT" },
 	equippedText = { label = L["REPLACES"], align = "LEFT" },
 	gain = { label = L["UPGRADE"], align = "LEFT" },
 	songText = { label = L["SONG"], align = "LEFT" },
@@ -71,14 +66,6 @@ local VIEWS = {
 		{ key = "net", width = 95 },
 		{ key = "perPoint", width = 115 },
 	},
-	-- Bags: what to do with every item you carry.
-	bags = {
-		{ key = "name", width = 235 },
-		{ key = "vendorValue", width = 85 },
-		{ key = "ahValue", width = 85 },
-		{ key = "usedCount", width = 205 },
-		{ key = "bestValue", width = 175 },
-	},
 	-- Upgrades: items from your recipes that beat what you wear.
 	upgrades = {
 		{ key = "name", width = 280 },
@@ -109,11 +96,10 @@ local VIEWS = {
 	},
 }
 local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
-	"vendorValue", "ahValue", "deValue", "usedCount", "bestValue", "equippedText", "gain", "songText", "modeText",
+	"equippedText", "gain", "songText", "modeText",
 	"chance", "saleValue", "net", "perPoint", "sample", "topCatches", "perCatch", "perHour", "fishChance", "unitValue" }
 
 local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
-local BEST_TEXT = { vendor = L["Vendor"], auction = L["Auction"], disenchant = L["Disenchant"], junk = L["Junk"] }
 
 local STATUS_TEXT = {
 	known = L["Known"],
@@ -202,7 +188,7 @@ end
 
 local function View()
 	local v = Settings().view
-	return (v == "learn" or v == "level" or v == "bags" or v == "upgrades" or v == "music" or v == "fishing") and v or "profit"
+	return (v == "learn" or v == "level" or v == "upgrades" or v == "music" or v == "fishing") and v or "profit"
 end
 
 -- Upgrades view section: "craft" (Craftable, #16) or "ah" (General / AH, #50).
@@ -212,7 +198,7 @@ end
 
 -- Views that list items across all professions (no profession tabs).
 local function ItemView()
-	return View() == "bags" or View() == "upgrades" or View() == "music" or View() == "fishing"
+	return View() == "upgrades" or View() == "music" or View() == "fishing"
 end
 
 -- Shared with the other ProfitFrame files.
@@ -220,7 +206,7 @@ ns.PF = {
 	WIDTH = WIDTH, HEIGHT = HEIGHT, PAD = PAD, ROW_HEIGHT = ROW_HEIGHT, HEADER_Y = HEADER_Y, LIST_TOP = LIST_TOP,
 	VISIBLE_ROWS = VISIBLE_ROWS,
 	COLUMN_DEFS = COLUMN_DEFS, VIEWS = VIEWS, CELL_KEYS = CELL_KEYS,
-	QUALITY_COLORS = QUALITY_COLORS, BEST_TEXT = BEST_TEXT, SKILL_COLORS = SKILL_COLORS,
+	QUALITY_COLORS = QUALITY_COLORS, SKILL_COLORS = SKILL_COLORS,
 	ARROW_DOWN = ARROW_DOWN, ARROW_UP = ARROW_UP,
 	rows = rows, tabs = tabs, viewButtons = viewButtons, state = state,
 	Settings = Settings, Money = Money, Muted = Muted, ItemName = ItemName, StatusLine = StatusLine,

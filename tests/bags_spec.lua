@@ -55,19 +55,25 @@ it("reagents for known recipes are marked", function()
 	eq(byID(ns.BagRows())[200].reagent, false)
 end)
 
-it("bags view renders, sorts by best value and shows tooltips", function()
-	local ns, stub = setup()
-	ns.db.settings.view = "bags"
-	ns.ToggleProfitFrame()
+-- Sell › Bags in the main window (#155): the rows of its list, groups left out.
+local function pageItems(ns)
+	ns.Main.state.vendorOnly.bags = true -- no AH observation in these specs
+	ns.Main.Open("bags")
 	local shown = {}
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false then
-			shown[#shown + 1] = f.data
-			f.scripts.OnEnter(f)
+	for _, f in ipairs(ns.Main.ListOf("bags").box.frames) do
+		if not f.elementData.row.group then
+			shown[#shown + 1] = f
 		end
 	end
+	return shown
+end
+
+it("Sell › Bags renders the items grouped by best outcome and shows tooltips", function()
+	local ns, stub = setup()
+	local shown = pageItems(ns)
 	eq(#shown, 4)
-	eq(shown[1].itemID, 100) -- highest best value first
+	eq(shown[1].elementData.row.itemID, 100) -- Sell at the AH comes first
+	for _, f in ipairs(shown) do f.scripts.OnEnter(f); f.scripts.OnLeave(f) end
 	stub.Fire("BAG_UPDATE_DELAYED")
 end)
 
@@ -76,16 +82,11 @@ it("kept items leave the advice and totals, sort last, and can be hidden", funct
 	ns.ToggleKeep(100)
 	local rows = byID(ns.BagRows())
 	eq(rows[100].kept, true); eq(rows[100].best, nil); eq(rows[100].bestValue, nil)
-	ns.db.settings.view = "bags"
-	ns.ToggleProfitFrame()
-	local shown = {}
-	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then shown[#shown + 1] = f.data end end
-	eq(shown[#shown].itemID, 100) -- kept last
+	local shown = pageItems(ns)
+	local target = shown[#shown]
+	eq(target.elementData.row.itemID, 100) -- kept: the Keep group, last (no junk marked)
+	eq(target.elementData.row.groupKey, "keep")
 	-- clicking the row opens Keep / Junk / Normal; Normal sells it again
-	local target
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.itemID == 100 and f.shown ~= false then target = f end
-	end
 	target.scripts.OnClick(target, "LeftButton")
 	eq(CraftWiseItemMenu.buttons.keep.current, true)
 	CraftWiseItemMenu.buttons.normal.scripts.OnClick(CraftWiseItemMenu.buttons.normal)
@@ -93,10 +94,7 @@ it("kept items leave the advice and totals, sort last, and can be hidden", funct
 	eq(CraftWiseItemMenu.shown, false)
 	ns.ToggleKeep(100)
 	ns.db.settings.showKept = false
-	ns.RefreshProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false then assert(not f.data.kept, "kept item shown") end
-	end
+	for _, f in ipairs(pageItems(ns)) do assert(f.elementData.row.itemID ~= 100, "kept item shown") end
 end)
 
 it("quest items are always kept", function()
@@ -126,15 +124,15 @@ it("AH only a little above vendor: vendor it and say how much the AH would pay m
 	eq(byID(ns.BagRows())[900].best, "auction")
 	SlashCmdList.CRAFTWISE("ahmin 5")
 	eq(byID(ns.BagRows())[700].best, "auction")
-	ns.db.settings.view = "bags"
 	SlashCmdList.CRAFTWISE("ahmin 20")
-	ns.ToggleProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.itemID == 700 then
-			f.scripts.OnEnter(f)
-			assert(f.cells.bestValue.text:find("too little"), f.cells.bestValue.text)
+	local found
+	for _, f in ipairs(pageItems(ns)) do
+		if f.elementData.row.itemID == 700 then
+			found = true
+			assert(f.cells[4].text:find("under your AH rule", 1, true), f.cells[4].text)
 		end
 	end
+	assert(found, "feathers listed")
 end)
 
 it("AH rule panel: percent and minimum copper, both with - / +", function()
@@ -142,7 +140,6 @@ it("AH rule panel: percent and minimum copper, both with - / +", function()
 	stub.items[900] = { name = "Darkshore Grouper", sellPrice = 2 }
 	stub.ah[900] = 17
 	stub.bags[0] = { { itemID = 900, stackCount = 1, quality = 1 } }
-	ns.db.settings.view = "bags"
 	ns.ToggleProfitFrame()
 	local rows = byID(ns.BagRows())
 	eq(rows[900].best, "auction") -- +14c, over 20% and over the 10c minimum

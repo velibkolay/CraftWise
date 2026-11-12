@@ -577,11 +577,17 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local ledgerArg = msg:match("^ledger%s*(.*)$")
 	if ledgerArg and ns.Ledger then
 		ns.Ledger.Slash(ledgerArg)
+		if ns.OpenLedgerPage then
+			ns.OpenLedgerPage(ledgerArg) -- Sell › Ledger on that period (#155)
+		end
 		return
 	end
 	if msg == "auctions" or msg == "auction" then
 		if ns.Auctions then
 			ns.Auctions.Slash()
+		end
+		if ns.OpenAuctionsPage then
+			ns.OpenAuctionsPage() -- Sell › Auctions (#155)
 		end
 		return
 	end

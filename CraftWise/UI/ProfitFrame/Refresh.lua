@@ -34,10 +34,9 @@ local function Refresh()
 	local compare = ns.Profit.Comparator(sortKey, sortDesc)
 	if ItemView() and View() ~= "music" and View() ~= "fishing" then
 		local inner = compare
-		local flag = View() == "bags" and "kept" or "dismissed"
 		compare = function(a, b)
-			if a[flag] ~= b[flag] then
-				return b[flag] -- kept / dismissed items last
+			if a.dismissed ~= b.dismissed then
+				return b.dismissed -- dismissed items last
 			end
 			return inner(a, b)
 		end

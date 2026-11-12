@@ -57,6 +57,7 @@ end
 
 it("Main: five sections in the spec's order; every sub-page of #150 has a page (a bridge until it moves)", function()
 	local _, _, M = Load()
+	local moved = { bags = true, auctions = true, ledger = true } -- Sell (#155)
 	local labels = {}
 	for _, s in ipairs(M.SECTIONS) do labels[#labels + 1] = s.label end
 	eq(table.concat(labels, ","), "Make,Sell,Gather,Look up,Music")
@@ -66,7 +67,7 @@ it("Main: five sections in the spec's order; every sub-page of #150 has a page (
 		local got = {}
 		for _, p in ipairs(M.SectionPages(section)) do
 			got[#got + 1] = p.label
-			eq(p.bridge, true, p.key .. " is a bridge")
+			eq(p.bridge or false, not moved[p.key], p.key .. " is a bridge until it moves")
 		end
 		eq(table.concat(got, ","), list, section)
 	end
@@ -372,8 +373,8 @@ it("States: a page model that raises shows Error; Reload UI and Show error text;
 	show.scripts.OnClick(show)
 	eq(f.panel.errorHolder.shown, true)
 	eq(f.panel.errorBox.text, "TestPage.lua:12: attempt to index a nil value")
-	M.ShowPage("bags")
-	eq(M.shown.state, "custom", "another page still works")
+	M.ShowPage("ledger")
+	eq(M.shown.state, "list", "another page still works")
 	eq(f.panel.shown, false)
 end)
 
@@ -541,13 +542,13 @@ it("Bridges: each page not moved yet says so and opens its old home", function()
 	b.scripts.OnClick(b)
 	eq(ns.db.settings.view, "learn")
 	assert(ns.PF.frame and ns.PF.frame:IsShown(), "profit window open on Learn")
-	M.ShowPage("ledger")
+	M.ShowPage("crates")
 	local opened
 	ns.ShowRecords = function(key) opened = key end
-	local lb = M.SlotsOf("ledger").body.panel.buttons[1]
+	local lb = M.SlotsOf("crates").body.panel.buttons[1]
 	eq(lb.label.text, "Open in the Records window")
 	lb.scripts.OnClick(lb)
-	eq(opened, ns.RW.Ledger.key)
+	eq(opened, ns.RW.Crates.key)
 	-- two homes: Fishing (Spots, Log), Items (Market, Where to buy); Settings: panel, AH rule, Snapshot
 	M.ShowPage("fishing")
 	eq(M.SlotsOf("fishing").body.panel.buttons[2].shown, true)

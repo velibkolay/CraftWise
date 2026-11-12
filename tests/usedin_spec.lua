@@ -31,20 +31,21 @@ it("lists recipes using an item: known, then learnable, then other professions",
 	eq(#ns.UsedIn(4306), 0)
 end)
 
-it("bags view shows a Used in column, filters to my crafting materials, and jumps to the recipes", function()
+it("Sell › Bags notes how many of your recipes use an item, filters to my crafting materials, and jumps to the recipes", function()
 	local ns, stub = setup()
-	ns.db.settings.view = "bags"
-	ns.ToggleProfitFrame()
+	local M = ns.Main
+	M.state.vendorOnly.bags = true
+	M.Open("bags")
 	local leather
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.itemID == 2318 then leather = f end
+	for _, f in ipairs(M.ListOf("bags").box.frames) do
+		if f.elementData.row.itemID == 2318 then leather = f end
 	end
-	assert(leather.cells.usedCount.text:find("Leatherworking 2"), leather.cells.usedCount.text)
+	assert(leather.cells[4].text:find("used in 1 of your recipes", 1, true), leather.cells[4].text)
 	leather.scripts.OnEnter(leather)
 	ns.db.settings.bagsMatsOnly = true
-	ns.RefreshProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.itemID then assert(f.data.itemID ~= 4306, "rock hidden") end
+	M.Refresh()
+	for _, f in ipairs(M.ListOf("bags").box.frames) do
+		assert(f.elementData.row.itemID ~= 4306, "rock hidden")
 	end
 	-- menu: Recipes using this -> Profit view, Leatherworking, search by reagent name
 	ns.ShowItemMenu(2318)

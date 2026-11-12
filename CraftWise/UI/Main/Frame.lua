@@ -388,9 +388,20 @@ local function PlaceHero(model, m)
 	hero.figure:SetPoint("RIGHT", hero, "RIGHT", -px, 0)
 	hero.figure:SetWidth(m.heroRight)
 	hero.figure:SetText(h.figure or "")
+	-- h.full: the page draws the figures itself, over the whole card inside its padding (label still
+	-- the shell's). h.bare: no card at all; the page draws its own cards in the slot (Auctions).
+	hero.sheet:SetShown(not h.bare)
 	hero.middle:ClearAllPoints()
-	hero.middle:SetPoint("TOPLEFT", hero, "TOPLEFT", px + m.heroLeft + m.heroGap, -py)
-	hero.middle:SetPoint("BOTTOMRIGHT", hero, "BOTTOMRIGHT", -(px + m.heroRight + m.heroGap), py)
+	if h.bare then
+		hero.middle:SetPoint("TOPLEFT", hero, "TOPLEFT", 0, 0)
+		hero.middle:SetPoint("BOTTOMRIGHT", hero, "BOTTOMRIGHT", 0, 0)
+	elseif h.full then
+		hero.middle:SetPoint("TOPLEFT", hero, "TOPLEFT", px, -py)
+		hero.middle:SetPoint("BOTTOMRIGHT", hero, "BOTTOMRIGHT", -px, py)
+	else
+		hero.middle:SetPoint("TOPLEFT", hero, "TOPLEFT", px + m.heroLeft + m.heroGap, -py)
+		hero.middle:SetPoint("BOTTOMRIGHT", hero, "BOTTOMRIGHT", -(px + m.heroRight + m.heroGap), py)
+	end
 	return h.height or m.heroHeight
 end
 
@@ -419,7 +430,18 @@ local function DrawListPage(page, ctx, m, top, status)
 		f.hero:SetPoint("TOPRIGHT", f.body, "TOPRIGHT", -m.pad, -y)
 		f.hero:SetHeight(heroHeight)
 		f.hero.middle:SetShown(page.Hero ~= nil)
-		local okHero, err = M.Call(page.Hero, f.hero, model.hero, ctx)
+		-- The page's own frame in the middle, hidden while another page shows (like its tools).
+		local heroSlot
+		if page.Hero then
+			local s = Slots(page)
+			if not s.hero then
+				s.hero = CreateFrame("Frame", nil, f.hero.middle)
+				s.hero:SetAllPoints(f.hero.middle)
+			end
+			heroSlot = s.hero
+			heroSlot:Show()
+		end
+		local okHero, err = M.Call(page.Hero, f.hero, model.hero, ctx, heroSlot)
 		if not okHero then
 			error(err, 0)
 		end

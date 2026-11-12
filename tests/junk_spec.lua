@@ -62,13 +62,13 @@ it("sells every marked stack at the merchant with one click, then remembers the 
 	eq(ns.Junk.Sell(), false) -- no merchant
 end)
 
-it("bags view: clicking a row opens Keep / Junk / Normal", function()
+it("Sell › Bags: clicking a row opens Keep / Junk / Normal", function()
 	local ns, stub = setup()
-	ns.db.settings.view = "bags"
-	ns.ToggleProfitFrame()
+	ns.Main.state.vendorOnly.bags = true
+	ns.Main.Open("bags")
 	local row
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.itemID == 100 then row = f end
+	for _, f in ipairs(ns.Main.ListOf("bags").box.frames) do
+		if f.elementData.row.itemID == 100 then row = f end
 	end
 	row.scripts.OnEnter(row)
 	row.scripts.OnClick(row, "LeftButton")
