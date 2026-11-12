@@ -63,12 +63,78 @@ function CreateFont(name)
 end
 
 stub.frames = {}
-function CreateFrame(_, name)
+local templates = {} -- template name -> function(frame) that adds what the client's template has
+function CreateFrame(frameType, name, parent, template)
 	local f = setmetatable({ events = {}, scripts = {} }, frameMeta)
+	f.frameType, f.parent, f.template = frameType, parent, template
 	table.insert(stub.frames, f)
 	if name then _G[name] = f end -- named frames become globals, as in the client
+	if template and templates[template] then templates[template](f) end
 	return f
 end
+
+-- ScrollBox (Blizzard_SharedXML/Shared/Scroll): a WowScrollBoxList that builds a frame for every element
+-- (no virtualisation) when it gets a data provider, reusing its frames per frame type as the client's
+-- pools do. box.frames = the frames in element order; frame.extent = the view's extent for it.
+ScrollBoxConstants = { RetainScrollPosition = true }
+function CreateDataProvider(tbl)
+	local dp = { collection = tbl or {} }
+	function dp:Enumerate() return ipairs(self.collection) end
+	function dp:GetSize() return #self.collection end
+	function dp:Find(i) return self.collection[i] end
+	return dp
+end
+function CreateScrollBoxListLinearView()
+	local view = {}
+	function view:SetElementFactory(fn) self.factory = fn end
+	function view:SetElementInitializer(t, fn) self.factory = function(factory) factory(t, fn) end end
+	function view:SetElementExtentCalculator(fn) self.extent = fn end
+	function view:SetElementExtent(n) self.extent = function() return n end end
+	function view:SetPadding() end
+	return view
+end
+templates.WowScrollBoxList = function(box)
+	box.frames, box.pools = {}, {}
+	function box:Init(view) self.view = view end
+	function box:GetDataProvider() return self.dataProvider end
+	function box:SetDataProvider(dp, retain)
+		self.dataProvider, self.retained = dp, retain
+		for _, fr in ipairs(self.frames) do
+			self.pools[fr.cwType] = self.pools[fr.cwType] or {}
+			table.insert(self.pools[fr.cwType], fr)
+			fr:Hide()
+		end
+		self.frames = {}
+		for i, element in dp:Enumerate() do
+			local frameType, init
+			self.view.factory(function(t, fn) frameType, init = t, fn end, element)
+			local fr = table.remove(self.pools[frameType] or {}, 1) or CreateFrame(frameType, nil, self)
+			fr.cwType = frameType
+			fr.extent = self.view.extent and self.view.extent(i, element)
+			fr.elementData = element
+			fr:Show()
+			init(fr, element)
+			self.frames[#self.frames + 1] = fr
+		end
+	end
+	function box:ForEachFrame(fn) for _, fr in ipairs(self.frames) do fn(fr, fr.elementData) end end
+end
+templates.MinimalScrollBar = function(bar)
+	local function w() return setmetatable({ events = {}, scripts = {} }, frameMeta) end
+	bar.Back, bar.Forward = w(), w()
+	bar.Track = w()
+	bar.Track.Begin, bar.Track.Middle, bar.Track.End = w(), w(), w()
+	bar.Track.Thumb = w()
+	bar.Track.Thumb.Begin, bar.Track.Thumb.Middle, bar.Track.Thumb.End = w(), w(), w()
+end
+ScrollUtil = {
+	InitScrollBoxListWithScrollBar = function(box, bar, view) box:Init(view); box.scrollBar = bar end,
+	AddManagedScrollBarVisibilityBehavior = function(box, bar) box.managedBar = bar end,
+}
+-- Chat links (Shift-click): stub.chatLinks receives what was inserted.
+stub.chatLinks = {}
+ChatFrameUtil = { InsertLink = function(link) table.insert(stub.chatLinks, link) return true end }
+C_UI = { Reload = function() stub.reloaded = (stub.reloaded or 0) + 1 end }
 
 -- Fire a game event at every frame that registered it.
 function stub.Fire(event, ...)
@@ -88,7 +154,8 @@ function GetCursorPosition() return 150, 100 end
 math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 GameTooltip = widget()
 UISpecialFrames = {}
-function IsShiftKeyDown() return false end
+stub.shift = false
+function IsShiftKeyDown() return stub.shift end
 
 C_Timer = { After = function(_, fn) fn() end }
 SlashCmdList = {}

@@ -650,7 +650,8 @@ SlashCmdList.CRAFTWISE = function(msg)
 		end
 		return
 	end
-	if ns.ToggleProfitFrame then
-		ns.ToggleProfitFrame()
+	-- The main window (#153); the other commands open their own windows until their page moves there.
+	if ns.ToggleMainWindow then
+		ns.ToggleMainWindow()
 	end
 end

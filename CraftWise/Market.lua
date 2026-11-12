@@ -967,6 +967,24 @@ function M.CurrentHouse()
 	return currentHouse
 end
 
+-- The full scan being recorded (main window "Scanning" state, #153): { house, label, done, total } with
+-- done = rows read so far (all of them while the rows are stored), nil when no scan runs.
+function M.ScanProgress()
+	local scan = job
+	if not scan or scan.aborted then
+		return nil
+	end
+	local done = scan.phase == "commit" and scan.count or math.min(scan.read or 0, scan.count)
+	return { house = scan.house, label = M.HouseLabel(scan.house), done = done, total = scan.count }
+end
+
+-- When anything (full scan, search, browse) was last recorded at a house; nil when nothing was (#153).
+function M.LastRecorded(houseKey)
+	local list = db and houseKey and db.scans[houseKey]
+	local last = list and list[#list]
+	return last and last.t or nil
+end
+
 local function OnBrowseUpdated()
 	if db and currentHouse then
 		RecordBrowse(C_AuctionHouse.GetBrowseResults())
@@ -1204,6 +1222,7 @@ local function OnReplicateList()
 	job = scan
 	Chunked(count, ROWS_PER_FRAME, function(i)
 		local index = i - 1 -- the list is 0-based, as Auctionator reads it
+		scan.read = i
 		if not CollectRow(scan, index) then
 			scan.waiting[#scan.waiting + 1] = index
 		end

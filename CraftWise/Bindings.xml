@@ -2,6 +2,9 @@
 	<Binding name="CRAFTWISE_PARTY" header="CRAFTWISE" category="ADDONS">
 		CraftWise_PartyToggle()
 	</Binding>
+	<Binding name="CRAFTWISE_MAIN" header="CRAFTWISE" category="ADDONS">
+		CraftWise_MainToggle()
+	</Binding>
 	<Binding name="CRAFTWISE_FARM" header="CRAFTWISE" category="ADDONS">
 		CraftWise_FarmToggle()
 	</Binding>

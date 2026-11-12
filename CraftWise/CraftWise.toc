@@ -78,4 +78,9 @@ UI\Records\Market.lua
 UI\Records\Where.lua
 UI\Records\Snapshot.lua
 UI\Records\Frame.lua
+UI\Main\Shell.lua
+UI\Main\States.lua
+UI\Main\List.lua
+UI\Main\Frame.lua
+UI\Main\Pages\Bridges.lua
 UI\MinimapButton.lua
