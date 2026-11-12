@@ -1,7 +1,8 @@
 /* wow.velikopter.com pages (#97, #98). Values come from tokens.css.
    1. Base and layout both skins share. 2. Classic chrome: the WoW: Forever window kit (W2d), textures in /tex.
    3. Velikopter chrome: the brand kit (design V1c). 4. Phone. 5. Private page /me (W2d-Me), all three parts for it.
-   6. Velikopter on phones. */
+   6. Velikopter on phones. 7. Crafting profit (#143): the list's Profit and Pays back columns and breakdown, the item
+   page's Craft It and Teaches blocks. */
 
 /* ===== 1. Base and layout ===== */
 *, *::before, *::after { box-sizing: border-box; }
@@ -853,4 +854,53 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 	.tbl.fish .iname { font-size: 14px; }
 	.rowpick { font-size: 14.5px; }
 	.fishbody .me-pane { margin-bottom: 0; }
+}
+
+/* ===== 7. Crafting profit (#143) ===== */
+.tbl.list.recipes { min-width: 900px; }
+.tbl.list.recipes .c-7d { display: none; } /* recipe lists: room for Profit and Pays back (with the sparkline gone) */
+.profit { display: inline-flex; align-items: baseline; gap: 2px; }
+.profit.loss, .profit.loss .mg, .profit.loss .ms, .profit.loss .mc { color: var(--money-out); }
+.pbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.pbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pbtn:hover .mp, .pbtn:hover > .hint { text-decoration: underline; text-underline-offset: 3px; }
+.thin { display: inline-block; padding: 0 4px; font-family: var(--font-ui); font-size: 11px; line-height: 15px; letter-spacing: 0.02em; color: var(--text-3); border: 1px solid currentColor; border-radius: 3px; cursor: help; }
+.pbtn .thin { margin-left: -2px; }
+.chev { flex: none; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--text-3); transition: transform 120ms; }
+.chev.open { transform: rotate(90deg); }
+.tbl tr.detail > td { height: auto; padding-top: 12px; padding-bottom: 16px; white-space: normal; }
+.breakdown { position: sticky; left: 12px; max-width: min(720px, calc(100vw - 72px)); display: flex; flex-direction: column; gap: 10px; }
+.bd-head { font-size: 14px; line-height: 20px; }
+.tbl.bd td { height: auto; min-height: 30px; padding-top: 5px; padding-bottom: 5px; white-space: normal; line-height: 17px; }
+.tbl.bd th:first-child { width: 100%; }
+.tbl.bd .qty { color: var(--text-2); }
+.basis { display: block; font-size: 12px; line-height: 14px; }
+.bd-sums { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: 4px 16px; font-size: 14px; }
+.bd-sums .row { display: contents; }
+.bd-sums .val { justify-self: end; text-align: right; }
+.bd-sums .basis { display: inline; }
+.bd-note { font-size: 13px; }
+.ilink:hover { text-decoration: underline; text-underline-offset: 3px; }
+.craftbox { display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px; }
+.craftbox + .craftbox { border-top: 1px solid var(--line-strong); }
+[data-skin] .tbl.bd tbody tr td, [data-skin] .tbl.bd tbody tr:hover td { background: transparent; box-shadow: none; }
+[data-skin="classic"] .tbl tbody tr.detail > td, [data-skin="classic"] .tbl tbody tr.detail:hover > td { background: linear-gradient(#141211, #0f0e0d); box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.75); }
+[data-skin="classic"] .tbl.bd th { height: 24px; font-size: 13px; }
+[data-skin="velikopter"] .tbl tbody tr.detail > td, [data-skin="velikopter"] .tbl tbody tr.detail:hover > td { background: var(--surface-2); }
+[data-skin="velikopter"] .tbl.bd { border-top: 0; }
+[data-skin="velikopter"] .thin { border-radius: 0; }
+/* the Velikopter rows are wider (padded money, more padding): a little less padding on recipe lists */
+[data-skin="velikopter"] .tbl.list.recipes th, [data-skin="velikopter"] .tbl.list.recipes td { padding-left: 10px; padding-right: 10px; }
+[data-skin="velikopter"] .tbl.list.recipes th:first-child, [data-skin="velikopter"] .tbl.list.recipes td:first-child { padding-left: 24px; }
+[data-skin="velikopter"] .tbl.bd th { height: 30px; border-bottom-width: 1px; }
+[data-skin="velikopter"] .tbl.bd th:first-child, [data-skin="velikopter"] .tbl.bd td:first-child { padding-left: 0; }
+[data-skin="velikopter"] .craftbox { padding: 0 0 12px; }
+[data-skin="velikopter"] .craftbox + .craftbox { padding-top: 12px; border-top-color: var(--line); }
+@media (max-width: 760px) {
+	.tbl.list.recipes { min-width: 100%; }
+	.breakdown { left: 4px; max-width: calc(100vw - 88px); }
+	.bd-sums { grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; }
+	.bd-sums .basis { grid-column: 1 / -1; justify-self: end; margin-top: -4px; }
+	.bd-sums .basis:empty { display: none; }
+	[data-skin] .tbl.bd th, [data-skin] .tbl.bd td { padding-left: 4px; padding-right: 4px; }
 }

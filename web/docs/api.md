@@ -207,6 +207,31 @@ then shows Blizzard's enum identifier from `site/lib/enums.ts`, or "Subclass N")
 for one unit (`C_Item.GetItemInfo`'s sellPrice), `0` when vendors don't buy the item, `null` when not known yet. The
 names are read on every request (a few dozen rows), not cached with the class index.
 
+### Recipe data and crafting profit (#143)
+
+`GET /data/recipes.json` is a static asset (no Worker, no D1): the addon's bundled recipe data, written by
+`tools/gen_site_recipes.lua` from `CraftWise/Data/Recipes.lua`, `Sources.lua` and `Vendor.lua` (format in the tool's
+header; each file's source and licence header is carried in `sources`). The list page loads it when a list holds
+recipe items (item class 9, or an item `teach` knows) and the item page always; both then price the products and
+reagents through `/api/browse?ids=` (100 IDs per request, at most three at a time, each item fetched once per page
+view). The maths is `site/lib/recipes.ts` (tested in `test/recipes.test.ts`):
+
+- Reagent: per unit the Horde AH's typical price, else its lowest listing while listed, or the bundled vendor buy
+  price when that is cheaper (or the only one).
+- Product: one unit on the Horde AH (typical, else lowest) after the 5% cut, or what a vendor pays when that is
+  more (`sellPrice`, else the bundled sell price), times the output quantity (mean yield), rounded down. Without a
+  Horde AH price the product has no value ("no AH price", sorted with the unknowns), even when a vendor buys it: the
+  breakdown shows the vendor price only as a floor ("a vendor pays X: at worst a loss of Y").
+- Thin market: a price from the lowest listing (no typical price yet) shows the units and listings behind it in the
+  breakdown; when the product's price rests on 1 or 2 listings or fewer than 5 units the profit carries a "thin"
+  marker. The maths is the same.
+- Profit per craft = product - reagents; unknown when any reagent or the product has no price (nothing is filled
+  in); none for spells that make no item (enchants). Pays back = the recipe's AH price (typical, else lowest) /
+  profit, rounded up, only when the profit is positive.
+- Recipe items missing from `Sources.lua` (no usable required skill in the client, see its header) show "no data".
+
+A Recipe list of 158 items needs about 300 more item IDs, so 3 to 4 browse requests (about 10 rows read per item).
+
 ## Private API (`/api/me/*`, Cloudflare Access)
 
 Behind the Access app for `/me*` and `/api/me/*`. The Worker also checks the Access token
