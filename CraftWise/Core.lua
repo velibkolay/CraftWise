@@ -614,6 +614,10 @@ SlashCmdList.CRAFTWISE = function(msg)
 		ns.ToggleMinimapButton()
 		return
 	end
+	if msg == "debug style" then
+		ns.Style.Preview()
+		return
+	end
 	if msg == "debug" then
 		local n = 0
 		for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
