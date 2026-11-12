@@ -103,8 +103,8 @@ it("Settings › Look: layout, scale (on release), fade, lock, Escape, minimap b
 	eq(b.label.text, "Reset window positions")
 	b.scripts.OnClick(b)
 	eq(M.UI().pos, nil); eq(ns.db.farm.pos, nil); eq(ns.db.lootToast.pos, nil)
-	-- the Background sliders are #162: not here yet
-	eq(M.Settings.RowOf("look", "background"), nil)
+	-- the Background sliders: tests/alpha_spec.lua
+	assert(M.Settings.RowOf("look", "bgMain") and M.Settings.RowOf("look", "bgFarm") and M.Settings.RowOf("look", "bgToast"))
 end)
 
 it("Settings › Prices: basis, house (only with data), reagent cost per view", function()

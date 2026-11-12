@@ -113,6 +113,7 @@ local DB_DEFAULTS = {
 		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
 		upgradeSection = "craft", -- Upgrades view: "craft" (Craftable, #16) | "ah" (General / AH, #50)
 		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
+		alpha = { main = 0.96, farm = 0.86, toast = 0.70 }, -- background alpha per window (#162), Settings > Look
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
 		slotMarks = true, -- marks on bag slots (BagIcons.lua, #160); Settings › Bags and loot (#157)
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |

@@ -19,7 +19,7 @@
 -- OnEnter/OnLeave drive it; the per-frame OnUpdate also checks, because moving onto a child (a row, a
 -- button) doesn't fire the tracker's own OnEnter/OnLeave.
 --
--- Background alpha (#162) is frame.cwSheet:SetAlpha.
+-- Background alpha (#162): db.settings.alpha.farm through frame.cwWindow (Style.ApplyWindowAlpha); the whole-frame fade multiplies with it.
 local _, ns = ...
 local Style, L = ns.Style, ns.L
 local C = Style.C
@@ -899,6 +899,7 @@ local function Build()
 		return frame
 	end
 	frame = CreateFrame("Frame", "CraftWiseFarmFrame", UIParent)
+	frame.cwWindow = "farm" -- sheet and cards follow db.settings.alpha.farm (#162); the fade multiplies with it
 	frame:SetWidth(FF.WIDTH)
 	frame:SetFrameStrata("MEDIUM")
 	frame:SetClampedToScreen(true)

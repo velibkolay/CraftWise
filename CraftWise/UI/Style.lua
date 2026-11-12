@@ -326,6 +326,65 @@ function Style.Tween(owner, key, duration, ease, fn)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- Background alpha per window (#162; Settings > Look and > Loot toast). db.settings.alpha[window] is
+-- applied to the window's sheet, card and plane textures only: text, icons, rails and the nokta stay at
+-- alpha 1. A window's frame carries frame.cwWindow = "main" | "farm"; every Style.Sheet and header plane
+-- created under it follows. The loot toast sets its strips itself (LootToast.Render) from the same value.
+
+Style.WINDOW_ALPHA = { main = 0.96, farm = 0.86, toast = 0.70 } -- defaults (spec: Colours)
+Style.windowSheets = setmetatable({}, { __mode = "k" })
+Style.windowPlanes = setmetatable({}, { __mode = "k" })
+
+-- The alpha of a window: the saved value clamped to 0..1, the default when none (or not a number).
+function Style.WindowAlpha(window)
+	local set = ns.db and ns.db.settings
+	local a = set and type(set.alpha) == "table" and tonumber(set.alpha[window])
+	if not a then
+		return Style.WINDOW_ALPHA[window] or 1
+	end
+	return math.min(math.max(a, 0), 1)
+end
+
+-- Which window a frame belongs to: its own cwWindow, else its nearest parent's; nil outside the windows.
+function Style.WindowOf(frame)
+	local f, guard = frame, 0
+	while f and guard < 64 do
+		if f.cwWindow then
+			return f.cwWindow
+		end
+		f = f.GetParent and f:GetParent() or f.parent
+		guard = guard + 1
+	end
+end
+
+-- Puts a window's alpha on every sheet and plane under it.
+function Style.ApplyWindowAlpha(window)
+	local a = Style.WindowAlpha(window)
+	for s in pairs(Style.windowSheets) do
+		if s.window == window then
+			s:SetAlpha(a)
+		end
+	end
+	for t in pairs(Style.windowPlanes) do
+		if t.cwWindow == window then
+			t:SetAlpha(a)
+		end
+	end
+end
+
+-- Saves (clamped to 0..1, 2 decimals) and applies. Returns the stored value.
+function Style.SetWindowAlpha(window, value)
+	local v = math.floor(math.min(math.max(tonumber(value) or Style.WINDOW_ALPHA[window] or 1, 0), 1) * 100 + 0.5) / 100
+	local set = ns.db.settings
+	if type(set.alpha) ~= "table" then
+		set.alpha = {}
+	end
+	set.alpha[window] = v
+	Style.ApplyWindowAlpha(window)
+	return v
+end
+
+---------------------------------------------------------------------------------------------------
 -- Folded sheet (spec: Shapes and textures). A = left part, full height, width w - cut; B = right strip,
 -- width cut, from cut below the top; C = the cut x cut corner with cw-fold in the flap colour. The
 -- shadow is the same three pieces in C.shadow, offset (3, -3), one sublevel lower.
@@ -372,6 +431,13 @@ function Style.Sheet(frame, fill, flap, cut, shadow)
 		s.shadow = Pieces(frame, SHEET_SUBLEVEL - 1)
 	end
 	s.fill, s.flap = Style.Color(fill or C.sheet), Style.Color(flap or C.flap)
+	-- Inside a window that has a background alpha (frame.cwWindow, set on the window's frame) the sheet
+	-- follows it from the start; elsewhere it stays at 1 (the toast sets its own per line).
+	local window = Style.WindowOf(frame)
+	if window then
+		s.window, s.alpha = window, Style.WindowAlpha(window)
+		Style.windowSheets[s] = true
+	end
 	s:SetCut(cut or 22)
 	s:Paint()
 	frame.cwSheet = s
@@ -423,6 +489,12 @@ function Style.HeaderArt(frame, narrow)
 	local t = frame:CreateTexture(nil, "BACKGROUND", nil, SHEET_SUBLEVEL + 1)
 	t:SetTexture(narrow and Media.headerNarrow or Media.headerWide)
 	t:SetAllPoints(frame)
+	local window = Style.WindowOf(frame)
+	if window then
+		t.cwWindow = window
+		t:SetAlpha(Style.WindowAlpha(window))
+		Style.windowPlanes[t] = true
+	end
 	return t
 end
 

@@ -711,3 +711,12 @@ Needs a **full game restart**: four new files in the TOC (`UI/Main/Pages/Items.l
 - [ ] Settings › Look: Scale slider applies when you let go (70–130 %), the window resizes in place; Lock position stops dragging the header; Close with Escape off: Escape no longer closes the window; Minimap button hides/shows it; Reset window positions puts the main window, the farm tracker and the loot toast back in their default places.
 - [ ] Settings › Bags and loot › Bag slot marks off: the gold and grey corners leave the bag slots (open bags refresh), on brings them back.
 - [ ] `/craftwise settings` opens the Settings page. Every page above in combat: no error.
+
+## Background alpha per window (#162)
+No new file in the TOC, so `/reload` is enough. Compare with the Colours paragraph of #150.
+- [ ] Settings › Look: three sliders, Background · Main window / Farm tracker / Loot toast, 20–100 %, defaults 96 / 86 / 70 %. Drag the main one: the window's sheet, its cards (hero card, list cards, Crates, Auctions) and the header planes get see-through while you drag; text, icons, rails and the nokta stay fully opaque. Compare the shadow: it fades with the sheet.
+- [ ] The header's baked planes carry the gold key block too (one texture): check that it fading with the planes looks right at 20 % (open question in the PR).
+- [ ] Farm tracker slider: the tracker's sheet and its fishing card follow while dragging, also in mini mode. With "Fade to 40 %" on, away from the mouse it ends at about alpha x 0.4 (the two multiply); hovering brings it back to the slider's value, not to 100 %.
+- [ ] Loot toast slider (Look and Settings › Loot toast, same value): with no toast on screen the three test lines appear and follow the slider; with real loot on screen those strips follow. The newest line's turkuaz flap stays solid.
+- [ ] The values survive `/reload`. Item menu, the Music dropdown and tooltips are not affected (always solid).
+- [ ] Every window at UI scale 1 and 0.64: sliders do not overlap other rows.

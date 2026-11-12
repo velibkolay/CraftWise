@@ -194,17 +194,12 @@ function T.LineAlpha(index, line, now)
 	return T.StepAlpha(index) * T.Alpha(line, now)
 end
 
--- Background transparency of the strips (Settings › Look, db.settings.alpha.toast; #162 adds the
--- control). Only the strips' fill and shadow use it; icon, text and the turkuaz flap of the newest line
--- follow the line's own alpha.
+-- Background transparency of the strips (Settings > Look and > Loot toast, db.settings.alpha.toast, #162).
+-- Only the strips' fill and shadow use it; icon, text and the turkuaz flap of the newest line follow the
+-- line's own alpha.
 T.DEFAULT_ALPHA = 0.70
 function T.BackgroundAlpha()
-	local set = ns.db and ns.db.settings
-	local a = set and type(set.alpha) == "table" and tonumber(set.alpha.toast)
-	if not a then
-		return T.DEFAULT_ALPHA
-	end
-	return math.min(math.max(a, 0), 1)
+	return ns.Style.WindowAlpha("toast")
 end
 
 ----------------------------------------------------------------------------------------------------
