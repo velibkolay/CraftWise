@@ -36,13 +36,13 @@ it("item menu: folded sheet 200 wide, cut 10, hard shadow; title in BodyBold; ro
 	eq(menu.sheet.fill, C.sheet); eq(menu.sheet.flap, C.flap)
 	eq(menu.title.text, "Bolt of Test Cloth")
 	eq(menu.title.fontObject, ns.Style.Fonts.BodyBold)
-	eq(visible(menu), "keep,junk,auction,normal,where,history,recipes")
+	eq(visible(menu), "keep,junk,auction,normal,where,history,watch,recipes")
 	eq(menu.buttons.keep.height, 24)
 	eq(menu.buttons.keep.lastPoint[5], -28, "8 padding + the 20 unit title")
 	eq(menu.buttons.junk.lastPoint[5], -52)
 	eq(menu.buttons.where.lastPoint[5], -28 - 4 * 24 - 13, "a 1 unit rule with 6 either side before Where to buy")
 	eq(menu.rule.lastPoint[5], -28 - 4 * 24 - 6)
-	eq(menu.height, 28 + 7 * 24 + 13 + 8, "8 padding at the bottom")
+	eq(menu.height, 28 + 8 * 24 + 13 + 8, "8 padding at the bottom")
 	eq(menu.buttons.quest.shown, false, "no quest line for other items")
 end)
 
@@ -80,13 +80,13 @@ it("item menu: quest items show \"Quest items can't be sold\" in place of Junk a
 	ns.ShowItemMenu(QUEST)
 	local menu = CraftWiseItemMenu
 	menu.options = ns.ItemMenuOptions
-	eq(visible(menu), "keep,quest,normal,where,history,recipes")
+	eq(visible(menu), "keep,quest,normal,where,history,watch,recipes")
 	local q = menu.buttons.quest
 	eq(q.label.text, "Quest items can't be sold")
 	eq(q.label.textColor[1], C.text3[1])
 	eq(q.scripts.OnClick, nil, "the quest line is not a choice")
 	eq(menu.buttons.quest.lastPoint[5], -52, "where Junk would be")
-	eq(menu.height, 28 + 6 * 24 + 13 + 8)
+	eq(menu.height, 28 + 7 * 24 + 13 + 8)
 	eq(menu.buttons.keep.current, true, "quest items count as kept")
 	ns.ShowItemMenu(CLOTH)
 	eq(menu.buttons.quest.shown, false); eq(menu.buttons.junk.shown, true)

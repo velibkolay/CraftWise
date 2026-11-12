@@ -81,15 +81,15 @@ it("Items: search by name (AH or merchant records), item ID or link; exact names
 	eq(list.searching, true)
 end)
 
-it("Items: chips Your recipes (scope) and Recent; Watched only with #165's ns.ItemWatch", function()
+it("Items: chips Watched, Your recipes (scope) and Recent", function()
 	local ns, _, M = Load()
 	SeedLeather()
 	Seed(BOOTS, HORDE, { min = 9000, total = 1 })
 	local I = M.Items
 	local chips = {}
 	for _, c in ipairs(I.Chips()) do chips[#chips + 1] = c.key end
-	eq(table.concat(chips, ","), "recipes,recent")
-	eq(I.Chip(), "recipes")
+	eq(table.concat(chips, ","), "watched,recipes,recent")
+	eq(I.Chip(), "recipes", "a fresh list does not open on the empty Watched chip")
 	local list = I.ListModel(NOW)
 	eq(#list.rows, 1); eq(list.rows[1].itemID, LEATHER)
 	I.Select(BOOTS); I.Select(LEATHER); I.Select(BOOTS)
@@ -97,16 +97,8 @@ it("Items: chips Your recipes (scope) and Recent; Watched only with #165's ns.It
 	list = I.ListModel(NOW)
 	eq(list.rows[1].itemID, BOOTS); eq(list.rows[2].itemID, LEATHER); eq(#list.rows, 2)
 	eq(ns.db.settings.ui.lookup.item, BOOTS, "the item shown is kept")
-	-- #165's hook: the chip and the card's toggle appear once it exists
-	local watched = { [LEATHER] = true }
-	ns.ItemWatch = {
-		List = function() local out = {} for id in pairs(watched) do out[#out + 1] = id end return out end,
-		IsWatched = function(id) return watched[id] == true end,
-		Toggle = function(id) watched[id] = not watched[id] or nil end,
-	}
-	chips = {}
-	for _, c in ipairs(I.Chips()) do chips[#chips + 1] = c.key end
-	eq(table.concat(chips, ","), "watched,recipes,recent")
+	-- the Watched chip lists ns.ItemWatch (#165)
+	ns.ItemWatch.Set(LEATHER, true)
 	I.SetChip("watched")
 	eq(I.ListModel(NOW).rows[1].itemID, LEATHER)
 	eq(I.Card(LEATHER, NOW).watched, true)
@@ -218,7 +210,8 @@ it("Items page: the list and the card draw; Line objects for the chart with the 
 	eq(M.shown.page, "items"); eq(M.shown.state, "custom")
 	eq(M.Frame().head.status.shown, true, "the AH status shows")
 	local left = body.left
-	eq(left.chips[1].label.text, "Your recipes"); eq(left.chips[1].on, true)
+	eq(left.chips[1].label.text, "Watched"); eq(left.chips[1].on, false)
+	eq(left.chips[2].label.text, "Your recipes"); eq(left.chips[2].on, true)
 	local row = left.box.frames[1]
 	eq(row.name.text, "Testleather"); eq(row.note.text, "214 listed"); eq(row.bg.shown, true)
 	local card = body.card
@@ -239,7 +232,7 @@ it("Items page: the list and the card draw; Line objects for the chart with the 
 	-- hovering the figures shows their reason
 	card.figs[2].scripts.OnEnter(card.figs[2])
 	eq(CraftWiseInverseTip.title.text, "Lowest now")
-	eq(card.watch.shown, false, "no Watched toggle before #165")
+	eq(card.watch.shown, true, "the Watched toggle (#165)")
 end)
 
 it("Items page: chart fallback: seven 4 unit day bars where the client has no CreateLine", function()

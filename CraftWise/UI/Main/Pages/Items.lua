@@ -69,7 +69,7 @@ function Items.Chip()
 			return chosen
 		end
 	end
-	return Items.Chips()[1].key
+	return "recipes" -- not Watched: a fresh list is empty (#165)
 end
 
 function Items.SetChip(key)

@@ -720,3 +720,10 @@ No new file in the TOC, so `/reload` is enough. Compare with the Colours paragra
 - [ ] Loot toast slider (Look and Settings › Loot toast, same value): with no toast on screen the three test lines appear and follow the slider; with real loot on screen those strips follow. The newest line's turkuaz flap stays solid.
 - [ ] The values survive `/reload`. Item menu, the Music dropdown and tooltips are not affected (always solid).
 - [ ] Every window at UI scale 1 and 0.64: sliders do not overlap other rows.
+
+## Items watch list (#165, part 1)
+Needs a **full game restart**: new file `ItemWatch.lua` in the TOC (before `UI/Style.lua`); `/reload` is not enough.
+- [ ] Item menu (right/middle click in the bags, any row): a "Watch" line after Price history; click it and the menu closes. Open the menu again: the line reads "Stop watching"; click it and the item is no longer watched. Quest items can be watched too.
+- [ ] Look up › Items: chips Watched / Your recipes / Recent (a fresh install opens on Your recipes). The Watched chip lists the watched items by name; empty it says "Watch an item from its card and it shows here."
+- [ ] Items card: the Watched toggle (top right) is white when on. Click it: the item joins or leaves the Watched chip at once. Watch an item from the item menu while the Items page is open on it: the card's toggle follows without reopening the page.
+- [ ] `/reload`: the watched items are still there. `SavedVariables/CraftWise.lua` has `["watch"] = { [itemID] = <Unix time>, ... }` (account wide, the same file for every character).

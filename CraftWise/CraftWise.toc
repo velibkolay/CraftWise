@@ -52,6 +52,7 @@ FlightPaths.lua
 Crates.lua
 Farm.lua
 Snapshot.lua
+ItemWatch.lua
 UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua

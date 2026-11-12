@@ -31,6 +31,9 @@ local OPTIONS = {
 	{ key = "rule" },
 	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it" },
 	{ key = "history", label = "Price history", note = "Auction house prices recorded for it" },
+	-- Watch list (#165): the label flips once the item is watched; same toggle as the Items card.
+	{ key = "watch", label = "Watch", undo = "Stop watching", watch = true,
+		note = "Adds it to Look up › Items › Watched" },
 	-- Gear only (#157, spec "Upgrades": dismiss from the item menu); the label flips once dismissed.
 	{ key = "dismiss", label = "Don't suggest as upgrade", undo = "Suggest as upgrade again", gear = true,
 		note = "Look up › Upgrades leaves it out (Settings › Bags and loot › Show dismissed upgrades lists it again)" },
@@ -112,6 +115,8 @@ local function Choose(opt)
 			ns.ShowRecipesUsing(itemID)
 		elseif opt.key == "where" or opt.key == "history" then
 			ns.OpenItemLookup(itemID, opt.key)
+		elseif opt.key == "watch" and ns.ItemWatch then
+			ns.ItemWatch.Toggle(itemID)
 		elseif opt.key == "dismiss" and ns.ToggleDismissed then
 			ns.ToggleDismissed(itemID)
 		elseif MARKS[opt.key] and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
@@ -225,6 +230,8 @@ function ns.ShowItemMenu(itemID, anchor) -- luacheck: ignore anchor
 	local dismissed = ns.db.dismissed and ns.db.dismissed[itemID]
 	local dismiss = menu.buttons.dismiss
 	dismiss.label:SetText(L[dismissed and dismiss.opt.undo or dismiss.opt.label])
+	local watch = menu.buttons.watch
+	watch.label:SetText(L[ns.ItemWatch and ns.ItemWatch.IsWatched(itemID) and watch.opt.undo or watch.opt.label])
 	local state = menu.quest and "keep" or State(itemID)
 	local usedByMe = false
 	for _, e in ipairs(ns.UsedIn(itemID)) do
