@@ -23,7 +23,7 @@ const st = {
 	pricesT: null as number | null,
 	pricesFailed: false,
 	items: new Map<number, Item>(),
-	sort: "hour" as F.SortBy,
+	sort: "expected" as F.SortBy,
 	sel: null as string | null,
 };
 
@@ -34,13 +34,14 @@ const app = document.getElementById("app")!;
 function readUrl(): void {
 	const p = new URLSearchParams(location.search);
 	st.key = p.get("c");
-	st.sort = p.get("by") === "catch" ? "catch" : "hour";
+	const by = p.get("by");
+	st.sort = by === "catch" || by === "hour" ? by : "expected";
 }
 
 function writeUrl(push: boolean): void {
 	const p = new URLSearchParams();
 	if (st.key) p.set("c", st.key);
-	if (st.sort !== "hour") p.set("by", st.sort);
+	if (st.sort !== "expected") p.set("by", st.sort);
 	const url = `/me/fishing${p.size ? `?${p}` : ""}`;
 	if (url !== location.pathname + location.search) (push ? history.pushState : history.replaceState).call(history, null, "", url);
 }
@@ -83,10 +84,26 @@ function valueCell(now: number | null, high: number | null, snap: number | null,
 	return h("td", { class: "r", title: changed ? `At the snapshot: ${moneyText(snap)}` : null }, rangeEl(now, high));
 }
 
-function hourCell(r: { perHour: number | null; timed: number | null; timedTooFew: boolean }, snap: number | null, revalued: boolean): HTMLElement {
-	if (r.perHour !== null) return valueCell(r.perHour, null, snap, revalued);
-	if (r.timedTooFew) return h("td", { class: "r" }, h("span", { class: "hint" }, r.timed !== null ? `${r.timed} timed, too few` : "too few timed"));
-	return h("td", { class: "r" }, h("span", { class: "hint" }, "not timed"));
+function hourCell(r: { perHour: number | null; timed: number | null; timedTooFew: boolean }, snap: number | null, revalued: boolean, cls = ""): HTMLElement {
+	if (r.perHour !== null) {
+		const td = valueCell(r.perHour, null, snap, revalued);
+		if (cls) td.className += ` ${cls}`;
+		if (r.timed !== null) td.append(h("span", { class: "hint sub2" }, `${n(r.timed)} timed`));
+		return td;
+	}
+	if (r.timedTooFew) return h("td", { class: `r ${cls}` }, h("span", { class: "hint" }, r.timed !== null ? `${r.timed} timed, too few` : "too few timed"));
+	return h("td", { class: `r ${cls}` }, h("span", { class: "hint" }, "not timed"));
+}
+
+// Expected per hour (#136): value per catch now x the catch rate for the row's water, the rate under it.
+function expectedCell(r: F.Row, page: F.FishingPage): HTMLElement {
+	if (r.expected === null || !r.rate) return h("td", { class: "r" }, h("span", { class: "hint" }, page.expectedOk ? "no value" : "–"));
+	return h(
+		"td",
+		{ class: "r", title: `${Math.round(r.rate.perHour)} catches per hour, ${F.rateText(r.rate, page.ownMin)}` },
+		rangeEl(r.expected, r.expectedHigh),
+		h("span", { class: "hint sub2" }, `at ${Math.round(r.rate.perHour)}/h`),
+	);
 }
 
 function sampleText(r: F.Row): string {
@@ -121,7 +138,7 @@ function otherEl(r: F.ZoneRow): HTMLElement {
 	return h("span", { class: "other" }, h("span", { class: "hint" }, o.source === "ref" ? "Reference " : "Yours "), rangeEl(o.perCatch, o.perCatchHigh), o.source === "own" ? h("span", { class: "hint" }, ` (n = ${n(o.n)})`) : null);
 }
 
-function zoneTable(rows: F.ZoneRow[]): HTMLElement {
+function zoneTable(rows: F.ZoneRow[], page: F.FishingPage): HTMLElement {
 	return well(
 		h(
 			"table",
@@ -137,7 +154,8 @@ function zoneTable(rows: F.ZoneRow[]): HTMLElement {
 					h("th", { class: "r wide-only" }, "Sample"),
 					h("th", { class: "r" }, "Per Catch"),
 					h("th", { class: "r wide-only" }, "Compared"),
-					h("th", { class: "r" }, "Per Hour"),
+					h("th", { class: "r" }, h("span", { class: "wide-only" }, "Expected / Hour"), h("span", { class: "phone-only" }, "Expected / h")),
+					h("th", { class: "r wide-only" }, "Measured / Hour"),
 				),
 			),
 			h(
@@ -161,21 +179,26 @@ function zoneTable(rows: F.ZoneRow[]): HTMLElement {
 								h("td", { class: "r num wide-only" }, sampleText(r)),
 								valueCell(r.perCatch, r.perCatchHigh, r.snap.perCatch, r.revalued),
 								h("td", { class: "r wide-only" }, otherEl(r)),
-								hourCell(r, r.snap.perHour, r.revalued),
+								expectedCell(r, page),
+								hourCell(r, r.snap.perHour, r.revalued, "wide-only"),
 							),
 						)
-					: h("tr", {}, h("td", { class: "empty", colspan: 6 }, "No zones in this fishing log.")),
+					: h("tr", {}, h("td", { class: "empty", colspan: 7 }, "No zones in this fishing log.")),
 			),
 		),
 	);
 }
 
-function spotTable(rows: F.Row[], first: string, empty: string): HTMLElement {
+function spotTable(rows: F.Row[], first: string, empty: string, page: F.FishingPage): HTMLElement {
 	return well(
 		h(
 			"table",
 			{ class: "tbl wide fish" },
-			h("thead", {}, h("tr", {}, h("th", {}, first), h("th", { class: "r wide-only" }, "Catches"), h("th", { class: "r" }, "Per Catch"), h("th", { class: "r" }, "Per Hour"))),
+			h(
+				"thead",
+				{},
+				h("tr", {}, h("th", {}, first), h("th", { class: "r" }, "Per Catch"), h("th", { class: "r" }, "Expected / h"), h("th", { class: "r wide-only" }, "Measured / h")),
+			),
 			h(
 				"tbody",
 				{},
@@ -192,11 +215,11 @@ function spotTable(rows: F.Row[], first: string, empty: string): HTMLElement {
 									rowPick(r.key, where || "Unknown place"),
 									smallFlag(r.small),
 									water ? h("span", { class: "hint sub2" }, water) : null,
-									h("span", { class: "phone-only hint sub2" }, sampleText(r)),
+									h("span", { class: "hint sub2" }, sampleText(r)),
 								),
-								h("td", { class: "r num wide-only" }, n(r.n)),
 								valueCell(r.perCatch, r.perCatchHigh, r.snap.perCatch, r.revalued),
-								hourCell(r, r.snap.perHour, r.revalued),
+								expectedCell(r, page),
+								hourCell(r, r.snap.perHour, r.revalued, "wide-only"),
 							);
 						})
 					: h("tr", {}, h("td", { class: "empty", colspan: 4 }, empty)),
@@ -312,8 +335,9 @@ function zoneDetail(r: F.ZoneRow, page: F.FishingPage): HTMLElement {
 		h(
 			"div",
 			{},
+			...expectedKv(r, page),
 			...kv(
-				"Value per hour",
+				"Measured per hour",
 				r.perHour !== null ? moneyEl(r.perHour) : h("span", { class: "hint" }, r.timedTooFew ? "too few timed catches" : "not timed"),
 				r.timed !== null && r.minutes !== null ? `${n(r.timed)} timed catches in ${r.minutes.toLocaleString("en-US")} min${r.perHour === null ? `; it takes ${page.ownMin}` : ""}.` : null,
 			),
@@ -332,6 +356,16 @@ function zoneDetail(r: F.ZoneRow, page: F.FishingPage): HTMLElement {
 		),
 	);
 	return pane("p-detail", "fishing", ...parts);
+}
+
+function expectedKv(r: F.Row, page: F.FishingPage): HTMLElement[] {
+	const o = page.rates?.overall ?? null;
+	const value =
+		r.expected !== null
+			? rangeEl(r.expected, r.expectedHigh)
+			: h("span", { class: "hint" }, page.expectedOk ? "no value per catch" : `too few timed catches (${n(o?.timed ?? 0)} of ${page.ownMin})`);
+	const note = r.rate ? `${Math.round(r.rate.perHour)} catches per hour (${F.rateText(r.rate, page.ownMin)}) x the value per catch now.` : null;
+	return kv("Expected per hour", value, note);
 }
 
 function itemsTable(lines: F.ValuedLine[], row: { perCountUnits: boolean; n: number | null }): HTMLElement {
@@ -375,8 +409,9 @@ function detailPane(page: F.FishingPage): HTMLElement {
 		: [
 				kv("Source", r.source === "ref" ? "Local reference" : r.kind === "zone" ? "Your catches" : "Your catches here", sampleText(r) + (r.small ? `: a small sample, fewer than ${page.ownMin}.` : ".")),
 				kv("Value per catch", rangeEl(r.perCatch, r.perCatchHigh), r.revalued && r.snap.perCatch !== null && r.snap.perCatch !== r.perCatch ? `At the snapshot: ${moneyText(r.snap.perCatch)}.` : null),
+				expectedKv(r, page),
 				kv(
-					"Value per hour",
+					"Measured per hour",
 					r.perHour !== null ? moneyEl(r.perHour) : h("span", { class: "hint" }, r.timedTooFew ? "too few timed catches" : "not timed"),
 					r.timed !== null && r.minutes !== null ? `${n(r.timed)} timed catches in ${r.minutes.toLocaleString("en-US")} min${r.perHour === null ? `; it takes ${page.ownMin}` : ""}.` : null,
 				),
@@ -420,14 +455,38 @@ function shell(title: string, medal: Node, parts: Node[]): void {
 	);
 }
 
-function sortButtons(): HTMLElement {
+// `sort` = the ranking in effect: without enough timed catches "expected" falls back to per catch (#136).
+function rateText(r: F.Rate): string {
+	return `${Math.round(r.perHour)}/h`;
+}
+
+// Your catch rate (#136), overall and per water type, each with its sample.
+function rateLine(page: F.FishingPage): HTMLElement {
+	const r = page.rates;
+	const label = h("span", { class: "lbl" }, "Catch rate");
+	if (!r) return h("p", {}, label, h("span", { class: "hint" }, " not in this upload: update CraftWise and the companion."));
+	const o = r.overall;
+	if (!o?.enough) return h("p", {}, label, h("span", { class: "hint" }, ` ${n(o?.timed ?? 0)} timed catches, too few (it takes ${r.min})`));
+	const hours = (o.minutes / 60).toLocaleString("en-US", { maximumFractionDigits: 1 });
+	const waters = ["open", "pool", "?"].flatMap((w) => {
+		const x = r.waters.get(w);
+		if (!x) return [];
+		const what = w === "open" ? "open water" : w === "pool" ? "pools" : "water not known yet";
+		return [x.enough ? `${what} ${rateText(x)} (${n(x.timed)})` : `${what}: ${n(x.timed)} timed, too few`];
+	});
+	return h("p", {}, label, ` ${rateText(o)}`, h("span", { class: "hint" }, ` ${n(o.timed)} timed catches in ${hours} h${waters.length ? `; ${waters.join(", ")}` : ""}`));
+}
+
+function sortButtons(sort: F.SortBy, expectedOk: boolean): HTMLElement {
 	const btn = (by: F.SortBy, label: string) =>
 		h(
 			"button",
 			{
 				type: "button",
 				class: "wtab up",
-				"aria-pressed": String(st.sort === by),
+				"aria-pressed": String(sort === by),
+				disabled: by === "expected" && !expectedOk ? "" : null,
+				title: by === "expected" && !expectedOk ? "Too few timed catches for your catch rate" : null,
 				onclick: () => {
 					st.sort = by;
 					writeUrl(false);
@@ -436,7 +495,7 @@ function sortButtons(): HTMLElement {
 			},
 			label,
 		);
-	return h("div", { class: "periods", role: "group", "aria-label": "Rank by" }, btn("hour", "Per Hour"), btn("catch", "Per Catch"));
+	return h("div", { class: "periods", role: "group", "aria-label": "Rank by" }, btn("expected", "Expected"), btn("hour", "Measured"), btn("catch", "Per Catch"));
 }
 
 function pricesLine(now: number, page: F.FishingPage): string {
@@ -478,8 +537,9 @@ function render(): void {
 		redraw = render;
 		return;
 	}
-	const zones = F.sortRows(page.zones, st.sort);
-	const spots = F.sortRows(page.spots, st.sort);
+	const sort: F.SortBy = st.sort === "expected" && !page.expectedOk ? "catch" : st.sort;
+	const zones = F.sortRows(page.zones, sort);
+	const spots = F.sortRows(page.spots, sort);
 	const pools = F.sortPools(page.pools);
 	if (!st.sel || ![...page.zones, ...page.spots, ...page.waters, ...page.pools].some((r) => r.key === st.sel)) st.sel = zones[0]?.key ?? spots[0]?.key ?? null;
 	const more = (count: number | null, what: string) => (count ? ` ${count} more ${what} are in /craftwise fishing.` : "");
@@ -488,12 +548,13 @@ function render(): void {
 		{ class: "stats" },
 		h("p", {}, h("span", { class: "lbl" }, "Catches"), ` ${n(page.catches)}${page.days !== null ? ` in ${page.days} days` : ""}`),
 		page.containersOpened !== null ? h("p", {}, h("span", { class: "lbl" }, "Containers opened"), ` ${n(page.containersOpened)}`) : null,
+		rateLine(page),
 		ff && ff.known !== null ? h("p", {}, h("span", { class: "lbl" }, "Find Fish"), ff.known ? ` known, tracking ${ff.tracking === null ? "unknown" : ff.tracking ? "on" : "off"}` : " not known") : null,
 	);
 	const body = h(
 		"div",
 		{ class: "fishbody" },
-		h("div", { class: "lctl" }, h("span", { class: "lbl rankby" }, "Rank by"), sortButtons()),
+		h("div", { class: "lctl" }, h("span", { class: "lbl rankby" }, "Rank by"), sortButtons(sort, page.expectedOk)),
 		h(
 			"div",
 			{ class: "merow" },
@@ -502,7 +563,8 @@ function render(): void {
 				"fishing",
 				barHead("Where to Fish"),
 				stats,
-				zoneTable(zones),
+				zoneTable(zones, page),
+				st.sort === "expected" && !page.expectedOk ? h("p", { class: "hint note" }, `Ranked by value per catch: your catch rate needs ${page.ownMin} timed catches${page.rates?.overall ? `, the log has ${n(page.rates.overall.timed)}` : ""}.`) : null,
 				h(
 					"p",
 					{ class: "hint note" },
@@ -520,12 +582,12 @@ function render(): void {
 			h(
 				"div",
 				{ class: "mecol" },
-				pane("p-spots", "fishing", barHead("Your Spots"), spotTable(spots, "Spot", "No catches in this period."), h("p", { class: "hint note" }, `Zone, subzone and water, from your own catches of the last ${page.days ?? 90} days.${more(page.moreSpots, "spots")}`)),
+				pane("p-spots", "fishing", barHead("Your Spots"), spotTable(spots, "Spot", "No catches in this period.", page), h("p", { class: "hint note" }, `Zone, subzone and water, from your own catches of the last ${page.days ?? 90} days.${more(page.moreSpots, "spots")}`)),
 				pane(
 					"p-waters",
 					"fishing",
 					barHead("Open Water and Pools"),
-					page.waters.length ? spotTable(page.waters, "Water", "") : h("p", { class: "hint pad" }, "Not in this upload yet: update CraftWise and the companion."),
+					page.waters.length ? spotTable(page.waters, "Water", "", page) : h("p", { class: "hint pad" }, "Not in this upload yet: update CraftWise and the companion."),
 					page.pools.length ? poolTable(pools) : h("p", { class: "hint pad" }, "No pool visits yet."),
 					h(
 						"p",
@@ -539,7 +601,9 @@ function render(): void {
 		h(
 			"p",
 			{ class: "hint note foot" },
-			`Small sample = fewer than ${page.ownMin} catches; they rank after the others. Value per hour = your timed catches per hour x the value per catch, shown from ${page.ownMin} timed catches on (a session's first catch is untimed; catches more than ${page.sessionGap ?? 5} min apart start a new session). `,
+			`Small sample = fewer than ${page.ownMin} catches; they rank after the others. `,
+			`Expected / Hour = the value per catch now x your catch rate: your timed catches per hour over the whole log, in open water or at pools (a walk between pools counts while it stays under ${page.sessionGap ?? 5} min). A zone takes the water mix of your catches there; a zone you haven't fished, or a water type with fewer than ${page.ownMin} timed catches, takes your overall rate. So zones compare by what they give, not by how well a session there went. Below ${page.ownMin} timed catches in all there is no rate and the ranking is by value per catch. `,
+			`Measured / Hour = what you made per hour in that row itself: its timed catches per hour x the value per catch, shown from ${page.ownMin} timed catches on. A session's first catch is untimed; catches more than ${page.sessionGap ?? 5} min apart start a new session. `,
 			"Each item: the Horde AH's typical price (else its lowest listing) after the cut, or the vendor price when that is more; containers by their contents and items without a price today as in the snapshot.",
 		),
 	);

@@ -404,6 +404,52 @@ local function Minutes(seconds)
 	return seconds > 0 and math.floor(seconds / 6 + 0.5) / 10 or nil
 end
 
+-- Long-run catch rate (#136): timed catches per hour over the whole fishing log (last KEEP_DAYS days), overall
+-- and per water type, with the sessions of the tables (catches less than the session gap apart; a session's
+-- first catch is untimed, so a walk to the next pool counts only while it stays under the gap).
+-- { timed, seconds, perHour, min, enough, waters = { [water] = { timed, seconds, perHour, enough } } };
+-- perHour = timed x 3600 / seconds (nil without time), enough = timed >= min (FishingZones' own-data minimum).
+-- Cached until the log, the gap or the hour changes (the farm window asks every second).
+local rateCache
+function F.CatchRate(key)
+	local log = F.Log(key)
+	if not log then
+		return nil
+	end
+	local list = log.catches or {}
+	local now = time()
+	local gap = F.SessionGap() * 60
+	local min = ns.FishingZones and ns.FishingZones.OwnMin() or 50
+	local lastC = list[#list]
+	local sig = table.concat({ tostring(log), #list, tostring(lastC and lastC.t), gap, min, math.floor(now / 3600) }, ":")
+	if rateCache and rateCache.sig == sig then
+		return rateCache.out
+	end
+	local cutoff = now - F.KEEP_DAYS * 86400
+	local kinds = F.Kinds()
+	local out = { timed = 0, seconds = 0, min = min, waters = {} }
+	for _, e in ipairs(Timed(log, gap)) do
+		if e.dt and (e.c.t or 0) >= cutoff then
+			local water = F.WaterOf(e.c, kinds)
+			local w = out.waters[water]
+			if not w then
+				w = { timed = 0, seconds = 0 }
+				out.waters[water] = w
+			end
+			w.timed, w.seconds = w.timed + 1, w.seconds + e.dt
+			out.timed, out.seconds = out.timed + 1, out.seconds + e.dt
+		end
+	end
+	for _, r in pairs(out.waters) do
+		r.perHour = r.seconds > 0 and r.timed * 3600 / r.seconds or nil
+		r.enough = r.perHour ~= nil and r.timed >= min
+	end
+	out.perHour = out.seconds > 0 and out.timed * 3600 / out.seconds or nil
+	out.enough = out.perHour ~= nil and out.timed >= min
+	rateCache = { sig = sig, out = out }
+	return out
+end
+
 F.WATER_ORDER = { "open", "pool", "?" }
 
 function F.SnapshotSummary()
