@@ -142,7 +142,8 @@ end)
 it("minimap button: click opens CraftWise, right-click the farm tracker, Shift-click docks once #161 exists", function()
 	local ns = setup()
 	local opened, docked = 0, 0
-	ns.ToggleProfitFrame = function() opened = opened + 1 end
+	eq(ns.ToggleDock, nil, "no docked layout registered yet (#161)")
+	ns.ToggleMainWindow = function() opened = opened + 1 end
 	eq(ns.MinimapClick("LeftButton", false), "open")
 	eq(ns.MinimapClick("LeftButton", true), "open", "no docked layout yet: Shift-click opens too")
 	eq(opened, 2)
@@ -150,13 +151,12 @@ it("minimap button: click opens CraftWise, right-click the farm tracker, Shift-c
 	eq(ns.FarmFrame.IsShown(), true)
 	ns.MinimapClick("RightButton", false)
 	eq(ns.FarmFrame.IsShown(), false, "right-click again hides it")
-	-- the main window (#153) and the docked layout (#161) plug in
-	ns.ToggleMainWindow = function() opened = opened + 10 end
+	-- the docked layout (#161) plugs in
 	ns.ToggleDock = function() docked = docked + 1 end
 	eq(ns.MinimapClick("LeftButton", true), "dock")
 	eq(docked, 1)
 	eq(ns.MinimapClick("LeftButton", false), "open")
-	eq(opened, 12, "the main window, not the profit window")
+	eq(opened, 3)
 	IsShiftKeyDown = function() return true end
 	CraftWiseMinimapButton.scripts.OnClick(CraftWiseMinimapButton, "LeftButton")
 	eq(docked, 2, "the button reads Shift from the client")
@@ -180,15 +180,17 @@ it("minimap button: hover shows the inverse tooltip with one line per action", f
 	eq(tip.shown, false, "dragging hides it")
 end)
 
-it("addon compartment opens the main window once #153 exists, until then the profit window", function()
+it("addon compartment opens the main window (#153); the profit window only without it", function()
 	local ns = setup()
+	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
+	eq(CraftWiseMainFrame:IsShown(), true, "the main window")
+	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
+	eq(CraftWiseMainFrame:IsShown(), false, "toggles")
 	local which
 	ns.ToggleProfitFrame = function() which = "profit" end
+	ns.ToggleMainWindow = nil
 	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
 	eq(which, "profit")
-	ns.ToggleMainWindow = function() which = "main" end
-	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
-	eq(which, "main")
 end)
 
 it("the TOC icon is the W key (#166), the compartment function is named there", function()

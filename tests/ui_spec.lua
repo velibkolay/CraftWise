@@ -42,12 +42,12 @@ it("tooltips render for known, trainer, vendor and bundled-only rows", function(
 	end
 end)
 
-it("minimap button: click opens the window, right-click the farm tracker, drag moves it, /craftwise minimap hides it", function()
+it("minimap button: click opens the main window, right-click the farm tracker, drag moves it, /craftwise minimap hides it", function()
 	local ns, stub = LoadAddon()
 	local btn = CraftWiseMinimapButton
 	assert(btn, "minimap button not created at login")
-	btn.scripts.OnClick(btn, "LeftButton") -- opens window
-	assert(ns.PF.frame and ns.PF.frame:IsShown(), "profit window open")
+	btn.scripts.OnClick(btn, "LeftButton") -- opens the main window (#153)
+	assert(CraftWiseMainFrame and CraftWiseMainFrame:IsShown(), "main window open")
 	btn.scripts.OnEnter(btn); btn.scripts.OnLeave(btn)
 	btn.scripts.OnDragStart(btn)
 	btn.scripts.OnUpdate(btn)

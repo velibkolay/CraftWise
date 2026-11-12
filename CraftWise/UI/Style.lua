@@ -19,6 +19,9 @@ Style.Media = {
 	up = MEDIA .. "cw-up", -- ▲, missing from the fonts
 	down = MEDIA .. "cw-down", -- ▼
 	arrow = MEDIA .. "cw-arrow", -- →
+	gear = MEDIA .. "cw-gear", -- main window header buttons (#153)
+	dock = MEDIA .. "cw-dock",
+	close = MEDIA .. "cw-close",
 }
 local Media = Style.Media
 

@@ -16,6 +16,12 @@ escape's colour), so one file serves every colour; the header art and the W key 
   cw-up.tga, cw-down.tga 16 x 16   ▲ and ▼: Atkinson Hyperlegible has no such glyph; the boards' caret
                                    (path "M1 3h8L5 8z" in a 10 unit box), pointing up and down
   cw-arrow.tga           16 x 16   →: no such glyph either; shaft and head on the same 10 unit grid
+  cw-gear.tga            32 x 32   the window header's Settings gear (#153), the boards' icon: a ring
+                                   (r 2.5) and eight spokes, stroke 1.6, butt caps, in a 16 unit box
+  cw-dock.tga            32 x 32   the header's dock button: a frame (11 x 10, stroke 1.4) with its left
+                                   4 units filled, in a 14 unit box
+  cw-close.tga           32 x 32   the header's close button: two diagonals, stroke 1.6, square caps, in a
+                                   12 unit box
 
 The header files hold the boards' polygons scaled to the texture: drawn over the whole header (880 x 56 in
 the window, 380 x 64 docked) they give the board's shapes. Stretch them horizontally only if a layout ever
@@ -223,6 +229,30 @@ HEADER_NARROW = (380, 64, [
 ])
 
 
+def stroke_segment(x0, y0, x1, y1, width, square=False):
+    """A straight line stroked with butt caps (or square caps: extended by half the width)."""
+    dx, dy = x1 - x0, y1 - y0
+    n = (dx * dx + dy * dy) ** 0.5
+    ux, uy = dx / n, dy / n
+    h = width / 2
+    if square:
+        x0, y0, x1, y1 = x0 - ux * h, y0 - uy * h, x1 + ux * h, y1 + uy * h
+    nx, ny = -uy * h, ux * h
+    return [(x0 + nx, y0 + ny), (x1 + nx, y1 + ny), (x1 - nx, y1 - ny), (x0 - nx, y0 - ny)]
+
+
+def circle(cx, cy, r, clockwise=True, steps=96):
+    import math
+    pts = [(cx + r * math.cos(2 * math.pi * i / steps), cy + r * math.sin(2 * math.pi * i / steps))
+           for i in range(steps)]
+    return pts if clockwise else pts[::-1]
+
+
+def rect(x0, y0, x1, y1, clockwise=True):
+    pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    return pts if clockwise else pts[::-1]
+
+
 def pairs(flat):
     return [(flat[i], flat[i + 1]) for i in range(0, len(flat), 2)]
 
@@ -352,6 +382,25 @@ def main():
     c = Canvas(16, 16)
     c.fill([[(1, 4.4), (6, 4.4), (6, 5.6), (1, 5.6)], [(5, 2), (9, 5), (5, 8)]], WHITE, sx=caret, sy=caret)
     write_tga(MEDIA / "cw-arrow.tga", c)
+
+    # Header buttons (#153), from the boards' inline SVG icons; the hole of a ring winds the other way.
+    c = Canvas(32, 32)  # viewBox 0 0 16 16
+    gear = [circle(8, 8, 2.5 + 0.8), circle(8, 8, 2.5 - 0.8, clockwise=False)]
+    for x0, y0, x1, y1 in ((8, 1.5, 8, 4), (8, 12, 8, 14.5), (1.5, 8, 4, 8), (12, 8, 14.5, 8),
+                           (3.4, 3.4, 5.2, 5.2), (10.8, 10.8, 12.6, 12.6), (3.4, 12.6, 5.2, 10.8),
+                           (10.8, 5.2, 12.6, 3.4)):
+        gear.append(stroke_segment(x0, y0, x1, y1, 1.6))
+    c.fill(gear, WHITE, sx=2, sy=2)
+    write_tga(MEDIA / "cw-gear.tga", c)
+    c = Canvas(32, 32)  # viewBox 0 0 14 14: rect 1.5 2 11 10, stroke 1.4; the left 4 also filled
+    h = 0.7
+    c.fill([rect(1.5 - h, 2 - h, 12.5 + h, 12 + h), rect(1.5 + h, 2 + h, 12.5 - h, 12 - h, clockwise=False),
+            rect(1.5 - h, 2 - h, 5.5 + h, 12 + h)], WHITE, sx=32 / 14, sy=32 / 14)
+    write_tga(MEDIA / "cw-dock.tga", c)
+    c = Canvas(32, 32)  # viewBox 0 0 12 12: M2 2l8 8M10 2l-8 8, stroke 1.6, square caps
+    c.fill([stroke_segment(2, 2, 10, 10, 1.6, square=True), stroke_segment(10, 2, 2, 10, 1.6, square=True)],
+           WHITE, sx=32 / 12, sy=32 / 12)
+    write_tga(MEDIA / "cw-close.tga", c)
 
 
 if __name__ == "__main__":
