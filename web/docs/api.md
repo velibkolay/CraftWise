@@ -210,7 +210,9 @@ expiry), so the private data stays closed if the Access app is missing or miscon
 
 `GET /me` (also `/me/` and `/me/index.html`) serves the private page (#98, `public/me/index.html` with
 `site/me.ts`) after the same check, with the pages' security headers and `Cache-Control: private, no-store`;
-other paths under `/me/` answer 404. The page itself holds no data: it reads everything above from
+`/me/<page>` (also with `/` or `/index.html`) serves `public/me/<page>/index.html` the same way when that
+page exists, e.g. `/me/crates` (#129, Waylaid crates and Merchant's Favor, `site/crates.ts`); other paths
+under `/me/` answer 404. The page itself holds no data: it reads everything above from
 `/api/me/*` and item names and qualities from `/api/browse?ids=`.
 
 ## Budget (free plans) and retention

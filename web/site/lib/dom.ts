@@ -145,7 +145,7 @@ function keyBar(sub: Node | string, view: View | null): HTMLElement {
 			"div",
 			{ class: "keybar" },
 			h("a", { href: "/", class: "brand" }, h("img", { src: "/img/key-wow-32.svg", width: 32, height: 32, alt: "" }), h("span", {}, "wow.velikopter.com")),
-			h("nav", { class: "vnav", "aria-label": "Views" }, tab("browse", "/", "All items"), tab("favourites", "/?view=favourites", "Favourites"), tab("crates", "/?view=crates", "Waylaid crates")),
+			h("nav", { class: "vnav", "aria-label": "Views" }, tab("browse", "/", "All items"), tab("favourites", "/?view=favourites", "Favourites"), tab("crates", "/me/crates", "Waylaid crates")),
 			h("span", { class: "grow" }),
 			skinSwitch(),
 			tab("me", "/me", "Me", "ntab me"),
@@ -177,7 +177,7 @@ export function bottomTabs(active: View | null): HTMLElement {
 		{ class: "btabs", "aria-label": "Views" },
 		tab("browse", "/", "Browse"),
 		tab("favourites", "/?view=favourites", "Favourites"),
-		tab("crates", "/?view=crates", "Waylaid Crates"),
+		tab("crates", "/me/crates", "Waylaid Crates"),
 		tab("me", "/me", "My Characters"),
 	);
 }

@@ -1,0 +1,71 @@
+/* Waylaid Crates page /me/crates (#129, design W2d-Crates). Layout on the shared components of site.css
+   (.cols, .side, .results, .tbl, .tip, .pane); only what the page adds is here. Values from tokens.css. */
+
+.cr-medal { --ic: #8a5a2a; }
+.cr-icon path { fill: none; stroke-linejoin: round; }
+.cr-icon .under { stroke: #000; stroke-width: 5; }
+.cr-icon .face { fill: var(--bronze-hi); fill-opacity: 0.55; stroke: none; }
+.cr-icon .over { stroke: var(--parch); stroke-width: 2; }
+
+.cr-balance { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 12px; }
+.cr-balance .num { font-size: 16px; }
+.cr-balance .hint { font-size: 13px; }
+.statusrow select.winput { max-width: 260px; }
+
+.cr-all { padding-left: 12px; }
+.tree .plate .hint { font-size: 13px; }
+.cr-spendat { margin: 16px 4px 4px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.cr-spendat .lbl { font-size: 15px; margin-bottom: 2px; }
+.cr-spendat a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.cr-spendat .hint { font-size: 13px; }
+
+.cr-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.cr-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
+.tbl.cr-table { min-width: 940px; }
+.tbl.cr-table td.c-name { line-height: 17px; padding-top: 3px; padding-bottom: 3px; }
+.tbl.cr-table tbody tr { cursor: pointer; }
+.cr-tags { display: flex; gap: 4px; margin: 2px 0 0 38px; }
+.cr-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; font-size: 12px; line-height: 1; color: var(--accent); border: 1px solid currentColor; border-radius: var(--radius); }
+.cr-tag.held { color: var(--text-2); }
+.cr-src { display: inline-block; width: 10px; margin-left: 2px; font-size: 11px; text-align: left; }
+.r .m + .cr-src { vertical-align: top; }
+.cr-how { font-size: 12.5px; }
+.cr-guide .cr-how { font-style: italic; }
+
+.cr-detail { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.cr-tipcol { flex: 1 1 340px; max-width: 460px; min-width: 0; gap: 0; }
+[data-skin="classic"] .pane.cr-tipcol { padding: 0; background: none; border: 0; box-shadow: none; }
+.cr-detail .tip { display: flex; flex-direction: column; gap: 1px; }
+.cr-use, .cr-bundle { color: var(--q-uncommon); }
+.cr-bundle a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.cr-bundle .sub2, .cr-detail .row .sub2 { text-align: right; }
+.cr-bundle.best > span:first-child { font-weight: 700; }
+.cr-how-pane { flex: 1 1 300px; max-width: none; padding: 12px; gap: 8px; }
+.cr-how-pane .bar-head { font-weight: 400; }
+.cr-text { padding: 2px 8px 0; font-size: 14px; line-height: 20px; color: var(--text-2); }
+.cr-how-pane .note { padding: 0 8px; }
+.cr-link { text-decoration: underline; text-underline-offset: 3px; }
+
+.cr-spend { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+.cr-merchant { display: flex; flex-direction: column; gap: 8px; }
+.cr-mhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 0 4px; }
+.cr-mhead h3 { font-size: 16px; font-weight: 400; }
+.cr-rep { flex: 0 1 320px; }
+.tbl.cr-wares { min-width: 760px; }
+.tbl.cr-wares .c-name { width: 46%; }
+.tbl.cr-wares td.c-name { white-space: normal; padding-top: 4px; padding-bottom: 4px; }
+.cr-short { color: var(--money-out); }
+.cr-dim .nm { opacity: 0.7; }
+
+@media (max-width: 760px) {
+	.statusrow select.winput { max-width: none; flex: 1 1 100%; }
+	.tbl.cr-table, .tbl.cr-wares { min-width: 100%; width: 100%; }
+	.tbl.cr-table .c-name, .tbl.cr-wares .c-name { width: auto; white-space: normal; line-height: 17px; padding-top: 4px; padding-bottom: 4px; }
+	.tbl.cr-table .slot, .tbl.cr-wares .slot { display: none; }
+	.cr-tags { flex-wrap: wrap; margin-left: 0; }
+	.cr-detail { flex-direction: column; align-items: stretch; }
+	.cr-tipcol { max-width: none; flex-basis: auto; }
+	.cr-how-pane { flex-basis: auto; }
+	.cr-rep { flex: 1 1 100%; }
+}
