@@ -472,29 +472,38 @@ end
 local Controls = {}
 
 function Controls.seg(holder, def)
-	local opts = Value(def.options)
-	local labels = {}
-	for i, o in ipairs(opts) do
-		labels[i] = o.label
-	end
-	local seg = Style.Segmented(holder, labels, function(index)
-		local o = holder.opts[index]
-		if o and not o.disabled then
-			def.set(o.value)
+	-- Built again when the number of options changes (a docked layout registered by #161, say).
+	local function Make(opts)
+		local labels = {}
+		for i, o in ipairs(opts) do
+			labels[i] = o.label
 		end
-		M.Refresh()
-	end)
-	seg:SetPoint("LEFT", holder, "LEFT", 0, 0)
-	holder.control, holder.opts = seg, opts
+		if holder.control then
+			holder.control:Hide()
+		end
+		local seg = Style.Segmented(holder, labels, function(index)
+			local o = Value(def.options)[index] -- as it is now (a house may have data since)
+			if o and not o.disabled then
+				def.set(o.value)
+			end
+			M.Refresh()
+		end)
+		seg:SetPoint("LEFT", holder, "LEFT", 0, 0)
+		holder.control, holder.opts = seg, opts
+		return seg
+	end
+	Make(Value(def.options))
 	return function()
 		local now = Value(def.options)
+		local seg = holder.control
+		if #now ~= #seg.buttons then
+			seg = Make(now)
+		end
 		holder.opts = now
 		for i, o in ipairs(now) do
 			local b = seg.buttons[i]
-			if b then
-				b:SetLabel(o.label)
-				b:SetAlpha(o.disabled and 0.4 or 1)
-			end
+			b:SetLabel(o.label)
+			b:SetAlpha(o.disabled and 0.4 or 1)
 		end
 		local cur = def.get()
 		local index

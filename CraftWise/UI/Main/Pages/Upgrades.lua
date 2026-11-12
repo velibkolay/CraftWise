@@ -442,6 +442,7 @@ M.RegisterPage({
 	key = "upgrades", section = "lookup", label = L["Upgrades"], order = 2,
 	events = { "UPGRADES_CHANGED", "BAGS_CHANGED", "LEDGER_CHANGED" },
 	rowHeight = Up.ROW_HEIGHT,
+	noHeader = true, -- board "Look up · Upgrades": the group rows carry the 2 unit rule
 	columns = COLUMNS,
 	sort = { key = "gain", desc = true },
 	SortRows = Up.SortRows,
