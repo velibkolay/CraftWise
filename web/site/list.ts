@@ -4,7 +4,7 @@ import { type Browse, type BrowseItem, type Categories, get, type House, mainHou
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, skinMoney, slot, statusBar, topBar, type View } from "./lib/dom";
 import { favourites, isFavourite, toggleFavourite } from "./lib/favs";
 import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sellChoice, sparkPath, sparkValues, subclassName } from "./lib/format";
-import { type CraftNames, craftBreakdown, craftsText, profitEl } from "./lib/craftview";
+import { type CraftNames, craftBreakdown, craftsText, profitEl, thinTag } from "./lib/craftview";
 import { itemsNeeded, type Quote, quoteOf, RECIPES_URL, type RecipeData, type RecipeRow, recipeRow } from "./lib/recipes";
 
 const PAGE = 25;
@@ -502,7 +502,7 @@ const COLUMNS: { key: SortKey | null; label: string; cls: string; firstDesc: boo
 	{ key: "lowest", label: "Lowest", cls: "r", firstDesc: true },
 	{ key: "vendor", label: "Vendor", cls: "r", firstDesc: true },
 	{ key: "c24", label: "24h", cls: "r", firstDesc: true },
-	{ key: "c7", label: "7d", cls: "r", firstDesc: true },
+	{ key: "c7", label: "7d", cls: "r c-7d", firstDesc: true },
 	{ key: null, label: "Last 7 Days", cls: "c-spark", firstDesc: false },
 	{ key: "listed", label: "Listed", cls: "r", firstDesc: true },
 ];
@@ -597,7 +597,7 @@ function rowEl(r: Row, fav: boolean, today: number, recipes: boolean): HTMLEleme
 		h("td", { class: "r" }, cur && !cur.listed ? h("span", { class: "hint" }, "not listed") : moneyEl(r.lowest)),
 		vendorCell(r),
 		changeCell(r.c24, "24 hours"),
-		changeCell(r.c7, "7 days"),
+		changeCell(r.c7, "7 days", " c-7d"),
 		recipes
 			? null
 			: h(
@@ -640,13 +640,23 @@ function profitCell(r: Row): HTMLElement {
 	}
 	const open = openRows.has(r.item.id);
 	const c = rec.craft!;
-	const label = rec.status === "no_item" ? h("span", { class: "hint" }, "no item") : r.profit === null ? h("span", { class: "hint" }, "unknown") : profitEl(r.profit);
-	const tip =
+	const label =
 		rec.status === "no_item"
-			? "It makes no item (an enchant or the like): no product to value"
-			: r.profit === null
-				? "Unknown: a reagent or the product has no price"
-				: `Product ${skinMoney(c.revenue!).short} - reagents ${skinMoney(c.cost!).short}`;
+			? h("span", { class: "hint" }, "no item")
+			: rec.status === "no_ah_price"
+				? h("span", { class: "hint" }, "no AH price")
+				: r.profit === null
+					? h("span", { class: "hint" }, "unknown")
+					: [profitEl(r.profit), c.thin ? thinTag(c.value) : null];
+	let tip: string;
+	if (rec.status === "no_item") tip = "It makes no item (an enchant or the like): no product to value";
+	else if (rec.status === "no_ah_price")
+		tip =
+			c.vendorFloor !== null && c.worst !== null
+				? `The product has no Horde AH price. A vendor pays ${skinMoney(c.vendorFloor).short}: at worst ${c.worst < 0 ? `a loss of ${skinMoney(-c.worst).short}` : `${skinMoney(c.worst).short} profit`}`
+				: "The product has no Horde AH price";
+	else if (r.profit === null) tip = "Unknown: a reagent or the product has no price";
+	else tip = `Product ${skinMoney(c.revenue!).short} - reagents ${skinMoney(c.cost!).short}${c.thin ? ". Thin market: the product's price rests on few units or listings" : ""}`;
 	const btn = h(
 		"button",
 		{ type: "button", class: "pbtn", "aria-expanded": String(open), "aria-controls": `bd-${r.item.id}`, title: tip },
@@ -669,8 +679,8 @@ function detailRow(r: Row, span: number): HTMLElement | null {
 	return h("tr", { class: "detail" }, h("td", { colspan: span }, h("div", { class: "breakdown", id: `bd-${r.item.id}` }, craftBreakdown(r.recipe, itemNames, r.item.name))));
 }
 
-function changeCell(v: number | null, span: string): HTMLElement {
-	return h("td", { class: "r num" }, h("span", { class: changeClass(v), "aria-hidden": "true" }, pctText(v)), h("span", { class: "sr" }, `${span}: ${pctSpoken(v)}`));
+function changeCell(v: number | null, span: string, cls = ""): HTMLElement {
+	return h("td", { class: `r num${cls}` }, h("span", { class: changeClass(v), "aria-hidden": "true" }, pctText(v)), h("span", { class: "sr" }, `${span}: ${pctSpoken(v)}`));
 }
 
 function setSelection(id: number | null): void {

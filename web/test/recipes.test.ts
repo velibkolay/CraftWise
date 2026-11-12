@@ -7,6 +7,8 @@ import {
 	ahPrice,
 	basisText,
 	craft,
+	depthText,
+	isThin,
 	itemsNeeded,
 	makersOf,
 	paysBack,
@@ -104,7 +106,8 @@ describe("spells and recipe items", () => {
 describe("prices", () => {
 	it("takes the typical price, else the lowest listing", () => {
 		expect(ahPrice(q(100, 90))).toEqual({ unit: 100, basis: "typical" });
-		expect(ahPrice(q(null, 90))).toEqual({ unit: 90, basis: "lowest" });
+		expect(ahPrice(q(null, 90))).toEqual({ unit: 90, basis: "lowest", units: null, listings: null });
+		expect(ahPrice({ ...q(null, 90), units: 3, listings: 1 })).toEqual({ unit: 90, basis: "lowest", units: 3, listings: 1 });
 		expect(ahPrice(q(null, null))).toBeNull();
 		expect(ahPrice(undefined)).toBeNull();
 	});
@@ -113,25 +116,44 @@ describe("prices", () => {
 		expect(reagentPrice(q(15, 12), 10)).toEqual({ unit: 10, basis: "vendor" });
 		expect(reagentPrice(q(8, 12), 10)).toEqual({ unit: 8, basis: "typical" });
 		expect(reagentPrice(undefined, 10)).toEqual({ unit: 10, basis: "vendor" });
-		expect(reagentPrice(q(null, 30), undefined)).toEqual({ unit: 30, basis: "lowest" });
+		expect(reagentPrice(q(null, 30), undefined)).toMatchObject({ unit: 30, basis: "lowest" });
 		expect(reagentPrice(q(null, null), undefined)).toBeNull();
 	});
 
 	it("values the product after the 5% cut, or at the vendor when a vendor pays more", () => {
 		expect(productValue(q(1000, 900, 20), undefined)).toEqual({ unit: 950, basis: "typical" });
-		expect(productValue(q(null, 101, 0), undefined)).toEqual({ unit: 95, basis: "lowest" });
+		expect(productValue(q(null, 101, 0), undefined)).toMatchObject({ unit: 95, basis: "lowest" });
 		expect(productValue(q(100, null, 96), undefined)).toEqual({ unit: 96, basis: "vendor" });
-		// Not known on the site yet: the bundled sell price; vendors don't buy it (0): the AH only.
-		expect(productValue(q(null, null, null), 7)).toEqual({ unit: 7, basis: "vendor" });
-		expect(productValue(q(null, null, 0), 7)).toBeNull();
+		// No site sell price yet: the bundled one, still only against an AH price.
+		expect(productValue(q(100, null, null), 99)).toEqual({ unit: 99, basis: "vendor" });
+		expect(productValue(q(100, null, 0), 99)).toEqual({ unit: 95, basis: "typical" });
+	});
+
+	it("gives the product no value without a Horde AH price, even when a vendor buys it", () => {
+		expect(productValue(q(null, null, 500), undefined)).toBeNull();
+		expect(productValue(q(null, null, null), 7)).toBeNull();
 		expect(productValue(undefined, undefined)).toBeNull();
 	});
 
+	it("marks a lowest-listing price on one or two listings or under 5 units as thin", () => {
+		const lo = (units: number | null, listings: number | null) => ({ unit: 10, basis: "lowest" as const, units, listings });
+		expect(isThin(lo(4, null))).toBe(true);
+		expect(isThin(lo(40, 2))).toBe(true);
+		expect(isThin(lo(5, 3))).toBe(false);
+		expect(isThin(lo(null, null))).toBe(false);
+		expect(isThin({ unit: 10, basis: "typical" })).toBe(false);
+		expect(isThin(null)).toBe(false);
+		expect(depthText(lo(3, 1))).toBe("3 units in 1 listing");
+		expect(depthText(lo(1, null))).toBe("1 unit");
+		expect(depthText(lo(null, null))).toBeNull();
+		expect(depthText({ unit: 10, basis: "typical" })).toBeNull();
+	});
+
 	it("reads a browse item", () => {
-		const item = { typical: { status: "too_little_history", days: 1 }, current: { listed: true, min: 37 }, sellPrice: 15 } as unknown as BrowseItem;
-		expect(quoteOf(item)).toEqual({ typical: null, lowest: 37, sellPrice: 15 });
-		const gone = { typical: { status: "ok", price: 40, days: 5 }, current: { listed: false, min: 37 }, sellPrice: null } as unknown as BrowseItem;
-		expect(quoteOf(gone)).toEqual({ typical: 40, lowest: null, sellPrice: null });
+		const item = { typical: { status: "too_little_history", days: 1 }, current: { listed: true, min: 37, qty: 12, listings: null }, sellPrice: 15 } as unknown as BrowseItem;
+		expect(quoteOf(item)).toEqual({ typical: null, lowest: 37, sellPrice: 15, units: 12, listings: null });
+		const gone = { typical: { status: "ok", price: 40, days: 5 }, current: { listed: false, min: 37, qty: 3, listings: 1 }, sellPrice: null } as unknown as BrowseItem;
+		expect(quoteOf(gone)).toEqual({ typical: 40, lowest: null, sellPrice: null, units: null, listings: null });
 		expect(basisText("typical")).toBe("AH market price");
 	});
 });
@@ -155,6 +177,23 @@ describe("craft", () => {
 		expect(c.revenue).toBe(380);
 		expect(c.profit).toBe(280);
 		expect(c.missing).toEqual([]);
+		expect(c).toMatchObject({ noAhProduct: false, vendorFloor: null, worst: null, thin: false });
+	});
+
+	it("marks the profit thin when the product's lowest listing is thin", () => {
+		const c = craft(data, spell, new Map([[50, { ...q(null, 200), units: 2, listings: 1 }], [60, q(30, null)]]));
+		expect(c.profit).toBe(190 * 2 - 100);
+		expect(c.thin).toBe(true);
+		expect(c.value).toEqual({ unit: 190, basis: "lowest", units: 2, listings: 1 });
+	});
+
+	it("has no profit when the product has no AH price, the vendor price only as the worst case", () => {
+		const c = craft(data, spell, new Map([[50, q(null, null, 30)], [60, q(30, null)]]));
+		expect(c.profit).toBeNull();
+		expect(c.missing).toEqual([50]);
+		expect(c).toMatchObject({ noAhProduct: true, vendorFloor: 30, worst: 30 * 2 - 100 });
+		const bundled = craft(data, spell, new Map([[60, q(30, null)]]));
+		expect(bundled).toMatchObject({ noAhProduct: true, vendorFloor: 7, worst: 14 - 100 });
 	});
 
 	it("is negative when the reagents cost more", () => {
@@ -171,6 +210,7 @@ describe("craft", () => {
 		expect(noProduct.cost).toBe(100);
 		expect(noProduct.profit).toBeNull();
 		expect(noProduct.missing).toEqual([50]);
+		expect(noProduct).toMatchObject({ noAhProduct: true, vendorFloor: null, worst: null });
 	});
 
 	it("has no profit for a spell that makes no item", () => {
@@ -207,7 +247,7 @@ describe("recipe rows", () => {
 		const r = recipeRow(data, 100, q(null, 1000), quotes);
 		expect(r.status).toBe("ok");
 		expect(r.craft!.profit).toBe(280);
-		expect(r.recipePrice).toEqual({ unit: 1000, basis: "lowest" });
+		expect(r.recipePrice).toMatchObject({ unit: 1000, basis: "lowest" });
 		expect(r.payback).toBe(4);
 	});
 
@@ -215,8 +255,9 @@ describe("recipe rows", () => {
 		expect(recipeRow(data, 999, undefined, quotes)).toMatchObject({ status: "not_in_data", craft: null, payback: null });
 		expect(recipeRow(data, 102, undefined, quotes).status).toBe("no_reagents");
 		expect(recipeRow(data, 101, undefined, quotes).status).toBe("no_item");
-		// The product has no AH price and vendors don't buy it.
-		expect(recipeRow(data, 100, q(null, 1000), new Map([[50, q(null, null, 0)], [60, q(30, null)]]))).toMatchObject({ status: "no_price", payback: null });
+		// The product has no AH price (a vendor price doesn't count); a reagent without a price.
+		expect(recipeRow(data, 100, q(null, 1000), new Map([[50, q(null, null, 40)], [60, q(30, null)]]))).toMatchObject({ status: "no_ah_price", payback: null });
+		expect(recipeRow(data, 100, q(null, 1000), new Map([[50, q(200, null)]]))).toMatchObject({ status: "no_price", payback: null });
 	});
 
 	it("has a profit but no pay back when the recipe has no price", () => {

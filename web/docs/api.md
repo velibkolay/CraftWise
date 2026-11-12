@@ -219,7 +219,12 @@ view). The maths is `site/lib/recipes.ts` (tested in `test/recipes.test.ts`):
 - Reagent: per unit the Horde AH's typical price, else its lowest listing while listed, or the bundled vendor buy
   price when that is cheaper (or the only one).
 - Product: one unit on the Horde AH (typical, else lowest) after the 5% cut, or what a vendor pays when that is
-  more (`sellPrice`, else the bundled sell price), times the output quantity (mean yield), rounded down.
+  more (`sellPrice`, else the bundled sell price), times the output quantity (mean yield), rounded down. Without a
+  Horde AH price the product has no value ("no AH price", sorted with the unknowns), even when a vendor buys it: the
+  breakdown shows the vendor price only as a floor ("a vendor pays X: at worst a loss of Y").
+- Thin market: a price from the lowest listing (no typical price yet) shows the units and listings behind it in the
+  breakdown; when the product's price rests on 1 or 2 listings or fewer than 5 units the profit carries a "thin"
+  marker. The maths is the same.
 - Profit per craft = product - reagents; unknown when any reagent or the product has no price (nothing is filled
   in); none for spells that make no item (enchants). Pays back = the recipe's AH price (typical, else lowest) /
   profit, rounded up, only when the profit is positive.

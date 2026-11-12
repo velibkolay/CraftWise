@@ -858,11 +858,14 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 
 /* ===== 7. Crafting profit (#143) ===== */
 .tbl.list.recipes { min-width: 900px; }
+.tbl.list.recipes .c-7d { display: none; } /* recipe lists: room for Profit and Pays back (with the sparkline gone) */
 .profit { display: inline-flex; align-items: baseline; gap: 2px; }
 .profit.loss, .profit.loss .mg, .profit.loss .ms, .profit.loss .mc { color: var(--money-out); }
 .pbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .pbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pbtn:hover .mp, .pbtn:hover > .hint { text-decoration: underline; text-underline-offset: 3px; }
+.thin { display: inline-block; padding: 0 4px; font-family: var(--font-ui); font-size: 11px; line-height: 15px; letter-spacing: 0.02em; color: var(--text-3); border: 1px solid currentColor; border-radius: 3px; cursor: help; }
+.pbtn .thin { margin-left: -2px; }
 .chev { flex: none; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--text-3); transition: transform 120ms; }
 .chev.open { transform: rotate(90deg); }
 .tbl tr.detail > td { height: auto; padding-top: 12px; padding-bottom: 16px; white-space: normal; }
@@ -885,11 +888,16 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="classic"] .tbl.bd th { height: 24px; font-size: 13px; }
 [data-skin="velikopter"] .tbl tbody tr.detail > td, [data-skin="velikopter"] .tbl tbody tr.detail:hover > td { background: var(--surface-2); }
 [data-skin="velikopter"] .tbl.bd { border-top: 0; }
+[data-skin="velikopter"] .thin { border-radius: 0; }
+/* the Velikopter rows are wider (padded money, more padding): a little less padding on recipe lists */
+[data-skin="velikopter"] .tbl.list.recipes th, [data-skin="velikopter"] .tbl.list.recipes td { padding-left: 10px; padding-right: 10px; }
+[data-skin="velikopter"] .tbl.list.recipes th:first-child, [data-skin="velikopter"] .tbl.list.recipes td:first-child { padding-left: 24px; }
 [data-skin="velikopter"] .tbl.bd th { height: 30px; border-bottom-width: 1px; }
 [data-skin="velikopter"] .tbl.bd th:first-child, [data-skin="velikopter"] .tbl.bd td:first-child { padding-left: 0; }
 [data-skin="velikopter"] .craftbox { padding: 0 0 12px; }
 [data-skin="velikopter"] .craftbox + .craftbox { padding-top: 12px; border-top-color: var(--line); }
 @media (max-width: 760px) {
+	.tbl.list.recipes { min-width: 100%; }
 	.breakdown { left: 4px; max-width: calc(100vw - 88px); }
 	.bd-sums { grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; }
 	.bd-sums .basis { grid-column: 1 / -1; justify-self: end; margin-top: -4px; }

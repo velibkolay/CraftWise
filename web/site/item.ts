@@ -111,6 +111,8 @@ function ownQuote(m: Market | null, it: ItemInfo | null): Quote {
 		typical: m?.typical.status === "ok" ? m.typical.price : null,
 		lowest: m?.current && m.current.listed ? m.current.min : null,
 		sellPrice: it?.sellPrice ?? null,
+		units: m?.current && m.current.listed ? m.current.qty : null,
+		listings: m?.current && m.current.listed ? m.current.listings : null,
 	};
 }
 

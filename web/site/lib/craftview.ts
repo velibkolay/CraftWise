@@ -2,7 +2,7 @@
 // The numbers come from recipes.ts; this only draws them.
 import { h, moneyEl, skinMoney } from "./dom";
 import { qualityClass } from "./format";
-import { basisText, type Craft, type Priced, type RecipeRow, type Spell } from "./recipes";
+import { basisText, type Craft, depthText, type Priced, type RecipeRow, type Spell } from "./recipes";
 
 export type CraftNames = Map<number, { name: string | null; quality: number | null }>;
 
@@ -10,6 +10,17 @@ export type CraftNames = Map<number, { name: string | null; quality: number | nu
 export function profitEl(copper: number): HTMLElement {
 	if (copper >= 0) return h("span", { class: "profit" }, moneyEl(copper));
 	return h("span", { class: "profit loss" }, h("span", { "aria-hidden": "true" }, "−"), h("span", { class: "sr" }, "loss of "), moneyEl(-copper));
+}
+
+// The thin-market marker (#143 review): the product's price is its lowest listing, on few units or listings.
+export function thinTag(p: Priced | null): HTMLElement {
+	const depth = depthText(p);
+	return h(
+		"span",
+		{ class: "thin", title: `Thin market: priced from the lowest listing${depth ? ` (${depth})` : ""}, no typical price yet` },
+		h("span", { "aria-hidden": "true" }, "thin"),
+		h("span", { class: "sr" }, ", thin market"),
+	);
 }
 
 export function craftsText(n: number): string {
@@ -21,10 +32,13 @@ function itemLink(id: number, names: CraftNames): HTMLElement {
 	return h("a", { href: `/item/${id}`, class: `ilink ${qualityClass(n?.quality ?? null)}` }, n?.name ?? `Item ${id}`);
 }
 
+// Where a price comes from; a lowest listing also says what it holds ("AH lowest, 3 units in 1 listing").
 function priceNote(p: Priced | null, product = false): string {
 	if (!p) return "no price";
 	if (p.basis === "vendor") return product ? "a vendor pays" : "vendor";
-	return product ? `${basisText(p.basis)}, after the 5% cut` : basisText(p.basis, true);
+	const depth = depthText(p);
+	const base = product ? `${basisText(p.basis)}, after the 5% cut` : basisText(p.basis, true);
+	return depth ? `${base}, ${depth}` : base;
 }
 
 function qtyText(n: number): string {
@@ -73,7 +87,16 @@ function line(label: string, value: Node | string, note: string | null = null): 
 function sums(c: Craft, extra: HTMLElement[]): HTMLElement {
 	const s = c.spell;
 	const rows: (HTMLElement | null)[] = [line("Reagents", moneyEl(c.cost, "unknown"))];
-	if (s.output) {
+	if (s.output && c.noAhProduct) {
+		// No Horde AH price: no value and no profit; a vendor price only says how bad it can get.
+		let floor: string | null = null;
+		if (c.vendorFloor !== null) {
+			floor = `a vendor pays ${skinMoney(c.vendorFloor).short}${s.qty !== 1 ? " each" : ""}`;
+			if (c.worst !== null) floor += c.worst < 0 ? `: at worst a loss of ${skinMoney(-c.worst).short}` : `: at least ${skinMoney(c.worst).short} profit`;
+		}
+		rows.push(line("Product", h("span", { class: "hint" }, "no AH price"), floor ?? "vendors don't buy it"));
+		rows.push(line("Profit per craft", h("span", { class: "hint" }, "unknown")));
+	} else if (s.output) {
 		rows.push(
 			line(
 				s.qty !== 1 ? `Product, ${qtyText(s.qty)} × ${c.value ? skinMoney(c.value.unit).short : "?"}` : "Product",
@@ -81,16 +104,25 @@ function sums(c: Craft, extra: HTMLElement[]): HTMLElement {
 				priceNote(c.value, true),
 			),
 		);
-		rows.push(line("Profit per craft", c.profit === null ? h("span", { class: "hint" }, "unknown") : profitEl(c.profit)));
+		const profit = c.profit === null ? h("span", { class: "hint" }, "unknown") : h("span", {}, profitEl(c.profit), c.thin ? " " : null, c.thin ? thinTag(c.value) : null);
+		rows.push(line("Profit per craft", profit));
 	}
 	return h("div", { class: "bd-sums" }, rows, extra);
 }
 
 function missingNote(c: Craft, names: CraftNames): HTMLElement | null {
-	if (!c.missing.length) return null;
-	const list: (Node | string)[] = [];
-	c.missing.forEach((id, i) => list.push(i ? ", " : "", itemLink(id, names)));
-	return h("p", { class: "hint bd-note" }, "No price yet for ", ...list, ", so the profit is unknown.");
+	const reagents = c.missing.filter((id) => !(c.noAhProduct && id === c.spell.output));
+	const notes: (Node | string)[] = [];
+	if (reagents.length) {
+		notes.push("No price yet for ");
+		reagents.forEach((id, i) => notes.push(i ? ", " : "", itemLink(id, names)));
+		notes.push(", so the profit is unknown.");
+	}
+	if (c.noAhProduct && c.spell.output) {
+		notes.push(reagents.length ? " " : "", itemLink(c.spell.output, names), " has no Horde AH price, so the profit is unknown; a vendor price alone is not counted.");
+	}
+	if (c.thin) notes.push(`Thin market: the product's price is its lowest listing (${depthText(c.value) ?? "few units"}), with no typical price yet.`);
+	return notes.length ? h("p", { class: "hint bd-note" }, ...notes) : null;
 }
 
 // A recipe item's breakdown: what it teaches, the reagents, the sums, the recipe's price and its pay back.

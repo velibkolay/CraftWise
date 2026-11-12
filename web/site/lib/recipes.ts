@@ -94,6 +94,8 @@ export interface Quote {
 	typical: number | null; // the 7-day typical price, when there is one
 	lowest: number | null; // the lowest listing, while listed
 	sellPrice: number | null; // what a vendor pays (0 = vendors don't buy it, null = not known)
+	units?: number | null; // units listed now (with `lowest`)
+	listings?: number | null; // listings now, when the scan counted them
 }
 
 export function quoteOf(item: BrowseItem): Quote {
@@ -101,6 +103,8 @@ export function quoteOf(item: BrowseItem): Quote {
 		typical: item.typical.status === "ok" ? item.typical.price : null,
 		lowest: item.current && item.current.listed ? item.current.min : null,
 		sellPrice: item.sellPrice,
+		units: item.current && item.current.listed ? item.current.qty : null,
+		listings: item.current && item.current.listed ? item.current.listings : null,
 	};
 }
 
@@ -109,14 +113,27 @@ export type Basis = "typical" | "lowest" | "vendor";
 export interface Priced {
 	unit: number; // copper per unit
 	basis: Basis;
+	// With basis "lowest": what the listing behind the price holds now (null = not known).
+	units?: number | null;
+	listings?: number | null;
 }
 
 // What one unit costs on the auction house: the typical price, else the lowest listing.
 export function ahPrice(q: Quote | undefined): Priced | null {
 	if (!q) return null;
 	if (q.typical !== null) return { unit: q.typical, basis: "typical" };
-	if (q.lowest !== null) return { unit: q.lowest, basis: "lowest" };
+	if (q.lowest !== null) return { unit: q.lowest, basis: "lowest", units: q.units ?? null, listings: q.listings ?? null };
 	return null;
+}
+
+// A thin market (#143 review): a price from the lowest listing (no typical price yet) that rests on one or two
+// listings or fewer than 5 units. Only a marker; the maths stays the same.
+export const THIN_LISTINGS = 2;
+export const THIN_UNITS = 5;
+
+export function isThin(p: Priced | null): boolean {
+	if (!p || p.basis !== "lowest") return false;
+	return (p.listings != null && p.listings <= THIN_LISTINGS) || (p.units != null && p.units < THIN_UNITS);
 }
 
 // A reagent: the cheaper of the auction house and a vendor (Vendor.lua's buy price).
@@ -127,15 +144,23 @@ export function reagentPrice(q: Quote | undefined, vendorBuy: number | undefined
 	return ah ?? vendor;
 }
 
-// The product: one unit on the auction house after the 5% cut, or what a vendor pays when that is more (the site's
-// sell price, else the bundled one). As format.ts sellChoice and the addon's ns.GetSellValue.
+// What a vendor pays for one unit of the product: the site's sell price, else the bundled one; null when vendors
+// don't buy it or it isn't known.
+export function vendorSell(q: Quote | undefined, bundledSell: number | undefined): number | null {
+	const v = q?.sellPrice ?? bundledSell ?? null;
+	return v !== null && v > 0 ? v : null;
+}
+
+// The product: one unit on the auction house after the 5% cut, or what a vendor pays when that is more (as
+// format.ts sellChoice and the addon's ns.GetSellValue). Without a Horde AH price there is no value (#143 review):
+// a vendor price alone would show a loss for every item that just isn't listed; craft() keeps it as a floor.
 export function productValue(q: Quote | undefined, bundledSell: number | undefined): Priced | null {
 	const ah = ahPrice(q);
-	const net = ah ? Math.floor(ah.unit * (1 - AH_CUT)) : null;
-	const vendor = q?.sellPrice ?? bundledSell ?? null;
-	if (vendor !== null && vendor > 0 && (net === null || vendor > net)) return { unit: vendor, basis: "vendor" };
-	if (net !== null && ah) return { unit: net, basis: ah.basis };
-	return null;
+	if (!ah) return null;
+	const net = Math.floor(ah.unit * (1 - AH_CUT));
+	const vendor = vendorSell(q, bundledSell);
+	if (vendor !== null && vendor > net) return { unit: vendor, basis: "vendor" };
+	return { ...ah, unit: net };
 }
 
 // ---- One craft ---------------------------------------------------------------------------------
@@ -155,6 +180,10 @@ export interface Craft {
 	revenue: number | null; // value x output quantity, rounded down
 	profit: number | null; // revenue - cost; null when either is unknown or the spell makes no item
 	missing: number[]; // items without any price (reagents, then the product)
+	noAhProduct: boolean; // the product has no Horde AH price (its profit is unknown even with a vendor price)
+	vendorFloor: number | null; // then: what a vendor pays for one unit, when vendors buy it
+	worst: number | null; // then: vendor floor x output quantity - reagent cost (the profit at worst)
+	thin: boolean; // the product's price rests on a thin market (isThin)
 }
 
 export function craft(data: RecipeData, spell: Spell, quotes: Map<number, Quote>): Craft {
@@ -173,13 +202,22 @@ export function craft(data: RecipeData, spell: Spell, quotes: Map<number, Quote>
 	});
 	let value: Priced | null = null;
 	let revenue: number | null = null;
+	let noAhProduct = false;
+	let vendorFloor: number | null = null;
+	let worst: number | null = null;
 	if (spell.output) {
-		value = productValue(quotes.get(spell.output), data.sell[String(spell.output)]);
+		const q = quotes.get(spell.output);
+		value = productValue(q, data.sell[String(spell.output)]);
 		if (value) revenue = Math.floor(value.unit * spell.qty);
-		else missing.push(spell.output);
+		else {
+			missing.push(spell.output);
+			noAhProduct = true;
+			vendorFloor = vendorSell(q, data.sell[String(spell.output)]);
+			if (vendorFloor !== null && cost !== null) worst = Math.floor(vendorFloor * spell.qty) - cost;
+		}
 	}
 	const profit = cost !== null && revenue !== null ? revenue - cost : null;
-	return { spell, reagents, cost, value, revenue, profit, missing };
+	return { spell, reagents, cost, value, revenue, profit, missing, noAhProduct, vendorFloor, worst, thin: isThin(value) };
 }
 
 // How many crafts earn back the recipe's price; only when a craft makes a profit and the recipe has a price.
@@ -195,7 +233,7 @@ export interface RecipeRow {
 	craft: Craft | null;
 	recipePrice: Priced | null; // what the recipe costs on the auction house
 	payback: number | null;
-	status: "ok" | "not_in_data" | "no_reagents" | "no_item" | "no_price";
+	status: "ok" | "not_in_data" | "no_reagents" | "no_item" | "no_price" | "no_ah_price";
 }
 
 export function recipeRow(data: RecipeData, recipeItem: number, recipeQuote: Quote | undefined, quotes: Map<number, Quote>): RecipeRow {
@@ -204,7 +242,8 @@ export function recipeRow(data: RecipeData, recipeItem: number, recipeQuote: Quo
 	if (!teach) return { teach, craft: null, recipePrice, payback: null, status: "not_in_data" };
 	if (!teach.spell) return { teach, craft: null, recipePrice, payback: null, status: "no_reagents" };
 	const c = craft(data, teach.spell, quotes);
-	const status = !teach.spell.output ? "no_item" : c.profit === null ? "no_price" : "ok";
+	const reagentMissing = c.missing.some((id) => id !== teach.spell!.output);
+	const status = !teach.spell.output ? "no_item" : c.profit !== null ? "ok" : !reagentMissing && c.noAhProduct ? "no_ah_price" : "no_price";
 	return { teach, craft: c, recipePrice, payback: paysBack(recipePrice?.unit ?? null, c.profit), status };
 }
 
@@ -212,4 +251,12 @@ export function recipeRow(data: RecipeData, recipeItem: number, recipeQuote: Quo
 export function basisText(b: Basis, short = false): string {
 	if (short) return b === "typical" ? "AH market" : b === "lowest" ? "AH lowest" : "vendor";
 	return b === "typical" ? "AH market price" : b === "lowest" ? "AH lowest now" : "vendor";
+}
+
+// What a lowest-listing price rests on: "3 units in 1 listing", "40 units"; null for other prices.
+export function depthText(p: Priced | null): string | null {
+	if (!p || p.basis !== "lowest" || (p.units == null && p.listings == null)) return null;
+	const units = p.units != null ? `${p.units.toLocaleString("en-US")} ${p.units === 1 ? "unit" : "units"}` : null;
+	const listings = p.listings != null ? `${p.listings.toLocaleString("en-US")} ${p.listings === 1 ? "listing" : "listings"}` : null;
+	return units && listings ? `${units} in ${listings}` : (units ?? listings);
 }
