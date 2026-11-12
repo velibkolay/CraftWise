@@ -256,7 +256,7 @@ Farm tracker (#126, `/craftwise farm`): the session open now and the latest fini
 | `current` | The open session (fields below), valued at snapshot time, without `stop`, plus `running` (`true` while it counts time; a session running at logout is `true` and goes on at the next login) and `paused` (`"manual"` = Pause, `"idle"` = paused itself after the idle time without loot; missing while running). |
 | `sessions` | Finished sessions, newest first, at most 10, each valued as it was when it ended. |
 | `saved`, `more`, `historyMax` | Finished sessions kept in `CraftWiseDB.farmLog[<character key>].history` (at most `historyMax` = 50), and how many of those are not in `sessions`. |
-| `names` | `{ [itemID] = name }` for the items in `top` (the client's name at the time; missing when it hadn't loaded the item). |
+| `names` | `{ [itemID] = name }` for the items in `top` and `fish.best` (the client's name at the time; missing when it hadn't loaded the item). |
 
 Per session:
 
@@ -272,6 +272,22 @@ Per session:
 | `unknown` | Units looted with no AH or vendor price: counted, never valued. |
 | `zones`, `zonesMore` | Per zone, most time first, at most 3: `{ zone, seconds, coin, items }`; `zonesMore` = zones left out. Missing when the session was in one zone (then the session's own fields are that zone's). |
 | `top` | Up to 3 items with the highest value: `{ id, n (units), value (copper, whole stack), source ("auction" or "vendor") }`. |
+| `fish` | Fishing in the session (#130, table below); missing when the session had no catch. |
+| `logLines`, `logDropped` | Lines in the session's loot log (#130; at most 500 kept, `logDropped` = older lines dropped, missing when none). Missing when nothing was logged (sessions before #130). |
+| `log`, `logZones` | Open session only: its newest 20 loot log lines, oldest first, packed `"<seconds since start>,<itemID>,<count>,<zone>[,f]"` for an item or `"<seconds since start>,c,<copper>,<zone>[,f]"` for coin; `<zone>` = 1-based index into `logZones`, `f` = from a fishing catch. Time of the drop = `start` + seconds. The full log stays in `CraftWiseDB.farmLog` (finished sessions: the newest 10 keep it). |
+
+`fish` (#130): catches come from the fishing log's own catch record (`Fishing.lua`, the client's `IsFishingLoot`), one per loot window.
+
+| Field | Meaning |
+|---|---|
+| `catches` | Catches in the session (not while paused). |
+| `coin` | Coin from catch windows that had a coin slot (the coin loot following within 5 s), and from caught containers opened. |
+| `items` | The catches' items as the loot window held them, valued like `items` above. A container caught in this session and opened is replaced by its contents (so nothing counts twice); containers caught earlier are left out. |
+| `unknown` | Caught units with no price: counted, not in `items`. |
+| `opened` | Containers caught in this session and opened. |
+| `seconds`, `timed` | Fishing time: session time between two catches at most 120 s apart, and the number of catches that time was measured for. Catches per hour = `timed` × 3600 / `seconds`; gold per hour = (`coin` + `items`) / `catches` × `timed` × 3600 / `seconds`; value per catch = (`coin` + `items`) / `catches`. Not stored. |
+| `best` | Caught item with the highest value per unit: `{ id, value (copper per unit) }`; its name is in `names`. |
+| `zones`, `zonesMore` | Per zone, most catches first, at most 3: `{ zone, catches, timed, seconds, coin, items, unknown, opened }`. Missing when all catches were in one zone (the session's `zone` is not necessarily that zone then: the farm zone with the most time). |
 
 ## Market data (`CraftWiseMarketDB`, #26, #90)
 Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/reload` or quit, like the snapshot. Money is copper, times are Unix seconds.
@@ -293,4 +309,4 @@ Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/rel
 ## Size
 `CraftWiseMarketDB.itemInfo` for 10,000 items is about 0.34 MB (measured headless, `tests/item_info_spec.lua`); it is per item, not per house. With the names map and one full scan of 10,000 items at one house, the market data is about 1.4 MB.
 
-A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each, a Favor merchant with 82 items, every recipe of Leatherworking, Blacksmithing, Cooking and First Aid known, 20 recently learned recipes and a full farm history of 50 sessions in three zones each) is about 125 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 160 KB, 128 KB before #126). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, `professions` with `recipesLearned` about 14 KB, `farm` about 14 KB (current session and 10 finished ones), quests, reputations, holdings and flight paths roughly 12-13 KB each.
+A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each, a Favor merchant with 82 items, every recipe of Leatherworking, Blacksmithing, Cooking and First Aid known, 20 recently learned recipes and a full farm history of 50 sessions in three zones each, with fishing in three zones and full loot logs) is about 141 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 160 KB, 128 KB before #126). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, `farm` about 27 KB (current session and 10 finished ones; about 1.1 KB per session is the fishing block, 0.8 KB the open session's log lines), `professions` with `recipesLearned` about 14 KB, quests, reputations, holdings and flight paths roughly 12-13 KB each.

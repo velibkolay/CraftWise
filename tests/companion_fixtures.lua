@@ -497,6 +497,13 @@ function G.SavedVariables(loadAddon)
 	ns.Farm.OnFeed("item", { itemID = FISH, count = 3, link = Link(FISH) })
 	stub.clock = stub.clock + 30
 	ns.Farm.OnFeed("money", { copper = 12 })
+	-- #130: two catches 20 s apart, the second with coin (still over the idle time before the logout).
+	ns.Farm.OnFishing("catch", { catch = { items = { [FISH] = 1 } } })
+	ns.Farm.OnFeed("item", { itemID = FISH, count = 1, link = Link(FISH) })
+	stub.clock = stub.clock + 20
+	ns.Farm.OnFishing("catch", { catch = { items = { [OIL] = 1 } }, coin = true })
+	ns.Farm.OnFeed("item", { itemID = OIL, count = 1, link = Link(OIL) })
+	ns.Farm.OnFeed("money", { copper = 25 })
 	stub.clock = clock
 
 	SnapshotClient(stub)

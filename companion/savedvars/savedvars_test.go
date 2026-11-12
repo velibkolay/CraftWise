@@ -250,8 +250,19 @@ func TestSnapshot(t *testing.T) {
 		h.Top[0].ID != 9001 || h.Top[0].Source != "auction" || i64(h.Stop) != i64(h.Start)+240 {
 		t.Fatalf("farm session %+v", h)
 	}
-	if c := fm.Current; c == nil || c.Stop != nil || *c.Running || c.Paused != "idle" || i64(c.Coin) != 12 || c.Zones != nil {
+	if c := fm.Current; c == nil || c.Stop != nil || *c.Running || c.Paused != "idle" || i64(c.Coin) != 37 || c.Zones != nil {
 		t.Fatalf("farm current %+v", c)
+	}
+	c := fm.Current
+	if f := c.Fish; f == nil || i64(f.Catches) != 2 || i64(f.Timed) != 1 || i64(f.Seconds) != 20 || i64(f.Coin) != 25 ||
+		f.Best == nil || f.Zones != nil {
+		t.Fatalf("farm fishing %+v", c.Fish)
+	}
+	if i64(c.LogLines) != 5 || len(c.Log) != 5 || len(c.LogZones) != 1 || c.Log[4] != "50,c,25,1,f" || c.Log[0] != "0,9007,3,1" {
+		t.Fatalf("farm log %v %v %+v", c.Log, c.LogZones, c.LogLines)
+	}
+	if h := fm.Sessions[0]; i64(h.LogLines) != 3 || h.Log != nil || h.Fish != nil {
+		t.Fatalf("farm session log %+v", h)
 	}
 }
 

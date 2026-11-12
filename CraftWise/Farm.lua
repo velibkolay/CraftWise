@@ -27,6 +27,12 @@
 --     twice; containers caught before the session are left out). Fishing time: the session time between two
 --     catches when they are at most FISH_GAP apart (casts in a row); rates use only the catches that time
 --     was measured for (`timed`). Valued like the rest of the window, unknown values apart.
+--   * Loot log (#130): one line per counted drop, in order: item and count or coin, zone, from a catch or
+--     not, time. Packed strings in session.log (oldest first, at most LOG_MAX; older lines are dropped and
+--     counted in logDropped): "<seconds since start>,<itemID>,<count>,<zone>[,f]" or
+--     "<seconds since start>,c,<copper>,<zone>[,f]", zone = index into session.logZones, f = from a catch.
+--     Valued when shown, like the list. Kept with the session in the history for the newest HISTORY_LOGS
+--     finished sessions; older ones keep only logLines (a full log is about 20 KB in the SavedVariables).
 --   * Storage: CraftWiseDB.farm = settings (Core.lua defaults); CraftWiseDB.farmLog[ns.CharKey()] =
 --     { current = session, history = finished sessions, newest first, at most HISTORY_MAX }.
 local _, ns = ...
@@ -44,6 +50,9 @@ F.MIN_SCALE, F.MAX_SCALE = 0.5, 2
 F.MAX_IDLE = 120
 F.UNKNOWN_ZONE = "unknown zone"
 F.FISH_GAP = 120 -- seconds: two catches at most this far apart (session time) are casts in a row
+F.LOG_MAX = 500 -- loot log lines kept per session (newest)
+F.HISTORY_LOGS = 10 -- finished sessions that keep their loot log (older ones keep the line count only)
+F.SNAPSHOT_LOG = 20 -- loot log lines of the open session in the snapshot (newest)
 F.FISH_COIN_SECONDS = 5 -- a catch window with coin: the coin loot that follows within this time is fishing coin
 
 local function Settings()
@@ -232,6 +241,15 @@ function F.Remove(s, itemID)
 	end
 	s.links[itemID] = nil
 	s.ignored[itemID] = true
+	if s.log then
+		local kept = {}
+		for _, line in ipairs(s.log) do
+			if F.UnpackLog(line).itemID ~= itemID then
+				kept[#kept + 1] = line
+			end
+		end
+		s.log = kept
+	end
 end
 
 -- { [itemID] = units } over all zones.
@@ -247,6 +265,69 @@ end
 
 function F.HasLoot(s)
 	return s ~= nil and ((s.coin or 0) > 0 or next(F.Counts(s)) ~= nil)
+end
+
+-- Loot log (#130): appends one drop. kind "item" (a = itemID, b = count) or "coin" (a = copper).
+function F.LogDrop(s, now, kind, a, b, fishing)
+	s.log, s.logZones = s.log or {}, s.logZones or {}
+	local zone = s.zone or F.UNKNOWN_ZONE
+	local zi
+	for i, name in ipairs(s.logZones) do
+		if name == zone then
+			zi = i
+			break
+		end
+	end
+	if not zi then
+		s.logZones[#s.logZones + 1] = zone
+		zi = #s.logZones
+	end
+	local dt = math.max(0, now - (s.start or now))
+	local line
+	if kind == "coin" then
+		line = ("%d,c,%d,%d"):format(dt, a, zi)
+	else
+		line = ("%d,%d,%d,%d"):format(dt, a, b or 1, zi)
+	end
+	s.log[#s.log + 1] = fishing and (line .. ",f") or line
+	while #s.log > F.LOG_MAX do
+		table.remove(s.log, 1)
+		s.logDropped = (s.logDropped or 0) + 1
+	end
+end
+
+-- One packed log line: { dt, itemID, n } or { dt, copper }, plus zi (zone index) and fish.
+function F.UnpackLog(line)
+	local dt, what, amount, zi, flag = line:match("^(%d+),(%w+),(%d+),(%d+),?(%a*)$")
+	local e = { dt = tonumber(dt), zi = tonumber(zi), fish = flag == "f" or nil }
+	if what == "c" then
+		e.copper = tonumber(amount)
+	else
+		e.itemID, e.n = tonumber(what), tonumber(amount)
+	end
+	return e
+end
+
+-- The log, newest first, valued now: { t (Unix time), itemID, n, link, copper, zone, fish, value, unit,
+-- source, stale, age, label, noAuction } (value nil = unknown; coin lines: copper = value).
+function F.LogEntries(s)
+	local out, values = {}, {}
+	local log, zones = s.log or {}, s.logZones or {}
+	for i = #log, 1, -1 do
+		local e = F.UnpackLog(log[i])
+		e.t, e.zone = (s.start or 0) + (e.dt or 0), zones[e.zi] or F.UNKNOWN_ZONE
+		if e.itemID then
+			values[e.itemID] = values[e.itemID] or F.UnitValue(e.itemID)
+			local v = values[e.itemID]
+			e.link, e.unit, e.source, e.stale, e.age, e.label, e.noAuction = s.links and s.links[e.itemID], v.best,
+				v.source, v.stale, v.age, v.label, v.noAuction
+			e.value = v.best and math.floor(v.best * e.n + 0.5) or nil
+		else
+			e.value = e.copper
+		end
+		out[#out + 1] = e
+	end
+	return out
 end
 
 -- Fishing of one zone, created on first use: { catches, timed, seconds, coin, items = { [itemID] = units }, opened }.
@@ -506,7 +587,8 @@ end
 -- { start, stop, seconds, zone, coin, items, vendor, ah, stale, unknown, gph, coinGph,
 --   zones = { { zone, seconds, coin, items, gph } } (MAX_ZONES), zonesMore, top = { { id, name, n, value, source } },
 --   fish = { catches, timed, seconds, coin, items, unknown, opened, perCatch, cph, gph, best = { id, name, value },
---   zones = { { zone, catches, timed, seconds, coin, items, unknown, opened } } (MAX_ZONES), zonesMore } (with catches) }
+--   zones = { { zone, catches, timed, seconds, coin, items, unknown, opened } } (MAX_ZONES), zonesMore } (with catches),
+--   log, logZones, logDropped, logLines (the loot log as the session had it, #130) }
 function F.Summary(s, now)
 	local t = F.Totals(s, now)
 	local sum = { start = s.start, stop = now, seconds = t.seconds, coin = t.coin, items = t.items, vendor = t.vendor,
@@ -526,6 +608,15 @@ function F.Summary(s, now)
 		local r = t.rows[i]
 		if r.value then
 			sum.top[#sum.top + 1] = { id = r.itemID, name = ItemName(r.itemID, r.link), n = r.n, value = r.value, source = r.source }
+		end
+	end
+	if s.log and #s.log > 0 then
+		sum.log, sum.logZones, sum.logDropped, sum.logLines = {}, {}, s.logDropped, #s.log
+		for i, line in ipairs(s.log) do
+			sum.log[i] = line
+		end
+		for i, z in ipairs(s.logZones or {}) do
+			sum.logZones[i] = z
 		end
 	end
 	local f = t.fish
@@ -608,6 +699,10 @@ function F.Reset(now)
 		while #log.history > F.HISTORY_MAX do
 			table.remove(log.history)
 		end
+		local older = log.history[F.HISTORY_LOGS + 1]
+		if older and older.log then
+			older.logLines, older.log, older.logZones = older.logLines or #older.log, nil, nil
+		end
 	end
 	log.current = nil
 	Changed()
@@ -656,6 +751,7 @@ local function Accept(now, noStart)
 end
 
 local fishCoin -- { zone, at (GetTime) }: a catch or caught container window had coin; the next coin loot is fishing's
+local fishItems -- { items = { [itemID] = units }, at }: the last catch's items, to mark their loot lines in the log
 
 -- A loot from the feed.
 function F.OnFeed(kind, data)
@@ -668,14 +764,24 @@ function F.OnFeed(kind, data)
 		if not F.AddItem(s, data.itemID, data.count, data.link) then
 			return
 		end
+		-- An item of the catch just recorded: marked in the log.
+		local fish = false
+		if fishItems and GetTime() - fishItems.at <= F.FISH_COIN_SECONDS and (fishItems.items[data.itemID] or 0) > 0 then
+			fishItems.items[data.itemID] = fishItems.items[data.itemID] - (data.count or 1)
+			fish = true
+		end
+		F.LogDrop(s, now, "item", data.itemID, data.count or 1, fish)
 	elseif kind == "money" then
 		F.AddCoin(s, data.copper)
+		local fish = false
 		if fishCoin then
 			if GetTime() - fishCoin.at <= F.FISH_COIN_SECONDS then
 				F.AddFishCoin(s, fishCoin.zone, data.copper)
+				fish = true
 			end
 			fishCoin = nil
 		end
+		F.LogDrop(s, now, "coin", data.copper, nil, fish)
 	else
 		return
 	end
@@ -686,15 +792,21 @@ end
 -- Fishing.lua's catch record (#130): a catch, or one of this session's caught containers opened.
 function F.OnFishing(kind, data)
 	local now = F.Now()
-	fishCoin = nil
+	fishCoin, fishItems = nil, nil
 	local s, zone
 	if kind == "catch" then
 		s = Accept(now)
 		if not s then
 			return
 		end
-		F.AddCatch(s, data.catch and data.catch.items, now)
+		local items = data.catch and data.catch.items or {}
+		F.AddCatch(s, items, now)
 		zone = s.zone
+		local copy = {}
+		for id, n in pairs(items) do
+			copy[id] = n
+		end
+		fishItems = { items = copy, at = GetTime() }
 	elseif kind == "opened" then
 		s = Accept(now, true)
 		zone = s and F.OpenCatch(s, data.item, data.items)
@@ -777,6 +889,9 @@ local function Export(sum, names)
 			names[item.id] = item.name
 		end
 	end
+	if sum.log or sum.logLines then
+		out.logLines, out.logDropped = sum.logLines or #sum.log, sum.logDropped
+	end
 	local f = sum.fish
 	if f then
 		out.fish = { catches = f.catches, timed = f.timed, seconds = f.seconds, coin = f.coin, items = f.items,
@@ -815,6 +930,21 @@ function F.SnapshotSummary(now)
 		F.Update(s, now)
 		local cur = Export(F.Summary(s, now), names)
 		cur.stop = nil
+		-- The newest SNAPSHOT_LOG lines of the loot log, zone indexes renumbered into their own logZones.
+		local log = s.log or {}
+		if #log > 0 then
+			cur.log, cur.logZones = {}, {}
+			local renum = {}
+			for i = math.max(1, #log - F.SNAPSHOT_LOG + 1), #log do
+				local e = F.UnpackLog(log[i])
+				local zone = (s.logZones or {})[e.zi] or F.UNKNOWN_ZONE
+				if not renum[zone] then
+					cur.logZones[#cur.logZones + 1] = zone
+					renum[zone] = #cur.logZones
+				end
+				cur.log[#cur.log + 1] = (log[i]:gsub(",(%d+)(,?%a*)$", "," .. renum[zone] .. "%2"))
+			end
+		end
 		cur.running = (F.Running(s) or s.resumeOnLogin) and true or false
 		cur.paused = s.paused and "manual" or (s.autoPaused and "idle") or nil
 		out.current = cur
