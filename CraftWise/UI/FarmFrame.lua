@@ -1,61 +1,103 @@
--- Farm tracker window (#126): session stats on the left, the loot list on the right, in the CraftWise
--- style; below them a Fishing panel (#130) while the session has catches. The loot panel shows the list
--- (per item) or the log (one line per drop, newest first, #130); the view is kept in CraftWiseDB.farm.view. Movable by its title (unless locked), scalable, position kept in CraftWiseDB.farm.pos. The
--- numbers come from ns.Farm.Totals; this file only draws them. Refreshed once a second while shown and
--- whenever the session changes (FARM_CHANGED).
+-- Farm tracker (#126), in the Origami look (#150 "Farm tracker and mini mode", #158). One folded sheet
+-- 260 wide whose dog-ear carries the state (orange running, rule-strong paused, flap without a session):
+-- top line (Farm, state word, timer), gold per hour, the split bar (coin, items at AH, vendor only), the
+-- fishing card while the session has catches, the top 5 loot, links Log · History and the buttons of the
+-- state. The numbers come from ns.Farm (Farm.lua, unchanged); FF.Model turns them into plain data that the
+-- specs read and this file draws. Refreshed once a second while shown and on FARM_CHANGED.
+--
+-- Until Gather › Farm exists (#156), the links open today's views beside the tracker: Log the loot panel
+-- (per-item list with remove, or the loot log; the view is kept in CraftWiseDB.farm.view) and History the
+-- farm history (UI/FarmHistory.lua). FF.OpenLog, FF.OpenList and FF.OpenHistory are the only places to
+-- point at the new page.
+--
+-- Hooks for the follow-ups: mini mode (#164) can draw from FF.Model and FF.ApplyFlap and hide frame.full;
+-- the fade (#163) owns frame's OnEnter/OnLeave (unused here); background alpha (#162) is
+-- frame.cwSheet:SetAlpha.
 local _, ns = ...
 local Style, L = ns.Style, ns.L
-local C = Style.colors
+local C = Style.C
 local Farm = ns.Farm
 
 local FF = {}
 ns.FarmFrame = FF
 
-FF.STATS_WIDTH = 236
-FF.LIST_WIDTH = 330
-FF.HEIGHT = 300
+FF.WIDTH = 260
+FF.CUT = 22
+FF.PAD = 16
+FF.INNER = FF.WIDTH - 2 * FF.PAD
+FF.TOP_LOOT = 5
+FF.LOOT_ROW = 24
+FF.SPLIT_HEIGHT = 6
+FF.SPLIT_GAP = 2
+FF.BUTTON_HEIGHT = 28
+FF.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = -300, y = 150 }
+-- The loot panel (Log link) until #156.
+FF.PANEL_WIDTH = 330
+FF.PANEL_HEIGHT = 300
 FF.ROW_HEIGHT = 18
 FF.VISIBLE_ROWS = 13
-FF.ZONE_LINES = 3
-FF.FISH_HEIGHT = 136
-FF.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = -300, y = 150 }
-
-local frame
-local offset = 0
-local last -- totals of the last refresh
-local logOffset = 0
-local logEntries -- log of the last refresh, newest first
 
 FF.FISH_MARK = "|TInterface\\Icons\\Trade_Fishing:12:12|t"
 FF.COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
+local QUESTION_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
--- "list" or "log".
-function FF.View()
-	local st = ns.db and ns.db.farm
-	return st and st.view == "log" and "log" or "list"
-end
-
-function FF.SetView(view)
-	local st = ns.db and ns.db.farm
-	if st then
-		st.view = view == "log" and "log" or "list"
-	end
-	FF.Refresh()
-end
+local frame
+local panel -- the loot panel
+local last -- model of the last refresh
+local offset, logOffset = 0, 0
+local logEntries -- loot panel log of the last refresh, newest first
 
 local function Settings()
 	return ns.db and ns.db.farm
 end
 
-local function Muted(text)
-	return C.muted .. text .. "|r"
+----------------------------------------------------------------------------------------------------
+-- Text
+----------------------------------------------------------------------------------------------------
+
+local function Paint(text, color)
+	return Style.Hex(color) .. text .. "|r"
 end
 
-local function Money(copper)
-	return copper and ns.FormatMoney(copper) or Muted("-")
+-- Money in coin colours, at most two units (ns.FormatCoins, Money.lua); nil is "—" in text3 (no figure,
+-- never a guess).
+function FF.Coins(copper)
+	if copper == nil then
+		return Paint("—", "text3")
+	end
+	return ns.FormatCoins(copper)
 end
 
--- Item text: name in its link's quality colour, brackets dropped.
+-- The same without colours, for the inverse tooltip (dark text on a light sheet).
+function FF.PlainCoins(copper)
+	if copper == nil then
+		return "—"
+	end
+	return (ns.FormatCoins(copper):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+end
+
+-- "0:41:05" (board "Farm tracker states").
+function FF.Timer(seconds)
+	seconds = math.max(0, math.floor(seconds or 0))
+	return ("%d:%02d:%02d"):format(math.floor(seconds / 3600), math.floor(seconds % 3600 / 60), seconds % 60)
+end
+
+-- Item name without colour or brackets; "item <id>" only when nothing is known.
+function FF.ItemName(row)
+	local name = ns.ItemInfoNow and ns.ItemInfoNow(row.itemID)
+	if not name and type(row.link) == "string" then
+		name = row.link:match("%[(.-)%]")
+	end
+	return name or ("item " .. tostring(row.itemID))
+end
+
+-- Colour of an item's quality (Style.QualityColor, spec: q-* constants); text when it has none or is unknown.
+function FF.ItemColor(itemID)
+	local quality = C_Item and C_Item.GetItemInfo and select(3, C_Item.GetItemInfo(itemID))
+	return Style.QualityColor(quality) or C.text
+end
+
+-- Item text for the loot panel and the history: name in its link's colour, brackets dropped.
 local function ItemText(row)
 	local link = row.link
 	if type(link) == "string" and link:find("|h[", 1, true) then
@@ -65,22 +107,141 @@ local function ItemText(row)
 end
 FF.ItemText = ItemText
 
--- Value cell of a list row: stack value and where it comes from; "?" when no price is known.
+-- Value cell: stack value and its source word; an AH value over a day old carries its age in red; no
+-- price says so (spec: States, Unknown price and Stale).
 function FF.ValueText(row)
 	if not row.value then
-		return C.warn .. "?|r"
+		return Paint(L["no price"], "text3")
 	end
-	local tag = row.source == "auction" and "AH" or "vendor"
+	local tag = Paint(row.source == "auction" and "AH" or L["vendor"], "text3")
 	if row.stale then
-		tag = C.warn .. tag .. "!|r"
-	else
-		tag = Muted(tag)
+		tag = tag .. " " .. Paint(("%d d"):format(row.age or 0), "danger")
 	end
-	return Money(row.value) .. " " .. tag
+	return FF.Coins(row.value) .. " " .. tag
+end
+
+-- One log line: like the list's value cell; coin lines are coin.
+function FF.LogValueText(e)
+	if e.copper then
+		return FF.Coins(e.copper)
+	end
+	return FF.ValueText(e)
+end
+
+-- The long-run catch rate (#136, ns.Fishing.CatchRate) for the fishing card's last line: "your usual rate
+-- 144/h", or how many timed catches there are of the ones it needs.
+function FF.RateText(r)
+	if not r then
+		return nil
+	end
+	if not r.enough then
+		return (L["your usual rate: %d of %d timed catches"]):format(r.timed or 0, r.min or 0)
+	end
+	return (L["your usual rate %d/h"]):format(math.floor(r.perHour + 0.5))
+end
+
+-- The same rate per water type, for the card's tooltip.
+local RATE_WATERS = { { "open", "Open water" }, { "pool", "Pools" }, { "?", "Water not known yet" } }
+function FF.RateLines(r)
+	local lines = {}
+	if not r then
+		return lines
+	end
+	local function line(label, x)
+		local rate = x.perHour and x.enough and ("%d/h"):format(math.floor(x.perHour + 0.5)) or L["too few"]
+		lines[#lines + 1] = ("%s: %s (%d %s, %d min)"):format(label, rate, x.timed, L["timed"], math.floor(x.seconds / 60 + 0.5))
+	end
+	line(L["All water"], r)
+	for _, w in ipairs(RATE_WATERS) do
+		if r.waters[w[1]] then
+			line(L[w[2]], r.waters[w[1]])
+		end
+	end
+	return lines
 end
 
 ----------------------------------------------------------------------------------------------------
--- Position, lock, scale
+-- Model: what the tracker shows, as plain data
+----------------------------------------------------------------------------------------------------
+
+-- The tracker for session s (nil = none) at `now`:
+-- { state = "none"|"running"|"paused"|"idle", flap, word, wordColor, timer, timerColor, hero (copper|nil),
+--   caption, title, hint (no session), split = { coin, ah, vendor }, fish, loot (top rows), more, unpriced,
+--   buttons = { names }, totals }
+function FF.Model(s, now)
+	if not s then
+		return { state = "none", flap = "flap", word = L["no session"], wordColor = "text3", title = L["Press Start, then loot."],
+			hint = Farm.AutoStart() and L["Or just loot: \"Start on first loot\" is on in Settings."] or nil,
+			buttons = { "start", "history" }, loot = {}, more = 0, unpriced = 0 }
+	end
+	local t = Farm.Totals(s, now)
+	local m = { totals = t, timer = FF.Timer(t.seconds), hero = t.gph, fish = t.fish }
+	if Farm.Running(s) then
+		m.state, m.flap, m.word, m.wordColor, m.timerColor = "running", "live", L["running"], "live", "text"
+		m.buttons = { "pause", "endAction" }
+	else
+		m.state = s.autoPaused and "idle" or "paused"
+		m.flap, m.wordColor, m.timerColor = "ruleStrong", "text2", "text2"
+		m.word = s.autoPaused and (L["paused · idle %d min"]):format(Farm.IdleMinutes()) or L["paused"]
+		m.buttons = { "resume", "endLine" }
+	end
+	local zone = s.zone or (t.zones[1] and t.zones[1].zone)
+	if m.state == "idle" then
+		m.caption = L["per hour · resumes with your next loot"]
+	else
+		m.caption = L["per hour"] .. " · " .. L["total"] .. " " .. FF.Coins(t.total) .. (zone and (" · " .. zone) or "")
+	end
+	m.split = { coin = t.coin, ah = t.ah, vendor = t.items - t.ah, stale = t.stale }
+	m.loot = {}
+	for i = 1, math.min(FF.TOP_LOOT, #t.rows) do
+		m.loot[i] = t.rows[i]
+	end
+	m.more = math.max(0, #t.rows - FF.TOP_LOOT)
+	m.unpriced = t.unknownItems
+	return m
+end
+
+-- "+ 9 more · 2 unpriced"; "" when there is neither.
+function FF.FooterText(m)
+	local parts = {}
+	if m.more > 0 then
+		parts[#parts + 1] = ("+ %d %s"):format(m.more, L["more"])
+	end
+	if m.unpriced > 0 then
+		parts[#parts + 1] = ("%d %s"):format(m.unpriced, L["unpriced"])
+	end
+	return table.concat(parts, " · ")
+end
+
+-- The split bar: three parts with 2 unit gaps over `width`, each as wide as its share; parts without
+-- value take no room and no gap. Returns { { x, w } } in the order given (w = 0: not drawn).
+function FF.SplitGeometry(values, width, gap)
+	gap = gap or FF.SPLIT_GAP
+	local total, n = 0, 0
+	for _, v in ipairs(values) do
+		if v > 0 then
+			total, n = total + v, n + 1
+		end
+	end
+	local out = {}
+	local free = width - gap * math.max(n - 1, 0)
+	local x, placed = 0, 0
+	for i, v in ipairs(values) do
+		if v > 0 and total > 0 then
+			placed = placed + 1
+			local w = placed == n and (width - x) or math.floor(free * v / total + 0.5)
+			w = math.max(1, w)
+			out[i] = { x = x, w = w }
+			x = x + w + gap
+		else
+			out[i] = { x = x, w = 0 }
+		end
+	end
+	return out
+end
+
+----------------------------------------------------------------------------------------------------
+-- Position, lock, scale, side panels
 ----------------------------------------------------------------------------------------------------
 
 local function SavePosition()
@@ -101,13 +262,32 @@ local function Place()
 	frame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
 end
 
+local function StartDrag()
+	if frame and not frame.locked then
+		frame:StartMoving()
+	end
+end
+
+local function StopDrag()
+	if frame then
+		frame:StopMovingOrSizing()
+		SavePosition()
+	end
+end
+
+-- Child frames that take the mouse (hover cells, rows) pass a drag on to the tracker.
+local function ForwardDrag(f)
+	f:RegisterForDrag("LeftButton")
+	f:SetScript("OnDragStart", StartDrag)
+	f:SetScript("OnDragStop", StopDrag)
+end
+
 function FF.ApplyLock()
 	if not frame then
 		return
 	end
 	local s = Settings()
 	frame.locked = s and s.locked or false
-	frame.lockText:SetText(frame.locked and Muted("locked") or "")
 end
 
 function FF.ApplyScale()
@@ -117,207 +297,233 @@ function FF.ApplyScale()
 	local s = Settings()
 	local scale = s and tonumber(s.scale) or 1
 	frame:SetScale(math.max(Farm.MIN_SCALE, math.min(Farm.MAX_SCALE, scale)))
+	Style.SnapRules()
+end
+
+-- A panel next to the tracker (the loot panel, the history): right of it, or left when the screen ends.
+function FF.PlaceBeside(region, width)
+	region:ClearAllPoints()
+	local left = false
+	local right, scale = frame:GetRight(), frame:GetEffectiveScale()
+	local screen, screenScale = UIParent:GetRight(), UIParent:GetEffectiveScale()
+	if type(right) == "number" and type(scale) == "number" and type(screen) == "number" and type(screenScale) == "number" then
+		left = (right + 8 + width) * scale > screen * screenScale
+	end
+	if left then
+		region:SetPoint("TOPRIGHT", frame, "TOPLEFT", -8, 0)
+	else
+		region:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, 0)
+	end
+	region.side = left and "left" or "right"
 end
 
 ----------------------------------------------------------------------------------------------------
--- Build
+-- Build: the tracker
 ----------------------------------------------------------------------------------------------------
 
-local STAT_KEYS = { "time", "coin", "items", "vendor", "ah", "gph", "coinGph", "priciest", "unknown" }
-local STAT_LABELS = { time = "Time", coin = "Coin", items = "Items", vendor = "Vendor only", ah = "AH part",
-	gph = "Gold / hour", coinGph = "Coin / hour", priciest = "Priciest", unknown = "Unpriced" }
-local STAT_HELP = {
-	time = "Time the session ran. Pauses, idle stretches and time logged out don't count.",
-	coin = "Coin looted (paired with the loot message; vendor sales, mail and quests don't count).",
-	items = "Items looted, each at its CraftWise sell value: AH at your profit house after the cut, or vendor, whichever pays more. Bind on pickup and quest items: vendor. Unpriced items are not in it.",
-	vendor = "The same items, all sold to a vendor.",
-	ah = "The part of Items that rests on AH prices; the part from AH prices over a day old is shown as stale.",
-	gph = "Coin + Items per hour of session time (from one minute on).",
-	coinGph = "Coin only, per hour.",
-	priciest = "The looted item with the highest value per unit.",
-	unknown = "Items with no AH or vendor price: counted, never valued.",
+-- An invisible cell over a region that shows the inverse tooltip; tip() returns title and lines.
+local function Hover(parent, tip)
+	local h = CreateFrame("Button", nil, parent)
+	ForwardDrag(h)
+	h:SetScript("OnEnter", function(self)
+		local title, lines = tip()
+		if title then
+			Style.ShowTip(self, title, unpack(lines or {}))
+		end
+	end)
+	h:SetScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	return h
+end
+
+local function Height(fs, fallback)
+	local h = fs.GetStringHeight and fs:GetStringHeight()
+	return type(h) == "number" and h > 0 and math.ceil(h) or fallback
+end
+
+local function BuildTop(full)
+	local title = Style.Text(full, "Section", "text")
+	title:SetFont(Style.FontFiles.nextExtraBold, 13, "")
+	title:SetPoint("TOPLEFT", frame, "TOPLEFT", FF.PAD, -14)
+	title:SetText(L["Farm"])
+	frame.title = title
+	frame.word = Style.Text(full, "Small", "text3")
+	Style.SmallBold(frame.word)
+	frame.word:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 8, 0)
+	frame.timer = Style.Text(full, "Figure", "text")
+	frame.timer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, -14)
+	frame.timer:SetJustifyH("RIGHT")
+end
+
+local HERO_TIP = {
+	"Coin + items per hour of session time (from one minute on). Items at their CraftWise sell value: AH at your profit house after the cut, or vendor, whichever pays more; bind on pickup and quest items at vendor. Unpriced items are not in it.",
 }
 
-local function StatLine(parent, i, key)
-	local y = -40 - (i - 1) * 17
-	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	label:SetPoint("TOPLEFT", 12, y)
-	label:SetText(L[STAT_LABELS[key]])
-	local value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	value:SetPoint("TOPRIGHT", -12, y)
-	value:SetJustifyH("RIGHT")
-	value:SetWidth(FF.STATS_WIDTH - 104)
-	value:SetWordWrap(false)
-	local hover = CreateFrame("Frame", nil, parent)
-	hover:SetPoint("TOPLEFT", 8, y + 2)
-	hover:SetSize(FF.STATS_WIDTH - 16, 16)
-	hover:EnableMouse(true)
-	hover:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:AddLine(L[STAT_LABELS[key]])
-		GameTooltip:AddLine(L[STAT_HELP[key]], 0.8, 0.8, 0.8, true)
-		local p = key == "priciest" and last and last.priciest
-		if p then
-			GameTooltip:AddDoubleLine(ItemText(p), Money(p.unit) .. " " .. L["each"], 1, 1, 1, 1, 1, 1)
-		end
-		if key == "ah" and last and last.stale > 0 then
-			GameTooltip:AddDoubleLine(L["From stale AH prices"], Money(last.stale), 1, 0.6, 0.3, 1, 1, 1)
-		end
-		GameTooltip:Show()
-	end)
-	hover:SetScript("OnLeave", function()
-		GameTooltip:Hide()
-	end)
-	return value
+local function HeroTip()
+	local m = last
+	if not (m and m.totals) then
+		return nil
+	end
+	local t = m.totals
+	local lines = { L[HERO_TIP[1]], L["Time"] .. ": " .. FF.Timer(t.seconds), L["Coin per hour"] .. ": " .. FF.PlainCoins(t.coinGph) }
+	local p = t.priciest
+	if p then
+		lines[#lines + 1] = ("%s: %s, %s %s"):format(L["Priciest"], FF.ItemName(p), FF.PlainCoins(p.unit), L["each"])
+	end
+	for i = 1, math.min(3, #t.zones) do
+		local z = t.zones[i]
+		lines[#lines + 1] = ("%s: %s · %s/h"):format(z.zone, FF.Timer(z.seconds), FF.PlainCoins(z.gph))
+	end
+	return L["Gold per hour"], lines
 end
 
-local FISH_KEYS = { "catches", "rate", "perCatch", "gph", "best", "opened" }
-local FISH_LABELS = { catches = "Catches", rate = "Your rate", perCatch = "Per catch", gph = "Gold / hour",
-	best = "Best catch", opened = "Containers" }
-local FISH_HELP = {
-	catches = "Fishing loot windows this session (the fishing log's catches), and catches per hour of fishing time: the time between two catches at most two minutes apart.",
-	perCatch = "Coin + items per catch, items at the same values as the loot list. Caught containers you opened count as their contents. Unpriced items are counted apart, not in it.",
-	rate = "Your long-run catch rate from the fishing log (#136): timed catches per hour over the last 90 days, overall and in open water and pools. Catches less than the fishing session gap apart are one session (Settings > Fishing); a session's first catch is untimed. Shown from as many timed catches as \"Own catches count from\" asks (Settings > Fishing).",
-	gph = "Fishing coin + items per hour of fishing time.",
-	best = "The caught item with the highest value per unit.",
-	opened = "Containers caught this session and opened: their contents count as fishing loot.",
+local function BuildHero(full)
+	local hero = CreateFrame("Frame", nil, full)
+	hero:SetHeight(56)
+	frame.hero = hero
+	hero.value = Style.Text(hero, "FigureXL", "text")
+	hero.value:SetPoint("TOPLEFT", hero, "TOPLEFT", FF.PAD, 0)
+	hero.caption = Style.Text(hero, "Caption", "text3")
+	hero.caption:SetPoint("TOPLEFT", hero, "TOPLEFT", FF.PAD, -42)
+	hero.caption:SetWidth(FF.INNER)
+	hero.caption:SetJustifyH("LEFT")
+	hero.caption:SetWordWrap(false)
+	hero.hover = Hover(hero, HeroTip)
+	hero.hover:SetAllPoints(hero)
+
+	-- No session: what to do (board "No session yet").
+	local empty = CreateFrame("Frame", nil, full)
+	frame.empty = empty
+	empty.title = Style.Text(empty, "Section", "text")
+	empty.title:SetFont(Style.FontFiles.nextExtraBold, 13, "")
+	empty.title:SetPoint("TOPLEFT", empty, "TOPLEFT", FF.PAD, 0)
+	empty.hint = Style.Text(empty, "Caption", "text2")
+	empty.hint:SetPoint("TOPLEFT", empty.title, "BOTTOMLEFT", 0, -4)
+	empty.hint:SetWidth(FF.INNER)
+	empty.hint:SetJustifyH("LEFT")
+	empty.hint:SetWordWrap(true)
+end
+
+local SPLIT = {
+	{ key = "coin", color = C.coinGold, label = "Coin",
+		help = "Coin looted (paired with the loot message; vendor sales, mail and quests don't count)." },
+	{ key = "ah", color = C.text, label = "Items at AH",
+		help = "Items whose CraftWise value is their AH price at your profit house, after the cut." },
+	{ key = "vendor", color = C.ruleStrong, label = "Vendor only",
+		help = "Items valued at their vendor price: no AH price, bound on pickup or a quest item, or the vendor pays more." },
 }
 
--- The long-run catch rate (#136, ns.Fishing.CatchRate): "167/h · open 170 · pools 120", only from enough
--- timed catches (a water type below that is left out of the line, the tooltip says why).
-local RATE_WATERS = { { "open", "open", "Open water" }, { "pool", "pools", "Pools" }, { "?", "not known", "Water not known yet" } }
-local function PerHour(x)
-	return ("%d/h"):format(math.floor(x + 0.5))
-end
-
-function FF.RateText(r)
-	if not r or r.timed == 0 then
-		return Muted(L["no timed catches yet"])
-	end
-	if not r.enough then
-		return Muted((L["%d timed catches, too few (%d)"]):format(r.timed, r.min))
-	end
-	local parts = {}
-	for _, w in ipairs(RATE_WATERS) do
-		local x = r.waters[w[1]]
-		if x and x.enough then
-			parts[#parts + 1] = L[w[2]] .. " " .. math.floor(x.perHour + 0.5)
+local function SplitTip(i)
+	return function()
+		local m = last
+		if not (m and m.totals) then
+			return nil
 		end
-	end
-	return PerHour(r.perHour) .. (#parts > 0 and Muted("  ·  " .. table.concat(parts, "  ·  ")) or "")
-end
-
-function FF.RateTooltip()
-	local r = ns.Fishing.CatchRate and ns.Fishing.CatchRate()
-	if not r then
-		return
-	end
-	local function line(label, x)
-		local text = x.perHour and x.enough and PerHour(x.perHour) or L["too few"]
-		GameTooltip:AddDoubleLine(label, ("%s  (%d timed, %d min)"):format(text, x.timed, math.floor(x.seconds / 60 + 0.5)),
-			0.8, 0.8, 0.8, 1, 1, 1)
-	end
-	line(L["All water"], r)
-	for _, w in ipairs(RATE_WATERS) do
-		if r.waters[w[1]] then
-			line(L[w[3]], r.waters[w[1]])
+		local part, t = SPLIT[i], m.totals
+		local lines = { L[part.help], FF.PlainCoins(m.split[part.key]) }
+		if part.key == "ah" and t.stale > 0 then
+			lines[#lines + 1] = (L["%s of it from AH prices over a day old."]):format(FF.PlainCoins(t.stale))
 		end
+		if part.key == "vendor" then
+			lines[#lines + 1] = L["Everything sold to a vendor"] .. ": " .. FF.PlainCoins(t.vendor)
+				.. (t.vendorUnknown > 0 and (" " .. (L["(%d without a vendor price)"]):format(t.vendorUnknown)) or "")
+		end
+		if t.unknownUnits > 0 then
+			lines[#lines + 1] = (L["%d items without any price are counted, not valued."]):format(t.unknownUnits)
+		end
+		return L[part.label], lines
 	end
 end
 
-local function FishLine(parent, i, key)
-	local y = -32 - (i - 1) * 16
-	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	label:SetPoint("TOPLEFT", 12, y)
-	label:SetText(L[FISH_LABELS[key]])
-	local value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	value:SetPoint("TOPLEFT", 92, y)
-	value:SetWidth(FF.STATS_WIDTH - 2)
-	value:SetJustifyH("LEFT")
-	value:SetWordWrap(false)
-	local hover = CreateFrame("Frame", nil, parent)
-	hover:SetPoint("TOPLEFT", 8, y + 2)
-	hover:SetSize(FF.STATS_WIDTH + 70, 16)
-	hover:EnableMouse(true)
-	hover:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:AddLine(L[FISH_LABELS[key]])
-		GameTooltip:AddLine(L[FISH_HELP[key]], 0.8, 0.8, 0.8, true)
-		local f = last and last.fish
-		if key == "perCatch" and f and f.unknownUnits > 0 then
-			GameTooltip:AddLine((L["%d caught items without a price."]):format(f.unknownUnits), 1, 0.6, 0.3, true)
-		end
-		if key == "rate" then
-			FF.RateTooltip()
-		end
-		if key == "perCatch" and f and f.coin > 0 then
-			GameTooltip:AddDoubleLine(L["Coin from fishing"], Money(f.coin), 0.8, 0.8, 0.8, 1, 1, 1)
-		end
-		GameTooltip:Show()
-	end)
-	hover:SetScript("OnLeave", function()
-		GameTooltip:Hide()
-	end)
-	return value
+local function BuildSplit(full)
+	local split = CreateFrame("Frame", nil, full)
+	split:SetHeight(FF.SPLIT_HEIGHT + 6 + 12 + 14)
+	frame.split = split
+	split.bars, split.labels, split.figures = {}, {}, {}
+	local colWidth = FF.INNER / #SPLIT
+	for i, part in ipairs(SPLIT) do
+		local bar = split:CreateTexture(nil, "ARTWORK")
+		Style.Fill(bar, part.color)
+		bar:SetHeight(FF.SPLIT_HEIGHT)
+		split.bars[i] = bar
+		local label = Style.Text(split, "Label", "text3")
+		label:SetPoint("TOPLEFT", split, "TOPLEFT", FF.PAD + (i - 1) * colWidth, -(FF.SPLIT_HEIGHT + 6))
+		label:SetText(L[part.label])
+		split.labels[i] = label
+		local fig = Style.Text(split, "Figure", "text")
+		fig:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+		split.figures[i] = fig
+		local hover = Hover(split, SplitTip(i))
+		hover:SetPoint("TOPLEFT", split, "TOPLEFT", FF.PAD + (i - 1) * colWidth, 0)
+		hover:SetSize(colWidth, FF.SPLIT_HEIGHT + 6 + 12 + 14)
+	end
 end
 
-local function BuildFish()
-	local fish = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-	fish:SetPoint("TOPLEFT", frame.stats, "BOTTOMLEFT", 0, -6)
-	fish:SetSize(FF.STATS_WIDTH + FF.LIST_WIDTH + 6, FF.FISH_HEIGHT)
-	Style.Panel(fish)
+local FISH_TIP = {
+	"Fishing loot windows this session, and catches per hour of fishing time: the time between two catches at most two minutes apart.",
+	"Per catch: coin + items per catch, items at the same values as the loot. Caught containers you opened count as their contents.",
+	"Your usual rate: timed catches per hour from the fishing log over the last 90 days (Settings › Fishing sets the session gap and how many catches it needs).",
+}
+
+local function FishTip()
+	local f = last and last.fish
+	if not f then
+		return nil
+	end
+	local lines = { L[FISH_TIP[1]], L[FISH_TIP[2]], L["Gold per hour of fishing"] .. ": " .. FF.PlainCoins(f.gph) }
+	if f.coin > 0 then
+		lines[#lines + 1] = L["Coin from fishing"] .. ": " .. FF.PlainCoins(f.coin)
+	end
+	if f.unknownUnits > 0 then
+		lines[#lines + 1] = (L["%d caught items without a price."]):format(f.unknownUnits)
+	end
+	if f.opened > 0 then
+		lines[#lines + 1] = (L["%d caught containers opened."]):format(f.opened)
+	end
+	for i = 1, math.min(3, #f.zones) do
+		local z = f.zones[i]
+		lines[#lines + 1] = ("%s: %d %s, %s %s"):format(z.zone, z.catches, L["catches"], FF.PlainCoins(z.perCatch), L["per catch"])
+	end
+	lines[#lines + 1] = L[FISH_TIP[3]]
+	for _, line in ipairs(FF.RateLines(ns.Fishing.CatchRate and ns.Fishing.CatchRate())) do
+		lines[#lines + 1] = line
+	end
+	return L["Fishing"], lines
+end
+
+local FISH_COLUMNS = { { "catches", "Catches" }, { "perCatch", "Per catch" }, { "perHour", "Per hour" } }
+
+local function BuildFish(full)
+	local fish = CreateFrame("Frame", nil, full)
 	frame.fish = fish
-	local title = fish:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", 12, -10)
+	fish.card = CreateFrame("Frame", nil, fish)
+	fish.card:SetPoint("TOPLEFT", fish, "TOPLEFT", FF.PAD, 0)
+	fish.card:SetPoint("BOTTOMRIGHT", fish, "BOTTOMRIGHT", -FF.PAD, 0)
+	Style.Sheet(fish.card, C.card, C.cardFlap, 14, false)
+	local title = Style.Text(fish.card, "Label", "text2")
+	title:SetPoint("TOPLEFT", fish.card, "TOPLEFT", 10, -8)
 	title:SetText(L["Fishing"])
 	fish.values = {}
-	for i, key in ipairs(FISH_KEYS) do
-		fish.values[key] = FishLine(fish, i, key)
+	local colWidth = (FF.INNER - 20) / #FISH_COLUMNS
+	for i, col in ipairs(FISH_COLUMNS) do
+		local label = Style.Text(fish.card, "Caption", "text3")
+		label:SetPoint("TOPLEFT", fish.card, "TOPLEFT", 10 + (i - 1) * colWidth, -23)
+		label:SetText(L[col[2]])
+		local value = Style.Text(fish.card, "Figure", "text")
+		value:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
+		fish.values[col[1]] = value
 	end
-	local x = FF.STATS_WIDTH + 100
-	local head = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	head:SetPoint("TOPLEFT", x, -14)
-	head:SetText(Muted(L["Zones"] .. "  ·  " .. L["catches, per catch, per hour"]))
-	fish.zones = {}
-	for i = 1, FF.ZONE_LINES do
-		local name = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		name:SetPoint("TOPLEFT", x, -16 - i * 16)
-		name:SetWidth(96)
-		name:SetJustifyH("LEFT")
-		name:SetWordWrap(false)
-		local value = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		value:SetPoint("TOPRIGHT", -12, -16 - i * 16)
-		value:SetJustifyH("RIGHT")
-		fish.zones[i] = { name = name, value = value }
-	end
-	fish:Hide()
+	fish.line = Style.Text(fish.card, "Caption", "text3")
+	fish.line:SetPoint("TOPLEFT", fish.card, "TOPLEFT", 10, -53)
+	fish.line:SetWidth(FF.INNER - 20)
+	fish.line:SetJustifyH("LEFT")
+	fish.line:SetWordWrap(true)
+	fish.hover = Hover(fish, FishTip)
+	fish.hover:SetAllPoints(fish.card)
 end
 
--- The Fishing panel: shown with its numbers while the session has catches, hidden otherwise.
-local function RefreshFish(f)
-	local fish = frame.fish
-	frame:SetHeight(FF.HEIGHT + (f and (FF.FISH_HEIGHT + 6) or 0))
-	if not f then
-		fish:Hide()
-		return
-	end
-	fish:Show()
-	local V = fish.values
-	V.catches:SetText(f.catches .. (f.cph and Muted(("  ·  %s/h"):format(f.cph)) or ""))
-	V.rate:SetText(FF.RateText(ns.Fishing.CatchRate and ns.Fishing.CatchRate()))
-	V.perCatch:SetText(Money(f.perCatch) .. (f.unknownUnits > 0 and ("  " .. C.warn .. "+" .. f.unknownUnits .. " ?|r") or ""))
-	V.gph:SetText(Money(f.gph))
-	local b = f.best
-	V.best:SetText(b and (ItemText(b) .. " " .. ns.FormatMoney(b.unit)) or Muted("-"))
-	V.opened:SetText(f.opened > 0 and tostring(f.opened) or Muted("0"))
-	for i, z in ipairs(fish.zones) do
-		local zone = f.zones[i]
-		z.name:SetText(zone and zone.zone or "")
-		z.value:SetText(zone and (zone.catches .. "  " .. Money(zone.perCatch) .. "  " .. Money(zone.gph) .. Muted("/h")) or "")
-	end
-end
-
-local function RowTooltip(self)
+local function LootTooltip(self)
 	local r = self.data
 	if not r then
 		return
@@ -326,66 +532,208 @@ local function RowTooltip(self)
 	if GameTooltip.SetItemByID then
 		GameTooltip:SetItemByID(r.itemID)
 	else
-		GameTooltip:AddLine(ItemText(r))
+		GameTooltip:AddLine(FF.ItemName(r))
 	end
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine(L["Looted this session"], tostring(r.n), 0.8, 0.8, 0.8, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Looted this session"], tostring(r.n), 0.75, 0.75, 0.75, 1, 1, 1)
 	if r.value then
-		GameTooltip:AddDoubleLine(L["Value"], Money(r.value), 0.8, 0.8, 0.8, 1, 1, 1)
-		GameTooltip:AddDoubleLine(L["Each"], Money(r.unit) .. "  " .. (r.label or r.source or ""), 0.8, 0.8, 0.8, 1, 1, 1)
+		GameTooltip:AddDoubleLine(L["Value"], ns.FormatMoney(r.value), 0.75, 0.75, 0.75, 1, 1, 1)
+		GameTooltip:AddDoubleLine(L["Each"], ns.FormatMoney(r.unit) .. "  " .. (r.label or r.source or ""), 0.75, 0.75, 0.75, 1, 1, 1)
 		if r.stale then
-			GameTooltip:AddLine((L["AH price is %d days old."]):format(r.age), 1, 0.6, 0.3)
+			GameTooltip:AddLine((L["AH price is %d days old."]):format(r.age), C.danger[1], C.danger[2], C.danger[3])
 		end
 		if r.cutUnverified then
-			GameTooltip:AddLine(L["AH cut unverified at this house: value before the cut."], 1, 0.6, 0.3, true)
+			GameTooltip:AddLine(L["AH cut unverified at this house: value before the cut."], C.danger[1], C.danger[2], C.danger[3], true)
 		end
 	else
-		GameTooltip:AddLine(L["No AH or vendor price known: not valued."], 1, 0.76, 0.3, true)
+		GameTooltip:AddLine(L["No AH or vendor price known: not valued."], C.text2[1], C.text2[2], C.text2[3], true)
 	end
 	if r.noAuction then
-		GameTooltip:AddLine(L["Bind on pickup or quest item: vendor only."], 0.6, 0.6, 0.6, true)
+		GameTooltip:AddLine(L["Bind on pickup or quest item: vendor only."], C.text2[1], C.text2[2], C.text2[3], true)
 	end
-	GameTooltip:AddLine(L["x: remove from this session and ignore it until Reset."], 0.55, 0.55, 0.6, true)
 	GameTooltip:Show()
 end
 
-local function BuildRows(list)
-	frame.rows = {}
-	for i = 1, FF.VISIBLE_ROWS do
-		local row = CreateFrame("Button", nil, list)
-		row:SetSize(FF.LIST_WIDTH - 16, FF.ROW_HEIGHT)
-		row:SetPoint("TOPLEFT", 8, -30 - (i - 1) * FF.ROW_HEIGHT)
-		row.bg = row:CreateTexture(nil, "BACKGROUND")
-		row.bg:SetAllPoints()
-		Style.Fill(row.bg, i % 2 == 0 and C.stripe or { 0, 0, 0, 0 })
-		row.count = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		row.count:SetPoint("LEFT", 2, 0)
-		row.count:SetWidth(34)
-		row.count:SetJustifyH("RIGHT")
+-- A footer link: Caption text2, text on hover.
+local function Link(parent, text, onClick)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetHeight(FF.LOOT_ROW)
+	b.text = Style.Text(b, "Caption", "text2")
+	b.text:SetPoint("CENTER", b, "CENTER", 0, 0)
+	b.text:SetText(text)
+	b:SetWidth(math.floor((b.text:GetStringWidth() or 0) + 0.5))
+	b:SetScript("OnClick", onClick)
+	b:SetScript("OnEnter", function(self)
+		self.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+	end)
+	b:SetScript("OnLeave", function(self)
+		self.text:SetTextColor(C.text2[1], C.text2[2], C.text2[3], 1)
+	end)
+	ForwardDrag(b)
+	return b
+end
+
+local function BuildLoot(full)
+	local loot = CreateFrame("Frame", nil, full)
+	frame.loot = loot
+	local rule = Style.Rule(loot, "H", C.rule)
+	rule:SetPoint("TOPLEFT", loot, "TOPLEFT", 0, 0)
+	rule:SetPoint("TOPRIGHT", loot, "TOPRIGHT", 0, 0)
+	loot.rows = {}
+	for i = 1, FF.TOP_LOOT do
+		local row = CreateFrame("Button", nil, loot)
+		row:SetHeight(FF.LOOT_ROW)
+		row:SetPoint("TOPLEFT", loot, "TOPLEFT", 0, -(i - 1) * FF.LOOT_ROW)
+		row:SetPoint("TOPRIGHT", loot, "TOPRIGHT", 0, -(i - 1) * FF.LOOT_ROW)
 		row.icon = row:CreateTexture(nil, "ARTWORK")
-		row.icon:SetSize(FF.ROW_HEIGHT - 4, FF.ROW_HEIGHT - 4)
-		row.icon:SetPoint("LEFT", row.count, "RIGHT", 4, 0)
-		row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-		row.name:SetWidth(150)
+		row.icon:SetSize(16, 16)
+		row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		row.icon:SetPoint("LEFT", row, "LEFT", FF.PAD, 0)
+		row.value = Style.Text(row, "Figure", "text")
+		row.value:SetPoint("RIGHT", row, "RIGHT", -FF.PAD, 0)
+		row.value:SetWidth(62)
+		row.value:SetJustifyH("RIGHT")
+		row.count = Style.Text(row, "Figure", "text3")
+		row.count:SetPoint("RIGHT", row.value, "LEFT", -6, 0)
+		row.count:SetWidth(30)
+		row.count:SetJustifyH("RIGHT")
+		row.name = Style.Text(row, "Small", "text")
+		row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+		row.name:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
 		row.name:SetJustifyH("LEFT")
 		row.name:SetWordWrap(false)
-		row.remove = Style.CloseButton(row, function()
-			local data = row.data
-			if data then
-				Farm.RemoveItem(data.itemID)
-			end
-		end)
-		row.remove:SetSize(16, 16)
-		row.remove:SetPoint("RIGHT", 0, 0)
-		row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		row.value:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-		row.value:SetJustifyH("RIGHT")
-		row:SetScript("OnEnter", RowTooltip)
+		local hair = Style.Rule(row, "H", C.rule)
+		hair:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+		hair:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+		row:SetScript("OnEnter", LootTooltip)
 		row:SetScript("OnLeave", function()
 			GameTooltip:Hide()
 		end)
-		frame.rows[i] = row
+		ForwardDrag(row)
+		loot.rows[i] = row
+	end
+	loot.nothing = Style.Text(loot, "Small", "text3")
+	loot.nothing:SetPoint("LEFT", loot, "TOPLEFT", FF.PAD, -FF.LOOT_ROW / 2)
+	loot.nothing:SetText(L["Nothing looted yet."])
+
+	local footer = CreateFrame("Frame", nil, loot)
+	footer:SetHeight(FF.LOOT_ROW)
+	loot.footer = footer
+	-- "+ 9 more": opens the whole list (with remove) in the loot panel.
+	loot.more = Link(footer, "", function()
+		FF.OpenList()
+	end)
+	loot.more:SetPoint("LEFT", footer, "LEFT", FF.PAD, 0)
+	loot.more.text:SetTextColor(C.text3[1], C.text3[2], C.text3[3], 1)
+	loot.more:SetScript("OnLeave", function(self)
+		self.text:SetTextColor(C.text3[1], C.text3[2], C.text3[3], 1)
+	end)
+	loot.history = Link(footer, L["History"], function()
+		FF.OpenHistory()
+	end)
+	loot.history:SetPoint("RIGHT", footer, "RIGHT", -FF.PAD, 0)
+	loot.dot = Style.Text(footer, "Caption", "text3")
+	loot.dot:SetPoint("RIGHT", loot.history, "LEFT", -4, 0)
+	loot.dot:SetText("·")
+	loot.log = Link(footer, L["Log"], function()
+		FF.OpenLog()
+	end)
+	loot.log:SetPoint("RIGHT", loot.dot, "LEFT", -4, 0)
+end
+
+-- Buttons per state (spec): running Pause (line) + End session (action); paused Resume (primary) + End
+-- session (line); no session Start (primary) + History (line).
+local function BuildButtons(full)
+	local bar = CreateFrame("Frame", nil, full)
+	bar:SetHeight(FF.BUTTON_HEIGHT)
+	frame.buttons = bar
+	local h = FF.BUTTON_HEIGHT
+	local b = {
+		pause = Style.LineButton(bar, L["Pause"], nil, h),
+		endAction = Style.ActionButton(bar, L["End session"], nil, h),
+		resume = Style.PrimaryButton(bar, L["Resume"], nil, h),
+		endLine = Style.LineButton(bar, L["End session"], nil, h),
+		start = Style.PrimaryButton(bar, L["Start"], nil, h),
+		history = Style.LineButton(bar, L["History"], nil, h),
+	}
+	bar.b = b
+	b.pause:SetScript("OnClick", function()
+		Farm.TogglePause()
+	end)
+	b.resume:SetScript("OnClick", function()
+		Farm.TogglePause()
+	end)
+	b.start:SetScript("OnClick", function()
+		Farm.Start()
+	end)
+	b.history:SetScript("OnClick", function()
+		FF.OpenHistory()
+	end)
+	for _, key in ipairs({ "endAction", "endLine" }) do
+		b[key]:SetScript("OnClick", function()
+			Farm.Slash("reset")
+		end)
+		b[key]:HookScript("OnEnter", function(self)
+			Style.ShowTip(self, L["End session"], L["Ends the session and keeps it in the history."])
+		end)
+		b[key]:HookScript("OnLeave", function(self)
+			Style.HideTip(self)
+		end)
+	end
+	for _, button in pairs(b) do
+		ForwardDrag(button)
+		button:Hide()
+	end
+end
+
+-- Shows the two buttons of the state: side by side, equal widths (running, paused), or at their own
+-- width (no session).
+local function ApplyButtons(names, equal)
+	local b = frame.buttons.b
+	for _, button in pairs(b) do
+		button:Hide()
+	end
+	local x = FF.PAD
+	local half = (FF.INNER - 8) / 2
+	for _, name in ipairs(names) do
+		local button = b[name]
+		if equal then
+			button:SetWidth(half)
+		end
+		button:ClearAllPoints()
+		button:SetPoint("TOPLEFT", frame.buttons, "TOPLEFT", x, 0)
+		button:Show()
+		x = x + (equal and half or (button:GetWidth() or button.cwWidth or 0)) + 8
+	end
+end
+
+----------------------------------------------------------------------------------------------------
+-- Build: the loot panel (Log link, #126/#130 views until Gather › Farm, #156)
+----------------------------------------------------------------------------------------------------
+
+local function PanelRow(parent, i)
+	local row = CreateFrame("Button", nil, parent)
+	row:SetSize(FF.PANEL_WIDTH - 2 * FF.PAD, FF.ROW_HEIGHT)
+	row:SetPoint("TOPLEFT", parent, "TOPLEFT", FF.PAD, -46 - (i - 1) * FF.ROW_HEIGHT)
+	local hair = Style.Rule(row, "H", C.rule)
+	hair:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+	hair:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+	row.icon = row:CreateTexture(nil, "ARTWORK")
+	row.icon:SetSize(FF.ROW_HEIGHT - 4, FF.ROW_HEIGHT - 4)
+	row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	row.name = Style.Text(row, "Small", "text")
+	row.name:SetJustifyH("LEFT")
+	row.name:SetWordWrap(false)
+	row.value = Style.Text(row, "Figure", "text")
+	row.value:SetJustifyH("RIGHT")
+	return row
+end
+
+local function ListTooltip(self)
+	LootTooltip(self)
+	if self.data then
+		GameTooltip:AddLine(L["×: remove it from this session and ignore it until the session ends."], C.text2[1], C.text2[2], C.text2[3], true)
+		GameTooltip:Show()
 	end
 end
 
@@ -398,56 +746,105 @@ local function LogTooltip(self)
 	if e.itemID and GameTooltip.SetItemByID then
 		GameTooltip:SetItemByID(e.itemID)
 	else
-		GameTooltip:AddLine(e.itemID and ItemText(e) or L["Coin"])
+		GameTooltip:AddLine(e.itemID and FF.ItemName(e) or L["Coin"])
 	end
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine(L["Looted at"], date("%H:%M:%S", e.t), 0.8, 0.8, 0.8, 1, 1, 1)
-	GameTooltip:AddDoubleLine(L["Zone"], e.zone, 0.8, 0.8, 0.8, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Looted at"], date("%H:%M:%S", e.t), 0.75, 0.75, 0.75, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Zone"], e.zone, 0.75, 0.75, 0.75, 1, 1, 1)
 	if e.itemID then
-		GameTooltip:AddDoubleLine(L["Count"], tostring(e.n), 0.8, 0.8, 0.8, 1, 1, 1)
+		GameTooltip:AddDoubleLine(L["Count"], tostring(e.n), 0.75, 0.75, 0.75, 1, 1, 1)
 		if e.value then
-			GameTooltip:AddDoubleLine(L["Value"], Money(e.value) .. "  " .. (e.label or e.source or ""), 0.8, 0.8, 0.8, 1, 1, 1)
+			GameTooltip:AddDoubleLine(L["Value"], ns.FormatMoney(e.value) .. "  " .. (e.label or e.source or ""), 0.75, 0.75, 0.75, 1, 1, 1)
 		else
-			GameTooltip:AddLine(L["No AH or vendor price known: not valued."], 1, 0.76, 0.3, true)
+			GameTooltip:AddLine(L["No AH or vendor price known: not valued."], C.text2[1], C.text2[2], C.text2[3], true)
 		end
 	else
-		GameTooltip:AddDoubleLine(L["Coin"], Money(e.copper), 0.8, 0.8, 0.8, 1, 1, 1)
+		GameTooltip:AddDoubleLine(L["Coin"], ns.FormatMoney(e.copper), 0.75, 0.75, 0.75, 1, 1, 1)
 	end
 	if e.fish then
-		GameTooltip:AddLine(L["From a fishing catch."], 0.5, 0.8, 1, true)
+		GameTooltip:AddLine(L["From a fishing catch."], C.text2[1], C.text2[2], C.text2[3], true)
 	end
 	GameTooltip:Show()
 end
 
-local function BuildLogRows(list)
+local function BuildPanel()
+	panel = CreateFrame("Frame", "CraftWiseFarmLoot", frame)
+	panel:SetSize(FF.PANEL_WIDTH, FF.PANEL_HEIGHT)
+	panel:SetFrameLevel((frame:GetFrameLevel() or 1) + 10)
+	panel:EnableMouse(true)
+	Style.Sheet(panel, C.sheet, C.flap, FF.CUT, true)
+	frame.panel = panel
+	frame.listHead = Style.Text(panel, "Section", "text")
+	frame.listHead:SetPoint("TOPLEFT", panel, "TOPLEFT", FF.PAD, -14)
+	frame.listHead:SetWidth(170)
+	frame.listHead:SetJustifyH("LEFT")
+	frame.listHead:SetWordWrap(false)
+	local close = Style.LineButton(panel, "×", 24, 24)
+	close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -10)
+	close:SetScript("OnClick", function()
+		FF.HideLoot()
+	end)
+	panel.close = close
+	frame.viewButton = Style.LineButton(panel, "", nil, 24)
+	frame.viewButton:SetPoint("RIGHT", close, "LEFT", -6, 0)
+	frame.viewButton:SetScript("OnClick", function()
+		FF.SetView(FF.View() == "log" and "list" or "log")
+	end)
+	frame.viewButton:HookScript("OnEnter", function(self)
+		if FF.View() == "log" then
+			Style.ShowTip(self, L["Loot list"], L["Per item: count and value; × removes an item from the session."])
+		else
+			Style.ShowTip(self, L["Loot log"], L["One line per drop, newest first: time, item, value, zone; fishing catches marked."])
+		end
+	end)
+	frame.viewButton:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	frame.panelEmpty = Style.Text(panel, "Small", "text3")
+	frame.panelEmpty:SetPoint("CENTER", panel, "CENTER", 0, 0)
+	frame.panelEmpty:SetWidth(FF.PANEL_WIDTH - 40)
+
+	frame.rows = {}
+	for i = 1, FF.VISIBLE_ROWS do
+		local row = PanelRow(panel, i)
+		row.count = Style.Text(row, "Figure", "text3")
+		row.count:SetPoint("LEFT", row, "LEFT", 0, 0)
+		row.count:SetWidth(36)
+		row.count:SetJustifyH("RIGHT")
+		row.icon:SetPoint("LEFT", row.count, "RIGHT", 6, 0)
+		row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+		row.name:SetWidth(132)
+		row.remove = Style.LineButton(row, "×", 16, 16)
+		row.remove:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+		row.remove:SetScript("OnClick", function()
+			if row.data then
+				Farm.RemoveItem(row.data.itemID)
+			end
+		end)
+		row.value:SetPoint("RIGHT", row.remove, "LEFT", -6, 0)
+		row:SetScript("OnEnter", ListTooltip)
+		row:SetScript("OnLeave", function()
+			GameTooltip:Hide()
+		end)
+		row:Hide()
+		frame.rows[i] = row
+	end
 	frame.logRows = {}
 	for i = 1, FF.VISIBLE_ROWS do
-		local row = CreateFrame("Button", nil, list)
-		row:SetSize(FF.LIST_WIDTH - 16, FF.ROW_HEIGHT)
-		row:SetPoint("TOPLEFT", 8, -30 - (i - 1) * FF.ROW_HEIGHT)
-		row.bg = row:CreateTexture(nil, "BACKGROUND")
-		row.bg:SetAllPoints()
-		Style.Fill(row.bg, i % 2 == 0 and C.stripe or { 0, 0, 0, 0 })
-		row.time = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		row.time:SetPoint("LEFT", 2, 0)
-		row.time:SetWidth(48)
+		local row = PanelRow(panel, i)
+		row.time = Style.Text(row, "Figure", "text3")
+		row.time:SetPoint("LEFT", row, "LEFT", 0, 0)
+		row.time:SetWidth(62)
 		row.time:SetJustifyH("LEFT")
-		row.icon = row:CreateTexture(nil, "ARTWORK")
-		row.icon:SetSize(FF.ROW_HEIGHT - 4, FF.ROW_HEIGHT - 4)
 		row.icon:SetPoint("LEFT", row.time, "RIGHT", 2, 0)
-		row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-		row.name:SetWidth(118)
-		row.name:SetJustifyH("LEFT")
-		row.name:SetWordWrap(false)
-		row.zone = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		row.zone:SetPoint("RIGHT", 0, 0)
-		row.zone:SetWidth(52)
+		row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+		row.name:SetWidth(96)
+		row.zone = Style.Text(row, "Caption", "text3")
+		row.zone:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+		row.zone:SetWidth(50)
 		row.zone:SetJustifyH("RIGHT")
 		row.zone:SetWordWrap(false)
-		row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		row.value:SetPoint("RIGHT", row.zone, "LEFT", -4, 0)
-		row.value:SetJustifyH("RIGHT")
 		row:SetScript("OnEnter", LogTooltip)
 		row:SetScript("OnLeave", function()
 			GameTooltip:Hide()
@@ -455,175 +852,45 @@ local function BuildLogRows(list)
 		row:Hide()
 		frame.logRows[i] = row
 	end
-end
-
--- One log line: value cell like the list's ("?" = unknown), coin lines in coin.
-function FF.LogValueText(e)
-	if e.copper then
-		return Money(e.copper)
-	end
-	return FF.ValueText(e)
+	panel:EnableMouseWheel(true)
+	panel:SetScript("OnMouseWheel", function(_, delta)
+		if FF.View() == "log" then
+			local n = logEntries and #logEntries or 0
+			logOffset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), logOffset - delta * 3))
+		else
+			local n = last and last.totals and #last.totals.rows or 0
+			offset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), offset - delta * 3))
+		end
+		FF.Refresh()
+	end)
+	panel:Hide()
 end
 
 local function Build()
 	if frame then
 		return frame
 	end
-	frame = CreateFrame("Frame", "CraftWiseFarmFrame", UIParent, "BackdropTemplate")
-	frame:SetSize(FF.STATS_WIDTH + FF.LIST_WIDTH + 6, FF.HEIGHT)
+	frame = CreateFrame("Frame", "CraftWiseFarmFrame", UIParent)
+	frame:SetWidth(FF.WIDTH)
 	frame:SetFrameStrata("MEDIUM")
 	frame:SetClampedToScreen(true)
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart", function(self)
-		if not self.locked then
-			self:StartMoving()
-		end
-	end)
-	frame:SetScript("OnDragStop", function(self)
-		self:StopMovingOrSizing()
-		SavePosition()
-	end)
-
-	local stats = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-	stats:SetPoint("TOPLEFT")
-	stats:SetSize(FF.STATS_WIDTH, FF.HEIGHT)
-	Style.Panel(stats)
-	frame.stats = stats
-	local title = stats:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", 12, -12)
-	title:SetText("|cffffffffCraftWise|r " .. Muted(L["Farm"]))
-	frame.state = stats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	frame.state:SetPoint("LEFT", title, "RIGHT", 8, 0)
-	frame.lockText = stats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	frame.lockText:SetPoint("TOPRIGHT", -12, -14)
-
-	frame.values = {}
-	for i, key in ipairs(STAT_KEYS) do
-		frame.values[key] = StatLine(stats, i, key)
-	end
-	local zoneY = -40 - #STAT_KEYS * 17 - 6
-	local zoneHead = stats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	zoneHead:SetPoint("TOPLEFT", 12, zoneY)
-	zoneHead:SetText(Muted(L["Zones"]))
-	frame.zones = {}
-	for i = 1, FF.ZONE_LINES do
-		local name = stats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		name:SetPoint("TOPLEFT", 12, zoneY - i * 15)
-		name:SetWidth(100)
-		name:SetJustifyH("LEFT")
-		name:SetWordWrap(false)
-		local value = stats:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		value:SetPoint("TOPRIGHT", -12, zoneY - i * 15)
-		value:SetJustifyH("RIGHT")
-		frame.zones[i] = { name = name, value = value }
-	end
-
-	frame.pause = Style.Button(stats, 80, 22, L["Pause"])
-	frame.pause:SetPoint("BOTTOMLEFT", 12, 10)
-	frame.pause:SetScript("OnClick", function()
-		Farm.TogglePause()
-	end)
-	frame.reset = Style.Button(stats, 80, 22, L["Reset"])
-	frame.reset:SetPoint("LEFT", frame.pause, "RIGHT", 8, 0)
-	frame.reset:SetScript("OnClick", function()
-		Farm.Slash("reset")
-	end)
-	frame.reset:SetScript("OnEnter", function(self)
-		self:SetSelected(false)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:AddLine(L["Reset"])
-		GameTooltip:AddLine(L["Ends the session and keeps it in the history (History button)."], 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	frame.reset:SetScript("OnLeave", function(self)
-		self:SetSelected(false)
-		GameTooltip:Hide()
-	end)
-	local gear = CreateFrame("Button", nil, stats)
-	gear:SetSize(18, 18)
-	gear:SetPoint("LEFT", frame.reset, "RIGHT", 10, 0)
-	gear.icon = gear:CreateTexture(nil, "ARTWORK")
-	gear.icon:SetAllPoints()
-	gear.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
-	gear:SetScript("OnClick", function(self)
-		ns.ToggleSettings(self)
-	end)
-	gear:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:AddLine(L["Settings"])
-		GameTooltip:AddLine(L["Farm tracker on/off, start on first loot, lock, idle pause, scale. Also: /craftwise farm lock | unlock | scale <n> | idle <min>"], 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	gear:SetScript("OnLeave", function()
-		GameTooltip:Hide()
-	end)
-
-	local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-	list:SetPoint("TOPLEFT", stats, "TOPRIGHT", 6, 0)
-	list:SetSize(FF.LIST_WIDTH, FF.HEIGHT)
-	Style.Panel(list)
-	frame.list = list
-	local close = Style.CloseButton(list, function()
-		Farm.Slash("hide")
-	end)
-	close:SetPoint("TOPRIGHT", -6, -6)
-	frame.listHead = list:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	frame.listHead:SetPoint("TOPLEFT", 12, -12)
-	frame.listHead:SetWidth(152) -- the History, List/Log and close buttons sit right of it
-	frame.listHead:SetJustifyH("LEFT")
-	frame.listHead:SetWordWrap(false)
-	frame.empty = list:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-	frame.empty:SetPoint("CENTER")
-	frame.empty:SetWidth(FF.LIST_WIDTH - 40)
-	BuildRows(list)
-	BuildLogRows(list)
-	frame.viewButton = Style.Button(list, 56, 20, "")
-	frame.viewButton:SetPoint("RIGHT", close, "LEFT", -6, 0)
-	-- History (#137): finished sessions and their loot logs, drawn by UI/FarmHistory.lua over this window.
-	frame.historyButton = Style.Button(list, 62, 20, L["History"])
-	frame.historyButton:SetPoint("RIGHT", frame.viewButton, "LEFT", -6, 0)
-	frame.historyButton:SetScript("OnClick", function()
-		ns.FarmHistory.Toggle()
-	end)
-	frame.historyButton:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:AddLine(L["Farm history"])
-		GameTooltip:AddLine(L["Finished sessions: time, zone, coin, items, gold per hour, fishing. Click one for its details and loot log."],
-			0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	frame.historyButton:SetScript("OnLeave", function(self)
-		self:SetSelected(false)
-		GameTooltip:Hide()
-	end)
-	frame.viewButton:SetScript("OnClick", function()
-		FF.SetView(FF.View() == "log" and "list" or "log")
-	end)
-	frame.viewButton:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:AddLine(FF.View() == "log" and L["Loot list"] or L["Loot log"])
-		GameTooltip:AddLine(FF.View() == "log" and L["Per item: count and value, x removes an item."]
-			or L["One line per drop, newest first: time, item, value, zone; fishing catches marked."], 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	frame.viewButton:SetScript("OnLeave", function()
-		GameTooltip:Hide()
-	end)
-	list:EnableMouseWheel(true)
-	list:SetScript("OnMouseWheel", function(_, delta)
-		if FF.View() == "log" then
-			local n = logEntries and #logEntries or 0
-			logOffset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), logOffset - delta * 3))
-		else
-			local n = last and #last.rows or 0
-			offset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), offset - delta * 3))
-		end
-		FF.Refresh()
-	end)
-
-	BuildFish()
+	frame:SetScript("OnDragStart", StartDrag)
+	frame:SetScript("OnDragStop", StopDrag)
+	Style.Sheet(frame, C.sheet, C.flap, FF.CUT, true)
+	-- The full tracker's content; mini mode (#164) swaps it for its strip.
+	local full = CreateFrame("Frame", nil, frame)
+	full:SetAllPoints(frame)
+	frame.full = full
+	BuildTop(full)
+	BuildHero(full)
+	BuildSplit(full)
+	BuildFish(full)
+	BuildLoot(full)
+	BuildButtons(full)
+	BuildPanel()
 
 	local elapsed = 0
 	frame:SetScript("OnUpdate", function(_, dt)
@@ -645,98 +912,240 @@ end
 -- Refresh
 ----------------------------------------------------------------------------------------------------
 
+-- The state colour on the dog-ear (shared with mini mode, #164).
+function FF.ApplyFlap(color)
+	if frame and frame.cwSheet then
+		frame.cwSheet:SetFlap(Style.Color(color))
+	end
+end
+
+local function SetColor(fs, color)
+	local c = Style.Color(color)
+	fs:SetTextColor(c[1], c[2], c[3], 1)
+end
+
+local function RefreshSplit(m)
+	local split = frame.split
+	local values = { m.split.coin, m.split.ah, m.split.vendor }
+	local geo = FF.SplitGeometry({ math.max(values[1], 0), math.max(values[2], 0), math.max(values[3], 0) }, FF.INNER)
+	for i, g in ipairs(geo) do
+		local bar = split.bars[i]
+		if g.w > 0 then
+			bar:ClearAllPoints()
+			bar:SetPoint("TOPLEFT", split, "TOPLEFT", FF.PAD + g.x, 0)
+			bar:SetWidth(g.w)
+			bar:Show()
+		else
+			bar:Hide()
+		end
+		split.figures[i]:SetText(FF.Coins(values[i]))
+	end
+	SetColor(split.labels[2], m.split.stale > 0 and "danger" or "text3")
+end
+
+local function RefreshFish(f)
+	local fish = frame.fish
+	if not f then
+		fish:Hide()
+		return
+	end
+	fish:Show()
+	fish.values.catches:SetText(tostring(f.catches))
+	fish.values.perCatch:SetText(FF.Coins(f.perCatch))
+	fish.values.perHour:SetText(f.cph and tostring(math.floor(f.cph + 0.5)) or Paint("—", "text3"))
+	local parts = {}
+	if f.best then
+		parts[1] = L["Best catch"] .. ": " .. Paint(FF.ItemName(f.best), FF.ItemColor(f.best.itemID))
+	end
+	parts[#parts + 1] = FF.RateText(ns.Fishing.CatchRate and ns.Fishing.CatchRate())
+	fish.line:SetText(table.concat(parts, " · "))
+	fish.cwHeight = 53 + Height(fish.line, 12) + 8
+	fish:SetHeight(fish.cwHeight)
+end
+
+local function RefreshLoot(m)
+	local loot = frame.loot
+	for i, row in ipairs(loot.rows) do
+		local r = m.loot[i]
+		row.data = r
+		if r then
+			local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(r.itemID)
+			row.icon:SetTexture(icon or QUESTION_ICON)
+			row.name:SetText(FF.ItemName(r))
+			SetColor(row.name, FF.ItemColor(r.itemID))
+			row.count:SetText("×" .. r.n)
+			row.value:SetText(r.value and FF.Coins(r.value) or Paint(L["no price"], "text3"))
+			row:Show()
+		else
+			row:Hide()
+		end
+	end
+	loot.nothing:SetShown(#m.loot == 0)
+	loot.more.text:SetText(FF.FooterText(m))
+	loot.more:SetWidth(math.floor((loot.more.text:GetStringWidth() or 0) + 0.5))
+	loot.more:SetShown(m.more > 0 or m.unpriced > 0)
+	loot.footer:ClearAllPoints()
+	local rows = math.max(#m.loot, 1)
+	loot.footer:SetPoint("TOPLEFT", loot, "TOPLEFT", 0, -rows * FF.LOOT_ROW)
+	loot.footer:SetPoint("TOPRIGHT", loot, "TOPRIGHT", 0, -rows * FF.LOOT_ROW)
+	loot.cwHeight = (rows + 1) * FF.LOOT_ROW
+	loot:SetHeight(loot.cwHeight)
+end
+
+-- Stacks the shown sections from the top line down and sizes the tracker to them.
+function FF.Layout()
+	local y = -30
+	local function stack(section, gap, height)
+		if not section:IsShown() then
+			return
+		end
+		y = y - gap
+		section:ClearAllPoints()
+		section:SetPoint("TOPLEFT", frame.full, "TOPLEFT", 0, y)
+		section:SetPoint("TOPRIGHT", frame.full, "TOPRIGHT", 0, y)
+		if height then
+			section:SetHeight(height)
+		end
+		y = y - (height or section.cwHeight or 0)
+	end
+	local none = last and last.state == "none"
+	stack(frame.empty, 18, 16 + (frame.empty.hint:IsShown() and (4 + Height(frame.empty.hint, 24)) or 0))
+	stack(frame.hero, 8, 56)
+	stack(frame.split, 12, FF.SPLIT_HEIGHT + 6 + 12 + 14)
+	stack(frame.fish, 12, nil)
+	stack(frame.loot, 12, nil)
+	stack(frame.buttons, none and 18 or 10, FF.BUTTON_HEIGHT)
+	frame:SetHeight(math.floor(-y + 14 + 0.5))
+end
+
 function FF.Refresh()
 	if not (frame and frame:IsShown()) then
 		return
 	end
 	local s = Farm.Current()
-	local now = Farm.Now()
-	local V = frame.values
-	if not s then
-		last = nil
-		offset = 0
-		for _, key in ipairs(STAT_KEYS) do
-			V[key]:SetText(Muted("-"))
-		end
-		V.time:SetText(Farm.FormatTime(0))
-		frame.state:SetText(Muted(L["no session"]))
-		frame.pause:SetLabel(L["Start"])
-		for _, z in ipairs(frame.zones) do
-			z.name:SetText("")
-			z.value:SetText("")
-		end
-		for _, row in ipairs(frame.rows) do
-			row.data = nil
-			row:Hide()
-		end
-		logEntries, logOffset = nil, 0
-		for _, row in ipairs(frame.logRows) do
-			row.data = nil
-			row:Hide()
-		end
-		frame.viewButton:SetLabel(FF.View() == "log" and L["List"] or L["Log"])
-		frame.listHead:SetText(Muted(FF.View() == "log" and L["Loot log"] or L["Loot"]))
-		frame.empty:SetText(Farm.AutoStart() and L["A session starts with your next loot."]
-			or L["Press Start, then loot."])
-		frame.empty:Show()
+	local m = FF.Model(s, Farm.Now())
+	last = m
+	FF.ApplyFlap(m.flap)
+	frame.word:SetText(m.word)
+	SetColor(frame.word, m.wordColor)
+	frame.timer:SetText(m.timer or "")
+	if m.timerColor then
+		SetColor(frame.timer, m.timerColor)
+	end
+	local none = m.state == "none"
+	frame.empty:SetShown(none)
+	frame.hero:SetShown(not none)
+	frame.split:SetShown(not none)
+	frame.loot:SetShown(not none)
+	if none then
+		frame.empty.title:SetText(m.title)
+		frame.empty.hint:SetText(m.hint or "")
+		frame.empty.hint:SetShown(m.hint ~= nil)
 		RefreshFish(nil)
-		return
-	end
-	local t = Farm.Totals(s, now)
-	last = t
-	RefreshFish(t.fish)
-	local state
-	if Farm.Running(s) then
-		state = C.good .. L["running"] .. "|r"
-	elseif s.autoPaused then
-		state = C.warn .. L["paused (idle)"] .. "|r"
 	else
-		state = C.warn .. L["paused"] .. "|r"
+		frame.hero.value:SetText(FF.Coins(m.hero))
+		frame.hero.caption:SetText(m.caption)
+		RefreshSplit(m)
+		RefreshFish(m.fish)
+		RefreshLoot(m)
 	end
-	frame.state:SetText(state)
-	frame.pause:SetLabel(Farm.Running(s) and L["Pause"] or L["Resume"])
-	V.time:SetText(Farm.FormatTime(t.seconds))
-	V.coin:SetText(Money(t.coin))
-	V.items:SetText(Money(t.items))
-	V.vendor:SetText(Money(t.vendor) .. (t.vendorUnknown > 0 and Muted(" +?") or ""))
-	V.ah:SetText(Money(t.ah) .. (t.stale > 0 and (" " .. C.warn .. L["stale"] .. " " .. ns.FormatMoney(t.stale) .. "|r") or ""))
-	V.gph:SetText(Money(t.gph))
-	V.coinGph:SetText(Money(t.coinGph))
-	local p = t.priciest
-	V.priciest:SetText(p and (ItemText(p) .. " " .. ns.FormatMoney(p.unit)) or Muted("-"))
-	V.unknown:SetText(t.unknownUnits > 0 and (C.warn .. t.unknownUnits .. "|r" .. Muted(" (" .. t.unknownItems .. " " .. L["items"] .. ")"))
-		or Muted("0"))
-	for i, z in ipairs(frame.zones) do
-		local zone = t.zones[i]
-		z.name:SetText(zone and zone.zone or "")
-		z.value:SetText(zone and (Farm.FormatTime(zone.seconds) .. "  " .. Money(zone.gph) .. Muted("/h")) or "")
-	end
+	ApplyButtons(m.buttons, not none)
+	FF.Layout()
+	FF.RefreshPanel(s, m)
+end
 
-	frame.viewButton:SetLabel(FF.View() == "log" and L["List"] or L["Log"])
-	if FF.View() == "log" then
-		for _, row in ipairs(frame.rows) do
-			row.data = nil
-			row:Hide()
-		end
-		FF.RefreshLog(s)
-		return
+----------------------------------------------------------------------------------------------------
+-- The loot panel: list (per item, × removes) or log (one line per drop, newest first)
+----------------------------------------------------------------------------------------------------
+
+-- "list" or "log".
+function FF.View()
+	local st = Settings()
+	return st and st.view == "log" and "log" or "list"
+end
+
+function FF.SetView(view)
+	local st = Settings()
+	if st then
+		st.view = view == "log" and "log" or "list"
 	end
-	for _, row in ipairs(frame.logRows) do
+	FF.Refresh()
+end
+
+local function HideRows(rows)
+	for _, row in ipairs(rows) do
 		row.data = nil
 		row:Hide()
 	end
-	local n = #t.rows
+end
+
+local function RefreshLog(s)
+	logEntries = Farm.LogEntries(s)
+	local n = #logEntries
+	logOffset = math.max(0, math.min(logOffset, math.max(0, n - FF.VISIBLE_ROWS)))
+	local head = ("%s · %d"):format(L["Loot log"], n)
+	if (s.logDropped or 0) > 0 then
+		head = head .. " " .. Paint(("(%d %s)"):format(s.logDropped, L["older dropped"]), "text3")
+	end
+	frame.listHead:SetText(head)
+	frame.panelEmpty:SetText(L["Nothing looted yet."])
+	frame.panelEmpty:SetShown(n == 0)
+	for i, row in ipairs(frame.logRows) do
+		local e = logEntries[logOffset + i]
+		row.data = e
+		if e then
+			row.time:SetText(date("%H:%M:%S", e.t))
+			local mark = e.fish and (FF.FISH_MARK .. " ") or ""
+			if e.itemID then
+				local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.itemID)
+				row.icon:SetTexture(icon or QUESTION_ICON)
+				row.name:SetText(mark .. (e.n > 1 and Paint("×" .. e.n, "text3") .. " " or "") .. ItemText(e))
+			else
+				row.icon:SetTexture(FF.COIN_ICON)
+				row.name:SetText(mark .. L["Coin"])
+			end
+			row.value:SetText(FF.LogValueText(e))
+			row.zone:SetText(e.zone)
+			row:Show()
+		else
+			row:Hide()
+		end
+	end
+end
+
+function FF.RefreshPanel(s, m)
+	if not (panel and panel:IsShown()) then
+		return
+	end
+	frame.viewButton:SetLabel(FF.View() == "log" and L["List"] or L["Log"])
+	if not s then
+		HideRows(frame.rows)
+		HideRows(frame.logRows)
+		offset, logOffset, logEntries = 0, 0, nil
+		frame.listHead:SetText(FF.View() == "log" and L["Loot log"] or L["Loot"])
+		frame.panelEmpty:SetText(Farm.AutoStart() and L["A session starts with your next loot."] or L["Press Start, then loot."])
+		frame.panelEmpty:Show()
+		return
+	end
+	if FF.View() == "log" then
+		HideRows(frame.rows)
+		RefreshLog(s)
+		return
+	end
+	HideRows(frame.logRows)
+	local rows = m.totals.rows
+	local n = #rows
 	offset = math.max(0, math.min(offset, math.max(0, n - FF.VISIBLE_ROWS)))
-	frame.listHead:SetText(Muted(("%s  ·  %d"):format(L["Loot"], n)))
-	frame.empty:SetText(L["Nothing looted yet."])
-	frame.empty:SetShown(n == 0)
+	frame.listHead:SetText(("%s · %d"):format(L["Loot"], n))
+	frame.panelEmpty:SetText(L["Nothing looted yet."])
+	frame.panelEmpty:SetShown(n == 0)
 	for i, row in ipairs(frame.rows) do
-		local r = t.rows[offset + i]
+		local r = rows[offset + i]
 		row.data = r
 		if r then
-			row.count:SetText(C.warn .. r.n .. "x|r")
+			row.count:SetText("×" .. r.n)
 			local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(r.itemID)
-			row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+			row.icon:SetTexture(icon or QUESTION_ICON)
 			row.name:SetText(ItemText(r))
 			row.value:SetText(FF.ValueText(r))
 			row:Show()
@@ -746,38 +1155,49 @@ function FF.Refresh()
 	end
 end
 
--- The log view: newest drop on top.
-function FF.RefreshLog(s)
-	logEntries = Farm.LogEntries(s)
-	local n = #logEntries
-	logOffset = math.max(0, math.min(logOffset, math.max(0, n - FF.VISIBLE_ROWS)))
-	local head = ("%s  ·  %d"):format(L["Loot log"], n)
-	if (s.logDropped or 0) > 0 then
-		head = head .. (" (%d %s)"):format(s.logDropped, L["older dropped"])
+----------------------------------------------------------------------------------------------------
+-- Opening and the links (Gather › Farm takes these over in #156)
+----------------------------------------------------------------------------------------------------
+
+local function ShowPanel(view)
+	FF.Show()
+	if ns.FarmHistory then
+		ns.FarmHistory.Close()
 	end
-	frame.listHead:SetText(Muted(head))
-	frame.empty:SetText(L["Nothing looted yet."])
-	frame.empty:SetShown(n == 0)
-	for i, row in ipairs(frame.logRows) do
-		local e = logEntries[logOffset + i]
-		row.data = e
-		if e then
-			row.time:SetText(Muted(date("%H:%M:%S", e.t)))
-			if e.itemID then
-				local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.itemID)
-				row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-				row.name:SetText((e.fish and (FF.FISH_MARK .. " ") or "") .. (e.n > 1 and (C.warn .. e.n .. "x|r ") or "") .. ItemText(e))
-			else
-				row.icon:SetTexture(FF.COIN_ICON)
-				row.name:SetText((e.fish and (FF.FISH_MARK .. " ") or "") .. L["Coin"])
-			end
-			row.value:SetText(FF.LogValueText(e))
-			row.zone:SetText(Muted(e.zone))
-			row:Show()
-		else
-			row:Hide()
-		end
+	local st = Settings()
+	if st then
+		st.view = view
 	end
+	FF.PlaceBeside(panel, FF.PANEL_WIDTH)
+	panel:Show()
+	FF.Refresh()
+end
+
+-- Log link: the session's loot log, newest first.
+function FF.OpenLog()
+	ShowPanel("log")
+end
+
+-- "+ N more": every looted item of the session, with remove.
+function FF.OpenList()
+	ShowPanel("list")
+end
+
+-- History link and button: the finished sessions.
+function FF.OpenHistory()
+	if ns.FarmHistory then
+		ns.FarmHistory.Open()
+	end
+end
+
+function FF.HideLoot()
+	if panel then
+		panel:Hide()
+	end
+end
+
+function FF.LootShown()
+	return panel ~= nil and panel:IsShown()
 end
 
 function FF.Rows()
@@ -788,11 +1208,19 @@ function FF.LogRows()
 	return frame and frame.logRows
 end
 
-function FF.FishPanel()
+function FF.LootRows()
+	return frame and frame.loot.rows
+end
+
+function FF.FishCard()
 	return frame and frame.fish
 end
 
--- The window frame, for views drawn over it (UI/FarmHistory.lua).
+function FF.Last()
+	return last
+end
+
+-- The tracker frame, for panels drawn beside it (UI/FarmHistory.lua).
 function FF.Window()
 	return frame
 end

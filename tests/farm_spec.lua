@@ -173,7 +173,7 @@ it("unknown values are counted apart, never valued, and used once a price is kno
 	eq(t.items, 13); eq(t.unknownUnits, 4); eq(t.unknownItems, 1); eq(t.vendorUnknown, 4)
 	eq(t.rows[#t.rows].itemID, HIDE, "unknown last"); eq(t.rows[#t.rows].value, nil)
 	eq(t.priciest.itemID, CLOTH)
-	eq(ns.FarmFrame.ValueText(t.rows[#t.rows]), ns.Style.colors.warn .. "?|r")
+	eq(ns.FarmFrame.ValueText(t.rows[#t.rows]), ns.Style.Hex("text3") .. "no price|r")
 	stub.ah[HIDE] = 200 -- a scan arrives: 190 after the cut
 	t = F.Totals(F.Current(), stub.clock)
 	eq(t.unknownUnits, 0); eq(t.items, 13 + 760); eq(t.vendorUnknown, 4, "still no vendor price")
@@ -341,37 +341,50 @@ it("snapshot: current session and the latest finished ones, capped, with what is
 	eq(snap.skipped and snap.skipped.farm, nil); eq(snap.errors, nil)
 end)
 
-it("window: stats, list rows with value and source, x removes, lock, scale, hide and show", function()
+it("tracker (#158): top line, gold per hour, split bar, top loot; × in the loot panel removes; lock, scale, hide and show", function()
 	local ns, stub = setup()
 	local FF = ns.FarmFrame
-	stub.ah[ORE], stub.ahAge[ORE] = 100, 0
+	local S = ns.Style
+	stub.ah[ORE], stub.ahAge[ORE] = 100, 0 -- 95 after the cut
 	loot(stub, ORE, 3)
 	loot(stub, HIDE, 1)
+	loot(stub, CLOTH, 2)
 	advance(stub, 120)
 	coin(stub, 240)
 	FF.Refresh()
 	local f = CraftWiseFarmFrame
-	eq(f.values.time.text, "00:02:00")
-	eq(f.values.coin.text, ns.FormatMoney(240))
-	eq(f.values.items.text, ns.FormatMoney(285))
-	eq(f.values.gph.text, ns.FormatMoney((240 + 285) * 30))
-	eq(f.values.coinGph.text, ns.FormatMoney(240 * 30))
-	assert(f.values.priciest.text:find("Copper Ore", 1, true), f.values.priciest.text)
-	assert(f.values.unknown.text:find("1", 1, true))
-	eq(f.pause.label.text, "Pause")
-	local rows = FF.Rows()
-	eq(rows[1].data.itemID, ORE)
-	assert(rows[1].value.text:find("AH", 1, true), rows[1].value.text)
-	assert(rows[1].count.text:find("3x", 1, true))
-	assert(rows[1].name.text:find("|hCopper Ore|h", 1, true), "name without brackets")
-	eq(rows[2].data.itemID, HIDE)
-	eq(rows[3].shown, false)
-	rows[1].remove.GetParent = function() return rows[1] end
-	rows[1].remove:GetScript("OnClick")(rows[1].remove)
+	eq(f.timer.text, "0:02:00")
+	eq(f.word.text, "running")
+	local gph = (240 + 285 + 26) * 30
+	eq(f.hero.value.text, FF.Coins(gph))
+	assert(f.hero.caption.text:find("total " .. FF.Coins(240 + 285 + 26), 1, true), f.hero.caption.text)
+	assert(f.hero.caption.text:find("Elwynn Forest", 1, true), "zone in the caption")
+	eq(f.split.figures[1].text, FF.Coins(240), "coin")
+	eq(f.split.figures[2].text, FF.Coins(285), "items at AH")
+	eq(f.split.figures[3].text, FF.Coins(26), "vendor only")
+	local rows = FF.LootRows()
+	eq(rows[1].data.itemID, ORE); eq(rows[1].count.text, "×3"); eq(rows[1].value.text, FF.Coins(285))
+	eq(rows[1].name.text, "Copper Ore", "plain name, quality colour on the FontString")
+	eq(rows[1].name.textColor[1], S.C.qCommon[1])
+	eq(rows[2].data.itemID, CLOTH)
+	eq(rows[3].data.itemID, HIDE); eq(rows[3].value.text, S.Hex("text3") .. "no price|r")
+	eq(rows[4].shown, false)
+	eq(f.loot.more.text.text, "1 unpriced"); eq(f.loot.more.shown, true)
+	-- × removes from the session in the loot panel's list (+ N more / Log link).
+	FF.OpenList()
+	eq(FF.LootShown(), true)
+	local list = FF.Rows()
+	eq(list[1].data.itemID, ORE)
+	assert(list[1].value.text:find("AH", 1, true), list[1].value.text)
+	eq(list[1].count.text, "×3")
+	assert(list[1].name.text:find("|hCopper Ore|h", 1, true), "name without brackets")
+	list[1].remove:GetScript("OnClick")(list[1].remove)
 	eq(ns.Farm.Counts(ns.Farm.Current())[ORE], nil)
-	eq(rows[1].data.itemID, HIDE, "list redrawn")
-	f.pause:GetScript("OnClick")(f.pause)
-	eq(f.pause.label.text, "Resume")
+	eq(list[1].data.itemID, CLOTH, "list redrawn")
+	eq(FF.LootRows()[1].data.itemID, CLOTH, "tracker redrawn")
+	local b = f.buttons.b
+	b.pause:GetScript("OnClick")(b.pause)
+	eq(f.word.text, "paused"); eq(b.resume.shown, true); eq(b.pause.shown, false)
 	SlashCmdList.CRAFTWISE("farm lock")
 	eq(ns.db.farm.locked, true); eq(f.locked, true)
 	SlashCmdList.CRAFTWISE("farm unlock")
@@ -384,9 +397,10 @@ it("window: stats, list rows with value and source, x removes, lock, scale, hide
 	eq(f:IsShown(), false); eq(ns.db.farm.shown, false)
 	SlashCmdList.CRAFTWISE("farm")
 	eq(f:IsShown(), true); eq(ns.db.farm.shown, true)
-	SlashCmdList.CRAFTWISE("farm reset")
-	eq(f.pause.label.text, "Start")
-	eq(rows[1].shown, false)
+	b.endLine:GetScript("OnClick")(b.endLine)
+	eq(ns.Farm.Current(), nil); eq(#ns.Farm.History(), 1, "End session keeps it in the history")
+	eq(b.start.shown, true)
+	eq(list[1].shown, false)
 	f.GetPoint = function() return "TOPLEFT", UIParent, "TOPLEFT", 40, -80 end
 	f:GetScript("OnDragStop")(f)
 	eq(ns.db.farm.pos.x, 40)
@@ -454,7 +468,7 @@ it("fishing: catches counted from the fishing log's record, valued like the loot
 	local F = ns.Farm
 	window(stub, { { id = ORE, n = 2 }, { copper = 500 } }, false) -- a mob: not fishing
 	eq(F.Totals(F.Current(), stub.clock).fish, nil, "no catches, no fishing block")
-	eq(ns.FarmFrame.FishPanel().shown, false)
+	eq(ns.FarmFrame.FishCard().shown, false)
 	advance(stub, 30)
 	catch(stub, { { id = CLOTH } }) -- 13
 	advance(stub, 30)
@@ -472,7 +486,7 @@ it("fishing: catches counted from the fishing log's record, valued like the loot
 	eq(f.unknownUnits, 0); eq(f.opened, 0)
 	local t = F.Totals(F.Current(), stub.clock)
 	eq(t.coin, 540, "the session's coin has the mob's and the catch's"); eq(t.items, 10 + 13 + 25 + 26)
-	eq(ns.FarmFrame.FishPanel().shown, true, "the block shows once there are catches")
+	eq(ns.FarmFrame.FishCard().shown, true, "the block shows once there are catches")
 end)
 
 it("fishing: coin only from a catch window with coin; unknown values apart; gaps over FISH_GAP aren't fishing time", function()
@@ -570,30 +584,6 @@ it("fishing: the first catch starts a session; history, /craftwise farm history 
 	eq(F.History()[1].fish, nil); eq(ns.Snapshot.Build().farm.sessions[1].fish, nil)
 end)
 
-it("fishing window: the block's numbers, hidden again after reset", function()
-	local ns, stub = fishSetup()
-	stub.ah[GEM], stub.ahAge[GEM] = 400, 0 -- 380 after the cut
-	catch(stub, { { id = GEM } })
-	for _ = 1, 2 do
-		advance(stub, 40)
-		catch(stub, { { id = CLOTH }, { copper = 7 } })
-	end
-	catch(stub, { { id = HIDE } })
-	ns.FarmFrame.Refresh()
-	local p = ns.FarmFrame.FishPanel()
-	eq(p.shown, true)
-	assert(p.values.catches.text:find("^4"), p.values.catches.text)
-	assert(p.values.catches.text:find("/h", 1, true), "catches per hour shown")
-	assert(p.values.rate.text:find("timed catches, too few", 1, true), p.values.rate.text) -- long-run rate (#136)
-	assert(p.values.perCatch.text:find(ns.FormatMoney(math.floor((14 + 380 + 26) / 4 + 0.5)), 1, true), p.values.perCatch.text)
-	assert(p.values.perCatch.text:find("+1 ?", 1, true), "unpriced count shown")
-	assert(p.values.best.text:find("Malachite", 1, true), p.values.best.text)
-	eq(p.values.opened.text, ns.Style.colors.muted .. "0|r")
-	eq(p.zones[1].name.text, "Elwynn Forest")
-	SlashCmdList.CRAFTWISE("farm reset")
-	eq(p.shown, false)
-end)
-
 it("open without typing (#130): the profit window's Farm button, the key binding and the Settings button toggle the window", function()
 	local ns, stub = setup()
 	local function shown() return CraftWiseFarmFrame ~= nil and CraftWiseFarmFrame:IsShown() end
@@ -673,7 +663,7 @@ it("log: capped at LOG_MAX lines per session, the oldest dropped and counted", f
 	local e = F.LogEntries(s)
 	eq(e[1].n, F.LOG_MAX + 25, "newest first"); eq(e[#e].n, 26, "the oldest kept")
 	eq(F.Counts(s)[ORE] + F.Counts(s)[CLOTH], (F.LOG_MAX + 25) * (F.LOG_MAX + 26) / 2, "the totals keep everything")
-	ns.FarmFrame.SetView("log")
+	ns.FarmFrame.OpenLog()
 	assert(CraftWiseFarmFrame.listHead.text:find("25 older dropped", 1, true), CraftWiseFarmFrame.listHead.text)
 end)
 
@@ -717,7 +707,7 @@ it("log: kept across /reload, in the history, and the snapshot carries only the 
 	eq(hist[ns2.Farm.HISTORY_LOGS + 1].log, nil); eq(hist[ns2.Farm.HISTORY_LOGS + 1].logLines, 31)
 end)
 
-it("log view: a button switches list and log, remembered in CraftWiseDB.farm.view; rows newest first", function()
+it("loot panel (Log link): a button switches list and log, remembered in CraftWiseDB.farm.view; rows newest first", function()
 	local ns, stub = fishSetup()
 	local FF = ns.FarmFrame
 	eq(ns.db.farm.view, "list")
@@ -727,7 +717,7 @@ it("log view: a button switches list and log, remembered in CraftWiseDB.farm.vie
 	advance(stub, 3)
 	catch(stub, { { id = GEM } })
 	local f = CraftWiseFarmFrame
-	FF.Refresh()
+	FF.OpenList()
 	eq(f.viewButton.label.text, "Log")
 	eq(FF.Rows()[1].shown, true); eq(FF.LogRows()[1].shown, false)
 	f.viewButton:GetScript("OnClick")(f.viewButton)
@@ -737,11 +727,11 @@ it("log view: a button switches list and log, remembered in CraftWiseDB.farm.vie
 	eq(FF.Rows()[1].shown, false)
 	eq(rows[1].data.itemID, GEM)
 	assert(rows[1].name.text:find(FF.FISH_MARK, 1, true), "catch marked")
-	eq(rows[1].time.text, ns.Style.colors.muted .. date("%H:%M:%S", T0 + 6) .. "|r")
-	eq(rows[2].data.copper, 50); eq(rows[2].icon.texture, FF.COIN_ICON); eq(rows[2].value.text, ns.FormatMoney(50))
+	eq(rows[1].time.text, date("%H:%M:%S", T0 + 6))
+	eq(rows[2].data.copper, 50); eq(rows[2].icon.texture, FF.COIN_ICON); eq(rows[2].value.text, FF.Coins(50))
 	assert(not rows[2].name.text:find(FF.FISH_MARK, 1, true))
 	eq(rows[3].data.itemID, ORE)
-	assert(rows[3].name.text:find("2x", 1, true)); assert(rows[3].zone.text:find("Elwynn Forest", 1, true))
+	assert(rows[3].name.text:find("×2", 1, true)); assert(rows[3].zone.text:find("Elwynn Forest", 1, true))
 	eq(rows[4].shown, false)
 	rows[1]:GetScript("OnEnter")(rows[1])
 	-- Remembered: a new load of the addon opens in the log view.
@@ -750,4 +740,185 @@ it("log view: a button switches list and log, remembered in CraftWiseDB.farm.vie
 	eq(ns2.db.farm.view, "log"); eq(ns2.FarmFrame.View(), "log")
 	f.viewButton:GetScript("OnClick")(f.viewButton)
 	eq(ns.db.farm.view, "list")
+end)
+
+
+----------------------------------------------------------------------------------------------------
+-- Tracker in the Origami look (#158): states, dog-ear, buttons, money, split, links
+----------------------------------------------------------------------------------------------------
+
+local function flapOf(f)
+	return f.cwSheet.flap.hex
+end
+
+local function shownButtons(f)
+	local out = {}
+	for name, b in pairs(f.buttons.b) do
+		if b.shown then out[#out + 1] = name end
+	end
+	table.sort(out)
+	return table.concat(out, ",")
+end
+
+it("tracker states: no session, running, paused by hand, paused when idle; dog-ear, word, timer and buttons", function()
+	local ns, stub = setup()
+	local FF, S = ns.FarmFrame, ns.Style
+	SlashCmdList.CRAFTWISE("farm show")
+	local f = CraftWiseFarmFrame
+	-- No session.
+	eq(FF.Last().state, "none")
+	eq(flapOf(f), S.C.flap.hex, "flap colour without a session")
+	eq(f.word.text, "no session"); eq(f.word.textColor[1], S.C.text3[1])
+	eq(f.timer.text, "")
+	eq(f.empty.shown, true); eq(f.hero.shown, false); eq(f.split.shown, false); eq(f.loot.shown, false); eq(f.fish.shown, false)
+	eq(f.empty.title.text, "Press Start, then loot.")
+	eq(f.empty.hint.text, "Or just loot: \"Start on first loot\" is on in Settings.")
+	eq(shownButtons(f), "history,start")
+	SlashCmdList.CRAFTWISE("farm autostart off")
+	eq(f.empty.hint.shown, false, "no hint while Start on first loot is off")
+	SlashCmdList.CRAFTWISE("farm autostart on")
+	assert(f.height and f.height > 0, "height from content")
+	local noneHeight = f.height
+	-- Start: running, nothing looted yet.
+	f.buttons.b.start:GetScript("OnClick")(f.buttons.b.start)
+	eq(FF.Last().state, "running")
+	eq(flapOf(f), S.C.live.hex, "orange dog-ear while running")
+	eq(f.word.text, "running"); eq(f.word.textColor[1], S.C.live[1])
+	eq(f.timer.text, "0:00:00")
+	eq(f.hero.value.text, S.Hex("text3") .. "—|r", "no rate under a minute")
+	eq(f.loot.nothing.shown, true); eq(f.loot.more.shown, false)
+	eq(shownButtons(f), "endAction,pause")
+	loot(stub, CLOTH, 2)
+	advance(stub, 240)
+	FF.Refresh()
+	eq(f.timer.text, "0:04:00")
+	eq(f.hero.value.text, FF.Coins(26 * 15))
+	eq(f.loot.nothing.shown, false)
+	assert(f.height > noneHeight, "the running tracker is taller")
+	-- Paused by hand.
+	f.buttons.b.pause:GetScript("OnClick")(f.buttons.b.pause)
+	eq(FF.Last().state, "paused")
+	eq(flapOf(f), S.C.ruleStrong.hex, "rule-strong dog-ear while paused")
+	eq(f.word.text, "paused"); eq(f.timer.textColor[1], S.C.text2[1])
+	assert(f.hero.caption.text:find("total", 1, true), "manual pause keeps the total")
+	eq(shownButtons(f), "endLine,resume")
+	f.buttons.b.resume:GetScript("OnClick")(f.buttons.b.resume)
+	eq(FF.Last().state, "running")
+	-- Paused when idle (5 minutes without loot).
+	advance(stub, 5 * 60 + 1)
+	ns.Farm.Tick()
+	eq(FF.Last().state, "idle")
+	eq(f.word.text, "paused · idle 5 min")
+	eq(f.hero.caption.text, "per hour · resumes with your next loot")
+	eq(flapOf(f), S.C.ruleStrong.hex)
+	eq(shownButtons(f), "endLine,resume")
+	loot(stub, CLOTH, 1)
+	eq(FF.Last().state, "running", "the next loot resumes")
+	-- End session (action button): back to no session, kept in the history.
+	f.buttons.b.endAction:GetScript("OnClick")(f.buttons.b.endAction)
+	eq(FF.Last().state, "none"); eq(flapOf(f), S.C.flap.hex); eq(#ns.Farm.History(), 1)
+end)
+
+it("tracker: top 5 loot by value, footer '+ N more · M unpriced', the links open the loot panel and the history beside it", function()
+	local ns, stub = setup()
+	local FF = ns.FarmFrame
+	local ids = {}
+	for i = 1, 7 do
+		local id = 5000 + i
+		stub.items[id] = { name = "Test Item " .. i, sellPrice = i * 10 }
+		ids[i] = id
+		loot(stub, id, 1)
+	end
+	stub.items[5100] = { name = "Unpriced A" }
+	stub.items[5101] = { name = "Unpriced B" }
+	loot(stub, 5100, 1); loot(stub, 5101, 3)
+	FF.Refresh()
+	local f = CraftWiseFarmFrame
+	local rows = FF.LootRows()
+	eq(#FF.Last().loot, 5)
+	eq(rows[1].data.itemID, ids[7], "best value first"); eq(rows[5].data.itemID, ids[3])
+	eq(FF.Last().more, 4); eq(FF.Last().unpriced, 2)
+	eq(f.loot.more.text.text, "+ 4 more · 2 unpriced")
+	eq(FF.FooterText({ more = 0, unpriced = 0 }), "")
+	-- Log: the loot panel in its log view, beside the tracker.
+	f.loot.log:GetScript("OnClick")(f.loot.log)
+	eq(FF.LootShown(), true); eq(FF.View(), "log"); eq(f.panel.side, "right")
+	eq(FF.LogRows()[1].data.itemID, 5101, "newest first")
+	assert(f.listHead.text:find("Loot log · 9", 1, true), f.listHead.text)
+	-- History: the farm history beside it; the loot panel makes room.
+	f.loot.history:GetScript("OnClick")(f.loot.history)
+	eq(ns.FarmHistory.IsShown(), true); eq(FF.LootShown(), false)
+	-- + N more: the whole list; the history closes.
+	f.loot.more:GetScript("OnClick")(f.loot.more)
+	eq(FF.LootShown(), true); eq(FF.View(), "list"); eq(ns.FarmHistory.IsShown(), false)
+	eq(FF.Rows()[9].data.itemID ~= nil, true, "every item in the list")
+	f.panel.close:GetScript("OnClick")(f.panel.close)
+	eq(FF.LootShown(), false)
+	-- Near the right screen edge the panels open on the left.
+	f.GetRight = function() return 1800 end
+	f.GetEffectiveScale = function() return 1 end
+	UIParent.GetRight = function() return 1920 end
+	UIParent.GetEffectiveScale = function() return 1 end
+	FF.OpenLog()
+	eq(f.panel.side, "left")
+	eq(f.panel.points[1][1], "TOPRIGHT"); eq(f.panel.points[1][3], "TOPLEFT")
+end)
+
+it("tracker fishing card: only with catches; catches, per catch, catches per hour, best catch and your usual rate", function()
+	local ns, stub = fishSetup()
+	local FF, S = ns.FarmFrame, ns.Style
+	stub.items[GEM].quality = 2
+	loot(stub, ORE, 1)
+	FF.Refresh()
+	local card = FF.FishCard()
+	eq(card.shown, false, "no card without catches")
+	local plain = CraftWiseFarmFrame.height
+	catch(stub, { { id = GEM } })
+	for _ = 1, 2 do
+		advance(stub, 40)
+		catch(stub, { { id = CLOTH }, { copper = 7 } })
+	end
+	FF.Refresh()
+	eq(card.shown, true)
+	assert(CraftWiseFarmFrame.height > plain, "the card adds its height")
+	local f = FF.Last().fish
+	eq(card.values.catches.text, "3")
+	eq(card.values.perCatch.text, FF.Coins(f.perCatch))
+	eq(card.values.perHour.text, tostring(math.floor(f.cph + 0.5)))
+	assert(card.line.text:find("Best catch: " .. S.Hex("qUncommon") .. "Malachite|r", 1, true), card.line.text)
+	assert(card.line.text:find("your usual rate: ", 1, true), card.line.text)
+	card.hover:GetScript("OnEnter")(card.hover)
+	eq(CraftWiseInverseTip.title.text, "Fishing")
+	SlashCmdList.CRAFTWISE("farm reset")
+	eq(card.shown, false)
+end)
+
+it("tracker pieces: money in coin colours, the timer, split geometry, hover tips", function()
+	local ns, stub = setup()
+	local FF, S = ns.FarmFrame, ns.Style
+	local g, s, c = S.Hex("coinGold"), S.Hex("coinSilver"), S.Hex("coinCopper")
+	eq(FF.Coins(164023), ns.FormatCoins(164023), "the shared money format (Money.lua)")
+	eq(FF.Coins(164023), g .. "16g|r " .. s .. "40s|r", "at most two units")
+	eq(FF.Coins(6620), s .. "66s|r " .. c .. "20c|r")
+	eq(FF.Coins(nil), S.Hex("text3") .. "—|r")
+	eq(FF.PlainCoins(164023), "16g 40s"); eq(FF.PlainCoins(nil), "—")
+	eq(FF.Timer(3600 + 12 * 60 + 40), "1:12:40")
+	local geo = FF.SplitGeometry({ 100, 300, 0 }, 228)
+	eq(geo[1].x, 0); eq(geo[1].w, 57); eq(geo[2].x, 59); eq(geo[2].w, 169); eq(geo[3].w, 0)
+	geo = FF.SplitGeometry({ 1, 1, 1 }, 228)
+	eq(geo[1].w + geo[2].w + geo[3].w + 4, 228, "two gaps of 2 units")
+	eq(FF.SplitGeometry({ 0, 0, 0 }, 228)[1].w, 0)
+	-- The split's AH label turns red with stale prices; hover cells show the inverse tooltip.
+	stub.ah[ORE], stub.ahAge[ORE] = 100, 3
+	loot(stub, ORE, 2)
+	advance(stub, 120)
+	FF.Refresh()
+	local f = CraftWiseFarmFrame
+	eq(f.split.labels[2].textColor[1], S.C.danger[1])
+	f.hero.hover:GetScript("OnEnter")(f.hero.hover)
+	eq(CraftWiseInverseTip.title.text, "Gold per hour")
+	assert(CraftWiseInverseTip.body.text:find("Elwynn Forest", 1, true), "zones in the hero tip")
+	f.hero.hover:GetScript("OnLeave")(f.hero.hover)
+	FF.OpenList()
+	assert(FF.Rows()[1].value.text:find(S.Hex("danger") .. "3 d|r", 1, true), "stale AH value carries its age in red")
 end)
