@@ -134,6 +134,10 @@ local function OnReady(_, autoloot)
 	if ns.Fishing and ns.Fishing.Capture then
 		ns.Fishing.Capture()
 	end
+	-- Loot feed (#135): a container's slots are read before they are looted.
+	if ns.LootFeed and ns.LootFeed.Capture then
+		ns.LootFeed.Capture()
+	end
 	if autoloot == nil then
 		autoloot = Loot.AutoLootApplies()
 	end
