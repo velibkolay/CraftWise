@@ -2,6 +2,7 @@
 -- Item tooltip section: on/off, always or only with Shift, and each line on/off.
 -- Profit prices (#26 phase 2): price basis and the auction house profit uses.
 -- Reagent cost per view (#47): AH or paid cost.
+-- Loot toast (#114) and farm tracker (#126) on/off.
 local _, ns = ...
 local Style = ns.Style
 local C = Style.colors
@@ -168,7 +169,24 @@ local function Build(parent)
 	panel.toastHint:SetWidth(292)
 	panel.toastHint:SetJustifyH("LEFT")
 	panel.toastHint:SetText(C.muted .. L["Shows what you loot for a few seconds. Move it: /craftwise loottoast unlock"] .. "|r")
-	panel:SetHeight(-toastY + 62)
+	-- Farm tracker (Farm.lua, #126).
+	local farmY = toastY - 52
+	panel.farm = Style.Check(panel, L["Farm tracker"], ns.Farm.Enabled(), function(v)
+		ns.Farm.Slash(v and "on" or "off")
+		panel.render()
+	end)
+	panel.farm:SetPoint("TOPLEFT", 12, farmY)
+	panel.farmAuto = Style.Check(panel, L["Start on first loot"], ns.Farm.AutoStart(), function(v)
+		ns.Farm.Slash(v and "autostart on" or "autostart off")
+		panel.render()
+	end)
+	panel.farmAuto:SetPoint("TOPLEFT", 150, farmY)
+	panel.farmHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	panel.farmHint:SetPoint("TOPLEFT", 12, farmY - 22)
+	panel.farmHint:SetWidth(292)
+	panel.farmHint:SetJustifyH("LEFT")
+	panel.farmHint:SetText(C.muted .. L["Gold per hour while farming, valued with CraftWise prices. Window: /craftwise farm"] .. "|r")
+	panel:SetHeight(-farmY + 62)
 
 	function panel.render()
 		for key, b in pairs(panel.clicks) do
@@ -213,6 +231,9 @@ local function Build(parent)
 		end
 		panel.fastLoot:SetChecked(ns.Loot.Enabled())
 		panel.lootToast:SetChecked(ns.LootToast.Enabled())
+		panel.farm:SetChecked(ns.Farm.Enabled())
+		panel.farmAuto:SetChecked(ns.Farm.AutoStart())
+		panel.farmAuto:SetAlpha(ns.Farm.Enabled() and 1 or 0.4)
 		local other = ns.Loot.Conflict()
 		panel.fastLoot:SetAlpha(other and 0.4 or 1)
 		panel.lootHint:SetText(C.muted .. (other and (other .. " " .. L["is loaded, so CraftWise does not loot."])

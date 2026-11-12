@@ -10,7 +10,7 @@
 -- 2. companion/savedvars/testdata/CraftWise.lua: a synthetic SavedVariables file (stub items, stub
 --    realm, no game data) made by running the addon headless: full scans at two houses on three days,
 --    a browse list, a commodity search, Auctionator prices, ledger trades, two auctions, a fishing log,
---    a character with gear, quests, reputations, a pet and flight paths, then logout (names, item
+--    a character with gear, quests, reputations, a pet and flight paths, farm sessions, then logout (names, item
 --    info, packing, snapshot). Only the tables the companion reads are written. It is
 --    not checked by the spec, so changes elsewhere in the addon don't force a regeneration; rerun this
 --    script when one of those tables changes shape.
@@ -481,6 +481,23 @@ function G.SavedVariables(loadAddon)
 			x = 25.4, y = 60.1, obj = pool and 6001 or 5001, spawn = pool and "0000AB" or ("00000" .. i),
 			clk = pool and "GameObject-0-1-2-3-5001-0000FF" or nil, same = not pool or nil, items = { [FISH] = 1, [OIL] = i % 2 } }
 	end
+
+	-- Farm tracker (#126): a finished session in two zones, then one still open (idle-paused by logout).
+	-- The clock goes back afterwards, so every other time in the fixture stays as it was.
+	local clock = stub.clock
+	stub.zone = "Test Zone"
+	ns.Farm.OnFeed("item", { itemID = CLOTH, count = 6, link = Link(CLOTH) })
+	stub.clock = stub.clock + 120
+	ns.Farm.OnFeed("money", { copper = 345 })
+	stub.zone = "Test Zone 2"
+	stub.clock = stub.clock + 60
+	ns.Farm.OnFeed("item", { itemID = HIDE, count = 2, link = Link(HIDE) })
+	stub.clock = stub.clock + 60
+	ns.Farm.Reset(stub.clock)
+	ns.Farm.OnFeed("item", { itemID = FISH, count = 3, link = Link(FISH) })
+	stub.clock = stub.clock + 30
+	ns.Farm.OnFeed("money", { copper = 12 })
+	stub.clock = clock
 
 	SnapshotClient(stub)
 	stub.clock = stub.clock + 600

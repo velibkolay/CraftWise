@@ -30,6 +30,7 @@ type Snapshot struct {
 	Market         *MarketSummary    `json:"market,omitempty"`
 	Crates         *Crates           `json:"crates,omitempty"`
 	Favor          *Favor            `json:"favor,omitempty"`
+	Farm           *FarmSummary      `json:"farm,omitempty"`
 
 	Raw *svparse.Table `json:"-" lua:"-"`
 }
@@ -419,4 +420,49 @@ type FavorItem struct {
 	Known    bool   `json:"known,omitempty"`
 	Unusable bool   `json:"unusable,omitempty"`
 	N        *int64 `json:"n,omitempty"`
+}
+
+// FarmSummary is the farm tracker section (#126): the current session and the latest finished ones,
+// newest first. Money is copper, times Unix seconds, Seconds the session time without pauses.
+type FarmSummary struct {
+	Current    *FarmSession     `json:"current,omitempty"`
+	Sessions   []FarmSession    `json:"sessions"`
+	Names      map[int64]string `json:"names,omitempty"` // names of the top items
+	Saved      *int64           `json:"saved,omitempty"` // finished sessions kept in CraftWiseDB.farmLog
+	More       *int64           `json:"more,omitempty"`  // kept but not in the snapshot
+	HistoryMax *int64           `json:"historyMax,omitempty"`
+}
+
+type FarmSession struct {
+	Start         *int64 `json:"start,omitempty"`
+	Stop          *int64 `json:"stop,omitempty"` // nil for the current session
+	Seconds       *int64 `json:"seconds,omitempty"`
+	Zone          string `json:"zone,omitempty"`
+	Coin          *int64 `json:"coin,omitempty"`
+	Items         *int64 `json:"items,omitempty"`  // items, each sold the best way (AH after the cut or vendor)
+	Vendor        *int64 `json:"vendor,omitempty"` // the same items, all to a vendor
+	VendorUnknown *int64 `json:"vendorUnknown,omitempty"`
+	AH            *int64 `json:"ah,omitempty"`    // part of Items from AH prices
+	Stale         *int64 `json:"stale,omitempty"` // part of AH from prices over a day old
+	Unknown       *int64 `json:"unknown,omitempty"`
+	// Zones: most time first; nil when the session was in one zone (Zone).
+	Zones     []FarmZone `json:"zones,omitempty"`
+	ZonesMore *int64     `json:"zonesMore,omitempty"`
+	Top       []FarmItem `json:"top"`
+	Running   *bool      `json:"running,omitempty"` // current session only
+	Paused    string     `json:"paused,omitempty"`  // current session only: "manual" or "idle"
+}
+
+type FarmZone struct {
+	Zone    string `json:"zone,omitempty"`
+	Seconds *int64 `json:"seconds,omitempty"`
+	Coin    *int64 `json:"coin,omitempty"`
+	Items   *int64 `json:"items,omitempty"`
+}
+
+type FarmItem struct {
+	ID     int64  `json:"id"`
+	N      *int64 `json:"n,omitempty"`
+	Value  *int64 `json:"value,omitempty"`
+	Source string `json:"source,omitempty"` // "auction" or "vendor"
 }
