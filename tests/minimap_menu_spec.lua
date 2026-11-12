@@ -109,6 +109,7 @@ end)
 it("item menu: Where to buy and Price history open Look up › Items when it exists, else the Records views", function()
 	local ns = setup()
 	local calls = {}
+	ns.ShowItemLookup = nil -- before Look up › Items: the Records views
 	ns.ShowWhereToBuy = function(id) calls[#calls + 1] = "where " .. id end
 	ns.ShowMarketPrices = function(id) calls[#calls + 1] = "market " .. id end
 	local menu

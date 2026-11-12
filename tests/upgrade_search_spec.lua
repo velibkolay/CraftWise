@@ -190,39 +190,45 @@ it("a search without an answer or a failed one is skipped and reported", functio
 	eq(#failed, 2); eq(failed[1], "Head"); eq(failed[2], "Neck")
 end)
 
-it("General / AH section: switch, Search AH button, rows, dismiss and restore", function()
+it("Look up › Upgrades: the AH group, Search AH for these (disabled while the AH is closed), rows, dismiss", function()
 	local ns, stub = setup()
-	ns.db.settings.view = "upgrades"
-	ns.ToggleProfitFrame()
-	local f = CraftWiseFrame
-	f.sectionButtons.ah.scripts.OnClick(f.sectionButtons.ah)
-	eq(ns.db.settings.upgradeSection, "ah")
-	eq(f.searchAH.shown, true)
-	assert(f.empty.text:find("No AH search yet", 1, true), f.empty.text)
-	OpenAH(stub)
-	f.searchAH.scripts.OnClick(f.searchAH)
-	eq(#stub.browseQueries, 1)
-	assert(f.summary.text:find("Searching the AH: 1/15 Head", 1, true), f.summary.text)
-	Answer(stub, { [16] = { Row(6001, 12, 2500, 4) } })
-	local function shown()
-		local list = {}
-		for _, fr in ipairs(stub.frames) do
-			if fr.data and fr.shown ~= false then list[#list + 1] = fr end
+	local M = ns.Main
+	M.Open("upgrades")
+	local function frames()
+		local out = { items = {} }
+		for _, fr in ipairs(M.ListOf("upgrades").box.frames) do
+			local r = fr.element and fr.element.row
+			if r and r.search then out.search = fr
+			elseif r and r.header and r.group == "ah" then out.header = r
+			elseif r and r.emptyLine and r.group == "ah" then out.empty = r
+			elseif r and r.itemID then out.items[#out.items + 1] = r end
 		end
-		return list
+		return out
 	end
-	local rows = shown()
-	eq(#rows, 1); eq(rows[1].data.itemID, 6001)
-	assert(rows[1].status.text:find("4 listed", 1, true), rows[1].status.text)
-	assert(f.summary.text:find("General / AH", 1, true))
-	rows[1].scripts.OnEnter(rows[1])
-	rows[1].scripts.OnClick(rows[1], "RightButton")
-	eq(ns.db.dismissed[6001], true); eq(#shown(), 0)
+	local f = frames()
+	eq(f.header.title, "From the auction house"); eq(f.header.note, "no search yet")
+	eq(f.header.right, "open the auction house to search")
+	assert(f.empty.emptyLine:find("Open the auction house and search", 1, true), f.empty.emptyLine)
+	local chip = f.search.cwUp.chip
+	eq(chip.label.text, "Search AH for these"); eq(chip.disabled, true)
+	eq(chip.cwTip, "open the auction house to search")
+	OpenAH(stub)
+	f = frames()
+	chip = f.search.cwUp.chip
+	eq(f.header.right, nil); eq(chip.disabled, false)
+	chip.scripts.OnClick(chip)
+	eq(#stub.browseQueries, 1)
+	eq(frames().search.cwUp.chip.label.text, "Searching 1 of 15 · Head")
+	Answer(stub, { [16] = { Row(6001, 12, 2500, 4) } })
+	f = frames()
+	eq(#f.items, 1); eq(f.items[1].itemID, 6001); eq(f.items[1].group, "ah")
+	assert(f.items[1].how:find("4 listed", 1, true), f.items[1].how)
+	eq(f.items[1].gainText, "+3 AGI · +2 armor")
+	eq(f.items[1].costText, ns.FormatCoins(2500))
+	assert(f.header.note:find("searched", 1, true), f.header.note)
+	ns.ToggleDismissed(6001)
+	eq(#frames().items, 0)
 	ns.db.settings.showDismissed = true
-	ns.RefreshProfitFrame()
-	rows = shown()
-	rows[1].scripts.OnClick(rows[1], "RightButton")
-	eq(ns.db.dismissed[6001], nil)
-	f.sectionButtons.craft.scripts.OnClick(f.sectionButtons.craft)
-	eq(f.searchAH.shown, false)
+	ns.Notify("UPGRADES_CHANGED")
+	eq(frames().items[1].dismissed, true)
 end)

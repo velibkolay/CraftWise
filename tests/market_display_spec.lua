@@ -366,7 +366,7 @@ end)
 it("settings: basis and house buttons; houses without data can't be picked", function()
 	local ns = Load()
 	Seed(5, BOOTY, { tiers = { 200, 40 }, total = 40 })
-	SlashCmdList.CRAFTWISE("settings")
+	ns.ToggleSettings() -- the old panel, until #157 part 2 (the Settings page: tests/settings_page_spec.lua)
 	local p = CraftWiseSettings
 	p.basis.current.scripts.OnClick(p.basis.current)
 	eq(ns.db.settings.priceBasis, "current")

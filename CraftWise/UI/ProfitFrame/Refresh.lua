@@ -31,15 +31,6 @@ local function Refresh()
 	state.data, state.hidden = FilteredRows()
 	local sortKey, sortDesc = SortSettings()
 	local compare = ns.Profit.Comparator(sortKey, sortDesc)
-	if ItemView() and View() ~= "music" then
-		local inner = compare
-		compare = function(a, b)
-			if a.dismissed ~= b.dismissed then
-				return b.dismissed -- dismissed items last
-			end
-			return inner(a, b)
-		end
-	end
 	table.sort(state.data, compare)
 	state.offset = math.max(0, math.min(state.offset, #state.data - VISIBLE_ROWS))
 
@@ -47,13 +38,6 @@ local function Refresh()
 	for key, header in pairs(PF.frame.headers) do
 		local arrow = sortKey == key and (sortDesc and ARROW_DOWN or ARROW_UP) or ""
 		local label = header.label
-		if key == "name" and View() == "music" then
-			label = L["PROFESSION"]
-		elseif key == "name" and ItemView() then
-			label = L["ITEM"]
-		elseif key == "cost" and View() == "upgrades" then
-			label = L["TOTAL COST"]
-		end
 		header.text:SetText(label .. arrow)
 	end
 
@@ -66,19 +50,13 @@ local function Refresh()
 			rows[i]:Hide()
 		end
 	end
-	local unit = View() == "music" and "professions" or ItemView() and "items" or "recipes"
-	PF.frame.count:SetText(Muted(("%d %s"):format(#state.data, unit)))
+	PF.frame.count:SetText(Muted(("%d %s"):format(#state.data, "recipes")))
 	local empty = "No recipes match. Clear the search or tick \"Show unlearned\"."
 	if View() == "learn" then
 		empty = "No recipes match. Clear the search or untick \"Fits my skill\"."
-	elseif View() == "upgrades" and PF.UpgradeSection() == "ah" then
-		empty = ns.UpgradeSearch.LastRun() and "No AH gear beats what you wear. Search again at the auction house later."
-			or "No AH search yet. Open the auction house and click Search AH."
-	elseif View() == "upgrades" then
-		empty = "No upgrades from recipes you know or can learn now. Open your professions once so CraftWise knows them."
 	end
 	PF.frame.empty:SetText(empty)
-	PF.frame.empty:SetShown((#ids > 0 or ItemView()) and #state.data == 0)
+	PF.frame.empty:SetShown(#ids > 0 and #state.data == 0)
 	UpdateScrollBar()
 end
 ns.RefreshProfitFrame = Refresh

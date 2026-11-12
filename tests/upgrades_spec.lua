@@ -63,37 +63,43 @@ it("compares rings with the weaker of the two ring slots", function()
 	eq(row.current.itemID, 3002); eq(row.ilvlGain, 5)
 end)
 
-it("upgrades view renders; right-click dismisses and restores a suggestion", function()
-	local ns, stub = setup()
-	ns.db.settings.view = "upgrades"
-	ns.ToggleProfitFrame()
-	local function shown()
-		local list = {}
-		for _, f in ipairs(stub.frames) do
-			if f.data and f.shown ~= false then list[#list + 1] = f end
-		end
-		return list
+-- Rows of a main window list page that are items (not group headers or the search row).
+local function pageItems(M, key)
+	local out = {}
+	for _, fr in ipairs(M.ListOf(key).box.frames) do
+		local r = fr.element and fr.element.row
+		if r and r.itemID and not r.header then out[#out + 1] = r end
 	end
-	local rows = shown()
-	eq(#rows, 3)
-	eq(rows[1].data.itemID, 2003) -- empty slot first, then biggest gain
-	for _, f in ipairs(rows) do f.scripts.OnEnter(f) end
-	local target
-	for _, f in ipairs(rows) do
-		if f.data.itemID == 2001 then target = f end
-	end
-	target.scripts.OnClick(target, "RightButton")
-	eq(ns.db.dismissed[2001], true)
-	eq(#shown(), 2)
-	ns.db.settings.showDismissed = true
-	ns.RefreshProfitFrame()
-	rows = shown()
-	eq(#rows, 3); eq(rows[3].data.itemID, 2001) -- dismissed last
-	rows[3].scripts.OnClick(rows[3], "RightButton")
-	eq(ns.db.dismissed[2001], nil)
-	stub.Fire("PLAYER_EQUIPMENT_CHANGED")
-end)
+	return out
+end
 
+it("Look up › Upgrades lists what you can craft; the item menu dismisses and restores a suggestion", function()
+	local ns = setup()
+	local M = ns.Main
+	M.Open("upgrades")
+	eq(M.shown.page, "upgrades"); eq(M.shown.state, "list")
+	local rows = pageItems(M, "upgrades")
+	eq(#rows, 3)
+	eq(rows[1].itemID, 2003) -- empty slot first, then biggest gain
+	eq(rows[1].gainText, "fills the slot")
+	ns.ShowItemMenu(2001)
+	local dismiss = CraftWiseItemMenu.buttons.dismiss
+	eq(dismiss.shown, true); eq(dismiss.label.text, "Don't suggest as upgrade")
+	dismiss.scripts.OnClick(dismiss)
+	eq(ns.db.dismissed[2001], true)
+	eq(#pageItems(M, "upgrades"), 2)
+	ns.db.settings.showDismissed = true
+	ns.Notify("UPGRADES_CHANGED")
+	rows = pageItems(M, "upgrades")
+	eq(#rows, 3); eq(rows[3].itemID, 2001); eq(rows[3].dismissed, true) -- dismissed last
+	ns.ShowItemMenu(2001)
+	eq(dismiss.label.text, "Suggest as upgrade again")
+	dismiss.scripts.OnClick(dismiss)
+	eq(ns.db.dismissed[2001], nil)
+	ns.ShowItemMenu(2318) -- not gear: no upgrade line
+	eq(dismiss.shown, false)
+	stub = nil
+end)
 it("main stats inline: primary stats and stamina, for the item and the equipped one", function()
 	local ns, stub = setup()
 	eq(ns.Upgrades.MainStatsText({ ITEM_MOD_STAMINA_SHORT = 2, ITEM_MOD_AGILITY_SHORT = 3, RESISTANCE0_NAME = 9 }), "+3 AGI +2 STA")
@@ -217,21 +223,20 @@ it("a known recipe wins over a learnable one for the same item; cheaper learnabl
 	eq(rows[4002].recipeID, 102); eq(rows[4002].cost, 110)
 end)
 
-it("upgrades view shows learn-first rows and the total cost header", function()
-	local ns, stub = learnSetup()
+it("Look up › Upgrades shows learn-first rows with how to learn and the total cost", function()
+	local ns = learnSetup()
 	ns.db.trainer[101] = { fee = 500, required = 80 }
-	ns.db.settings.view = "upgrades"
-	ns.ToggleProfitFrame()
+	local M = ns.Main
+	M.Open("upgrades")
 	local row
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.itemID == 4001 then row = f end
+	for _, fr in ipairs(M.ListOf("upgrades").box.frames) do
+		local r = fr.element and fr.element.row
+		if r and r.itemID == 4001 then row = fr end
 	end
-	assert(row.status.text:find("learn first", 1, true), row.status.text)
-	assert(row.status.text:find("Trainer", 1, true))
-	row.scripts.OnEnter(row)
-	local header
-	for _, f in ipairs(stub.frames) do
-		if f.label and f.text and f.text.text and f.text.text:find("TOTAL COST", 1, true) then header = f end
-	end
-	assert(header, "TOTAL COST header")
+	assert(row, "row 4001")
+	eq(row.element.row.how, "learn: trainer " .. ns.FormatMoney(500, true))
+	eq(row.cwUp.how.text, row.element.row.how)
+	eq(row.element.row.costText, ns.FormatCoins(510))
+	local tip = M.Upgrades.CostTip(row.element.row)
+	eq(tip[1], "Cost"); eq(tip[#tip], "Learn: Trainer")
 end)

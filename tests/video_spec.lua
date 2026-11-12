@@ -34,21 +34,22 @@ it("shows the window while casting, advances frames, and resumes at the saved fr
 	eq(ns.Video.Current().frame, 0)
 end)
 
-it("preview doesn't save a position and the picker lists videos", function()
+it("preview doesn't save a position; the Music page's Video list chooses a clip", function()
 	local ns, stub = setup()
 	ns.Video.Preview("Clip")
 	ns.Video.Tick(0.5)
 	ns.Video.Stop()
 	eq(ns.db.music.videoPos, nil)
-	ns.db.settings.view = "music"
-	ns.ToggleProfitFrame()
-	local row
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.name == "Fishing" then row = f end
-	end
-	row.scripts.OnClick(row, "LeftButton")
-	local picker = CraftWiseSongPicker
-	eq(picker.videos[2].pick.selected, true) -- Clip chosen
-	picker.videos[1].pick.scripts.OnClick(picker.videos[1].pick)
+	local M = ns.Main
+	M.Open("music")
+	local body = M.SlotsOf("music").body
+	local r = body.list.rows[2]
+	eq(r.data.name, "Fishing"); eq(r.video.text.text, "Clip")
+	r.video.scripts.OnClick(r.video)
+	local menu = CraftWiseMusicMenu
+	eq(menu.rows[2].current, true) -- Clip chosen
+	menu.rows[2].play.scripts.OnClick(menu.rows[2].play)
+	eq(ns.Video.PreviewName(), "Clip")
+	menu.rows[1].scripts.OnClick(menu.rows[1])
 	eq(ns.db.music.professions.Fishing.video, nil)
 end)

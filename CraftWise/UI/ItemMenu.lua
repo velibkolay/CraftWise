@@ -31,6 +31,9 @@ local OPTIONS = {
 	{ key = "rule" },
 	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it" },
 	{ key = "history", label = "Price history", note = "Auction house prices recorded for it" },
+	-- Gear only (#157, spec "Upgrades": dismiss from the item menu); the label flips once dismissed.
+	{ key = "dismiss", label = "Don't suggest as upgrade", undo = "Suggest as upgrade again", gear = true,
+		note = "Look up › Upgrades leaves it out (Settings › Bags and loot › Show dismissed upgrades lists it again)" },
 	{ key = "recipes", label = "Recipes using this", note = "Opens the Profit view with every recipe of yours that uses it" },
 }
 ns.ItemMenuOptions = OPTIONS
@@ -73,11 +76,21 @@ function ns.OpenItemLookup(itemID, focus)
 	return ns.ShowMarketPrices(itemID)
 end
 
--- Rows shown for an item, top to bottom: quest items swap Junk and Sell on AH for the quest line.
-function ns.ItemMenuRows(quest)
+-- Gear an upgrade can be suggested for (Upgrades.lua's slots), or one already dismissed.
+local function IsGear(itemID)
+	if ns.db and ns.db.dismissed and ns.db.dismissed[itemID] then
+		return true
+	end
+	local equipLoc = C_Item and C_Item.GetItemInfoInstant and select(4, C_Item.GetItemInfoInstant(itemID))
+	return equipLoc ~= nil and ns.EQUIP_SLOTS ~= nil and ns.EQUIP_SLOTS[equipLoc] ~= nil
+end
+
+-- Rows shown for an item, top to bottom: quest items swap Junk and Sell on AH for the quest line; the
+-- upgrade line only shows for gear.
+function ns.ItemMenuRows(quest, gear)
 	local keys = {}
 	for _, opt in ipairs(OPTIONS) do
-		if not (quest and opt.sells) and not (opt.quest and not quest) then
+		if not (quest and opt.sells) and not (opt.quest and not quest) and not (opt.gear and not gear) then
 			keys[#keys + 1] = opt.key
 		end
 	end
@@ -99,6 +112,8 @@ local function Choose(opt)
 			ns.ShowRecipesUsing(itemID)
 		elseif opt.key == "where" or opt.key == "history" then
 			ns.OpenItemLookup(itemID, opt.key)
+		elseif opt.key == "dismiss" and ns.ToggleDismissed then
+			ns.ToggleDismissed(itemID)
 		elseif MARKS[opt.key] and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
 			ns.SetItemState(itemID, opt.key)
 		end
@@ -144,7 +159,7 @@ local function Build()
 				b:SetScript("OnEnter", function(self)
 					self.hover = true
 					Paint(self)
-					Style.ShowTip(self, L[opt.label], L[opt.note])
+					Style.ShowTip(self, self.label:GetText() or L[opt.label], L[opt.note])
 				end)
 				b:SetScript("OnLeave", function(self)
 					self.hover = false
@@ -162,9 +177,9 @@ local function Build()
 end
 
 -- Places the rows for this item and sizes the sheet; returns the height.
-local function Layout(quest)
+local function Layout(quest, gear)
 	local shown = {}
-	for _, key in ipairs(ns.ItemMenuRows(quest)) do
+	for _, key in ipairs(ns.ItemMenuRows(quest, gear)) do
 		shown[key] = true
 	end
 	local y = -(PAD_Y + TITLE)
@@ -206,7 +221,10 @@ function ns.ShowItemMenu(itemID, anchor) -- luacheck: ignore anchor
 	menu.quest = IsQuestItem(itemID) and true or false
 	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
 	menu.title:SetText(name)
-	Layout(menu.quest)
+	Layout(menu.quest, IsGear(itemID))
+	local dismissed = ns.db.dismissed and ns.db.dismissed[itemID]
+	local dismiss = menu.buttons.dismiss
+	dismiss.label:SetText(L[dismissed and dismiss.opt.undo or dismiss.opt.label])
 	local state = menu.quest and "keep" or State(itemID)
 	local usedByMe = false
 	for _, e in ipairs(ns.UsedIn(itemID)) do

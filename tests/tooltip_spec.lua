@@ -47,7 +47,7 @@ end)
 
 it("settings panel toggles the section, mode and lines", function()
 	local ns, stub = setup()
-	SlashCmdList.CRAFTWISE("settings")
+	ns.ToggleSettings() -- the old panel, until #157 part 2 (the Settings page: tests/settings_page_spec.lua)
 	local p = CraftWiseSettings
 	assert(p.shown, "panel open")
 	p.shift.scripts.OnClick(p.shift)

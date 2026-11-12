@@ -179,6 +179,7 @@ local function PlayChunk(myToken)
 		local ok, willPlay, handle = pcall(PlaySoundFile, full, CHANNEL)
 		playing.handle = ok and willPlay and handle or nil
 		playing.full = true
+		playing.fullStart = GetTime and GetTime() or nil
 		if song.duration and C_Timer and C_Timer.NewTimer then
 			playing.timer = C_Timer.NewTimer(song.duration, function()
 				if playing and playing.token == myToken then
@@ -373,6 +374,37 @@ function Music.IsPlaying()
 	return playing ~= nil, playing and playing.profession, playing and playing.index
 end
 
+-- What plays now, for the Music page's Playing card (#157): { profession, song, party, preview, full,
+-- chunk, chunks, elapsed, duration }, nil when nothing plays. chunk/chunks for chunked songs; elapsed
+-- and duration in seconds where the song says how long it is (chunk lengths or its duration).
+function Music.NowPlaying(now)
+	if not playing then
+		return nil
+	end
+	now = now or (GetTime and GetTime()) or 0
+	local song = Music.Songs()[playing.song] or {}
+	local p = { profession = playing.profession, song = playing.song, party = playing.party, preview = playing.preview,
+		full = playing.full }
+	if playing.full then
+		p.duration = song.duration
+		if playing.fullStart then
+			p.elapsed = now - playing.fullStart
+			if p.duration and p.duration > 0 then
+				p.elapsed = p.elapsed % p.duration
+			end
+		end
+		return p
+	end
+	if song.chunks and song.chunks > 0 then
+		local length = song.length or 2
+		p.chunk, p.chunks = playing.index, song.chunks
+		p.duration = (song.chunks - 1) * length + (song.last or length)
+		local into = playing.chunkStart and math.max(0, math.min(now - playing.chunkStart, playing.chunkLength or length)) or 0
+		p.elapsed = (playing.index - 1) * length + into
+	end
+	return p
+end
+
 -- Song choice per profession, cycled from the Music view: none -> song 1 -> song 2 -> ... -> none.
 function Music.CycleSong(professionName)
 	local s = Settings()
@@ -476,11 +508,11 @@ function Music.ToggleParty()
 	local s = Settings()
 	local choice = s and s.professions[Music.PARTY]
 	if not (choice and (choice.song or choice.video)) then
-		ns.Print("Set up Party in the Music tab first (song and/or video).")
+		ns.Print("Set up Party on the Music page first (song and/or video).")
 		return false
 	end
 	if not s.enabled then
-		ns.Print("Music is off - tick \"Music on\" in the Music tab.")
+		ns.Print("Music is off - turn \"Music on\" on, on the Music page.")
 		return false
 	end
 	Music.Stop()

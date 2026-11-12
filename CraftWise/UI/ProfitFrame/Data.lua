@@ -6,35 +6,6 @@ local state, Settings, View, ItemName = PF.state, PF.Settings, PF.View, PF.ItemN
 -- Rows after the search box and the view's filters; also returns how many the filters hid.
 local function FilteredRows()
 	local s = Settings()
-	if View() == "music" then
-		local out = {}
-		local music = ns.db.music
-		local partyChoice = music.professions[ns.Music.PARTY] or {}
-		out[1] = { name = ns.Music.PARTY, icon = ns.Music.PARTY_ICON, party = true, song = partyChoice.song,
-			video = partyChoice.video, mode = partyChoice.mode or "resume",
-			position = partyChoice.song and music.position[partyChoice.song] }
-		for _, prof in ipairs(ns.Music.Professions()) do
-			local choice = music.professions[prof.name] or {}
-			out[#out + 1] = { name = prof.name, icon = prof.icon, skill = prof.skill, maxSkill = prof.maxSkill,
-				song = choice.song, mode = choice.mode or "resume", position = choice.song and music.position[choice.song] }
-		end
-		return out, 0
-	end
-	if View() == "upgrades" then
-		local query = state.query:lower()
-		local out, hidden = {}, 0
-		local list = PF.UpgradeSection() == "ah" and ns.UpgradeSearch.Rows() or ns.UpgradeRows()
-		for _, r in ipairs(list) do
-			if query == "" or r.name:lower():find(query, 1, true) then
-				if r.dismissed and not s.showDismissed then
-					hidden = hidden + 1
-				else
-					out[#out + 1] = r
-				end
-			end
-		end
-		return out, hidden
-	end
 	if View() == "level" then
 		local all, skill = {}, nil
 		if state.professionID then
@@ -106,10 +77,6 @@ local function SortSettings()
 		return s.learnSortKey or "required", s.learnSortDesc
 	elseif View() == "level" then
 		return s.levelSortKey or "perPoint", s.levelSortDesc or false
-	elseif View() == "upgrades" then
-		return s.upgradeSortKey or "gain", s.upgradeSortDesc ~= false
-	elseif View() == "music" then
-		return "name", false
 	end
 	return s.sortKey, s.sortDesc
 end

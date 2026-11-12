@@ -1,7 +1,8 @@
 -- Profit table window: shared constants, state and small helpers.
--- The window is split by responsibility (State, Data, Rows, Tooltips, SongPicker, Layout, Refresh,
--- Frame, Events). The files share their internals through ns.PF and load in the order CraftWise.toc lists them:
--- a file only uses what the files before it export.
+-- The window is split by responsibility (State, Data, Rows, Tooltips, Layout, Refresh, Frame, Events).
+-- Upgrades and Music moved to the main window (Look up › Upgrades, Music; #157). The files share their
+-- internals through ns.PF and load in the order CraftWise.toc lists them: a file only uses what the files
+-- before it export.
 local _, ns = ...
 local Style = ns.Style
 local L = ns.L
@@ -24,10 +25,6 @@ local COLUMN_DEFS = {
 	breakEven = { label = L["PAYS OFF"], align = "RIGHT" },
 	required = { label = L["SKILL"], align = "RIGHT" },
 	whereText = { label = L["WHERE TO GET IT"], align = "LEFT" },
-	equippedText = { label = L["REPLACES"], align = "LEFT" },
-	gain = { label = L["UPGRADE"], align = "LEFT" },
-	songText = { label = L["SONG"], align = "LEFT" },
-	modeText = { label = L["NEXT CAST"], align = "LEFT" },
 	chance = { label = L["CHANCE"], align = "LEFT" },
 	saleValue = { label = L["SALE"], align = "RIGHT" },
 	net = { label = L["NET / CRAFT"], align = "RIGHT" },
@@ -60,25 +57,10 @@ local VIEWS = {
 		{ key = "net", width = 95 },
 		{ key = "perPoint", width = 115 },
 	},
-	-- Upgrades: items from your recipes that beat what you wear.
-	upgrades = {
-		{ key = "name", width = 280 },
-		{ key = "equippedText", width = 220 },
-		{ key = "gain", width = 150 },
-		{ key = "cost", width = 110 },
-	},
-	-- Music: a song per profession while you level it.
-	music = {
-		{ key = "name", width = 260 },
-		{ key = "songText", width = 300 },
-		{ key = "modeText", width = 240 },
-	},
 }
 local CELL_KEYS = { "cost", "sellsFor", "profit", "learnCost", "breakEven", "required", "whereText",
-	"equippedText", "gain", "songText", "modeText",
 	"chance", "saleValue", "net", "perPoint" }
 
-local QUALITY_COLORS = { [0] = "|cff9d9d9d", "|cffffffff", "|cff1eff00", "|cff0070dd", "|cffa335ee", "|cffff8000" }
 
 local STATUS_TEXT = {
 	known = L["Known"],
@@ -167,17 +149,13 @@ end
 
 local function View()
 	local v = Settings().view
-	return (v == "learn" or v == "level" or v == "upgrades" or v == "music") and v or "profit"
+	return (v == "learn" or v == "level") and v or "profit"
 end
 
--- Upgrades view section: "craft" (Craftable, #16) or "ah" (General / AH, #50).
-local function UpgradeSection()
-	return Settings().upgradeSection == "ah" and "ah" or "craft"
-end
-
--- Views that list items across all professions (no profession tabs).
+-- Views that list items across all professions (no profession tabs): none left here since Bags, Fishing,
+-- Upgrades and Music moved to the main window (#155, #156, #157).
 local function ItemView()
-	return View() == "upgrades" or View() == "music"
+	return false
 end
 
 -- Shared with the other ProfitFrame files.
@@ -185,9 +163,9 @@ ns.PF = {
 	WIDTH = WIDTH, HEIGHT = HEIGHT, PAD = PAD, ROW_HEIGHT = ROW_HEIGHT, HEADER_Y = HEADER_Y, LIST_TOP = LIST_TOP,
 	VISIBLE_ROWS = VISIBLE_ROWS,
 	COLUMN_DEFS = COLUMN_DEFS, VIEWS = VIEWS, CELL_KEYS = CELL_KEYS,
-	QUALITY_COLORS = QUALITY_COLORS, SKILL_COLORS = SKILL_COLORS,
+	SKILL_COLORS = SKILL_COLORS,
 	ARROW_DOWN = ARROW_DOWN, ARROW_UP = ARROW_UP,
 	rows = rows, tabs = tabs, viewButtons = viewButtons, state = state,
 	Settings = Settings, Money = Money, Muted = Muted, ItemName = ItemName, StatusLine = StatusLine,
-	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag, CostBasisText = CostBasisText, UpgradeSection = UpgradeSection,
+	View = View, ItemView = ItemView, PriceBasisText = PriceBasisText, SaleTag = SaleTag, CostBasisText = CostBasisText,
 }

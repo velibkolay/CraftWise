@@ -114,6 +114,7 @@ local DB_DEFAULTS = {
 		upgradeSection = "craft", -- Upgrades view: "craft" (Craftable, #16) | "ah" (General / AH, #50)
 		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
+		slotMarks = true, -- marks on bag slots (BagIcons.lua, #160); Settings › Bags and loot (#157)
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |
 		-- "BootyBay" | "Gadgetzan" | "Everlook".
 		priceBasis = "typical", priceHouse = "faction",
@@ -609,7 +610,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 		return
 	end
 	if msg == "settings" or msg == "config" then
-		ns.ToggleSettings()
+		if ns.OpenMainWindow then
+			ns.OpenMainWindow("settings") -- the Settings page (#157)
+		else
+			ns.ToggleSettings()
+		end
 		return
 	end
 	if msg == "party" then

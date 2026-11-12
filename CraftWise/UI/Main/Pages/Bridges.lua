@@ -2,7 +2,7 @@
 -- everything lands"). Each says so and opens the feature where it lives today (profit window, Records
 -- window, farm window, settings panel), so nothing loses its UI home in between. A real page registered
 -- later with the same key (UI/Main/Pages/<Page>.lua, #154-#157) replaces its bridge; when the last one is
--- replaced this file goes.
+-- replaced this file goes. Look up, Music and Settings have moved (#157).
 local _, ns = ...
 local M = ns.Main
 local L = ns.L
@@ -20,17 +20,7 @@ local function ProfitView(view)
 	end
 end
 
--- The Records window on one of its tabs (RW.Ledger, RW.Auctions, ...).
-local function RecordsTab(name)
-	return function()
-		local tab = ns.RW and ns.RW[name]
-		if tab and ns.ShowRecords then
-			ns.ShowRecords(tab.key)
-		end
-	end
-end
-
-local PROFIT, RECORDS = L["profit window"], L["Records window"]
+local PROFIT = L["profit window"]
 
 local function Open(where)
 	return (L["Open in the %s"]):format(where)
@@ -41,25 +31,6 @@ local BRIDGES = {
 	{ "craft", "make", L["Craft"], 1, { { Open(PROFIT), ProfitView("profit") } } },
 	{ "learn", "make", L["Learn"], 2, { { Open(PROFIT), ProfitView("learn") } } },
 	{ "level", "make", L["Level up"], 3, { { Open(PROFIT), ProfitView("level") } } },
-	{ "items", "lookup", L["Items"], 1, {
-		{ L["Market in the Records window"], RecordsTab("Market") },
-		{ L["Where to buy in the Records window"], RecordsTab("Where") },
-	} },
-	{ "upgrades", "lookup", L["Upgrades"], 2, { { Open(PROFIT), ProfitView("upgrades") } } },
-	{ "music", "music", L["Music"], 1, { { Open(PROFIT), ProfitView("music") } } },
-	{ M.SETTINGS, nil, L["Settings"], 1, {
-		{ L["Settings panel"], function(_, button)
-			if ns.ToggleSettings then
-				ns.ToggleSettings(button)
-			end
-		end },
-		{ L["AH rule"], function(_, button)
-			if ns.ToggleAHRule then
-				ns.ToggleAHRule(button)
-			end
-		end },
-		{ L["Snapshot in the Records window"], RecordsTab("Snapshot") },
-	} },
 }
 
 M.BRIDGES = BRIDGES

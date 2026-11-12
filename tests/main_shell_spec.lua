@@ -58,7 +58,8 @@ end
 it("Main: five sections in the spec's order; every sub-page of #150 has a page (a bridge until it moves)", function()
 	local _, _, M = Load()
 	local moved = { bags = true, auctions = true, ledger = true, -- Sell (#155)
-		farm = true, fishing = true, crates = true } -- Gather (#156)
+		farm = true, fishing = true, crates = true, -- Gather (#156)
+		items = true, upgrades = true, music = true } -- Look up, Music (#157)
 	local labels = {}
 	for _, s in ipairs(M.SECTIONS) do labels[#labels + 1] = s.label end
 	eq(table.concat(labels, ","), "Make,Sell,Gather,Look up,Music")
@@ -73,6 +74,7 @@ it("Main: five sections in the spec's order; every sub-page of #150 has a page (
 		eq(table.concat(got, ","), list, section)
 	end
 	eq(M.Page("settings").section, nil, "settings is the gear's page, not a tab")
+	eq(M.Page("settings").bridge, nil, "the Settings page (#157)")
 end)
 
 it("Main: a real page replaces its bridge (keeping its place); twice or in an unknown section fails", function()
@@ -543,20 +545,6 @@ it("Bridges: each page not moved yet says so and opens its old home", function()
 	b.scripts.OnClick(b)
 	eq(ns.db.settings.view, "learn")
 	assert(ns.PF.frame and ns.PF.frame:IsShown(), "profit window open on Learn")
-	M.ShowPage("items")
-	local opened
-	ns.ShowRecords = function(key) opened = key end
-	local lb = M.SlotsOf("items").body.panel.buttons[1]
-	eq(lb.label.text, "Market in the Records window")
-	lb.scripts.OnClick(lb)
-	eq(opened, ns.RW.Market.key)
-	-- two homes: Items (Market, Where to buy); Settings: panel, AH rule, Snapshot
-	eq(M.SlotsOf("items").body.panel.buttons[2].shown, true)
-	M.ToggleSettings()
-	local sp = M.SlotsOf("settings").body.panel
-	eq(sp.buttons[3].label.text, "Snapshot in the Records window")
-	sp.buttons[3].scripts.OnClick(sp.buttons[3])
-	eq(opened, ns.RW.Snapshot.key)
 	-- every row of "Where everything lands" that is a page here has a bridge with a working button
 	for _, bridge in ipairs(M.BRIDGES) do
 		for _, def in ipairs(bridge[5]) do

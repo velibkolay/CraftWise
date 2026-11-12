@@ -462,6 +462,17 @@ local function Status()
 	ns.Print("/craftwise loottoast on | off | unlock | lock | test | duration <seconds> | value on | value off | reset")
 end
 
+-- Back to the default place (also Settings › Look › Reset window positions, #157).
+function T.ResetPosition()
+	local s = Settings()
+	if not s then
+		return
+	end
+	s.pos = nil
+	Build()
+	PlaceAnchor()
+end
+
 function T.Slash(arg)
 	local s = Settings()
 	if not s then
@@ -484,9 +495,7 @@ function T.Slash(arg)
 	elseif arg == "test" then
 		T.Test()
 	elseif arg == "reset" then
-		s.pos = nil
-		Build()
-		PlaceAnchor()
+		T.ResetPosition()
 		ns.Print("Loot toast position reset.")
 	elseif arg:match("^value") then
 		local v = arg:match("^value%s+(%a+)$")

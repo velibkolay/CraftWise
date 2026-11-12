@@ -140,108 +140,6 @@ local function AddMarketSection(r)
 	end
 end
 
-local function StatLabel(key)
-	local label = _G[key]
-	return type(label) == "string" and label or key
-end
-
-local function ShowUpgradeTooltip(row, r)
-	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-	if GameTooltip.SetItemByID then
-		GameTooltip:SetItemByID(r.itemID)
-	else
-		GameTooltip:AddLine(r.name)
-	end
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine("CraftWise", C.accent[1], C.accent[2], C.accent[3])
-	if r.emptySlot then
-		GameTooltip:AddDoubleLine("Replaces", "empty " .. r.slotLabel .. " slot", 0.8, 0.8, 0.8, 1, 1, 1)
-	else
-		GameTooltip:AddDoubleLine("Replaces", ("%s (ilvl %d)"):format(r.equippedText or "?", r.current.level or 0), 0.8, 0.8, 0.8, 1, 1, 1)
-		-- Stat differences, new minus equipped, from the client's item stats.
-		local keys, diff = {}, {}
-		for k, v in pairs(r.stats or {}) do
-			diff[k] = v
-		end
-		for k, v in pairs(r.current.stats or {}) do
-			diff[k] = (diff[k] or 0) - v
-		end
-		for k, v in pairs(diff) do
-			if v ~= 0 then
-				keys[#keys + 1] = k
-			end
-		end
-		table.sort(keys)
-		for _, k in ipairs(keys) do
-			local v = diff[k]
-			GameTooltip:AddDoubleLine("  " .. StatLabel(k), (v > 0 and "+" or "") .. v, 0.8, 0.8, 0.8,
-				v > 0 and 0.3 or 1, v > 0 and 0.82 or 0.4, v > 0 and 0.55 or 0.4)
-		end
-		if not r.stats then
-			GameTooltip:AddLine("Item stats not loaded yet - hover again.", 0.55, 0.55, 0.6)
-		end
-	end
-	if r.mainStats or r.currentStats then
-		GameTooltip:AddDoubleLine("Main stats", ("%s  vs  %s"):format(
-			r.mainStats == nil and "?" or r.mainStats == "" and "none" or r.mainStats,
-			r.emptySlot and "empty" or r.currentStats == nil and "?" or r.currentStats == "" and "none" or r.currentStats),
-			0.8, 0.8, 0.8, 1, 1, 1)
-	end
-	if r.section == "ah" then
-		if r.suffix then
-			GameTooltip:AddLine("Random enchant: the stats above are the base item's, the listing's own enchant is not included.", 0.55, 0.55, 0.6, true)
-		end
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("Auction house", 1, 0.82, 0)
-		if r.notAtHouse then
-			GameTooltip:AddLine(("  Not seen at %s in your latest search. Search there, or change the profit house in Settings."):format(
-				r.houseLabel or "the profit house"), 1, 0.6, 0.3, true)
-		else
-			GameTooltip:AddDoubleLine("  Lowest buyout", Money(r.cost), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("  Listed", ("%d at %s"):format(r.qty or 0, r.houseLabel or "?"), 0.8, 0.8, 0.8, 1, 1, 1)
-			GameTooltip:AddDoubleLine("  Seen", ns.Market.FormatAge(r.priceAge or 0) .. " ago", 0.8, 0.8, 0.8, 1, 1, 1)
-		end
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(r.dismissed and "Right-click: suggest this item again" or "Right-click: don't suggest this item",
-			0.55, 0.55, 0.6)
-		GameTooltip:Show()
-		return
-	end
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine("Recipe", (SKILL_COLORS[r.skillColor] or "") .. (r.recipeName or "?") .. "|r", 1, 0.82, 0, 1, 1, 1)
-	for _, line in ipairs(r.reagents or {}) do
-		local have = (C_Item and C_Item.GetItemCount and C_Item.GetItemCount(line.itemID)) or 0
-		local color = have >= line.quantity and C.good or C.warn
-		GameTooltip:AddDoubleLine(("  %d × %s"):format(line.quantity, ItemName(line.itemID)),
-			color .. ("have %d|r"):format(have), 1, 1, 1, 1, 1, 1)
-	end
-	if r.learnFirst then
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(("Learn first%s"):format(r.required and (" (skill %d)"):format(r.required) or ""), 1, 0.6, 0.3)
-		for i, line in ipairs(ns.RecipeWhere(r.recipeID)) do
-			if i > 4 then
-				break
-			end
-			GameTooltip:AddDoubleLine("  " .. line.text, line.label or "", 1, 1, 1, 0.55, 0.55, 0.6)
-		end
-	end
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine("Cost to obtain", 1, 0.82, 0)
-	local reagents = r.reagentComplete and Money(r.reagentCost or 0)
-		or ((r.reagentCost or 0) > 0 and (Money(r.reagentCost) .. C.warn .. " +?|r") or (C.warn .. "no price|r"))
-	GameTooltip:AddDoubleLine("  Reagents", reagents, 0.8, 0.8, 0.8, 1, 1, 1)
-	if r.learnFirst then
-		local how = ({ trainer = "trainer", vendor = "vendor" })[r.learnSource] or r.learnLabel or ""
-		GameTooltip:AddDoubleLine("  Learn" .. (how ~= "" and (" (" .. how .. ")") or ""),
-			r.learnCost and Money(r.learnCost) or (C.warn .. "no price|r"), 0.8, 0.8, 0.8, 1, 1, 1)
-	end
-	GameTooltip:AddDoubleLine("  Total", Money(r.cost or 0) .. (r.costComplete and "" or (C.warn .. " +?|r")), 0.8, 0.8, 0.8, 1, 1, 1)
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine(r.dismissed and "Right-click: suggest this item again" or "Right-click: don't suggest this item",
-		0.55, 0.55, 0.6)
-	GameTooltip:Show()
-end
-
 local STAGE_TEXT = { "1st quarter after yellow", "2nd quarter", "3rd quarter", "last quarter before grey" }
 
 local function ShowLevelTooltip(row, r)
@@ -349,23 +247,8 @@ local function ShowTooltip(row)
 	if not r then
 		return
 	end
-	if View() == "upgrades" then
-		return ShowUpgradeTooltip(row, r)
-	elseif View() == "level" then
+	if View() == "level" then
 		return ShowLevelTooltip(row, r)
-	elseif View() == "music" then
-		GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-		GameTooltip:AddLine(r.name)
-		if r.party then
-			GameTooltip:AddLine("One key: your character dances, the Party song and video start. Press again or move to stop.", 0.8, 0.8, 0.8, true)
-			GameTooltip:AddLine("Key: Esc > Options > Key Bindings > AddOns > CraftWise. Macro: /craftwise party", 0.8, 0.8, 0.8, true)
-		else
-			GameTooltip:AddLine("Plays while you cast " .. r.name .. " and stops when the cast ends.", 0.8, 0.8, 0.8, true)
-		end
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("Click: choose the song, preview it, resume or start over", 0.55, 0.55, 0.6)
-		GameTooltip:Show()
-		return
 	end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	-- The crafted item's own tooltip first (item level, stats, requirements, other addons' lines),

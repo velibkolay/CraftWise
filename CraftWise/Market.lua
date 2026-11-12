@@ -1760,6 +1760,84 @@ function M.Disappeared(itemKey, house)
 	return units
 end
 
+-- Look up › Items (#157). Read only.
+
+-- The item keys recorded for an item: the plain itemID first, then its suffix variants by key.
+function M.ItemKeys(itemID)
+	local keys = {}
+	for key in pairs(db and db.items or {}) do
+		if ItemIDOfKey(key) == itemID then
+			keys[#keys + 1] = key
+		end
+	end
+	table.sort(keys, function(a, b)
+		if (a == itemID) ~= (b == itemID) then
+			return a == itemID
+		end
+		return tostring(a) < tostring(b)
+	end)
+	return keys
+end
+
+-- Every itemID with a record at any house: { [itemID] = true }.
+function M.RecordedItemIDs()
+	local out = {}
+	for key in pairs(db and db.items or {}) do
+		local itemID = ItemIDOfKey(key)
+		if itemID then
+			out[itemID] = true
+		end
+	end
+	return out
+end
+
+-- The stored name of a recorded item (CraftWiseMarketDB.names), nil when none.
+function M.StoredName(itemID)
+	return db and db.names[itemID] or nil
+end
+
+-- Is the record at this house `last` only (an item outside the market scope, #90)? nil without a record.
+function M.IsLastOnlyAt(itemKey, house)
+	local perItem = db and db.items[itemKey]
+	local entry = perItem and perItem[house]
+	if entry == nil then
+		return nil
+	end
+	return IsLastOnly(entry)
+end
+
+-- The last n days (oldest first, today last) at one house: { { day, typ, lo }, ... }; typ and lo nil on
+-- days without data. Raw points not aggregated yet count for their day as AggregateEntry would count them.
+function M.DaySeries(itemKey, house, n, now)
+	n = n or TYPICAL_DAYS
+	local today = DayNumber(now or time())
+	local entry = db and GetEntry(itemKey, house)
+	local rawByDay = {}
+	for _, point in ipairs(entry and entry.raw or {}) do
+		local day = DayNumber(point.t)
+		rawByDay[day] = rawByDay[day] or {}
+		table.insert(rawByDay[day], point)
+	end
+	local out = {}
+	for day = today - n + 1, today do
+		local d = entry and entry.days[day]
+		local points = rawByDay[day]
+		local typ, lo = d and d.typ, d and d.lo
+		if points and (not d or (d.n or 0) <= #points) then
+			typ = M.DayTypical(points)
+			lo = nil
+			for _, p in ipairs(points) do
+				local first = p.tiers[1]
+				if first and (not lo or first < lo) then
+					lo = first
+				end
+			end
+		end
+		out[#out + 1] = { day = day, typ = typ, lo = lo }
+	end
+	return out
+end
+
 ----------------------------------------------------------------------------------------------------
 -- Display (phase 2): price per basis and house, depth figures, thin-market flag, best house.
 -- Veli's rule on #26: a cheap price at a thin house doesn't mean the item sells there or that enough
