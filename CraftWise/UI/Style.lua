@@ -74,6 +74,13 @@ Style.C = C
 -- and the primary button's flap.
 local INK = rgb("141517")
 local PAPER = rgb("FFFFFF")
+Style.INK, Style.PAPER = INK, PAPER
+
+-- Item names in the quality colours (C.qPoor … C.qEpic for qualities 0-4); nil for any other quality.
+local QUALITY = { [0] = C.qPoor, C.qCommon, C.qUncommon, C.qRare, C.qEpic }
+function Style.QualityColor(quality)
+	return QUALITY[tonumber(quality) or -1]
+end
 
 -- Style.Color("text2"), Style.Color("skill.orange"); a colour table passes through.
 function Style.Color(name)

@@ -1,23 +1,40 @@
--- Item menu (issue #12): Keep / Junk / Sell on AH / Normal for one item, opened by clicking a row in the Bags
--- view, or on an item in the game's bags (Blizzard, Bagnon, Baganator) with the click chosen in
--- the settings: middle click (default) or Alt + right-click. Also from a Records window row (#137); Where to buy and
--- Market prices open the Records window for the item.
+-- Item menu (issue #12; Origami look #159): Keep / Junk / Sell on AH / Normal for one item, then Where to
+-- buy and Price history. Opened by clicking a row in the Bags view or a Records row (#137), or on an item
+-- in the game's bags (Blizzard, Bagnon, Baganator) with the click chosen in the settings: middle click
+-- (default) or Alt + right-click.
 -- Middle click: Blizzard's bag buttons only listen to left and right clicks, and neither Bagnon nor
 -- Baganator uses it, so nothing else happens. Alt + click is "highlight similar items" in Baganator.
+-- Look (spec "Item menu"): a folded sheet 200 wide, cut 10, hard shadow, padding 8 vertical; title = item
+-- name (FontBodyBold); rows 24; the current mark has the nokta and C.selected behind it; a rule. Quest items
+-- show "Quest items can't be sold" in place of Junk and Sell on AH. Opens at the cursor, closes on Escape,
+-- a click elsewhere or after a choice.
 local _, ns = ...
 local Style = ns.Style
+local C = Style.C
 local L = ns.L
 
 local menu
+local WIDTH, ROW, PAD_Y, PAD_X, TITLE = 200, 24, 8, 12, 20
+local NOKTA_X = PAD_X + 4 -- centre of the 8 unit nokta slot
+local LABEL_X = PAD_X + 8 + 8
+local RULE_GAP = 6
+
+-- "rule" is the hairline; "quest" the line shown in place of Junk and Sell on AH for quest items.
+-- "recipes" is not on the spec's menu: kept until Look up › Items gives "Used in" a way to the recipes
+-- (the menu is its only UI home today; question on #159).
 local OPTIONS = {
 	{ key = "keep", label = "Keep", note = "Left out of the advice and selling" },
-	{ key = "junk", label = "Junk", note = "Sold with \"Sell junk\" at a vendor" },
-	{ key = "auction", label = "Sell on AH", note = "Always advised for the auction house, grouped first in the selling part of a bag sort" },
+	{ key = "junk", label = "Junk", note = "Sold with \"Sell junk\" at a vendor", sells = true },
+	{ key = "auction", label = "Sell on AH", note = "Always advised for the auction house, grouped first in the selling part of a bag sort", sells = true },
+	{ key = "quest", label = "Quest items can't be sold", quest = true },
 	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
+	{ key = "rule" },
+	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it" },
+	{ key = "history", label = "Price history", note = "Auction house prices recorded for it" },
 	{ key = "recipes", label = "Recipes using this", note = "Opens the Profit view with every recipe of yours that uses it" },
-	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it (Records window)" },
-	{ key = "market", label = "Market prices", note = "Auction house prices recorded for it (Records window)" },
 }
+ns.ItemMenuOptions = OPTIONS
+local MARKS = { keep = true, junk = true, auction = true, normal = true }
 
 local function State(itemID)
 	if ns.db.junk and ns.db.junk[itemID] then
@@ -44,55 +61,141 @@ local function IsQuestItem(itemID)
 	return C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID)) == 12
 end
 
-local function Build()
-	menu = CreateFrame("Frame", "CraftWiseItemMenu", UIParent, "BackdropTemplate")
-	menu:SetFrameStrata("DIALOG")
-	menu:SetSize(210, 30 + #OPTIONS * 28)
-	menu:EnableMouse(true)
-	menu:SetClampedToScreen(true)
-	Style.Panel(menu)
-	table.insert(UISpecialFrames, "CraftWiseItemMenu")
-	menu.title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	menu.title:SetPoint("TOPLEFT", 10, -8)
-	menu.title:SetPoint("RIGHT", -10, 0)
-	menu.title:SetJustifyH("LEFT")
-	menu.title:SetWordWrap(false)
-	menu.buttons = {}
-	for i, opt in ipairs(OPTIONS) do
-		local b = Style.Button(menu, 190, 24, L[opt.label])
-		b:SetPoint("TOPLEFT", 10, -28 - (i - 1) * 28)
-		b:SetScript("OnClick", function()
-			if opt.key == "recipes" then
-				if menu.itemID then
-					ns.ShowRecipesUsing(menu.itemID)
-				end
-			elseif opt.key == "where" or opt.key == "market" then
-				if menu.itemID then
-					(opt.key == "where" and ns.ShowWhereToBuy or ns.ShowMarketPrices)(menu.itemID)
-				end
-			elseif menu.itemID and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
-				ns.SetItemState(menu.itemID, opt.key)
-			end
-			menu:Hide()
-		end)
-		b:SetScript("OnEnter", function(self)
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:AddLine(L[opt.label])
-			GameTooltip:AddLine(menu.quest and (opt.key == "junk" or opt.key == "auction") and L["Quest items can't be sold"] or L[opt.note],
-				0.8, 0.8, 0.8, true)
-			GameTooltip:Show()
-		end)
-		b:SetScript("OnLeave", function(self)
-			GameTooltip:Hide()
-			self:SetSelected(self.current)
-		end)
-		menu.buttons[opt.key] = b
+-- Where to buy and Price history open Look up › Items on the item once it exists (#157 defines
+-- ns.ShowItemLookup(itemID, "where" | "history")); until then the Records views.
+function ns.OpenItemLookup(itemID, focus)
+	if ns.ShowItemLookup then
+		return ns.ShowItemLookup(itemID, focus)
+	end
+	if focus == "where" then
+		return ns.ShowWhereToBuy(itemID)
+	end
+	return ns.ShowMarketPrices(itemID)
+end
+
+-- Rows shown for an item, top to bottom: quest items swap Junk and Sell on AH for the quest line.
+function ns.ItemMenuRows(quest)
+	local keys = {}
+	for _, opt in ipairs(OPTIONS) do
+		if not (quest and opt.sells) and not (opt.quest and not quest) then
+			keys[#keys + 1] = opt.key
+		end
+	end
+	return keys
+end
+
+local function Paint(b)
+	b.bg:SetShown((b.current or b.hover) and true or false)
+	local bold = b.current
+	b.label:SetFontObject(bold and Style.Fonts.BodyBold or Style.Fonts.Body)
+	local c = b.opt.quest and C.text3 or C.text
+	b.label:SetTextColor(c[1], c[2], c[3], 1)
+end
+
+local function Choose(opt)
+	local itemID = menu.itemID
+	if itemID then
+		if opt.key == "recipes" then
+			ns.ShowRecipesUsing(itemID)
+		elseif opt.key == "where" or opt.key == "history" then
+			ns.OpenItemLookup(itemID, opt.key)
+		elseif MARKS[opt.key] and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
+			ns.SetItemState(itemID, opt.key)
+		end
 	end
 	menu:Hide()
 end
 
--- Opens the menu for an item next to the cursor (or an anchor frame).
-function ns.ShowItemMenu(itemID, anchor)
+local function Build()
+	menu = CreateFrame("Frame", "CraftWiseItemMenu", UIParent)
+	menu:SetFrameStrata("DIALOG")
+	menu:SetWidth(WIDTH)
+	menu:EnableMouse(true)
+	menu:SetClampedToScreen(true)
+	menu.sheet = Style.Sheet(menu, C.sheet, C.flap, 10, true)
+	table.insert(UISpecialFrames, "CraftWiseItemMenu")
+	menu.title = Style.Text(menu, "BodyBold", "text")
+	menu.title:SetPoint("TOPLEFT", menu, "TOPLEFT", PAD_X, -(PAD_Y + 2))
+	menu.title:SetPoint("RIGHT", menu, "RIGHT", -PAD_X - 10, 0)
+	menu.title:SetJustifyH("LEFT")
+	menu.title:SetWordWrap(false)
+	menu.nokta = Style.Nokta(menu)
+	menu.nokta:Hide()
+	menu.buttons = {}
+	for _, opt in ipairs(OPTIONS) do
+		if opt.key == "rule" then
+			menu.rule = Style.Rule(menu, "H", C.rule)
+		else
+			local b = CreateFrame("Button", nil, menu)
+			b.opt = opt
+			b:SetHeight(ROW)
+			b.bg = b:CreateTexture(nil, "BACKGROUND")
+			b.bg:SetAllPoints(b)
+			Style.Fill(b.bg, C.selected)
+			b.label = Style.Text(b, "Body", "text")
+			b.label:SetPoint("LEFT", b, "LEFT", LABEL_X, 0)
+			b.label:SetText(L[opt.label])
+			if opt.quest then
+				b:EnableMouse(false)
+			else
+				b:SetScript("OnClick", function()
+					Choose(opt)
+				end)
+				b:SetScript("OnEnter", function(self)
+					self.hover = true
+					Paint(self)
+					Style.ShowTip(self, L[opt.label], L[opt.note])
+				end)
+				b:SetScript("OnLeave", function(self)
+					self.hover = false
+					Paint(self)
+					Style.HideTip(self)
+				end)
+			end
+			menu.buttons[opt.key] = b
+		end
+	end
+	menu:SetScript("OnHide", function()
+		Style.HideTip()
+	end)
+	menu:Hide()
+end
+
+-- Places the rows for this item and sizes the sheet; returns the height.
+local function Layout(quest)
+	local shown = {}
+	for _, key in ipairs(ns.ItemMenuRows(quest)) do
+		shown[key] = true
+	end
+	local y = -(PAD_Y + TITLE)
+	for _, opt in ipairs(OPTIONS) do
+		if opt.key == "rule" then
+			y = y - RULE_GAP
+			menu.rule:ClearAllPoints()
+			menu.rule:SetPoint("TOPLEFT", menu, "TOPLEFT", 0, y)
+			menu.rule:SetPoint("TOPRIGHT", menu, "TOPRIGHT", 0, y)
+			y = y - 1 - RULE_GAP
+		else
+			local b = menu.buttons[opt.key]
+			if shown[opt.key] then
+				b:ClearAllPoints()
+				b:SetPoint("TOPLEFT", menu, "TOPLEFT", 0, y)
+				b:SetPoint("TOPRIGHT", menu, "TOPRIGHT", 0, y)
+				b:Show()
+				y = y - ROW
+			else
+				b:Hide()
+			end
+		end
+	end
+	local height = -y + PAD_Y
+	menu:SetHeight(height)
+	return height
+end
+
+-- Opens the menu for an item at the cursor. `anchor` is accepted for old callers and ignored: the spec
+-- opens the menu at the cursor wherever it was asked for.
+function ns.ShowItemMenu(itemID, anchor) -- luacheck: ignore anchor
 	if not (itemID and ns.db) then
 		return
 	end
@@ -100,35 +203,31 @@ function ns.ShowItemMenu(itemID, anchor)
 		Build()
 	end
 	menu.itemID = itemID
-	menu.quest = IsQuestItem(itemID)
+	menu.quest = IsQuestItem(itemID) and true or false
 	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID) or ("item " .. itemID)
 	menu.title:SetText(name)
+	Layout(menu.quest)
 	local state = menu.quest and "keep" or State(itemID)
 	local usedByMe = false
 	for _, e in ipairs(ns.UsedIn(itemID)) do
 		usedByMe = usedByMe or e.professionID ~= nil
 	end
+	menu.state = state
 	for key, b in pairs(menu.buttons) do
 		b.current = key == state
-		b:SetSelected(b.current)
+		b.hover = false
+		Paint(b)
 		if key == "recipes" then
 			b:SetAlpha(usedByMe and 1 or 0.4)
-		elseif key == "where" or key == "market" then
-			b.current = false
-			b:SetSelected(false)
-			b:SetAlpha(1)
-		else
-			b:SetAlpha(menu.quest and key ~= "keep" and 0.4 or 1)
+		end
+		if b.current then
+			menu.nokta:MoveTo(b, "LEFT", NOKTA_X, 0, true)
 		end
 	end
 	menu:ClearAllPoints()
-	if anchor then
-		menu:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, 0)
-	else
-		local x, y = GetCursorPosition()
-		local scale = UIParent:GetEffectiveScale() or 1
-		menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 8, y / scale + 8)
-	end
+	local x, y = GetCursorPosition()
+	local scale = UIParent:GetEffectiveScale() or 1
+	menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 8, y / scale + 8)
 	menu:Show()
 end
 

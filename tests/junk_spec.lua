@@ -73,11 +73,11 @@ it("bags view: clicking a row opens Keep / Junk / Normal", function()
 	row.scripts.OnEnter(row)
 	row.scripts.OnClick(row, "LeftButton")
 	local menu = CraftWiseItemMenu
-	eq(menu.buttons.normal.selected, true)
+	eq(menu.buttons.normal.current, true)
 	menu.buttons.junk.scripts.OnClick(menu.buttons.junk)
 	eq(ns.db.junk[100], true)
 	ns.ShowItemMenu(100)
-	eq(menu.buttons.junk.selected, true)
+	eq(menu.buttons.junk.current, true)
 	menu.buttons.keep.scripts.OnClick(menu.buttons.keep)
 	eq(ns.db.keep[100], true); eq(ns.db.junk[100], nil)
 	ns.ShowItemMenu(500) -- quest item: junk not allowed
@@ -186,7 +186,7 @@ it("marks items to sell on the AH: advised as Auction, exclusive with keep/junk,
 	local row = byID(ns.BagRows())[600]
 	eq(row.markedAH, true); eq(row.best, "auction"); eq(row.bestValue, math.floor(15 * 0.95))
 	ns.ShowItemMenu(600)
-	eq(menu.buttons.auction.selected, true)
+	eq(menu.buttons.auction.current, true)
 	ns.ToggleJunk(600)
 	eq(ns.db.sellAH[600], nil)
 	ns.SetItemState(600, "auction")

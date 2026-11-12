@@ -57,19 +57,23 @@ it("follows another locale's format, positional arguments and magic characters i
 	eq(T.ParseLoot("Beute (erhalten): x."), nil, "a client without the strings shows nothing")
 end)
 
-it("a loot line becomes a toast line: icon, name in its link colour without brackets, count", function()
+it("a loot line becomes a toast line: icon, name in its quality colour without brackets, ×count", function()
 	local ns, stub = setup()
 	local T = ns.LootToast
+	stub.items[ORE].quality = 2
 	loot(stub, ORE, "Copper Ore", 4)
 	local line = T.Lines()[1]
 	eq(#T.Lines(), 1)
 	eq(line.itemID, ORE); eq(line.count, 4); eq(line.icon, 135232)
-	local text = T.LineText(line)
-	assert(text:find("|cffffffff|Hitem:" .. ORE, 1, true), "keeps the link's quality colour: " .. text)
-	assert(text:find("|hCopper Ore|h", 1, true) and not text:find("[", 1, true), "brackets dropped: " .. text)
-	assert(text:find("x4", 1, true), text)
-	eq(T.LineText(T.Add({ key = "item:" .. CLOTH, itemID = CLOTH, link = link(CLOTH, "Linen Cloth"), count = 1 }, 100)):find("x1", 1, true), nil,
-		"a single item shows no count")
+	local p = T.LineParts(line)
+	eq(p.name, "Copper Ore", "brackets dropped, no link codes")
+	eq(p.color, ns.Style.C.qUncommon, "quality 2 = C.qUncommon")
+	eq(p.count, "×4")
+	eq(T.LineParts(T.Add({ key = "item:" .. CLOTH, itemID = CLOTH, link = link(CLOTH, "Linen Cloth"), count = 1 }, 100)).count,
+		"×1", "a single item shows ×1, as on the board")
+	stub.items[9999] = { name = "Odd Relic", quality = 7 }
+	eq(T.LineParts({ key = "item:9999", itemID = 9999, count = 1 }).color, ns.Style.C.text,
+		"a quality without a constant falls back to C.text; the name comes from the client without a link")
 	assert(anchor(), "the anchor frame is built on the first loot")
 	assert(anchor():GetScript("OnUpdate"), "fades are driven while lines are shown")
 end)
@@ -128,12 +132,14 @@ it("value: AH after the cut or vendor, whichever CraftWise uses, times the count
 	eq(T.Value(CLOTH, 2), 26, "vendor")
 	eq(T.Value(HIDE, 4), nil, "no price, no value")
 	loot(stub, ORE, "Copper Ore", 3)
-	eq(T.ValueText(T.Lines()[1]), ns.FormatMoney(285) .. " AH")
+	local p = T.LineParts(T.Lines()[1])
+	eq(p.money, ns.FormatCoins(285)); eq(p.source, "AH")
 	loot(stub, HIDE, "Light Leather", 4)
-	eq(T.ValueText(T.Lines()[1]), nil)
+	p = T.LineParts(T.Lines()[1])
+	eq(p.money, nil); eq(p.source, nil)
 	SlashCmdList.CRAFTWISE("loottoast value off")
 	eq(ns.db.lootToast.value, false)
-	eq(T.ValueText(T.Lines()[2]), nil, "value text switched off")
+	eq(T.LineParts(T.Lines()[2]).money, nil, "value switched off")
 end)
 
 it("coin: a money gain paired with CHAT_MSG_MONEY, in either order, exact copper", function()
@@ -148,8 +154,9 @@ it("coin: a money gain paired with CHAT_MSG_MONEY, in either order, exact copper
 	stub.Fire("CHAT_MSG_MONEY", "You loot 2 Silver, 34 Copper")
 	eq(#T.Lines(), 1)
 	eq(T.Lines()[1].key, "money"); eq(T.Lines()[1].copper, 234)
-	eq(T.LineText(T.Lines()[1]), ns.FormatMoney(234))
-	eq(T.ValueText(T.Lines()[1]), nil, "coins have no value text")
+	local p = T.LineParts(T.Lines()[1])
+	eq(p.name, "Coin"); eq(p.money, ns.FormatCoins(234)); eq(p.count, nil)
+	eq(p.source, nil, "coins have no source word")
 	-- message first, then the money
 	stub.now = 102
 	stub.Fire("CHAT_MSG_MONEY", "Your share of the loot is 1 Copper.")
@@ -207,10 +214,11 @@ it("settings: defaults, on/off, duration, lock/unlock, reset", function()
 	assert(stub.printed[#stub.printed]:find("Usage", 1, true))
 	SlashCmdList.CRAFTWISE("loottoast unlock")
 	eq(s.locked, false)
-	eq(anchor().bg.shown, true, "unlocked: the drag bar shows")
+	eq(anchor().handle.shown, true, "unlocked: the drag handle shows")
+	eq(anchor().outline.shown, true, "and the outline")
 	SlashCmdList.CRAFTWISE("loottoast lock")
 	eq(s.locked, true)
-	eq(anchor().bg.shown, false)
+	eq(anchor().handle.shown, false); eq(anchor().outline.shown, false)
 	s.pos = { point = "TOP", relPoint = "TOP", x = 1, y = 2 }
 	SlashCmdList.CRAFTWISE("loottoast reset")
 	eq(s.pos, nil)
@@ -238,18 +246,95 @@ it("dragging saves the position and the next session puts the anchor there", fun
 	eq(p[1], "TOPLEFT"); eq(p[3], "TOPLEFT"); eq(p[4], 40); eq(p[5], -80)
 end)
 
-it("test shows bag items with their values and a coin line; real loot doesn't merge into them", function()
+it("test shows three lines labelled test: two bag items with their values and a coin line; real loot doesn't merge into them", function()
 	local ns, stub = setup()
 	local T = ns.LootToast
 	stub.bags[0] = { { itemID = ORE, stackCount = 7, hyperlink = link(ORE, "Copper Ore"), iconFileID = 135232 },
 		{ itemID = ORE, stackCount = 2, hyperlink = link(ORE, "Copper Ore") },
-		{ itemID = CLOTH, stackCount = 1, hyperlink = link(CLOTH, "Linen Cloth") } }
+		{ itemID = CLOTH, stackCount = 1, hyperlink = link(CLOTH, "Linen Cloth") },
+		{ itemID = HIDE, stackCount = 3, hyperlink = link(HIDE, "Light Leather") } }
 	SlashCmdList.CRAFTWISE("loottoast test")
 	eq(#T.Lines(), 3, "two distinct items and the coin line")
 	eq(T.Lines()[1].key, "money")
 	eq(T.Lines()[3].count, 7)
-	eq(T.ValueText(T.Lines()[3]), ns.FormatMoney(35) .. " vendor")
+	local p = T.LineParts(T.Lines()[3])
+	eq(p.money, ns.FormatCoins(35)); eq(p.source, "vendor"); eq(p.test, true)
+	for i = 1, 3 do eq(T.LineParts(T.Lines()[i]).test, true, "line " .. i .. " labelled test") end
 	loot(stub, ORE, "Copper Ore", 1)
 	eq(#T.Lines(), 4, "a real loot is its own line")
 	eq(T.Lines()[1].test, nil)
+	eq(T.LineParts(T.Lines()[1]).test, nil)
+end)
+
+it("strips: 28 tall, cut 8 with a hard shadow, 6 apart, newest on top with the turkuaz flap", function()
+	local ns, stub = setup()
+	local T, C = ns.LootToast, ns.Style.C
+	loot(stub, ORE, "Copper Ore", 1)
+	stub.now = 100.5
+	loot(stub, CLOTH, "Linen Cloth", 2)
+	stub.now = 101
+	loot(stub, HIDE, "Light Leather", 1)
+	local rows = {}
+	for _, f in ipairs(stub.frames) do if f.sheet and f.name and f.count then rows[#rows + 1] = f end end
+	eq(#rows, 3)
+	for i, row in ipairs(rows) do
+		eq(row.height, 28)
+		eq(row.sheet.cut, 8)
+		assert(row.sheet.shadow, "hard shadow")
+		eq(row.lastPoint[5], -(i - 1) * 34, "line " .. i .. " sits 28 + 6 below the one above")
+		eq(row.lastPoint[2], anchor())
+	end
+	eq(rows[1].name.text, "Light Leather", "newest on top")
+	eq(rows[1].sheet.flap, C.nokta, "the newest line's flap is turkuaz")
+	eq(rows[2].sheet.flap, C.flap); eq(rows[3].sheet.flap, C.flap)
+	eq(rows[1].sheet.pieces.c.vertexColor[4], 1, "the turkuaz flap ignores the background alpha")
+	eq(rows[1].icon.width, 18)
+	eq(rows[2].count.text, "×2"); eq(rows[2].count.shown, true)
+	eq(rows[1].test.shown, false, "no test label on real loot")
+end)
+
+it("lines step down in alpha (1, 0.75, 0.5) on top of their own timer", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	eq(T.StepAlpha(1), 1); eq(T.StepAlpha(2), 0.75); eq(T.StepAlpha(3), 0.5); eq(T.StepAlpha(6), 0.5)
+	for i = 1, 4 do
+		stub.now = 100 + i * 0.1
+		loot(stub, 9000 + i, "Thing " .. i, 1)
+	end
+	T.Render(100.4)
+	local alphas = {}
+	for _, f in ipairs(stub.frames) do if f.sheet and f.name then alphas[#alphas + 1] = f.alpha end end
+	eq(alphas[1], 1); eq(alphas[2], 0.75); eq(alphas[3], 0.5); eq(alphas[4], 0.5)
+	-- 4.6 s later the oldest line (looted at 100.1) is half way through its 1 s fade: 0.5 x 0.6
+	assert(math.abs(T.LineAlpha(4, T.Lines()[4], 104.5) - 0.5 * 0.6) < 1e-9)
+end)
+
+it("background alpha: 0.70 by default, db.settings.alpha.toast when set, only on the strips' fill", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	eq(T.BackgroundAlpha(), 0.70)
+	ns.db.settings.alpha = { toast = 0.4 }
+	eq(T.BackgroundAlpha(), 0.4)
+	loot(stub, ORE, "Copper Ore", 1)
+	local row
+	for _, f in ipairs(stub.frames) do if f.sheet and f.name then row = f end end
+	eq(row.sheet.alpha, 0.4)
+	eq(row.sheet.pieces.a.vertexColor[4], 0.4, "the fill")
+	eq(row.alpha, 1, "the line itself (icon, text) stays at its step alpha")
+	ns.db.settings.alpha = { toast = 3 }
+	eq(T.BackgroundAlpha(), 1, "clamped")
+	ns.db.settings.alpha = { toast = "x" }
+	eq(T.BackgroundAlpha(), 0.70)
+end)
+
+it("Move: a white handle and a 1 unit outline over three lines' place", function()
+	local ns = setup()
+	local T, C = ns.LootToast, ns.Style.C
+	SlashCmdList.CRAFTWISE("loottoast unlock")
+	local a = anchor()
+	eq(a.width, T.WIDTH); eq(a.height, 16)
+	eq(a.handle.vertexColor[1], C.text[1])
+	eq(a.outline.height, 3 * 28 + 2 * 6)
+	eq(a.outline.border.top.vertexColor[1], C.text[1])
+	assert(a.label.text:find("drag", 1, true))
 end)
