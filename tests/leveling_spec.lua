@@ -142,16 +142,16 @@ it("shows the chance next to each recipe in the game's profession window", funct
 	ProfessionsFrame = { CraftingPage = { RecipeList = { ScrollBox = scroll } } }
 	C_TradeSkillUI.GetBaseProfessionInfo = function() return { professionID = 165, professionName = "Leatherworking", skillLevel = 100 } end
 	stub.Fire("ADDON_LOADED", "Blizzard_Professions")
-	eq(ns.RecipeChanceLabels[murloc].text, "|cff4fd18c83%|r") -- own crafts 5/6
+	eq(ns.RecipeChanceLabels[murloc].text, "|cffECEDEA83%|r") -- own crafts 5/6
 	eq(ns.RecipeChanceLabels[gloves], nil) -- grey: nothing
 	-- a row initialised later (scrolling) gets it too
 	local fine, fineNode = row({ recipeID = 3763, learned = true, relativeDifficulty = 2, name = "Fine Leather Belt" })
 	callbacks[1].fn(callbacks[1].owner, fine, fineNode)
-	eq(ns.RecipeChanceLabels[fine].text, "|cff4fd18c50%|r") -- all crafts at this stage 3/6
+	eq(ns.RecipeChanceLabels[fine].text, "|cffECEDEA50%|r") -- all crafts at this stage 3/6
 	-- no records: formula estimate with ~
 	ns.db.skillups = {}
 	ns.Notify("SKILLUPS_CHANGED")
-	eq(ns.RecipeChanceLabels[murloc].text, "|cffffb347~83%|r") -- (125 - 100) / (125 - 95)
+	eq(ns.RecipeChanceLabels[murloc].text, "|cffA7AAA6~83%|r") -- (125 - 100) / (125 - 95)
 	-- hover adds the source line
 	local lines = {}
 	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. "=" .. r end

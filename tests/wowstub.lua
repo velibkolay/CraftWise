@@ -44,6 +44,13 @@ function frameMeta.SetFont(self, path, size, flags) self.font = { path, size, fl
 function frameMeta.GetFont(self) if self.font then return unpack(self.font) end end
 function frameMeta.SetFontObject(self, f) self.fontObject = f end
 function frameMeta.SetAlpha(self, a) self.alpha = a end
+function frameMeta.SetDesaturated(self, v) self.desaturated = v and true or false end
+function frameMeta.IsDesaturated(self) return self.desaturated == true end
+function frameMeta.Disable(self) self.disabled = true end
+function frameMeta.Enable(self) self.disabled = false end
+function frameMeta.IsEnabled(self) return self.disabled ~= true end
+-- Combat: stub.inCombat
+function UnitAffectingCombat() return stub.inCombat == true end
 
 -- Font objects (CreateFont): named ones become globals, as in the client.
 function CreateFont(name)

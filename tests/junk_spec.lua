@@ -118,7 +118,7 @@ it("the chosen click on an item in the bags (Blizzard/Baganator or Bagnon button
 	eq(CraftWiseItemMenu.shown, false)
 end)
 
-it("shows the junk icon on marked items in Blizzard bags and Bagnon", function()
+it("marks junk in Blizzard bags and Bagnon with a grey corner and a dimmed icon", function()
 	local ns, stub = setup()
 	local hooks = {}
 	hooksecurefunc = function(t, name, fn)
@@ -128,8 +128,7 @@ it("shows the junk icon on marked items in Blizzard bags and Bagnon", function()
 	end
 	local function button(bag, slot)
 		local b = CreateFrame("Button")
-		b.JunkIcon = CreateFrame("Frame")
-		b.JunkIcon:Hide()
+		b.icon = CreateFrame("Frame")
 		b.GetBagID = function() return bag end
 		b.GetID = function() return slot end
 		return b
@@ -140,15 +139,20 @@ it("shows the junk icon on marked items in Blizzard bags and Bagnon", function()
 	Bagnon = { Item = { UpdateBorder = function() end }, Frames = { Update = function() end } }
 	stub.Fire("PLAYER_LOGIN")
 	ns.SetItemState(400, "junk")
-	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.shown, true) -- boots
-	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.texture, ns.JUNK_ICON) -- red X, not the coin
-	eq(ContainerFrameCombinedBags.Items[1].JunkIcon.shown, false) -- linen
-	local item = { JunkIcon = CreateFrame("Frame"), info = { itemID = 400 }, IsCached = function() return false end }
-	item.JunkIcon:Hide()
+	local boots, linen = ContainerFrameCombinedBags.Items[2], ContainerFrameCombinedBags.Items[1]
+	eq(ns.SlotCorners[boots].shown, true)
+	eq(ns.SlotCorners[boots].vertexColor[1], ns.Style.C.text3[1])
+	eq(boots.icon.desaturated, true); eq(boots.icon.alpha, 0.55)
+	eq(ns.SlotCorners[linen], nil)
+	eq(linen.icon.desaturated, nil)
+	local item = CreateFrame("Button")
+	item.icon, item.info, item.IsCached = CreateFrame("Frame"), { itemID = 400 }, function() return false end
 	hooks[Bagnon.Item].UpdateBorder(item)
-	eq(item.JunkIcon.shown, true)
+	eq(ns.SlotCorners[item].shown, true)
+	eq(item.icon.alpha, 0.55)
 	ns.SetItemState(400, "normal")
-	eq(ContainerFrameCombinedBags.Items[2].JunkIcon.shown, false)
+	eq(ns.SlotCorners[boots].shown, false)
+	eq(boots.icon.desaturated, false); eq(boots.icon.alpha, 1)
 end)
 
 it("registers a CraftWise junk plugin and sort mode with Baganator", function()
@@ -214,7 +218,7 @@ it("shows the AH mark in tooltips, Blizzard bags and as a Baganator corner widge
 	} }
 	hooksecurefunc = function() end
 	local b = CreateFrame("Button")
-	b.JunkIcon = CreateFrame("Frame")
+	b.icon = CreateFrame("Frame")
 	b.GetBagID = function() return 0 end
 	b.GetID = function() return 1 end
 	ContainerFrameCombinedBags = CreateFrame("Frame")
@@ -223,17 +227,23 @@ it("shows the AH mark in tooltips, Blizzard bags and as a Baganator corner widge
 	stub.Fire("PLAYER_LOGIN")
 	ns.SetItemState(100, "auction")
 	eq(refreshed, true)
-	eq(ns.AHIcons[b].shown, true)
-	eq(widget.pos.corner, "top_left"); eq(widget.fast, true)
-	assert(widget.onInit(CreateFrame("Button")))
-	eq(widget.onUpdate(nil, { itemID = 100 }), true)
-	eq(widget.onUpdate(nil, { itemID = 400 }), false)
+	eq(ns.SlotCorners[b].shown, true)
+	eq(ns.SlotCorners[b].vertexColor[1], ns.Style.C.coinGold[1])
+	eq(b.icon.desaturated, nil) -- AH marks don't dim
+	eq(widget.pos.corner, "top_right"); eq(widget.fast, true)
+	local corner = widget.onInit(CreateFrame("Button"))
+	assert(corner)
+	eq(corner.width, 13); eq(corner.texture, ns.Style.Media.fold)
+	corner.GetParent = function() return b end
+	eq(widget.onUpdate(corner, { itemID = 100 }), true)
+	eq(corner.vertexColor[1], ns.Style.C.coinGold[1])
+	eq(widget.onUpdate(corner, { itemID = 400 }), false)
 	local lines = {}
 	local tip = { AddLine = function() end, AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. "=" .. r end, Show = function() end }
 	ns.AddTooltipLines(tip, 100)
 	assert(table.concat(lines, ";"):find("Marked=.*Sell on AH"), table.concat(lines, ";"))
 	ns.SetItemState(100, "normal")
-	eq(ns.AHIcons[b].shown, false)
+	eq(ns.SlotCorners[b].shown, false)
 end)
 
 it("covers the reagent bag (bag 5): listed in the Bags view, menu opens, junk there is sold", function()

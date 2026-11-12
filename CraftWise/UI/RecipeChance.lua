@@ -1,6 +1,7 @@
 -- Skill-up chance next to every recipe in the game's profession window (issue #15).
--- Same numbers as the Level view (Leveling.lua): orange 100%, measured rates from your recorded
--- crafts, "~" for the community formula estimate. Grey and unlearned recipes show nothing.
+-- Same numbers as the Level view (Leveling.lua): measured rates from your recorded crafts in C.text
+-- (white), "~" and C.text2 (grey) for the community formula estimate. Grey and unlearned recipes show
+-- nothing. No green or orange: green collides with the difficulty colour, orange means "live".
 -- Hooks the recipe list's ScrollBox (Blizzard_Professions, loaded on demand) and only adds its own
 -- font string to each row; Blizzard's row code is left alone.
 local _, ns = ...
@@ -8,9 +9,6 @@ local _, ns = ...
 local hooked = false
 local scrollBox
 local RefreshRows
-
-local GOOD = "|cff4fd18c"
-local ESTIMATE = "|cffffb347"
 
 local function Skill()
 	local base = C_TradeSkillUI and C_TradeSkillUI.GetBaseProfessionInfo and C_TradeSkillUI.GetBaseProfessionInfo()
@@ -31,9 +29,9 @@ function ns.RecipeChanceText(recipeID, difficulty, skill)
 	end
 	local pct = math.floor(p * 100 + 0.5)
 	if info.kind == "formula" then
-		return ESTIMATE .. "~" .. pct .. "%|r", info, p
+		return ns.Style.Hex("text2") .. "~" .. pct .. "%|r", info, p
 	end
-	return GOOD .. pct .. "%|r", info, p
+	return ns.Style.Hex("text") .. pct .. "%|r", info, p
 end
 
 local labels = setmetatable({}, { __mode = "k" }) -- [row button] = our font string
@@ -42,7 +40,7 @@ ns.RecipeChanceLabels = labels
 local function Label(button)
 	local t = labels[button]
 	if not t then
-		t = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		t = ns.Style.Text(button, "Figure", "text")
 		t:SetPoint("RIGHT", button, "RIGHT", -4, 0)
 		t:SetJustifyH("RIGHT")
 		labels[button] = t
