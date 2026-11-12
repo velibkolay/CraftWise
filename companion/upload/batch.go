@@ -23,7 +23,7 @@ func (b *Batch[T]) Commit(st *State) {
 // Summary is a short description for the log, e.g. "12 prices, 3 scans".
 func (b *Batch[T]) Summary() string {
 	out := ""
-	for _, k := range []string{"scans", "items", "prices", "snapshots", "auctions", "fishing", "ledger"} {
+	for _, k := range []string{"scans", "classes", "items", "prices", "snapshots", "auctions", "fishing", "ledger"} {
 		if n := b.Counts[k]; n > 0 {
 			if out != "" {
 				out += ", "
@@ -52,6 +52,7 @@ func packPublic(units []unit[PublicPayload], houses map[string]House, opt Option
 			(u.kind == "prices" && c["prices"] >= MaxPriceEntries) ||
 			(u.kind == "items" && c["items"] >= MaxItems) ||
 			(u.kind == "scans" && c["scans"] >= MaxScans) ||
+			(u.kind == "classes" && c["classes"] >= MaxClassNames) ||
 			(u.key != "" && keys[u.key])
 	}
 	for _, u := range units {

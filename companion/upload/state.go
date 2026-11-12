@@ -18,8 +18,10 @@ type State struct {
 
 	// Scans: newest scan time sent per house.
 	Scans map[string]int64 `json:"scans,omitempty"`
-	// Items: hash of the item info and name sent per item ID.
+	// Items: hash of the item info (sell price included, #120) and name sent per item ID.
 	Items map[int64]uint64 `json:"items,omitempty"`
+	// Classes: class and subclass names sent (#120), per "<classID>" and "<classID>:<subclassID>".
+	Classes map[string]string `json:"classes,omitempty"`
 	// Prices per "<house>\x1f<itemKey>".
 	Prices map[string]*PriceMark `json:"prices,omitempty"`
 	// Docs: hash of the private document sent, per "<kind>\x1f<character>".
@@ -52,6 +54,9 @@ func (s *State) init() {
 	}
 	if s.Items == nil {
 		s.Items = map[int64]uint64{}
+	}
+	if s.Classes == nil {
+		s.Classes = map[string]string{}
 	}
 	if s.Prices == nil {
 		s.Prices = map[string]*PriceMark{}

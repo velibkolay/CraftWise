@@ -29,7 +29,7 @@ type DB struct {
 	Snapshots map[string]*Snapshot `json:"snapshots,omitempty"`
 }
 
-// MarketDB is CraftWiseMarketDB (#26, #46, #81, #90, #92).
+// MarketDB is CraftWiseMarketDB (#26, #46, #81, #90, #92, #120).
 type MarketDB struct {
 	V      *int64           `json:"v,omitempty"`
 	Houses map[string]House `json:"houses,omitempty"`
@@ -37,15 +37,22 @@ type MarketDB struct {
 	Scans map[string][]Scan `json:"scans,omitempty"`
 	// Items[itemKey][houseKey] = price entry (decoded from the packed string, or the table form an
 	// entry still in use at logout is saved in).
-	Items       map[market.ItemKey]map[string]market.Entry `json:"items,omitempty" lua:"-"`
-	Names       map[int64]string                           `json:"names,omitempty"`
-	ItemInfo    map[int64]market.ItemInfo                  `json:"itemInfo,omitempty" lua:"-"`
-	Auctionator *Auctionator                               `json:"auctionator,omitempty" lua:"-"`
-	Scope       *Scope                                     `json:"scope,omitempty"`
-	CutSamples  []CutSample                                `json:"cutSamples,omitempty"`
-	PrunedAt    *int64                                     `json:"prunedAt,omitempty"`
-	Ledger      *Ledger                                    `json:"ledger,omitempty"`
-	Auctions    *Auctions                                  `json:"auctions,omitempty"`
+	Items    map[market.ItemKey]map[string]market.Entry `json:"items,omitempty" lua:"-"`
+	Names    map[int64]string                           `json:"names,omitempty"`
+	ItemInfo map[int64]market.ItemInfo                  `json:"itemInfo,omitempty" lua:"-"`
+	// ItemInfoV is the itemInfo format (#120: 2 = "q,i,c,s,t,p"; missing in older files, format 1
+	// "q,i,c,s,t"). Each string is read by its field count, so a file can hold both.
+	ItemInfoV *int64 `json:"itemInfoV,omitempty"`
+	// The client's names of item classes and subclasses (#120): ClassNames[classID],
+	// SubclassNames[classID][subclassID]. Missing in files written before #120.
+	ClassNames    map[int64]string           `json:"classNames,omitempty"`
+	SubclassNames map[int64]map[int64]string `json:"subclassNames,omitempty"`
+	Auctionator   *Auctionator               `json:"auctionator,omitempty" lua:"-"`
+	Scope         *Scope                     `json:"scope,omitempty"`
+	CutSamples    []CutSample                `json:"cutSamples,omitempty"`
+	PrunedAt      *int64                     `json:"prunedAt,omitempty"`
+	Ledger        *Ledger                    `json:"ledger,omitempty"`
+	Auctions      *Auctions                  `json:"auctions,omitempty"`
 }
 
 // House is one auction house seen (#26): key "<realm>|H", "<realm>|A" or "<realm>|N:BootyBay".
@@ -333,7 +340,7 @@ func (r *reader) market(v any) *MarketDB {
 			id, ok := itemID(f.Key)
 			s, isString := f.Value.(string)
 			if !ok || !isString {
-				r.add(path, "want [itemID] = \"q,i,c,s,t\"")
+				r.add(path, "want [itemID] = \"q,i,c,s,t,p\"")
 				continue
 			}
 			decoded, err := market.DecodeItemInfo(s)

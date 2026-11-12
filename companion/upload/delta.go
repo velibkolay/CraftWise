@@ -189,7 +189,9 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 		}
 	}
 
-	// Item info and names: new or changed items.
+	units = append(units, d.classNames(m)...)
+
+	// Item info and names: new or changed items (a new sell price, #120, is a change).
 	ids := map[int64]bool{}
 	for id := range m.Names {
 		ids[id] = true
@@ -289,6 +291,89 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 	})
 	for _, r := range refs {
 		units = append(units, d.price(r.house, r.key.String(), r.e)...)
+	}
+	return units
+}
+
+// classNames sends the client's class and subclass names (#120) that are new or changed since the last
+// upload: they change almost never (another client language, a patch), so after the first upload this
+// sends nothing.
+func (d *delta) classNames(m *savedvars.MarketDB) []unit[PublicPayload] {
+	type named struct {
+		class, sub int64
+		isSub      bool
+		name       string
+	}
+	var list []named
+	okID := func(id int64) bool { return id >= 0 && id <= MaxClassID }
+	okName := func(name string) bool {
+		if !okString(name, MaxClassNameLen) || controlRE.MatchString(name) {
+			d.skip("class or subclass name empty, over 64 characters or with control characters")
+			return false
+		}
+		return true
+	}
+	for c, name := range m.ClassNames {
+		if !okID(c) {
+			d.skip("class name of a class ID out of range")
+			continue
+		}
+		if okName(name) {
+			list = append(list, named{class: c, name: name})
+		}
+	}
+	for c, subs := range m.SubclassNames {
+		for s, name := range subs {
+			if !okID(c) || !okID(s) {
+				d.skip("subclass name of a class or subclass ID out of range")
+				continue
+			}
+			if okName(name) {
+				list = append(list, named{class: c, sub: s, isSub: true, name: name})
+			}
+		}
+	}
+	sort.Slice(list, func(i, j int) bool {
+		a, b := list[i], list[j]
+		if a.class != b.class {
+			return a.class < b.class
+		}
+		if a.isSub != b.isSub {
+			return !a.isSub
+		}
+		return a.sub < b.sub
+	})
+	var units []unit[PublicPayload]
+	for _, n := range list {
+		n := n
+		key := fmt.Sprint(n.class)
+		if n.isSub {
+			key += fmt.Sprintf(":%d", n.sub)
+		}
+		if d.st.Classes[key] == n.name {
+			continue
+		}
+		units = append(units, unit[PublicPayload]{
+			add: func(p *PublicPayload) {
+				if !n.isSub {
+					if p.ClassNames == nil {
+						p.ClassNames = map[int64]string{}
+					}
+					p.ClassNames[n.class] = n.name
+					return
+				}
+				if p.SubclassNames == nil {
+					p.SubclassNames = map[int64]map[int64]string{}
+				}
+				if p.SubclassNames[n.class] == nil {
+					p.SubclassNames[n.class] = map[int64]string{}
+				}
+				p.SubclassNames[n.class][n.sub] = n.name
+			},
+			// one row, an upsert counts twice
+			kind: "classes", bytes: size(n.class) + size(n.sub) + size(n.name) + 6, rows: 2,
+			commit: func(st *State) { st.Classes[key] = n.name },
+		})
 	}
 	return units
 }

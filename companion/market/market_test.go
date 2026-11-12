@@ -117,7 +117,7 @@ func TestGoldenItemInfo(t *testing.T) {
 		Decoded ItemInfo `json:"decoded"`
 	}
 	unmarshal(t, loadGolden(t).Get("CraftWiseItemInfoGolden"), &cases)
-	if len(cases) < 7 {
+	if len(cases) < 8 {
 		t.Fatalf("only %d item info cases", len(cases))
 	}
 	for _, c := range cases {
@@ -132,6 +132,28 @@ func TestGoldenItemInfo(t *testing.T) {
 		}
 		if got := EncodeItemInfo(decoded); got != c.Packed {
 			t.Errorf("%s: round trip %q, want %q", c.Name, got, c.Packed)
+		}
+	}
+}
+
+// Format 1 strings (before #120, no sell price) decode as Market.lua reads them.
+func TestGoldenItemInfoV1(t *testing.T) {
+	var cases []struct {
+		Name    string   `json:"name"`
+		Packed  string   `json:"packed"`
+		Decoded ItemInfo `json:"decoded"`
+	}
+	unmarshal(t, loadGolden(t).Get("CraftWiseItemInfoV1Golden"), &cases)
+	if len(cases) < 3 {
+		t.Fatalf("only %d format 1 cases", len(cases))
+	}
+	for _, c := range cases {
+		decoded, err := DecodeItemInfo(c.Packed)
+		if err != nil || !reflect.DeepEqual(decoded, c.Decoded) {
+			t.Errorf("%s: DecodeItemInfo(%q) = %+v, %v; want %+v", c.Name, c.Packed, decoded, err, c.Decoded)
+		}
+		if decoded.SellPrice != nil {
+			t.Errorf("%s: a format 1 string has no sell price", c.Name)
 		}
 	}
 }
@@ -190,7 +212,7 @@ func TestDecodeRejectsMalformed(t *testing.T) {
 			t.Errorf("DecodeAuctionator(%q) accepted", s)
 		}
 	}
-	for _, s := range []string{"1,2,3,4", "1,2,3,4,5,6", "1,!,3,4,5"} {
+	for _, s := range []string{"1,2,3,4", "1,2,3,4,5,6,7", "1,!,3,4,5", "1,2,3,4,5,-"} {
 		if _, err := DecodeItemInfo(s); err == nil {
 			t.Errorf("DecodeItemInfo(%q) accepted", s)
 		}

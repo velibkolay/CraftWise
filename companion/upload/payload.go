@@ -6,7 +6,8 @@
 // the contract without touching the rest. Two endpoints:
 //
 //	POST /api/upload          public market data: a subset of CraftWiseMarketDB as the savedvars
-//	                          and market types marshal it (houses, scans, names, itemInfo, items)
+//	                          and market types marshal it (houses, scans, names, itemInfo, items,
+//	                          classNames, subclassNames)
 //	POST /api/private/upload  private data: snapshots, auctions, fishing (documents per character)
 //	                          and the ledger
 //
@@ -26,9 +27,12 @@ const (
 	MaxItems          = 5000 // item IDs in names + itemInfo
 	MaxHouses         = 20
 	MaxScans          = 200
-	MaxRawPoints      = 500 // per entry
-	MaxDays           = 400 // per entry
-	MaxTiers          = 8   // per raw point
+	MaxRawPoints      = 500  // per entry
+	MaxDays           = 400  // per entry
+	MaxTiers          = 8    // per raw point
+	MaxClassNames     = 1000 // class and subclass names together
+	MaxClassNameLen   = 64
+	MaxClassID        = 65535 // class and subclass IDs 0..MaxClassID
 	MaxLedgerEntries  = 5000
 	MaxPrivateDocSize = 450_000
 	MaxCharacters     = 50 // per private section
@@ -43,8 +47,11 @@ type PublicPayload struct {
 	Houses   map[string]House                   `json:"houses"`
 	Scans    map[string][]Scan                  `json:"scans,omitempty"`    // per house key
 	Names    map[int64]string                   `json:"names,omitempty"`    // CraftWiseMarketDB.names
-	ItemInfo map[int64]market.ItemInfo          `json:"itemInfo,omitempty"` // decoded (#92)
+	ItemInfo map[int64]market.ItemInfo          `json:"itemInfo,omitempty"` // decoded (#92), sell price p (#120)
 	Items    map[string]map[string]market.Entry `json:"items,omitempty"`    // [item key][house key]
+	// The client's class and subclass names (#120): [classID] and [classID][subclassID].
+	ClassNames    map[int64]string           `json:"classNames,omitempty"`
+	SubclassNames map[int64]map[int64]string `json:"subclassNames,omitempty"`
 }
 
 // House is one auction house; key "<realm>|H", "<realm>|A" or "<realm>|N:<Name>". A neutral

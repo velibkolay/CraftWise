@@ -150,8 +150,9 @@ it("#90: storing a large scan takes several frames; last-only items cost less pe
 	C_Timer.After = after
 	eq(CraftWiseMarketDB.scans[HORDE][1].lastOnly, 3000)
 	-- reading: 3001 rows at 500 a frame (7 frames); storing: 3000 light + 1 full entry at 1000 a frame (4);
-	-- item info (#92): 3001 items at 500 a frame (7)
-	assert(frames >= 14 and frames <= 18, "frames: " .. frames)
+	-- item info (#92): 3001 items at 500 a frame (7); the items known only from their rows are loaded
+	-- for their sell price (#120), 100 a step (30)
+	assert(frames >= 44 and frames <= 48, "frames: " .. frames)
 end)
 
 it("#90: pruning checks the age of last-only entries without decoding them; 30 days kept", function()

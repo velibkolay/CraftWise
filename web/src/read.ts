@@ -40,6 +40,42 @@ interface ItemRow {
 	icon: number | null;
 	class: number | null;
 	subclass: number | null;
+	sell_price: number | null;
+}
+
+// The client's class and subclass names (#120, migrations/0003_names_sell_price.sql), null where none
+// was uploaded (the site then falls back to Blizzard's enum identifiers).
+interface ClassNames {
+	cls: Map<number, string>;
+	sub: Map<string, string>;
+}
+const NO_NAMES: ClassNames = { cls: new Map(), sub: new Map() };
+
+// Statements reading the names of the given classes (all of them, subclasses included).
+function classNameStatements(db: D1Database, classes: Iterable<number | null>): [D1PreparedStatement, D1PreparedStatement] {
+	const list = JSON.stringify([...new Set([...classes].filter((c): c is number => c !== null))]);
+	return [
+		db.prepare("SELECT class, name FROM item_classes WHERE class IN (SELECT value FROM json_each(?1))").bind(list),
+		db.prepare("SELECT class, subclass, name FROM item_subclasses WHERE class IN (SELECT value FROM json_each(?1))").bind(list),
+	];
+}
+function classNamesOf(cls: D1Result, sub: D1Result): ClassNames {
+	return {
+		cls: new Map((cls.results as { class: number; name: string }[]).map((r) => [r.class, r.name])),
+		sub: new Map((sub.results as { class: number; subclass: number; name: string }[]).map((r) => [`${r.class}:${r.subclass}`, r.name])),
+	};
+}
+async function readClassNames(env: Env, classes: Iterable<number | null>): Promise<ClassNames> {
+	const list = [...classes];
+	if (!list.some((c) => c !== null)) return NO_NAMES;
+	const [cls, sub] = await env.DB.batch(classNameStatements(env.DB, list));
+	return classNamesOf(cls!, sub!);
+}
+function namesOut(names: ClassNames, cls: number | null, sub: number | null) {
+	return {
+		className: cls === null ? null : (names.cls.get(cls) ?? null),
+		subclassName: cls === null || sub === null ? null : (names.sub.get(`${cls}:${sub}`) ?? null),
+	};
 }
 
 async function allHouses(env: Env): Promise<HouseRow[]> {
@@ -62,8 +98,17 @@ function houseOut(h: HouseRow) {
 	};
 }
 
-function itemOut(i: ItemRow) {
-	return { id: i.id, name: i.name, quality: i.quality, icon: i.icon, class: i.class, subclass: i.subclass };
+function itemOut(i: ItemRow, names: ClassNames) {
+	return {
+		id: i.id,
+		name: i.name,
+		quality: i.quality,
+		icon: i.icon,
+		class: i.class,
+		subclass: i.subclass,
+		...namesOut(names, i.class, i.subclass),
+		sellPrice: i.sell_price ?? null,
+	};
 }
 
 // Random-suffix variants packed per item (#118, migrations/0002_variants.sql) as price rows.
@@ -141,22 +186,25 @@ export async function search(env: Env, url: URL): Promise<Response> {
 	const hs = await allHouses(env);
 	const byId = new Map(hs.map((h) => [h.id, h]));
 	let prices: PriceRow[] = [];
+	let names = NO_NAMES;
 	if (items.length) {
 		const ids = JSON.stringify(items.map((i) => i.id));
-		const [rows, variants] = await env.DB.batch([
+		const [rows, variants, cls, sub] = await env.DB.batch([
 			env.DB.prepare(
 				`SELECT house, item, suffix, t, min, qty, listings, off, depth_t, depth_total FROM prices
 				WHERE house IN (SELECT id FROM houses) AND item IN (SELECT value FROM json_each(?1))`,
 			).bind(ids),
 			env.DB.prepare("SELECT house, item, data FROM variants WHERE house IN (SELECT id FROM houses) AND item IN (SELECT value FROM json_each(?1))").bind(ids),
+			...classNameStatements(env.DB, items.map((i) => i.class)),
 		]);
 		prices = mergePrices(rows!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[]));
+		names = classNamesOf(cls!, sub!);
 	}
 	return json(
 		{
 			query: q,
 			items: items.map((i) => ({
-				...itemOut(i),
+				...itemOut(i, names),
 				prices: prices
 					.filter((p) => p.item === i.id)
 					.map((p) => ({ house: byId.get(p.house)!.key, label: byId.get(p.house)!.label, suffix: p.suffix, ...currentOut(p) })),
@@ -222,7 +270,12 @@ export async function itemDetail(env: Env, url: URL, id: number, now: number): P
 	const today = dayNumber(now);
 	const db = env.DB;
 	const [item, prices, daily, points, variants, variantDays] = await db.batch([
-		db.prepare("SELECT * FROM items WHERE id = ?1").bind(id),
+		db.prepare(
+			`SELECT i.*, c.name AS class_name, s.name AS subclass_name FROM items i
+			LEFT JOIN item_classes c ON c.class = i.class
+			LEFT JOIN item_subclasses s ON s.class = i.class AND s.subclass = i.subclass
+			WHERE i.id = ?1`,
+		).bind(id),
 		db.prepare("SELECT * FROM prices WHERE house IN (SELECT id FROM houses) AND item = ?1").bind(id),
 		db.prepare(
 			`SELECT house, suffix, day, src, lo, typ, hi, qty_max, list_max, n, gone FROM daily
@@ -235,7 +288,7 @@ export async function itemDetail(env: Env, url: URL, id: number, now: number): P
 		db.prepare("SELECT house, item, data FROM variants WHERE house IN (SELECT id FROM houses) AND item = ?1").bind(id),
 		db.prepare("SELECT house, day, data FROM variant_days WHERE house IN (SELECT id FROM houses) AND item = ?1 AND day > ?2").bind(id, today - days),
 	]);
-	const info = (item!.results as unknown as ItemRow[])[0] ?? null;
+	const info = (item!.results as unknown as (ItemRow & { class_name: string | null; subclass_name: string | null })[])[0] ?? null;
 	const priceRows = mergePrices(prices!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[]));
 	const dailyRows = mergeDays(daily!.results as unknown as DailyRow[], variantDays!.results as unknown as VariantDayRow[]);
 	const pointRows = points!.results as unknown as PointRow[];
@@ -287,7 +340,11 @@ export async function itemDetail(env: Env, url: URL, id: number, now: number): P
 				raw: m.raw.map((r) => ({ t: r.t, total: r.total, listings: r.listings, m: r.m, tiers: tierList(r.tiers) })),
 			};
 		});
-	return json({ id, item: info ? itemOut(info) : null, markets: out }, 200, CACHE);
+	const names: ClassNames = {
+		cls: new Map(info && info.class !== null && info.class_name !== null ? [[info.class, info.class_name]] : []),
+		sub: new Map(info && info.subclass_name !== null ? [[`${info.class}:${info.subclass}`, info.subclass_name]] : []),
+	};
+	return json({ id, item: info ? itemOut(info, names) : null, markets: out }, 200, CACHE);
 }
 
 interface Mover {
@@ -440,13 +497,16 @@ async function categoryIndex(env: Env, house: HouseRow, now: number): Promise<Ca
 export async function categories(env: Env, url: URL, now: number): Promise<Response> {
 	const house = await houseParam(env, url);
 	const index = await categoryIndex(env, house, now);
+	// Names are read on every request (a few dozen rows), so a name uploaded after the index was built
+	// shows at once.
+	const names = await readClassNames(env, index.cats.map(([c]) => c));
 	return json(
 		{
 			house: house.key,
 			label: house.label,
 			lastScan: house.last_scan,
 			computedAt: index.computedAt,
-			categories: index.cats.map(([c, s, ids]) => ({ class: c, subclass: s, items: ids.length })),
+			categories: index.cats.map(([c, s, ids]) => ({ class: c, subclass: s, ...namesOut(names, c, s), items: ids.length })),
 		},
 		200,
 		CACHE,
@@ -501,6 +561,7 @@ export async function browse(env: Env, url: URL, now: number): Promise<Response>
 			])
 		: [{ results: [] }, { results: [] }, { results: [] }];
 	const info = new Map((items!.results as unknown as ItemRow[]).map((i) => [i.id, i]));
+	const names = await readClassNames(env, [...info.values()].map((i) => i.class));
 	const price = new Map((prices!.results as unknown as PriceRow[]).map((p) => [p.item, p]));
 	const days = new Map<number, (DailyRow & { item: number })[]>();
 	for (const d of daily!.results as unknown as (DailyRow & { item: number })[]) {
@@ -526,6 +587,8 @@ export async function browse(env: Env, url: URL, now: number): Promise<Response>
 					icon: i?.icon ?? null,
 					class: i?.class ?? null,
 					subclass: i?.subclass ?? null,
+					...namesOut(names, i?.class ?? null, i?.subclass ?? null),
+					sellPrice: i?.sell_price ?? null,
 					current: p ? currentOut(p) : null,
 					typical: typical(d, today, Boolean(p || d.length)),
 					days: d.map((r) => ({ day: r.day, src: r.src === 1 ? "craftwise" : "last", lo: r.lo, typ: r.typ, hi: r.hi, qtyMax: r.qty_max })),

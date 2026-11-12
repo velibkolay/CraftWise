@@ -468,6 +468,14 @@ New file `Crates.lua` in the TOC: **full game restart** needed (not `/reload`). 
 - [ ] A Waylaid Crate or an item you never saw before the scan: present after the scan or after the next login (the client loads it on request).
 - [ ] With a non-English client (if available): `names` are in that language; `itemInfo` is the same numbers.
 
+## Class names and vendor sell prices (#120)
+`/reload` is enough (no new file, no TOC change). The first full scan or login after the update loads every priced item the client hasn't cached, 100 every 0.2 s (about 35 s for 18,000 items) to read its sell price.
+- [ ] After a full scan, about a minute and a `/reload`: in `CraftWise.lua` (copy it with the game closed) `CraftWiseMarketDB.itemInfoV = 2` and the `itemInfo` strings have 6 fields (`q,i,c,s,t,p`). Report how many still end in a comma (sell price unknown).
+- [ ] Pick three items and compare `p` (base 36) with the sell price in the game tooltip at a vendor, and with `/dump select(11, C_Item.GetItemInfo(<id>))`. An item the vendor doesn't buy (quest item, some bind-on-pickup items) has `p` = `0`.
+- [ ] `CraftWiseMarketDB.classNames` and `subclassNames` hold the names the auction house's category list shows (Trade Goods / Herb, Cloth, ...), the same as `/dump C_Item.GetItemClassInfo(7)` and `/dump C_Item.GetItemSubClassInfo(7, 9)`. No empty names.
+- [ ] No stutter after the scan beyond what #92 had; BugSack shows no CraftWise error.
+- [ ] After the companion uploaded (rebuilt with #120): wow.velikopter.com's category tree shows those names instead of "Tradegoods" / "Subclass 9"; the list has a Vendor column, "Better sold to a vendor" filters it; an item page shows "Sell Price" in the tooltip and the "Auction House or Vendor" block, in both skins.
+
 ## Market entries packed at logout (#105)
 `/reload` is enough (no new file, no TOC change).
 - [ ] Have a fishing log with catches that have an AH price at the profit house (the snapshot values them at logout), then `/reload`. In `CraftWise.lua` (copy it with the game closed) every value under `CraftWiseMarketDB.items[<id>]["<realm>|H"]` is a string; report any `{ ["days"] = ..., ["last"] = ..., ["raw"] = ... }` table.

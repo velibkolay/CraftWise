@@ -33,9 +33,10 @@ local function Scan(stub, list)
 	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
 end
 
--- An item the client has cached: name, quality, icon (GetItemInfoInstant), class, subclass.
-local function Cached(stub, itemID, name, quality, icon, classID, subclassID)
-	stub.items[itemID] = { name = name, quality = quality, icon = icon, classID = classID }
+-- An item the client has cached: name, quality, icon (GetItemInfoInstant), class, subclass, sell price
+-- (default 5 copper).
+local function Cached(stub, itemID, name, quality, icon, classID, subclassID, sellPrice)
+	stub.items[itemID] = { name = name, quality = quality, icon = icon, classID = classID, sellPrice = sellPrice or 5 }
 	stub.itemClass[itemID], stub.itemSubclass[itemID] = classID, subclassID
 end
 
@@ -50,9 +51,9 @@ it("#92: a full scan stores quality, icon, class, subclass and time for every it
 	Cached(stub, 765, "Silverleaf", 1, 134190, 7, 9)
 	OpenAH(stub)
 	Scan(stub, { { 765, 5, 500, "Silverleaf" } })
-	eq(CraftWiseMarketDB.itemInfo[765], "1," .. B36(134190) .. ",7,9," .. B36(NOW), "q,i,c,s,t in base 36")
+	eq(CraftWiseMarketDB.itemInfo[765], "1," .. B36(134190) .. ",7,9," .. B36(NOW) .. ",5", "q,i,c,s,t,p in base 36")
 	local info = M.ItemInfo(765)
-	eq(info.n, "Silverleaf"); eq(info.q, 1); eq(info.i, 134190); eq(info.c, 7); eq(info.s, 9); eq(info.t, NOW)
+	eq(info.n, "Silverleaf"); eq(info.q, 1); eq(info.i, 134190); eq(info.c, 7); eq(info.s, 9); eq(info.t, NOW); eq(info.p, 5)
 	eq(CraftWiseMarketDB.names[765], "Silverleaf", "names stays a plain name string")
 end)
 
@@ -64,7 +65,11 @@ it("#92: an item the cache doesn't hold yet takes quality and icon from its comp
 	Scan(stub, { { 13926, 1, 90000, "Golden Pearl", 2, 134122 } })
 	local info = M.ItemInfo(13926)
 	eq(info.q, 2); eq(info.i, 134122); eq(info.c, 7); eq(info.s, 7); eq(info.n, "Golden Pearl")
-	eq(#asked, 0, "nothing to request")
+	eq(info.p, nil, "no sell price without the loaded item")
+	eq(#asked, 1, "loaded for the sell price (#120)"); eq(asked[1], 13926)
+	Cached(stub, 13926, "Golden Pearl", 2, 134122, 7, 7, 2500)
+	stub.Fire("GET_ITEM_INFO_RECEIVED", 13926, true)
+	eq(M.ItemInfo(13926).p, 2500)
 end)
 
 it("#92: a row the client says is incomplete gives no quality; the item is requested and stored when it loads", function()
@@ -163,9 +168,93 @@ it("#92: an unknown field stays empty and reads as missing", function()
 	OpenAH(stub)
 	Scan(stub, { { 77, 1, 10 } })
 	local packed = CraftWiseMarketDB.itemInfo[77]
-	assert(packed:match("^0,,,,%w+$"), packed)
+	assert(packed:match("^0,,,,%w+,$"), packed)
 	local info = M.ItemInfo(77)
-	eq(info.q, 0, "poor quality is 0, not missing"); eq(info.i, nil); eq(info.c, nil); eq(info.s, nil)
+	eq(info.q, 0, "poor quality is 0, not missing"); eq(info.i, nil); eq(info.c, nil); eq(info.s, nil); eq(info.p, nil)
+end)
+
+------------------------------------------------------------------------------------ #120
+
+it("#120: the vendor sell price is stored with the info; 0 means vendors don't buy it", function()
+	local M, stub = Market()
+	Cached(stub, 765, "Silverleaf", 1, 134190, 7, 9, 0)
+	Cached(stub, 2589, "Linen Cloth", 1, 132889, 7, 5, 13)
+	OpenAH(stub)
+	Scan(stub, { { 765, 5, 500 }, { 2589, 20, 200 } })
+	eq(M.ItemInfo(765).p, 0, "0 is a value, not missing")
+	eq(M.ItemInfo(2589).p, 13)
+	eq(CraftWiseMarketDB.itemInfoV, 2, "the format is marked")
+end)
+
+it("#120: without the loaded item, the sell price the client returned earlier is used, never the bundled table", function()
+	local M, stub, ns = Market()
+	stub.itemClass[3000], stub.itemSubclass[3000] = 7, 5
+	stub.itemClass[3001], stub.itemSubclass[3001] = 7, 5
+	ns.db.sellPrices[3000] = 40
+	ns.ItemSellPrices = ns.ItemSellPrices or {}
+	ns.ItemSellPrices[3001] = 77
+	Requests(stub)
+	OpenAH(stub)
+	Scan(stub, { { 3000, 1, 900, "Seen Before", 1, 1 }, { 3001, 1, 900, "Bundled Only", 1, 1 } })
+	eq(M.ItemInfo(3000).p, 40)
+	eq(M.ItemInfo(3001).p, nil)
+end)
+
+it("#120: a format 1 string (no sell price) is read again at the next pass, though younger than 30 days", function()
+	local saved = {
+		v = 1, houses = {}, scans = {}, cutSamples = {}, scope = { items = {}, skillLines = {} },
+		items = { [765] = { [HORDE] = "tmz8w0,2s,5,1||" } },
+		names = { [765] = "Silverleaf" },
+		itemInfo = { [765] = "1," .. B36(134190) .. ",7,9," .. B36(NOW - DAY) },
+		auctionator = { items = {} },
+	}
+	local M, stub = Market({ savedMarket = saved })
+	eq(M.ItemInfo(765).p, nil, "an old string reads without a sell price")
+	eq(M.ItemInfo(765).t, NOW - DAY)
+	Cached(stub, 765, "Silverleaf", 1, 134190, 7, 9, 3)
+	stub.Fire("PLAYER_LOGIN")
+	stub.RunTimers()
+	eq(M.ItemInfo(765).p, 3); eq(M.ItemInfo(765).t, NOW)
+	stub.items[765].sellPrice = 4
+	stub.clock = NOW + DAY
+	M.FillItemInfo()
+	eq(M.ItemInfo(765).p, 3, "complete info waits for the 30 days again")
+end)
+
+it("#120: the client's class and subclass names are recorded for every class and subclass seen", function()
+	local M, stub = Market()
+	stub.classNames[7], stub.classNames[2] = "Trade Goods", "Weapon"
+	stub.subclassNames[7] = { [9] = "Herb", [5] = "Cloth" }
+	stub.subclassNames[2] = { [7] = "One-Handed Swords" }
+	Cached(stub, 765, "Silverleaf", 1, 134190, 7, 9)
+	Cached(stub, 2589, "Linen Cloth", 1, 132889, 7, 5)
+	Cached(stub, 15211, "Militant Shortsword", 2, 135321, 2, 7)
+	Cached(stub, 4500, "Unnamed Class", 1, 1, 15, 0)
+	OpenAH(stub)
+	Scan(stub, { { 765, 5, 500 }, { 2589, 20, 200 }, { 15211, 1, 5000 }, { 4500, 1, 10 } })
+	local db = CraftWiseMarketDB
+	eq(db.classNames[7], "Trade Goods"); eq(db.classNames[2], "Weapon")
+	eq(db.subclassNames[7][9], "Herb"); eq(db.subclassNames[7][5], "Cloth"); eq(db.subclassNames[2][7], "One-Handed Swords")
+	eq(db.classNames[15], nil, "no name from the client: nothing stored")
+	eq(db.subclassNames[15], nil)
+	eq(M.ItemInfo(765).c, 7)
+end)
+
+it("#120: class names are read once a session; a renamed class (other client language) replaces the old name", function()
+	local _, stub = Market()
+	local calls = 0
+	stub.classNames[7] = "Handwerkswaren"
+	stub.subclassNames[7] = { [9] = "Kräuter" }
+	local orig = C_Item.GetItemClassInfo
+	C_Item.GetItemClassInfo = function(c) calls = calls + 1; return orig(c) end
+	CraftWiseMarketDB.classNames[7] = "Trade Goods"
+	Cached(stub, 765, "Silberblatt", 1, 134190, 7, 9)
+	Cached(stub, 785, "Maguskönigskraut", 1, 134190, 7, 9)
+	OpenAH(stub)
+	Scan(stub, { { 765, 5, 500 }, { 785, 2, 900 } })
+	eq(CraftWiseMarketDB.classNames[7], "Handwerkswaren")
+	eq(CraftWiseMarketDB.subclassNames[7][9], "Kräuter")
+	eq(calls, 1, "one read per class and session")
 end)
 
 it("#92: an old saved file without itemInfo loads; login fills it from the cache, names untouched", function()

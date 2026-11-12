@@ -89,6 +89,19 @@ func TestFirstUploadSendsEverythingOnce(t *testing.T) {
 	if len(pub["itemInfo"].(map[string]any)) != len(f.Market.ItemInfo) {
 		t.Errorf("itemInfo: %v", pub["itemInfo"])
 	}
+	// #120: sell prices in itemInfo, the client's class and subclass names.
+	if p := pub["itemInfo"].(map[string]any)["9001"].(map[string]any)["p"]; p != 13.0 {
+		t.Errorf("sell price of 9001: %v", p)
+	}
+	if c := pub["classNames"].(map[string]any); len(c) != 2 || c["7"] != "Test Goods" {
+		t.Errorf("classNames: %v", c)
+	}
+	if sc := pub["subclassNames"].(map[string]any); len(sc) != 2 || sc["7"].(map[string]any)["5"] != "Test Cloth Type" {
+		t.Errorf("subclassNames: %v", sc)
+	}
+	if plan.Public[0].Counts["classes"] != 4 {
+		t.Errorf("classes counted %d", plan.Public[0].Counts["classes"])
+	}
 	scans := 0
 	for _, list := range pub["scans"].(map[string]any) {
 		scans += len(list.([]any))
@@ -412,5 +425,103 @@ func TestValidChar(t *testing.T) {
 		if validChar(key) != want {
 			t.Errorf("validChar(%q) = %v", key, !want)
 		}
+	}
+}
+
+// #120: names and sell prices are sent once, then only when they change; files from before #120
+// (format 1 item info, no class names) still upload.
+func TestClassNamesAndSellPricesDelta(t *testing.T) {
+	i := market.Int
+	m := smallMarket()
+	st := NewState("s", "f")
+	plan := Build(&savedvars.File{Market: m}, st, Options{Now: fixtureNow})
+	if len(plan.Public) != 1 || plan.Public[0].Body.ClassNames != nil || plan.Public[0].Body.SubclassNames != nil {
+		t.Fatalf("a file without class names: %+v", plan.Public)
+	}
+	if info := plan.Public[0].Body.ItemInfo[2589]; info.SellPrice != nil {
+		t.Fatalf("no sell price in a format 1 file, got %v", *info.SellPrice)
+	}
+	commitAll(plan, st)
+
+	// The addon now writes format 2 and the names.
+	info := m.ItemInfo[2589]
+	info.SellPrice = i(13)
+	info.T = i(fixtureNow - 50)
+	m.ItemInfo[2589] = info
+	m.ClassNames = map[int64]string{7: "Trade Goods", 2: "Weapon"}
+	m.SubclassNames = map[int64]map[int64]string{7: {5: "Cloth", 9: "Herb"}}
+	plan = Build(&savedvars.File{Market: m}, st, Options{Now: fixtureNow})
+	if len(plan.Public) != 1 {
+		t.Fatalf("%d requests", len(plan.Public))
+	}
+	b := plan.Public[0]
+	if b.Counts["items"] != 1 || b.Counts["classes"] != 4 || b.Counts["prices"] != 0 {
+		t.Fatalf("counts %v", b.Counts)
+	}
+	got, _ := json.Marshal(b.Body)
+	for _, want := range []string{`"itemInfo":{"2589":{"q":1,"i":132889,"c":7,"s":5,"t":1794009950,"p":13}}`,
+		`"classNames":{"2":"Weapon","7":"Trade Goods"}`, `"subclassNames":{"7":{"5":"Cloth","9":"Herb"}}`} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("payload %s\nwant %s", got, want)
+		}
+	}
+	commitAll(plan, st)
+
+	// Nothing changed (the read time alone is no change).
+	info.T = i(fixtureNow)
+	m.ItemInfo[2589] = info
+	if again := Build(&savedvars.File{Market: m}, st, Options{Now: fixtureNow}); !again.Empty() {
+		t.Fatalf("unchanged names and sell prices sent again: %+v", again.Public[0].Counts)
+	}
+
+	// A new sell price and one renamed subclass: only those.
+	info.SellPrice = i(0)
+	m.ItemInfo[2589] = info
+	m.SubclassNames[7][9] = "Kräuter"
+	plan = Build(&savedvars.File{Market: m}, st, Options{Now: fixtureNow})
+	b = plan.Public[0]
+	if b.Counts["items"] != 1 || b.Counts["classes"] != 1 || b.Body.ClassNames != nil || len(b.Body.SubclassNames[7]) != 1 ||
+		b.Body.SubclassNames[7][9] != "Kräuter" || *b.Body.ItemInfo[2589].SellPrice != 0 {
+		t.Fatalf("delta %v %+v", b.Counts, b.Body)
+	}
+	got, _ = json.Marshal(b.Body.ItemInfo)
+	if !strings.Contains(string(got), `"p":0`) {
+		t.Errorf("a sell price of 0 (vendors don't buy it) must be sent: %s", got)
+	}
+}
+
+func TestClassNamesInvalidLeftOut(t *testing.T) {
+	m := smallMarket()
+	m.ClassNames = map[int64]string{7: "Trade Goods", 8: "", 9: strings.Repeat("x", 65), -1: "Negative", 10: "Bad\nName"}
+	m.SubclassNames = map[int64]map[int64]string{7: {5: "Cloth", 70000: "Too Big"}}
+	plan := Build(&savedvars.File{Market: m}, NewState("s", "f"), Options{Now: fixtureNow})
+	b := plan.Public[0].Body
+	if len(b.ClassNames) != 1 || len(b.SubclassNames[7]) != 1 {
+		t.Fatalf("names %v %v", b.ClassNames, b.SubclassNames)
+	}
+	if n := len(plan.Skipped); n != 4 {
+		t.Errorf("skipped %v", plan.SkippedText())
+	}
+}
+
+func TestClassNamesSplitOverRequests(t *testing.T) {
+	m := smallMarket()
+	m.SubclassNames = map[int64]map[int64]string{}
+	for c := int64(0); c < 3; c++ {
+		m.SubclassNames[c] = map[int64]string{}
+		for s := int64(0); s < 500; s++ {
+			m.SubclassNames[c][s] = "Name"
+		}
+	}
+	plan := Build(&savedvars.File{Market: m}, NewState("s", "f"), Options{Now: fixtureNow})
+	total := 0
+	for _, b := range plan.Public {
+		if b.Counts["classes"] > MaxClassNames {
+			t.Errorf("%d names in one request", b.Counts["classes"])
+		}
+		total += b.Counts["classes"]
+	}
+	if total != 1500 || len(plan.Public) < 2 {
+		t.Errorf("%d names over %d requests", total, len(plan.Public))
 	}
 }

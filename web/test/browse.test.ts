@@ -18,7 +18,7 @@ const H = encodeURIComponent(HORDE);
 interface BrowseBody {
 	today: number;
 	more: boolean;
-	items: { id: number; name: string | null; class: number | null; current: { min: number } | null; typical: { status: string }; days: { day: number; src: string; typ: number | null }[] }[];
+	items: { id: number; name: string | null; class: number | null; className: string | null; subclassName: string | null; sellPrice: number | null; current: { min: number } | null; typical: { status: string }; days: { day: number; src: string; typ: number | null }[] }[];
 }
 
 beforeAll(async () => {
@@ -30,11 +30,14 @@ beforeAll(async () => {
 		houses: houses(),
 		scans: [{ house: HORDE, t: t0, kind: "full", items: 2, lastOnly: 2, source: "ui" }],
 		items: {
-			"2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5 },
-			"4306": { n: "Silk Cloth", q: 1, i: 132905, c: 7, s: 5 },
+			"2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5, p: 13 },
+			"4306": { n: "Silk Cloth", q: 1, i: 132905, c: 7, s: 5, p: 0 },
 			"2447": { n: "Peacebloom", q: 1, i: 133939, c: 7, s: 9 },
 			"858": { n: "Lesser Healing Potion", q: 1, i: 134830, c: 0, s: 1 },
 		},
+		// The client's names (#120); subclass 9 has none yet.
+		classNames: { "7": "Trade Goods" },
+		subclassNames: { "7": { "5": "Cloth" } },
 		prices: [
 			{
 				item: "2589",
@@ -60,9 +63,9 @@ describe("categories", () => {
 		const body = await res.json<{ categories: unknown[]; label: string }>();
 		expect(body.label).toBe("Horde AH");
 		expect(body.categories).toEqual([
-			{ class: null, subclass: null, items: 1 },
-			{ class: 7, subclass: 5, items: 2 },
-			{ class: 7, subclass: 9, items: 1 },
+			{ class: null, subclass: null, className: null, subclassName: null, items: 1 },
+			{ class: 7, subclass: 5, className: "Trade Goods", subclassName: "Cloth", items: 2 },
+			{ class: 7, subclass: 9, className: "Trade Goods", subclassName: null, items: 1 },
 		]);
 		const cached = await env.DB.prepare("SELECT count(*) AS n FROM cache WHERE key LIKE 'categories:%'").first<{ n: number }>();
 		expect(cached!.n).toBe(1);
@@ -83,6 +86,21 @@ describe("browse", () => {
 		expect(linen.days.map((d) => d.day)).toEqual([today - 7, today - 1, today]);
 		expect(linen.days[0]).toEqual({ day: today - 7, src: "craftwise", lo: 95, typ: 100, hi: 120, qtyMax: 100 });
 		expect(body.items[1]!.days).toEqual([{ day: today, src: "last", lo: 900, typ: null, hi: 900, qtyMax: 20 }]);
+		// #120: the client's names and the vendor sell price (0 = vendors don't buy it)
+		expect(body.items.map((i) => [i.className, i.subclassName, i.sellPrice])).toEqual([
+			["Trade Goods", "Cloth", 13],
+			["Trade Goods", "Cloth", 0],
+		]);
+	});
+
+	it("gives null names and sell price where none was uploaded (#120)", async () => {
+		let body = await (await call("GET", `/api/browse?house=${H}&class=7&subclass=9`)).json<BrowseBody>();
+		expect(body.items.map((i) => [i.name, i.className, i.subclassName, i.sellPrice])).toEqual([["Peacebloom", "Trade Goods", null, null]]);
+		body = await (await call("GET", `/api/browse?house=${H}&ids=858,999`)).json<BrowseBody>();
+		expect(body.items.map((i) => [i.class, i.className, i.subclassName, i.sellPrice])).toEqual([
+			[0, null, null, null],
+			[null, null, null, null],
+		]);
 	});
 
 	it("lists a whole class, items without info, a search and favourites", async () => {

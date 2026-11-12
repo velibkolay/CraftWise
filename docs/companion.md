@@ -4,7 +4,8 @@ A small app that uploads CraftWise's saved data to wow.velikopter.com. It watche
 `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/CraftWise.lua` (the game writes it
 on `/reload` and logout) and, after each change, sends what is new since the last upload:
 
-- **Public** (`POST /api/upload`): auction houses, scans, item names and info, prices (only new raw
+- **Public** (`POST /api/upload`): auction houses, scans, item names and info with the vendor sell
+  price, the client's class and subclass names (#120; only new or changed ones), prices (only new raw
   points, changed daily aggregates and newer `last` values per item and house). Never the
   Auctionator fallback prices.
 - **Private** (`POST /api/private/upload`, can be turned off): each character's snapshot, the

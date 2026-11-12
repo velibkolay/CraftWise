@@ -1,6 +1,6 @@
 // Item page (/item/<id>): tooltip, cheapest listings, price history (#97).
 import { chart, type Point, type Series } from "./chart";
-import { ApiError, get, type House, type ItemDetail, type Market, mainHouse } from "./lib/api";
+import { ApiError, get, type House, type ItemDetail, type ItemInfo, type Market, mainHouse } from "./lib/api";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, pctText, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
 import { isFavourite, toggleFavourite } from "./lib/favs";
 import {
@@ -13,6 +13,7 @@ import {
 	dayLabel,
 	pctSpoken,
 	qualityClass,
+	sellChoice,
 	subclassName,
 	timeLabel,
 } from "./lib/format";
@@ -96,8 +97,8 @@ function render(d: ItemDetail, house: House | null): void {
 	const it = d.item;
 	const name = it?.name ?? `Item ${d.id}`;
 	const q = qualityClass(it?.quality ?? null);
-	const cls = it ? className(it.class) : null;
-	const sub = it && it.class !== null ? subclassName(it.class, it.subclass) : null;
+	const cls = it ? className(it.class, it.className) : null;
+	const sub = it && it.class !== null ? subclassName(it.class, it.subclass, it.subclassName) : null;
 	const mine = d.markets.filter((m) => m.house === house?.key).sort((a, b) => a.suffix - b.suffix);
 	const m: Market | null = mine[0] ?? null;
 	const others = d.markets.filter((x) => x.house !== house?.key && x.current && x.current.listed && x.current.min !== null);
@@ -159,6 +160,7 @@ function render(d: ItemDetail, house: House | null): void {
 			h("p", { class: `${q} tip-title` }, name),
 			cls ? h("p", {}, sub && !sub.startsWith("Subclass") ? `${cls}, ${sub}` : cls) : null,
 			h("p", { class: "hint" }, `Item ID ${d.id}`),
+			sellPriceLine(it),
 			h("p", { class: "addon" }, "CraftWise"),
 			m ? tipRows.filter((n): n is Node => n !== null) : h("p", { class: "hint" }, `No prices at the ${house?.label ?? "auction house"} yet.`),
 		),
@@ -173,6 +175,7 @@ function render(d: ItemDetail, house: House | null): void {
 		fili("br"),
 		h("div", { class: "pane-head" }, slot(name, q, "ring"), h("div", { class: "grow" }, h("p", { class: `${q} pane-name` }, name), cls ? h("p", { class: "hint" }, cls) : null), favBtn),
 		tooltip,
+		sellBlock(m, it),
 		listings(m),
 	);
 
@@ -255,6 +258,61 @@ function render(d: ItemDetail, house: House | null): void {
 	);
 	page(crumbs, section, house);
 	section.querySelector(".medal-letter")?.classList.add(q);
+}
+
+// The tooltip's "Sell Price" line, as the client shows it (#120); "No sell price" when vendors don't buy it.
+function sellPriceLine(it: ItemInfo | null): HTMLElement | null {
+	if (!it || it.sellPrice === null) return null;
+	if (it.sellPrice === 0) return h("p", { class: "hint" }, "No sell price");
+	return h("p", { class: "row" }, h("span", { class: "lbl" }, "Sell Price"), moneyEl(it.sellPrice));
+}
+
+// Auction House or Vendor (#120): one unit on the auction house after the 5% cut (the 7-day typical
+// price, else the lowest listing) against what a vendor pays, the better one marked.
+function sellBlock(m: Market | null, it: ItemInfo | null): HTMLElement | null {
+	const typ = m?.typical.status === "ok" ? m.typical.price : null;
+	const low = m?.current && m.current.listed ? m.current.min : null;
+	const vendor = it?.sellPrice ?? null;
+	const c = sellChoice(typ, low, vendor);
+	if (c.ah === null && vendor === null) return null;
+	const basis = c.ahBasis === "typical" ? "Auction house: market price after the 5% cut. " : c.ahBasis === "lowest" ? "Auction house: lowest listing after the 5% cut. " : "";
+	let verdict: string;
+	if (vendor === null) verdict = "The vendor price comes with the next upload of the CraftWise companion.";
+	else if (c.best === "vendor") verdict = c.ah === null ? "No auction house price: sell it to a vendor." : `Better sold to a vendor: ${skinMoney(vendor - c.ah).short} more per unit.`;
+	else if (c.best === "ah" && vendor === 0) verdict = "Vendors don't buy it: the auction house is the only way to sell it.";
+	else if (c.best === "ah") verdict = `Better sold on the auction house: ${skinMoney(c.ah! - vendor).short} more per unit.`;
+	else verdict = "Vendors don't buy it and the auction house has no price.";
+	return h(
+		"div",
+		{ class: "block" },
+		h("h2", { class: "bar-head", id: "sell-title" }, "Auction House or Vendor"),
+		h(
+			"div",
+			{ class: "inset" },
+			h(
+				"table",
+				{ class: "tbl", "aria-labelledby": "sell-title" },
+				h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Sell to"), h("th", { scope: "col", class: "r" }, "Per unit"))),
+				h(
+					"tbody",
+					{},
+					h(
+						"tr",
+						{ class: c.best === "ah" ? "sel" : null },
+						h("td", {}, "Auction House", c.best === "ah" ? h("span", { class: "sr" }, ", better") : null),
+						h("td", { class: "r" }, moneyEl(c.ah)),
+					),
+					h(
+						"tr",
+						{ class: c.best === "vendor" ? "sel" : null },
+						h("td", {}, "Vendor", c.best === "vendor" ? h("span", { class: "sr" }, ", better") : null),
+						h("td", { class: "r" }, vendor === 0 ? h("span", { class: "hint" }, "doesn't buy it") : moneyEl(vendor, "not known yet")),
+					),
+				),
+			),
+		),
+		h("p", { class: "hint padx" }, basis + verdict),
+	);
 }
 
 function listings(m: Market | null): HTMLElement | null {

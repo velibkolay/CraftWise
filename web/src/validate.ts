@@ -26,6 +26,13 @@ export interface ItemInfo {
 	i: number | null;
 	c: number | null;
 	s: number | null;
+	p: number | null; // vendor sell price per unit (#120); 0 = vendors don't buy it
+}
+// The client's name of an item class (sub null) or subclass (#120).
+export interface ClassName {
+	class: number;
+	sub: number | null;
+	name: string;
 }
 export interface Last {
 	t: number;
@@ -64,6 +71,7 @@ export interface PublicUpload {
 	scans: Scan[];
 	items: ItemInfo[];
 	prices: Price[];
+	classNames: ClassName[];
 }
 
 export interface PrivateDoc {
@@ -168,6 +176,7 @@ function version(body: Obj): void {
 const HOUSE_KEY = /^([^|]{1,64})\|(H|A|N:[A-Za-z]{1,32})$/;
 const ITEM_KEY = /^([1-9][0-9]{0,9})(?::([0-9]{1,10}))?$/;
 const SCAN_KIND = /^[a-z]{1,16}$/;
+const CLASS_ID = /^(0|[1-9][0-9]{0,4})$/;
 
 function houses(v: unknown): House[] {
 	const o = obj(v, "houses");
@@ -298,13 +307,13 @@ export function validatePublic(body: unknown, now: number): PublicUpload {
 		if (scans.length > L.MAX_SCANS) fail("scans", `more than ${L.MAX_SCANS} scans`);
 	}
 
-	// names: { "<itemID>": name } and itemInfo: { "<itemID>": { q, i, c, s, t } } (#92)
+	// names: { "<itemID>": name } and itemInfo: { "<itemID>": { q, i, c, s, t, p } } (#92, p #120)
 	const info = new Map<number, ItemInfo>();
 	const entry = (id: string, path: string): ItemInfo => {
 		if (!/^[1-9][0-9]{0,9}$/.test(id)) fail(path, "item ID must be a positive integer");
 		let e = info.get(Number(id));
 		if (!e) {
-			e = { id: Number(id), n: null, q: null, i: null, c: null, s: null };
+			e = { id: Number(id), n: null, q: null, i: null, c: null, s: null, p: null };
 			info.set(e.id, e);
 		}
 		return e;
@@ -326,6 +335,7 @@ export function validatePublic(body: unknown, now: number): PublicUpload {
 			e.i = optInt(v.i, `${path}.i`);
 			e.c = optInt(v.c, `${path}.c`);
 			e.s = optInt(v.s, `${path}.s`);
+			e.p = optInt(v.p, `${path}.p`);
 			optTime(v.t, `${path}.t`, now); // when the client gave it; checked, not stored
 		}
 	}
@@ -360,7 +370,43 @@ export function validatePublic(body: unknown, now: number): PublicUpload {
 		}
 	}
 
-	return { houses: houseList, scans, items, prices };
+	// classNames: { "<classID>": name }, subclassNames: { "<classID>": { "<subclassID>": name } } (#120)
+	const classNames: ClassName[] = [];
+	const classId = (k: string, path: string): number => {
+		if (!CLASS_ID.test(k)) fail(path, `class and subclass IDs must be integers from 0 to ${L.MAX_CLASS_ID}`);
+		const n = Number(k);
+		if (n > L.MAX_CLASS_ID) fail(path, `class and subclass IDs must be integers from 0 to ${L.MAX_CLASS_ID}`);
+		return n;
+	};
+	const className = (v: unknown, path: string): string => {
+		const name = str(v, path, L.MAX_CLASS_NAME);
+		if (/[\u0000-\u001f]/.test(name)) fail(path, "control characters in a name");
+		return name;
+	};
+	if (b.classNames !== undefined && b.classNames !== null) {
+		const o = obj(b.classNames, "classNames");
+		for (const k of Object.keys(o)) {
+			const path = `classNames[${JSON.stringify(k)}]`;
+			classNames.push({ class: classId(k, path), sub: null, name: className(o[k], path) });
+		}
+	}
+	if (b.subclassNames !== undefined && b.subclassNames !== null) {
+		const o = obj(b.subclassNames, "subclassNames");
+		for (const k of Object.keys(o)) {
+			const cp = `subclassNames[${JSON.stringify(k)}]`;
+			const c = classId(k, cp);
+			const subs = obj(o[k], cp);
+			for (const sk of Object.keys(subs)) {
+				const path = `${cp}[${JSON.stringify(sk)}]`;
+				classNames.push({ class: c, sub: classId(sk, path), name: className(subs[sk], path) });
+				if (classNames.length > L.MAX_CLASS_NAMES) break;
+			}
+			if (classNames.length > L.MAX_CLASS_NAMES) break;
+		}
+	}
+	if (classNames.length > L.MAX_CLASS_NAMES) fail("classNames", `more than ${L.MAX_CLASS_NAMES} names in classNames and subclassNames`);
+
+	return { houses: houseList, scans, items, prices, classNames };
 }
 
 // Character key as CraftWise builds it: "<realm>-<name> <surname>" or "<realm>-<name>".

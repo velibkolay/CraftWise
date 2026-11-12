@@ -29,7 +29,7 @@ describe("public upload shape", () => {
 				...base(),
 				scans: { [HORDE]: [{ t: NOW, kind: "full", items: 1, lastOnly: 1, source: "ui" }] },
 				names: { "15210": "Burnished Leggings" },
-				itemInfo: { "15210": { q: 2, i: 1, c: 4, s: 2, t: NOW } },
+				itemInfo: { "15210": { q: 2, i: 1, c: 4, s: 2, t: NOW, p: 1234 } },
 				items: {
 					"15210:1017": { [BOOTY]: { last } },
 					"2589": {
@@ -55,7 +55,8 @@ describe("public upload shape", () => {
 			// integer-like keys come first in a JS object
 			{ house: BOOTY, item: 15210, suffix: 1017, last: { ...last, listings: null, off: null }, raw: [], days: [] },
 		]);
-		expect(out.items).toEqual([{ id: 15210, n: "Burnished Leggings", q: 2, i: 1, c: 4, s: 2 }]);
+		expect(out.items).toEqual([{ id: 15210, n: "Burnished Leggings", q: 2, i: 1, c: 4, s: 2, p: 1234 }]);
+		expect(out.classNames).toEqual([]);
 		expect(out.scans).toEqual([{ house: HORDE, t: NOW, kind: "full", items: 1, lastOnly: 1, source: "ui" }]);
 		expect(out.houses.map((h) => [h.key, h.kind, h.faction])).toEqual([
 			[HORDE, "faction", "Horde"],
@@ -104,7 +105,32 @@ describe("public upload shape", () => {
 	it("checks names and item info", () => {
 		expect(message(() => validatePublic({ ...base(), itemInfo: { abc: {} } }, NOW))).toMatch(/item ID must be a positive integer/);
 		expect(message(() => validatePublic({ ...base(), names: { "5": "" } }, NOW))).toMatch(/names\["5"\]: expected a string/);
-		expect(validatePublic({ ...base(), itemInfo: { "5": {} } }, NOW).items).toEqual([{ id: 5, n: null, q: null, i: null, c: null, s: null }]);
+		expect(validatePublic({ ...base(), itemInfo: { "5": {} } }, NOW).items).toEqual([{ id: 5, n: null, q: null, i: null, c: null, s: null, p: null }]);
+		expect(validatePublic({ ...base(), itemInfo: { "5": { p: 0 } } }, NOW).items[0]!.p).toBe(0);
+		expect(message(() => validatePublic({ ...base(), itemInfo: { "5": { p: -1 } } }, NOW))).toBe('itemInfo["5"].p: expected a non-negative integer');
+		expect(message(() => validatePublic({ ...base(), itemInfo: { "5": { p: 1.5 } } }, NOW))).toMatch(/\.p: expected a non-negative integer/);
+	});
+
+	it("checks class and subclass names (#120)", () => {
+		const out = validatePublic({ ...base(), classNames: { "0": "Consumable", "7": "Trade Goods" }, subclassNames: { "7": { "9": "Herb", "0": "Trade Goods" } } }, NOW);
+		expect(out.classNames).toEqual([
+			{ class: 0, sub: null, name: "Consumable" },
+			{ class: 7, sub: null, name: "Trade Goods" },
+			{ class: 7, sub: 0, name: "Trade Goods" },
+			{ class: 7, sub: 9, name: "Herb" },
+		]);
+		const bad = (b: Record<string, unknown>) => message(() => validatePublic({ ...base(), ...b }, NOW));
+		expect(bad({ classNames: { x: "A" } })).toBe('classNames["x"]: class and subclass IDs must be integers from 0 to 65535');
+		expect(bad({ classNames: { "01": "A" } })).toMatch(/must be integers/);
+		expect(bad({ classNames: { "65536": "A" } })).toMatch(/must be integers/);
+		expect(bad({ classNames: { "7": "" } })).toBe('classNames["7"]: expected a string of 1 to 64 characters');
+		expect(bad({ classNames: { "7": "x".repeat(65) } })).toMatch(/1 to 64 characters/);
+		expect(bad({ classNames: { "7": "Bad\nName" } })).toBe('classNames["7"]: control characters in a name');
+		expect(bad({ subclassNames: { "7": "Herb" } })).toBe('subclassNames["7"]: expected an object');
+		expect(bad({ subclassNames: { "7": { "-1": "Herb" } } })).toMatch(/subclassNames\["7"\]\["-1"\]: class and subclass IDs/);
+		const many = Object.fromEntries(Array.from({ length: 1001 }, (_, i) => [String(i), "N"]));
+		expect(bad({ subclassNames: { "7": many } })).toMatch(/more than 1000 names/);
+		expect(validatePublic({ ...base(), classNames: null, subclassNames: null }, NOW).classNames).toEqual([]);
 	});
 });
 
