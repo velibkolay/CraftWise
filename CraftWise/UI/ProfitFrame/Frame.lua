@@ -42,6 +42,23 @@ local function BuildHeader()
 			Refresh()
 		end)
 	end
+	-- Farm (#130): not a view, opens or closes the farm tracker window (Farm.lua, UI/FarmFrame.lua).
+	local farmBtn = Style.Button(PF.frame, 50, 24, L["Farm"])
+	farmBtn:SetPoint("RIGHT", profitBtn, "LEFT", -10, 0)
+	farmBtn:SetScript("OnClick", function()
+		ns.Farm.Slash("toggle")
+	end)
+	farmBtn:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Farm tracker"])
+		GameTooltip:AddLine(L["Opens or closes the farm window. Also: /craftwise farm, or a key in Key Bindings > AddOns > CraftWise."],
+			0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	farmBtn:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	PF.frame.farmButton = farmBtn
 
 	local close = Style.CloseButton(PF.frame, function()
 		PF.frame:Hide()

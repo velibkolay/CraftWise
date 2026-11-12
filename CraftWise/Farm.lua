@@ -20,6 +20,13 @@
 --   * A session starts with the first loot (autoStart) or the Start button. While paused by hand,
 --     loot is not counted. Removing an item from the list drops it from the session and ignores it for
 --     the rest of the session (a quest item, something you keep).
+--   * Fishing (#130): catches come from Fishing.lua's own catch record (Fishing.Subscribe), never detected
+--     again here. Per zone: catches, the catch's items (as the loot window held them), coin from a catch
+--     window that had a coin slot (the next coin loot within FISH_COIN_SECONDS), containers caught this
+--     session and opened (the container leaves the fishing items, its contents join them, so nothing counts
+--     twice; containers caught before the session are left out). Fishing time: the session time between two
+--     catches when they are at most FISH_GAP apart (casts in a row); rates use only the catches that time
+--     was measured for (`timed`). Valued like the rest of the window, unknown values apart.
 --   * Storage: CraftWiseDB.farm = settings (Core.lua defaults); CraftWiseDB.farmLog[ns.CharKey()] =
 --     { current = session, history = finished sessions, newest first, at most HISTORY_MAX }.
 local _, ns = ...
@@ -36,6 +43,8 @@ F.MIN_RATE_SECONDS = 60 -- no per-hour figure from less than a minute
 F.MIN_SCALE, F.MAX_SCALE = 0.5, 2
 F.MAX_IDLE = 120
 F.UNKNOWN_ZONE = "unknown zone"
+F.FISH_GAP = 120 -- seconds: two catches at most this far apart (session time) are casts in a row
+F.FISH_COIN_SECONDS = 5 -- a catch window with coin: the coin loot that follows within this time is fishing coin
 
 local function Settings()
 	return ns.db and ns.db.farm
@@ -217,6 +226,9 @@ end
 function F.Remove(s, itemID)
 	for _, z in pairs(s.zones) do
 		z.items[itemID] = nil
+		if z.fish then
+			z.fish.items[itemID] = nil
+		end
 	end
 	s.links[itemID] = nil
 	s.ignored[itemID] = true
@@ -235,6 +247,80 @@ end
 
 function F.HasLoot(s)
 	return s ~= nil and ((s.coin or 0) > 0 or next(F.Counts(s)) ~= nil)
+end
+
+-- Fishing of one zone, created on first use: { catches, timed, seconds, coin, items = { [itemID] = units }, opened }.
+local function Fish(s, name)
+	local z = Zone(s, name)
+	if not z.fish then
+		z.fish = { catches = 0, timed = 0, seconds = 0, coin = 0, items = {}, opened = 0 }
+	end
+	return z.fish
+end
+
+-- A catch (Fishing.lua's record: its items) in the session's current zone at `now`.
+function F.AddCatch(s, items, now)
+	local f = Fish(s, s.zone)
+	f.catches = f.catches + 1
+	local el = F.Elapsed(s, now)
+	if s.fishAt and el - s.fishAt <= F.FISH_GAP then
+		f.seconds = f.seconds + (el - s.fishAt)
+		f.timed = f.timed + 1
+	end
+	s.fishAt = el
+	for id, n in pairs(items or {}) do
+		if not s.ignored[id] then
+			f.items[id] = (f.items[id] or 0) + n
+		end
+	end
+end
+
+function F.AddFishCoin(s, zone, copper)
+	local f = Fish(s, zone or s.zone)
+	f.coin = f.coin + copper
+end
+
+-- A container opened: when one of this session's catches, it leaves the fishing items of the zone it was
+-- caught in (the current zone first) and its contents join them. Returns that zone, or nil (not caught
+-- in this session: left out).
+function F.OpenCatch(s, containerID, items)
+	local name
+	local here = s.zones[s.zone]
+	if here and here.fish and (here.fish.items[containerID] or 0) > 0 then
+		name = s.zone
+	else
+		local names = {}
+		for zoneName, z in pairs(s.zones) do
+			if z.fish and (z.fish.items[containerID] or 0) > 0 then
+				names[#names + 1] = zoneName
+			end
+		end
+		table.sort(names)
+		name = names[1]
+	end
+	if not name then
+		return nil
+	end
+	local f = s.zones[name].fish
+	f.items[containerID] = f.items[containerID] - 1
+	if f.items[containerID] <= 0 then
+		f.items[containerID] = nil
+	end
+	f.opened = f.opened + 1
+	for id, n in pairs(items or {}) do
+		if not s.ignored[id] then
+			f.items[id] = (f.items[id] or 0) + n
+		end
+	end
+	return name
+end
+
+function F.Catches(s)
+	local n = 0
+	for _, z in pairs(s and s.zones or {}) do
+		n = n + (z.fish and z.fish.catches or 0)
+	end
+	return n
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -357,12 +443,70 @@ function F.Totals(s, now)
 		end
 		return a.zone < b.zone
 	end)
+	t.fish = F.FishTotals(s, Value)
+	return t
+end
+
+-- Rates of a fishing block: catches per hour and gold per hour, from the timed catches and their time.
+local function FishRates(f)
+	f.value = f.coin + f.items
+	f.perCatch = f.catches > 0 and math.floor(f.value / f.catches + 0.5) or nil
+	if f.timed > 0 and f.seconds >= F.MIN_RATE_SECONDS then
+		f.cph = math.floor(f.timed * 36000 / f.seconds + 0.5) / 10
+		f.gph = math.floor(f.value * f.timed * 3600 / (f.catches * f.seconds) + 0.5)
+	end
+end
+
+-- The session's fishing, valued now; nil without catches:
+-- { catches, timed, seconds, coin, items, unknownUnits, value, perCatch, cph, gph, opened,
+--   best = { itemID, unit, n, link } (caught item with the highest value per unit),
+--   zones = { { zone, catches, timed, seconds, coin, items, unknownUnits, value, perCatch, cph, gph, opened } }
+--   (most catches first) }
+function F.FishTotals(s, Value)
+	Value = Value or F.UnitValue
+	local t = { catches = 0, timed = 0, seconds = 0, coin = 0, items = 0, unknownUnits = 0, opened = 0, zones = {} }
+	for name, z in pairs(s.zones) do
+		local f = z.fish
+		if f and (f.catches > 0 or f.opened > 0) then
+			local zone = { zone = name, catches = f.catches, timed = f.timed, seconds = f.seconds, coin = f.coin, items = 0,
+				unknownUnits = 0, opened = f.opened }
+			for id, n in pairs(f.items) do
+				local v = Value(id)
+				if v.best then
+					zone.items = zone.items + Stack(v.best, n)
+					local b = t.best
+					if not b or v.best > b.unit or (v.best == b.unit and id < b.itemID) then
+						t.best = { itemID = id, unit = v.best, link = s.links[id], source = v.source }
+					end
+				else
+					zone.unknownUnits = zone.unknownUnits + n
+				end
+			end
+			FishRates(zone)
+			for _, k in ipairs({ "catches", "timed", "seconds", "coin", "items", "unknownUnits", "opened" }) do
+				t[k] = t[k] + zone[k]
+			end
+			t.zones[#t.zones + 1] = zone
+		end
+	end
+	if t.catches == 0 then
+		return nil
+	end
+	FishRates(t)
+	table.sort(t.zones, function(a, b)
+		if a.catches ~= b.catches then
+			return a.catches > b.catches
+		end
+		return a.zone < b.zone
+	end)
 	return t
 end
 
 -- A session as history keeps it (and the snapshot exports it): values as of `now`.
 -- { start, stop, seconds, zone, coin, items, vendor, ah, stale, unknown, gph, coinGph,
---   zones = { { zone, seconds, coin, items, gph } } (MAX_ZONES), zonesMore, top = { { id, name, n, value, source } } }
+--   zones = { { zone, seconds, coin, items, gph } } (MAX_ZONES), zonesMore, top = { { id, name, n, value, source } },
+--   fish = { catches, timed, seconds, coin, items, unknown, opened, perCatch, cph, gph, best = { id, name, value },
+--   zones = { { zone, catches, timed, seconds, coin, items, unknown, opened } } (MAX_ZONES), zonesMore } (with catches) }
 function F.Summary(s, now)
 	local t = F.Totals(s, now)
 	local sum = { start = s.start, stop = now, seconds = t.seconds, coin = t.coin, items = t.items, vendor = t.vendor,
@@ -382,6 +526,22 @@ function F.Summary(s, now)
 		local r = t.rows[i]
 		if r.value then
 			sum.top[#sum.top + 1] = { id = r.itemID, name = ItemName(r.itemID, r.link), n = r.n, value = r.value, source = r.source }
+		end
+	end
+	local f = t.fish
+	if f then
+		sum.fish = { catches = f.catches, timed = f.timed, seconds = f.seconds, coin = f.coin, items = f.items,
+			unknown = f.unknownUnits, opened = f.opened, perCatch = f.perCatch, cph = f.cph, gph = f.gph, zones = {} }
+		if f.best then
+			sum.fish.best = { id = f.best.itemID, name = ItemName(f.best.itemID, f.best.link), value = f.best.unit }
+		end
+		for i, z in ipairs(f.zones) do
+			if i <= F.MAX_ZONES then
+				sum.fish.zones[i] = { zone = z.zone, catches = z.catches, timed = z.timed, seconds = z.seconds, coin = z.coin,
+					items = z.items, unknown = z.unknownUnits, opened = z.opened }
+			else
+				sum.fish.zonesMore = (sum.fish.zonesMore or 0) + 1
+			end
 		end
 	end
 	return sum
@@ -462,23 +622,23 @@ function F.RemoveItem(itemID)
 	end
 end
 
--- A loot from the feed.
-function F.OnFeed(kind, data)
+-- The session a loot at `now` counts in: started on the first loot (autoStart; not when `noStart`),
+-- resumed after an idle or logout pause, nil while paused by hand or off.
+local function Accept(now, noStart)
 	if not F.Enabled() then
-		return
+		return nil
 	end
 	local log = F.Log()
 	if not log then
-		return
+		return nil
 	end
-	local now = F.Now()
 	local s = log.current
 	if s then
 		F.Update(s, now)
 	end
 	if not s then
-		if not F.AutoStart() then
-			return
+		if noStart or not F.AutoStart() then
+			return nil
 		end
 		s = F.New(now, ZoneNow())
 		log.current = s
@@ -487,17 +647,35 @@ function F.OnFeed(kind, data)
 			UI().Show()
 		end
 	elseif s.paused then
-		return -- paused by hand: not counted
+		return nil -- paused by hand: not counted
 	elseif not s.resumedAt then
 		F.Resume(s, now, ZoneNow()) -- auto-paused (idle, logout): the next loot goes on
 	end
 	F.SetZone(s, ZoneNow(), now)
+	return s
+end
+
+local fishCoin -- { zone, at (GetTime) }: a catch or caught container window had coin; the next coin loot is fishing's
+
+-- A loot from the feed.
+function F.OnFeed(kind, data)
+	local now = F.Now()
+	local s = Accept(now)
+	if not s then
+		return
+	end
 	if kind == "item" then
 		if not F.AddItem(s, data.itemID, data.count, data.link) then
 			return
 		end
 	elseif kind == "money" then
 		F.AddCoin(s, data.copper)
+		if fishCoin then
+			if GetTime() - fishCoin.at <= F.FISH_COIN_SECONDS then
+				F.AddFishCoin(s, fishCoin.zone, data.copper)
+			end
+			fishCoin = nil
+		end
 	else
 		return
 	end
@@ -505,7 +683,38 @@ function F.OnFeed(kind, data)
 	Changed()
 end
 
+-- Fishing.lua's catch record (#130): a catch, or one of this session's caught containers opened.
+function F.OnFishing(kind, data)
+	local now = F.Now()
+	fishCoin = nil
+	local s, zone
+	if kind == "catch" then
+		s = Accept(now)
+		if not s then
+			return
+		end
+		F.AddCatch(s, data.catch and data.catch.items, now)
+		zone = s.zone
+	elseif kind == "opened" then
+		s = Accept(now, true)
+		zone = s and F.OpenCatch(s, data.item, data.items)
+		if not zone then
+			return
+		end
+	else
+		return
+	end
+	if data.coin then
+		fishCoin = { zone = zone, at = GetTime() }
+	end
+	s.lastLoot = now
+	Changed()
+end
+
 ns.LootFeed.Subscribe(F.OnFeed)
+if ns.Fishing and ns.Fishing.Subscribe then
+	ns.Fishing.Subscribe(F.OnFishing)
+end
 
 ns.On("ZONE_CHANGED_NEW_AREA", function()
 	local s = F.Tick()
@@ -568,11 +777,30 @@ local function Export(sum, names)
 			names[item.id] = item.name
 		end
 	end
+	local f = sum.fish
+	if f then
+		out.fish = { catches = f.catches, timed = f.timed, seconds = f.seconds, coin = f.coin, items = f.items,
+			unknown = f.unknown, opened = f.opened, zonesMore = f.zonesMore }
+		if f.best then
+			out.fish.best = { id = f.best.id, value = f.best.value }
+			if f.best.id and f.best.name and not names[f.best.id] then
+				names[f.best.id] = f.best.name
+			end
+		end
+		-- One zone: the block's own totals are that zone's.
+		if #(f.zones or {}) > 1 or f.zonesMore then
+			out.fish.zones = {}
+			for i, z in ipairs(f.zones) do
+				out.fish.zones[i] = { zone = z.zone, catches = z.catches, timed = z.timed, seconds = z.seconds, coin = z.coin,
+					items = z.items, unknown = z.unknown, opened = z.opened }
+			end
+		end
+	end
 	return out
 end
 
 -- { current (running, paused = "manual" | "idle"; no stop), sessions (finished, newest first,
---   SNAPSHOT_SESSIONS), names = { [itemID] = name } of their top items, saved (finished sessions kept),
+--   SNAPSHOT_SESSIONS), names = { [itemID] = name } of their top items and best catches, saved (finished sessions kept),
 --   more (kept but not in the snapshot), historyMax }
 function F.SnapshotSummary(now)
 	local log = F.Log()
@@ -627,6 +855,12 @@ local function PrintHistory()
 			h.zone or "?", Money(h.coin), Money(h.items), Money(h.gph),
 			(h.unknown or 0) > 0 and ("  (" .. h.unknown .. " unpriced)") or "",
 			top and ("  best: " .. (top.name or ("item " .. top.id))) or ""))
+		local f = h.fish
+		if f then
+			ns.Print(("    fishing: %d catches, %s per catch%s, %s/h, %d containers opened%s"):format(f.catches, Money(f.perCatch),
+				(f.unknown or 0) > 0 and (" (" .. f.unknown .. " unpriced)") or "", Money(f.gph), f.opened or 0,
+				f.best and ("  best catch: " .. (f.best.name or ("item " .. f.best.id))) or ""))
+		end
 	end
 end
 
@@ -637,6 +871,12 @@ local function Status()
 		F.IdleMinutes() > 0 and (F.IdleMinutes() .. " min") or "off", st.shown == false and "hidden" or "shown",
 		st.locked and "locked" or "unlocked", tonumber(st.scale) or 1))
 	ns.Print("/craftwise farm show | hide | start | pause | reset | lock | unlock | scale <0.5-2> | idle <minutes, 0 = off> | autostart on|off | on | off | history")
+end
+
+-- Key binding (Bindings.xml, #130); the header is Music.lua's BINDING_HEADER_CRAFTWISE.
+_G.BINDING_NAME_CRAFTWISE_FARM = "Toggle CraftWise farm tracker"
+function CraftWise_FarmToggle()
+	F.Slash("toggle")
 end
 
 function F.Slash(arg)

@@ -1,5 +1,5 @@
 -- Farm tracker window (#126): session stats on the left, the loot list on the right, in the CraftWise
--- style. Movable by its title (unless locked), scalable, position kept in CraftWiseDB.farm.pos. The
+-- style; below them a Fishing panel (#130) while the session has catches. Movable by its title (unless locked), scalable, position kept in CraftWiseDB.farm.pos. The
 -- numbers come from ns.Farm.Totals; this file only draws them. Refreshed once a second while shown and
 -- whenever the session changes (FARM_CHANGED).
 local _, ns = ...
@@ -16,6 +16,7 @@ FF.HEIGHT = 300
 FF.ROW_HEIGHT = 18
 FF.VISIBLE_ROWS = 13
 FF.ZONE_LINES = 3
+FF.FISH_HEIGHT = 120
 FF.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = -300, y = 150 }
 
 local frame
@@ -150,6 +151,105 @@ local function StatLine(parent, i, key)
 	return value
 end
 
+local FISH_KEYS = { "catches", "perCatch", "gph", "best", "opened" }
+local FISH_LABELS = { catches = "Catches", perCatch = "Per catch", gph = "Gold / hour", best = "Best catch",
+	opened = "Containers" }
+local FISH_HELP = {
+	catches = "Fishing loot windows this session (the fishing log's catches), and catches per hour of fishing time: the time between two catches at most two minutes apart.",
+	perCatch = "Coin + items per catch, items at the same values as the loot list. Caught containers you opened count as their contents. Unpriced items are counted apart, not in it.",
+	gph = "Fishing coin + items per hour of fishing time.",
+	best = "The caught item with the highest value per unit.",
+	opened = "Containers caught this session and opened: their contents count as fishing loot.",
+}
+
+local function FishLine(parent, i, key)
+	local y = -32 - (i - 1) * 16
+	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	label:SetPoint("TOPLEFT", 12, y)
+	label:SetText(L[FISH_LABELS[key]])
+	local value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	value:SetPoint("TOPLEFT", 92, y)
+	value:SetWidth(FF.STATS_WIDTH - 2)
+	value:SetJustifyH("LEFT")
+	value:SetWordWrap(false)
+	local hover = CreateFrame("Frame", nil, parent)
+	hover:SetPoint("TOPLEFT", 8, y + 2)
+	hover:SetSize(FF.STATS_WIDTH + 70, 16)
+	hover:EnableMouse(true)
+	hover:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+		GameTooltip:AddLine(L[FISH_LABELS[key]])
+		GameTooltip:AddLine(L[FISH_HELP[key]], 0.8, 0.8, 0.8, true)
+		local f = last and last.fish
+		if key == "perCatch" and f and f.unknownUnits > 0 then
+			GameTooltip:AddLine((L["%d caught items without a price."]):format(f.unknownUnits), 1, 0.6, 0.3, true)
+		end
+		if key == "perCatch" and f and f.coin > 0 then
+			GameTooltip:AddDoubleLine(L["Coin from fishing"], Money(f.coin), 0.8, 0.8, 0.8, 1, 1, 1)
+		end
+		GameTooltip:Show()
+	end)
+	hover:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	return value
+end
+
+local function BuildFish()
+	local fish = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+	fish:SetPoint("TOPLEFT", frame.stats, "BOTTOMLEFT", 0, -6)
+	fish:SetSize(FF.STATS_WIDTH + FF.LIST_WIDTH + 6, FF.FISH_HEIGHT)
+	Style.Panel(fish)
+	frame.fish = fish
+	local title = fish:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("TOPLEFT", 12, -10)
+	title:SetText(L["Fishing"])
+	fish.values = {}
+	for i, key in ipairs(FISH_KEYS) do
+		fish.values[key] = FishLine(fish, i, key)
+	end
+	local x = FF.STATS_WIDTH + 100
+	local head = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	head:SetPoint("TOPLEFT", x, -14)
+	head:SetText(Muted(L["Zones"] .. "  ·  " .. L["catches, per catch, per hour"]))
+	fish.zones = {}
+	for i = 1, FF.ZONE_LINES do
+		local name = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		name:SetPoint("TOPLEFT", x, -16 - i * 16)
+		name:SetWidth(96)
+		name:SetJustifyH("LEFT")
+		name:SetWordWrap(false)
+		local value = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		value:SetPoint("TOPRIGHT", -12, -16 - i * 16)
+		value:SetJustifyH("RIGHT")
+		fish.zones[i] = { name = name, value = value }
+	end
+	fish:Hide()
+end
+
+-- The Fishing panel: shown with its numbers while the session has catches, hidden otherwise.
+local function RefreshFish(f)
+	local fish = frame.fish
+	frame:SetHeight(FF.HEIGHT + (f and (FF.FISH_HEIGHT + 6) or 0))
+	if not f then
+		fish:Hide()
+		return
+	end
+	fish:Show()
+	local V = fish.values
+	V.catches:SetText(f.catches .. (f.cph and Muted(("  ·  %s/h"):format(f.cph)) or ""))
+	V.perCatch:SetText(Money(f.perCatch) .. (f.unknownUnits > 0 and ("  " .. C.warn .. "+" .. f.unknownUnits .. " ?|r") or ""))
+	V.gph:SetText(Money(f.gph))
+	local b = f.best
+	V.best:SetText(b and (ItemText(b) .. " " .. ns.FormatMoney(b.unit)) or Muted("-"))
+	V.opened:SetText(f.opened > 0 and tostring(f.opened) or Muted("0"))
+	for i, z in ipairs(fish.zones) do
+		local zone = f.zones[i]
+		z.name:SetText(zone and zone.zone or "")
+		z.value:SetText(zone and (zone.catches .. "  " .. Money(zone.perCatch) .. "  " .. Money(zone.gph) .. Muted("/h")) or "")
+	end
+end
+
 local function RowTooltip(self)
 	local r = self.data
 	if not r then
@@ -203,8 +303,8 @@ local function BuildRows(list)
 		row.name:SetWidth(150)
 		row.name:SetJustifyH("LEFT")
 		row.name:SetWordWrap(false)
-		row.remove = Style.CloseButton(row, function(self)
-			local data = self:GetParent().data
+		row.remove = Style.CloseButton(row, function()
+			local data = row.data
 			if data then
 				Farm.RemoveItem(data.itemID)
 			end
@@ -339,6 +439,8 @@ local function Build()
 		FF.Refresh()
 	end)
 
+	BuildFish()
+
 	local elapsed = 0
 	frame:SetScript("OnUpdate", function(_, dt)
 		elapsed = elapsed + (dt or 0)
@@ -387,10 +489,12 @@ function FF.Refresh()
 		frame.empty:SetText(Farm.AutoStart() and L["A session starts with your next loot."]
 			or L["Press Start, then loot."])
 		frame.empty:Show()
+		RefreshFish(nil)
 		return
 	end
 	local t = Farm.Totals(s, now)
 	last = t
+	RefreshFish(t.fish)
 	local state
 	if Farm.Running(s) then
 		state = C.good .. L["running"] .. "|r"
@@ -441,6 +545,10 @@ end
 
 function FF.Rows()
 	return frame and frame.rows
+end
+
+function FF.FishPanel()
+	return frame and frame.fish
 end
 
 function FF.Show()
