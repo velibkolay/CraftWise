@@ -723,6 +723,7 @@ end
 local function Build()
 	f = CreateFrame("Frame", FRAME_NAME, UIParent)
 	M.frame = f
+	f.cwWindow = "main" -- sheets, cards and header planes under it follow db.settings.alpha.main (#162)
 	f:SetFrameStrata("MEDIUM")
 	f:SetToplevel(true)
 	f:SetClampedToScreen(true)

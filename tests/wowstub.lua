@@ -44,6 +44,7 @@ function frameMeta.SetAllPoints(self, rel) self.points = { { "TOPLEFT", rel, "TO
 function frameMeta.SetSize(self, w, h) self.width, self.height = w, h end
 function frameMeta.SetWidth(self, w) self.width = w end
 function frameMeta.SetHeight(self, h) self.height = h end
+function frameMeta.GetParent(self) return self.parent end
 function frameMeta.SetVertexColor(self, r, g, b, a) self.vertexColor = { r, g, b, a } end
 function frameMeta.SetTextColor(self, r, g, b, a) self.textColor = { r, g, b, a } end
 function frameMeta.SetFont(self, path, size, flags) self.font = { path, size, flags } end

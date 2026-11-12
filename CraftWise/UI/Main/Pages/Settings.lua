@@ -1,7 +1,7 @@
 -- Settings page (#157; spec in #150 "Look up, Music, Settings", board "Settings"): the gear in the header.
 -- A left list of groups, rows of label left and control right. It holds every option of the old settings
 -- panel (UI/Settings.lua) and the AH rule panel (UI/AHRule.lua), plus the new Look group and the Snapshot
--- group (Records › Snapshot today). The Background sliders of the Look group come with #162.
+-- group (Records › Snapshot today). The Background sliders (Look, Loot toast) write db.settings.alpha (#162).
 --
 -- The groups are data (Set.Groups: rows of { kind, label, get, set, ... }); the drawing below turns each
 -- kind into a control, so the docked layout (#161) can draw the same rows its own way. Kinds:
@@ -171,6 +171,29 @@ local function Pct(v)
 	return ("%d %%"):format(math.floor((v or 0) * 100 + 0.5))
 end
 
+-- Look › Background per window and Loot toast › Background (#162): db.settings.alpha[window] from
+-- ALPHA_MIN to 1 in steps of 5 %, applied while dragging (Style.ApplyWindowAlpha).
+Set.ALPHA_MIN, Set.ALPHA_STEP = 0.2, 0.05
+
+function Set.SetAlpha(window, v)
+	v = math.max(Set.ALPHA_MIN, math.min(1, tonumber(v) or Style.WINDOW_ALPHA[window]))
+	Style.SetWindowAlpha(window, v)
+	if window == "toast" then
+		-- The strips are drawn by the toast: redraw the ones on screen, or show the test lines when none are.
+		local T = ns.LootToast
+		if #T.Lines() == 0 and T.Enabled() then
+			T.Test()
+		end
+		T.Render(GetTime and GetTime() or 0)
+	end
+end
+
+local function AlphaRow(key, label, window)
+	return { key = key, kind = "slider", label = label, min = Set.ALPHA_MIN, max = 1, step = Set.ALPHA_STEP,
+		get = function() return Style.WindowAlpha(window) end,
+		set = function(v) Set.SetAlpha(window, v) end, format = Pct }
+end
+
 local function Minutes(v)
 	return ("%d min"):format(v or 0)
 end
@@ -194,7 +217,9 @@ local function Groups()
 			get = function() return M.LayoutKey() end, set = function(v) M.SetLayout(v) end },
 		{ key = "scale", kind = "slider", label = L["Scale"], min = Set.SCALE_MIN, max = Set.SCALE_MAX, step = Set.SCALE_STEP,
 			onRelease = true, get = function() return tonumber(M.UI().scale) or 1 end, set = Set.SetScale, format = Pct },
-		-- Background per window (main, farm tracker, loot toast): #162.
+		AlphaRow("bgMain", L["Background · Main window"], "main"),
+		AlphaRow("bgFarm", L["Background · Farm tracker"], "farm"),
+		AlphaRow("bgToast", L["Background · Loot toast"], "toast"),
 		{ key = "fade", kind = "check", label = L["Farm tracker away from the mouse"], text = L["Fade to 40 % until hovered"],
 			get = function() return FF.FadeEnabled() end, set = function(v) FF.SetFade(v) end },
 		{ key = "windows", kind = "checks", label = L["Windows"], items = {
@@ -320,6 +345,7 @@ local function Groups()
 			get = function() return T.Duration() end,
 			set = function(v) ns.db.lootToast.duration = math.floor(v + 0.5) end,
 			format = function(v) return ("%d s"):format(v) end },
+		AlphaRow("background", L["Background"], "toast"),
 		{ key = "position", kind = "buttons", label = L["Position"], buttons = {
 			{ key = "move", text = function() return ns.db.lootToast.locked == false and L["Lock"] or L["Move"] end,
 				on = function() return ns.db.lootToast.locked == false end,
