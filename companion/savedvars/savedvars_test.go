@@ -241,6 +241,18 @@ func TestSnapshot(t *testing.T) {
 	if s.Crates == nil || len(s.Crates.List) != 0 || s.Favor == nil || i64(s.Favor.ID) != 3402 {
 		t.Fatalf("crates %+v favor %+v", s.Crates, s.Favor)
 	}
+	fm := s.Farm
+	if fm == nil || i64(fm.Saved) != 1 || len(fm.Sessions) != 1 || fm.More != nil || fm.Names[9001] != "Test Cloth" {
+		t.Fatalf("farm %+v", fm)
+	}
+	if h := fm.Sessions[0]; i64(h.Seconds) != 240 || i64(h.Coin) != 345 || i64(h.Items) != 1279 || h.Zone != "Test Zone" ||
+		len(h.Zones) != 2 || h.Zones[1].Zone != "Test Zone 2" || i64(h.Zones[0].Seconds) != 180 || len(h.Top) != 2 ||
+		h.Top[0].ID != 9001 || h.Top[0].Source != "auction" || i64(h.Stop) != i64(h.Start)+240 {
+		t.Fatalf("farm session %+v", h)
+	}
+	if c := fm.Current; c == nil || c.Stop != nil || *c.Running || c.Paused != "idle" || i64(c.Coin) != 12 || c.Zones != nil {
+		t.Fatalf("farm current %+v", c)
+	}
 }
 
 func TestJSON(t *testing.T) {

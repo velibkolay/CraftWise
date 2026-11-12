@@ -1,18 +1,9 @@
 -- Loot toast (issue #114): what the player just received, one line per item or coin amount, each shown
 -- for a few seconds and then faded out on its own timer.
 --
---   * Items: CHAT_MSG_LOOT lines of the player's own receipts, read with the client's own format strings
---     LOOT_ITEM_SELF_MULTIPLE and LOOT_ITEM_SELF ("You receive loot: %sx%d." / "You receive loot: %s." in
---     English; every locale's client has its own), so only items that actually reached the bags show, with
---     or without the loot window and whoever loots (Loot.lua, Blizzard, another addon). Items pushed
---     without looting (quest rewards, LOOT_ITEM_PUSHED_SELF) and other players' loot are left out.
---     The text may be a secret value on 12.x clients (Market.lua's OnLoot has the same note): such a line
---     is skipped, the item still reaches the bags.
---   * Coin: the money the player gained (PLAYER_MONEY, GetMoney before and after), shown only when a
---     CHAT_MSG_MONEY (the client's "You loot ..." / "Your share of the loot is ...") arrives within
---     MONEY_PAIR_SECONDS of it, in either order. The amount is the exact copper difference; the message
---     text is never parsed, so no locale's coin wording matters. Vendor sales, mail and quest rewards
---     change the money without that message and don't show.
+--   * What was looted comes from the loot feed (LootFeed.lua, #126): the player's own CHAT_MSG_LOOT lines
+--     read with the client's format strings, and looted coin (a money gain paired with CHAT_MSG_MONEY).
+--     The farm tracker (Farm.lua) reads the same feed, so both always agree on what was looted.
 --   * Value: the CraftWise sell value of the stack (ns.GetSellValue: AH at the profit house after the
 --     cut, or vendor, whichever the addon uses), omitted when it has none.
 --   * The same item (or coin) again while its line is still fully shown adds to that line and restarts
@@ -26,7 +17,6 @@ local T = {}
 ns.LootToast = T
 
 T.MAX_LINES = 8 -- older lines are dropped when a new one would be the ninth
-T.MONEY_PAIR_SECONDS = 2
 T.MIN_DURATION, T.MAX_DURATION = 1, 30
 T.ROW_HEIGHT = 20
 T.WIDTH = 260
@@ -53,66 +43,10 @@ function T.Fade()
 	return s and tonumber(s.fade) or 1
 end
 
-----------------------------------------------------------------------------------------------------
--- Parsing
-----------------------------------------------------------------------------------------------------
-
--- Lua pattern for a client format string, and the argument index of each capture. %s matches any text,
--- %d digits; positional forms (%1$s, %2$d) some locales use are honoured.
-function T.Pattern(fmt)
-	if type(fmt) ~= "string" or fmt == "" then
-		return nil
-	end
-	local order = {}
-	local s = fmt:gsub("%%(%d)%$([sd])", function(index, kind)
-		order[#order + 1] = tonumber(index)
-		return "\1" .. kind
-	end)
-	s = s:gsub("%%([sd])", function(kind)
-		order[#order + 1] = #order + 1
-		return "\1" .. kind
-	end)
-	s = s:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
-	s = s:gsub("\1s", "(.+)"):gsub("\1d", "(%%d+)")
-	return "^" .. s .. "$", order
-end
-
-local function Match(text, fmt)
-	local pattern, order = T.Pattern(fmt)
-	if not pattern then
-		return nil
-	end
-	local caps = { text:match(pattern) }
-	if #caps == 0 then
-		return nil
-	end
-	local args = {}
-	for i, index in ipairs(order) do
-		args[index] = caps[i]
-	end
-	return args
-end
-
--- Item link and count of one of the player's own loot lines, or nil (someone else's loot, another
--- message, a secret value). The multiple form first: the single one's %s would swallow "x2".
-function T.ParseLoot(text)
-	if type(text) ~= "string" or (issecretvalue and issecretvalue(text)) then
-		return nil
-	end
-	local args = Match(text, LOOT_ITEM_SELF_MULTIPLE)
-	if args and args[1] and args[2] then
-		return args[1], tonumber(args[2])
-	end
-	args = Match(text, LOOT_ITEM_SELF)
-	if args and args[1] then
-		return args[1], 1
-	end
-	return nil
-end
-
-function T.ItemID(link)
-	return type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
-end
+-- Parsing lives in the loot feed (#126); kept here under the names the toast always had.
+local Feed = ns.LootFeed
+T.Pattern, T.ParseLoot, T.ItemID = Feed.Pattern, Feed.ParseLoot, Feed.ItemID
+T.MONEY_PAIR_SECONDS = Feed.MONEY_PAIR_SECONDS
 
 ----------------------------------------------------------------------------------------------------
 -- Lines (pure; the frame below only draws them)
@@ -364,70 +298,21 @@ function T.ShowMoney(copper)
 end
 
 ----------------------------------------------------------------------------------------------------
--- Events
+-- Events: one line per looted item or coin amount from the loot feed (LootFeed.lua, #126).
 ----------------------------------------------------------------------------------------------------
 
-function T.OnLoot(_, text)
+function T.OnFeed(kind, data)
 	if not T.Enabled() then
 		return
 	end
-	local link, count = T.ParseLoot(text)
-	if link then
-		T.ShowItem(link, count)
+	if kind == "item" then
+		T.ShowItem(data.link, data.count, data.itemID)
+	elseif kind == "money" then
+		T.ShowMoney(data.copper)
 	end
 end
 
--- Coin: a money gain and a CHAT_MSG_MONEY within MONEY_PAIR_SECONDS, in either order.
-local lastMoney, gain, moneyMsg -- gain = { copper, t }; moneyMsg = t of an unpaired CHAT_MSG_MONEY
-
-local function Fresh(t, now)
-	return t and now - t <= T.MONEY_PAIR_SECONDS
-end
-
-function T.OnMoney()
-	local now, money = GetTime(), GetMoney()
-	local before = lastMoney
-	lastMoney = money
-	if not before or money <= before then
-		return
-	end
-	local copper = money - before
-	if Fresh(moneyMsg, now) then
-		moneyMsg, gain = nil, nil
-		if T.Enabled() then
-			T.ShowMoney(copper)
-		end
-		return
-	end
-	if gain and Fresh(gain.t, now) then
-		gain.copper = gain.copper + copper -- several changes before the message: one loot
-	else
-		gain = { copper = copper, t = now }
-	end
-end
-
-function T.OnMoneyMessage()
-	local now = GetTime()
-	if gain and Fresh(gain.t, now) then
-		local copper = gain.copper
-		gain, moneyMsg = nil, nil
-		if T.Enabled() then
-			T.ShowMoney(copper)
-		end
-		return
-	end
-	gain, moneyMsg = nil, now
-end
-
-local function NoteMoney()
-	lastMoney = GetMoney()
-end
-
-ns.On("CHAT_MSG_LOOT", T.OnLoot)
-ns.On("CHAT_MSG_MONEY", T.OnMoneyMessage)
-ns.On("PLAYER_MONEY", T.OnMoney)
-ns.On("PLAYER_LOGIN", NoteMoney)
-ns.On("PLAYER_ENTERING_WORLD", NoteMoney)
+Feed.Subscribe(T.OnFeed)
 
 ----------------------------------------------------------------------------------------------------
 -- Test lines and slash command

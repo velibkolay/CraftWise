@@ -107,6 +107,78 @@ CraftWiseDB = {
 },
 },
 },
+["farm"] = {
+["current"] = {
+["ah"] = 0,
+["coin"] = 12,
+["items"] = 18,
+["paused"] = "idle",
+["running"] = false,
+["seconds"] = 30,
+["stale"] = 0,
+["start"] = 1794005760,
+["top"] = {
+{
+["id"] = 9007,
+["n"] = 3,
+["source"] = "vendor",
+["value"] = 18,
+},
+},
+["unknown"] = 0,
+["vendor"] = 18,
+["zone"] = "Test Zone 2",
+},
+["historyMax"] = 50,
+["names"] = {
+[9001] = "Test Cloth",
+[9002] = "Test Hide",
+[9007] = "Test Fish",
+},
+["saved"] = 1,
+["sessions"] = {
+{
+["ah"] = 1279,
+["coin"] = 345,
+["items"] = 1279,
+["seconds"] = 240,
+["stale"] = 0,
+["start"] = 1794005520,
+["stop"] = 1794005760,
+["top"] = {
+{
+["id"] = 9001,
+["n"] = 6,
+["source"] = "auction",
+["value"] = 690,
+},
+{
+["id"] = 9002,
+["n"] = 2,
+["source"] = "auction",
+["value"] = 589,
+},
+},
+["unknown"] = 0,
+["vendor"] = 178,
+["zone"] = "Test Zone",
+["zones"] = {
+{
+["coin"] = 345,
+["items"] = 690,
+["seconds"] = 180,
+["zone"] = "Test Zone",
+},
+{
+["coin"] = 0,
+["items"] = 589,
+["seconds"] = 60,
+["zone"] = "Test Zone 2",
+},
+},
+},
+},
+},
 ["favor"] = {
 ["id"] = 3402,
 ["vendors"] = {
@@ -233,12 +305,12 @@ CraftWiseDB = {
 ["location"] = {
 ["map"] = "Test Map",
 ["mapID"] = 1411,
-["minimapZone"] = "Orgrimmar",
+["minimapZone"] = "Test Zone 2",
 ["resting"] = true,
 ["subzone"] = "",
 ["x"] = 0.5235,
 ["y"] = 0.3011,
-["zone"] = "Orgrimmar",
+["zone"] = "Test Zone 2",
 },
 ["market"] = {
 ["auctionator"] = {

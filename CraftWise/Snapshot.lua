@@ -468,13 +468,21 @@ function S.Favor()
 	return ns.Crates.SnapshotFavor()
 end
 
+-- Farm tracker (#126): the current session and the latest finished ones.
+function S.Farm()
+	if not (ns.Farm and ns.Farm.SnapshotSummary) then
+		return nil, "Farm not loaded"
+	end
+	return ns.Farm.SnapshotSummary()
+end
+
 S.SECTIONS = {
 	{ "char", S.Character }, { "location", S.Location }, { "equipment", S.Equipment },
 	{ "professions", S.Professions }, { "recipesLearned", S.RecipesLearned }, { "quests", S.Quests }, { "reputations", S.Reputations },
 	{ "pet", S.Pet }, { "holdings", S.Holdings }, { "ledger", S.Ledger }, { "flightPaths", S.FlightPaths },
 	{ "fishing", S.Fishing }, { "fishingZones", S.FishingZones }, { "auctions", S.Auctions },
 	{ "market", S.Market },
-	{ "crates", S.Crates }, { "favor", S.Favor },
+	{ "crates", S.Crates }, { "favor", S.Favor }, { "farm", S.Farm },
 }
 
 ----------------------------------------------------------------------------------------------------

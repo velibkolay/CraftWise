@@ -248,6 +248,31 @@ Merchant's Favor (currency 3402) and the merchants that take it (#91): `{ id, na
 | `req` | Reputation requirement as the item's tooltip states it: the standing alone ("Honored") when it is with the merchant's own faction, else the whole line. Missing when the tooltip has none (or the list was recorded before #91). |
 | `known`, `unusable`, `n` | "Already known" on the tooltip, shown in red, limited stock (missing when unlimited). |
 
+### `farm`
+Farm tracker (#126, `/craftwise farm`): the session open now and the latest finished ones. Always present once the character is known; `current` is missing when no session is open and `sessions` is empty until one was finished (Reset). Money is copper, times Unix seconds.
+
+| Field | Meaning |
+|---|---|
+| `current` | The open session (fields below), valued at snapshot time, without `stop`, plus `running` (`true` while it counts time; a session running at logout is `true` and goes on at the next login) and `paused` (`"manual"` = Pause, `"idle"` = paused itself after the idle time without loot; missing while running). |
+| `sessions` | Finished sessions, newest first, at most 10, each valued as it was when it ended. |
+| `saved`, `more`, `historyMax` | Finished sessions kept in `CraftWiseDB.farmLog[<character key>].history` (at most `historyMax` = 50), and how many of those are not in `sessions`. |
+| `names` | `{ [itemID] = name }` for the items in `top` (the client's name at the time; missing when it hadn't loaded the item). |
+
+Per session:
+
+| Field | Meaning |
+|---|---|
+| `start`, `stop` | When it started and when it was ended (Reset). |
+| `seconds` | Time it counted: not paused, not idle (with no loot for the idle time, default 5 min, it stops as of the last loot), not logged out. Gold per hour = (`coin` + `items`) × 3600 / `seconds`; not stored. |
+| `zone` | Zone with the most time (`GetRealZoneText`); `"unknown zone"` when the client named none. |
+| `coin` | Coin looted: money gained together with the client's loot message (`CHAT_MSG_MONEY`). Vendor sales, mail and quest rewards are not in it. |
+| `items` | Items looted (the player's own `CHAT_MSG_LOOT` lines), each at the CraftWise sell value: AH at the profit house after the cut, or vendor, whichever pays more (`ns.GetSellValue`). Bind on pickup and quest items (`bindType` 1, 4): vendor. Items without any price are not in it. |
+| `vendor`, `vendorUnknown` | The same items all sold to a vendor; `vendorUnknown` = units without a known vendor price (missing when none). |
+| `ah`, `stale` | The part of `items` from AH prices, and of that the part from AH prices more than a day old. |
+| `unknown` | Units looted with no AH or vendor price: counted, never valued. |
+| `zones`, `zonesMore` | Per zone, most time first, at most 3: `{ zone, seconds, coin, items }`; `zonesMore` = zones left out. Missing when the session was in one zone (then the session's own fields are that zone's). |
+| `top` | Up to 3 items with the highest value: `{ id, n (units), value (copper, whole stack), source ("auction" or "vendor") }`. |
+
 ## Market data (`CraftWiseMarketDB`, #26, #90)
 Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/reload` or quit, like the snapshot. Money is copper, times are Unix seconds.
 
@@ -268,4 +293,4 @@ Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/rel
 ## Size
 `CraftWiseMarketDB.itemInfo` for 10,000 items is about 0.34 MB (measured headless, `tests/item_info_spec.lua`); it is per item, not per house. With the names map and one full scan of 10,000 items at one house, the market data is about 1.4 MB.
 
-A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each, a Favor merchant with 82 items, every recipe of Leatherworking, Blacksmithing, Cooking and First Aid known and 20 recently learned recipes) is about 111 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 128 KB). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, `professions` with `recipesLearned` about 14 KB, quests, reputations, holdings and flight paths roughly 12-13 KB each.
+A full character (18 worn items, 80 bag items, 100 bank items, 16 mail items, 25 quests with two objectives each, 50 reputations, 30 flight paths on each of two continents, a heavy fishing log, 26 Waylaid crates with 5 bundles each, a Favor merchant with 82 items, every recipe of Leatherworking, Blacksmithing, Cooking and First Aid known, 20 recently learned recipes and a full farm history of 50 sessions in three zones each) is about 125 KB in the SavedVariables file (measured headless, `tests/snapshot_spec.lua`; the test allows 160 KB, 128 KB before #126). Most of it is the file's indentation; `crates` and `favor` are about 37 KB of it, `professions` with `recipesLearned` about 14 KB, `farm` about 14 KB (current session and 10 finished ones), quests, reputations, holdings and flight paths roughly 12-13 KB each.

@@ -563,9 +563,36 @@ it("a full character stays small and holds nothing about other players", functio
 	for i = 1, ns.LEARNED_MAX do
 		ns.NoteLearned(1255000 + 165 * 1000 + i, "scan", NOW, NOW - 3600, 165)
 	end
+	-- A full farm history (#126): 50 finished sessions in 3 long-named zones with 3 long-named top items,
+	-- and a current session; the snapshot carries the current one and the latest Farm.SNAPSHOT_SESSIONS.
+	local farmLog = { history = {} }
+	for i = 1, ns.Farm.HISTORY_MAX do
+		local h = { start = NOW - i * 7200, stop = NOW - i * 7200 + 5400, seconds = 5321, zone = "Some Long Zone Name 1",
+			coin = 123456, items = 987654, vendor = 34567, ah = 900000, stale = 12345, unknown = 7, gph = 1234567, coinGph = 98765,
+			zones = {}, top = {}, zonesMore = 2 }
+		for z = 1, ns.Farm.MAX_ZONES do
+			h.zones[z] = { zone = "Some Long Zone Name " .. z, seconds = 1800, coin = 40000, items = 300000, gph = 678901 }
+		end
+		for k = 1, ns.Farm.TOP_ITEMS do
+			h.top[k] = { id = 250000 + k, name = "Some Long Item Name of the Whale " .. k, n = 120, value = 456789, source = "auction" }
+		end
+		farmLog.history[i] = h
+	end
+	ns.db.farmLog["Forever-EU-Veli"] = farmLog
+	for k = 1, 30 do
+		stub.items[251000 + k] = { name = "Some Long Farmed Item Name " .. k, sellPrice = 100 + k }
+	end
+	local cur = ns.Farm.New(NOW - 3000, "Some Long Zone Name 1")
+	for k = 1, 30 do
+		cur.zones["Some Long Zone Name " .. (k % 4 + 1)] = cur.zones["Some Long Zone Name " .. (k % 4 + 1)] or { seconds = 500, coin = 1000, items = {} }
+		cur.zones["Some Long Zone Name " .. (k % 4 + 1)].items[251000 + k] = k
+	end
+	farmLog.current = cur
 	stub.Fire("PLAYER_LOGOUT")
 	local snap = CraftWiseDB.snapshots["Forever-EU-Veli"]
 	eq(snap.errors, nil); eq(snap.skipped, nil)
+	eq(#snap.farm.sessions, ns.Farm.SNAPSHOT_SESSIONS); eq(snap.farm.more, ns.Farm.HISTORY_MAX - ns.Farm.SNAPSHOT_SESSIONS)
+	eq(#snap.farm.current.top, ns.Farm.TOP_ITEMS)
 	eq(#snap.crates.list, 26); eq(#snap.favor.vendors[1].items, 82); eq(snap.favor.balance, 45)
 	eq(#snap.flightPaths.maps, 2); eq(#snap.flightPaths.maps[2].nodes, 30)
 	eq(#snap.equipment.items, 18); eq(#snap.quests.list, 25); eq(#snap.reputations.list, 50)
@@ -578,10 +605,14 @@ it("a full character stays small and holds nothing about other players", functio
 	assert(#fishText < 5 * 1024, "fishing section too large: " .. #fishText)
 	local crateText = table.concat(Serialize({ crates = snap.crates, favor = snap.favor }, "\t\t\t"))
 	print(("       of which crates and favor (#91): %d bytes"):format(#crateText))
+	local farmText = table.concat(Serialize(snap.farm, "\t\t\t"))
+	print(("       of which farm sessions (#126, full history): %d bytes"):format(#farmText))
 	local recipeText = table.concat(Serialize({ professions = snap.professions, recipesLearned = snap.recipesLearned }, "\t\t\t"))
 	print(("       of which professions and recipes learned (#107): %d bytes"):format(#recipeText))
 	eq(#snap.recipesLearned, ns.LEARNED_MAX)
-	assert(#text < 128 * 1024, "snapshot too large: " .. #text)
+	assert(#farmText < 16 * 1024, "farm section too large: " .. #farmText)
+	-- 128 KB until #126; the farm history needs room (the web takes 450,000 bytes per snapshot).
+	assert(#text < 160 * 1024, "snapshot too large: " .. #text)
 	eq(text:find("Someone Else", 1, true), nil)
 end)
 

@@ -98,6 +98,10 @@ local DB_DEFAULTS = {
 	minimap = { hide = false, angle = 215 },
 	-- What was just looted, on screen (LootToast.lua, #114): seconds fully shown, then fade; pos = anchor.
 	lootToast = { enabled = true, duration = 4, fade = 1, value = true, locked = true },
+	-- Farm tracker (Farm.lua, #126): enabled = count loot, shown = window shown, autoStart = a session starts
+	-- with the first loot, idleMinutes = pause after that long without loot (0 = never), scale, locked, pos.
+	farm = { enabled = true, shown = true, autoStart = true, idleMinutes = 5, scale = 1, locked = false },
+	farmLog = {}, -- [ns.CharKey()] = { current = session, history = finished sessions, newest first } (#126)
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
 	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true } },
 	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
@@ -560,6 +564,11 @@ SlashCmdList.CRAFTWISE = function(msg)
 	local toastArg = msg:match("^loottoast%s*(.*)$")
 	if toastArg and ns.LootToast then
 		ns.LootToast.Slash(toastArg)
+		return
+	end
+	local farmArg = msg:match("^farm%s*(.*)$")
+	if farmArg and ns.Farm then
+		ns.Farm.Slash(farmArg)
 		return
 	end
 	local ledgerArg = msg:match("^ledger%s*(.*)$")

@@ -32,6 +32,7 @@ Loot.lua
 Fishing.lua
 FishingTables.lua
 FishingZones.lua
+LootFeed.lua
 LootToast.lua
 Crafts.lua
 Bags.lua
@@ -48,12 +49,14 @@ Music.lua
 Video.lua
 FlightPaths.lua
 Crates.lua
+Farm.lua
 Snapshot.lua
 UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua
 UI\AHRule.lua
 UI\Settings.lua
+UI\FarmFrame.lua
 UI\ProfitFrame\State.lua
 UI\ProfitFrame\Fishing.lua
 UI\ProfitFrame\Data.lua

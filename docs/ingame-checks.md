@@ -508,3 +508,21 @@ Needs a full game restart (new file `LootToast.lua` in the TOC). On by default; 
 - [ ] Level up, then `/reload`: `char.level` is the new level and `xp`/`xpMax` are the new level's.
 - [ ] `ledger.today.change` and `other` are plausible: `money - startMoney`, not `-startMoney`. `/craftwise ledger today` after logging back in shows no day starting at 0.
 - [ ] While there, compare `holdings.bags` and `favor.balance` in the logout snapshot with the bags and the Favor shown in game. If either is empty or 0 at logout, the client clears more than money and XP by then: report it on #123.
+
+## Farm tracker (#126)
+Needs a **full game restart**: three new files in the TOC (`LootFeed.lua`, `Farm.lua`, `UI/FarmFrame.lua`). Compare with MoneyLooter side by side before uninstalling it.
+- [ ] Kill and loot a mob: the CraftWise Farm window opens on its own (Start on first loot is on), state "running", Time counts up once a second. The loot toast still shows the same loot (both read one feed now).
+- [ ] Coin equals MoneyLooter's Gold to the copper after a few mobs. Selling to a vendor, taking mail money or a quest reward does **not** add coin.
+- [ ] Item list: count, name in quality colour, stack value with `AH` or `vendor` (`AH!` in orange = AH price over a day old). Hover a row: item tooltip plus "Looted this session", value, each, price source. A bind-on-pickup drop says "vendor only" and is valued at vendor. An item without any price shows `?` and is counted under Unpriced, not in Items.
+- [ ] Items / Vendor only / AH part (with "stale" part) add up as the hover texts say; Items is at least Vendor only. Gold / hour and Coin / hour appear after the first minute and match (coin + items) and coin per hour of Time.
+- [ ] Priciest names the drop with the highest value per unit (hover shows its unit value).
+- [ ] x on a row removes it from the totals; looting that item again in the same session doesn't bring it back; after Reset it counts again.
+- [ ] Pause: state "paused", Time stops, loot is not counted; Resume goes on. `/craftwise farm pause` does the same.
+- [ ] Stop looting for 5 minutes: state "paused (idle)", Time stays at the last loot (the idle minutes don't count); the next loot resumes. `/craftwise farm idle 2` makes it 2 minutes, `idle 0` never pauses.
+- [ ] Ride into another zone and loot there: the Zones lines show both zones with their time and gold per hour, the time split at the zone border (`ZONE_CHANGED_NEW_AREA`).
+- [ ] `/reload` mid-session: same session, Time continues from where it was (the loading screen is not counted). Log out for a few minutes and back in: Time didn't count the time offline.
+- [ ] Reset: the session goes to the history; `/craftwise farm history` lists it (start, time, zone, coin, items, gold per hour, best item). Then `/reload` and read `CraftWiseDB.snapshots[...].farm` in `CraftWise.lua`: `current` / `sessions` as in `docs/snapshot.md`.
+- [ ] Drag the window by its title or a free spot; `/reload` keeps the position. `/craftwise farm lock`: it no longer moves ("locked" shown at the top right); `unlock` again. `/craftwise farm scale 0.8` shrinks it, `scale 3` is refused.
+- [ ] X button or `/craftwise farm hide`: the window hides, loot is still counted; `/craftwise farm` (or `show`) brings it back with the totals.
+- [ ] Settings: "Farm tracker" off pauses the session, hides the window and nothing is counted; on again and Resume. "Start on first loot" off: loot doesn't open a session until Start.
+- [ ] In a group: your share of the coin counts, other players' loot doesn't. In a dungeon in combat, if loot lines are secret values they are skipped without a Lua error (same as the loot toast).
