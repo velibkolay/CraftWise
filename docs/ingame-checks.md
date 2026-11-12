@@ -526,3 +526,19 @@ Needs a **full game restart**: three new files in the TOC (`LootFeed.lua`, `Farm
 - [ ] X button or `/craftwise farm hide`: the window hides, loot is still counted; `/craftwise farm` (or `show`) brings it back with the totals.
 - [ ] Settings: "Farm tracker" off pauses the session, hides the window and nothing is counted; on again and Resume. "Start on first loot" off: loot doesn't open a session until Start.
 - [ ] In a group: your share of the coin counts, other players' loot doesn't. In a dungeon in combat, if loot lines are secret values they are skipped without a Lua error (same as the loot toast).
+
+## Farm tracker: fishing, loot log, Farm button, key binding (#130)
+No new files in the TOC; `Bindings.xml` changed (it is not in the TOC, the client reads it from the addon folder). Restart the game once for this update: whether `/reload` re-reads `Bindings.xml` is not verified.
+- [ ] Before fishing: farm a few mobs. The window has no Fishing panel.
+- [ ] Fish 10+ casts in a row (pool and open water). A Fishing panel appears under the window with the first catch. Catches = the number of catches (compare `/craftwise fishing`, same count for this stretch); after a minute of fishing `x/h` appears and is plausible (a catch every 15-25 s = 140-240/h).
+- [ ] Per catch = (fishing coin + caught items) / catches; caught items valued as in the loot list (hover a fish row there for its value). A catch with coin adds its coin to fishing (hover Per catch: "Coin from fishing"); coin from a mob looted right after does not. An item without a price shows `+N ?` next to Per catch and is not in it.
+- [ ] Gold / hour is per hour of fishing time: stand still for 3+ minutes between two casts, the next catch adds no time (the gap is over 2 minutes).
+- [ ] Best catch names the caught item with the highest value per unit.
+- [ ] Open a container you caught this session (crate, chest): Containers goes to 1, the container leaves the fishing value and its contents (and coin) join it. A container caught in an earlier session is not counted.
+- [ ] Fish in a second zone: the right side lists both zones with catches, per catch and gold per hour.
+- [ ] Reset: `/craftwise farm history` prints a "fishing:" line under that session; `/reload`, then `CraftWiseDB.snapshots[...].farm.sessions[1].fish` has the block (`docs/snapshot.md`).
+- [ ] Loot panel: the "Log" button switches to the loot log: one line per drop, newest on top, time (your clock, HH:MM:SS), icon, count, name in quality colour, value (`?` for unknown), zone; coin drops are their own lines with a coin icon; catches and their coin have the fishing icon. Hover a line: time, zone, count, value, "From a fishing catch.". Scroll with the mouse wheel. "List" switches back; `/reload` keeps the chosen view.
+- [ ] `/reload` mid-session: the log is still there. x on a list row removes that item's lines from the log too.
+- [ ] Profit window (`/craftwise`): a "Farm" button left of "Profit" opens and closes the farm window; it doesn't overlap the subtitle.
+- [ ] Esc > Options > Key Bindings > AddOns > CraftWise: "Toggle CraftWise farm tracker" is listed under the CraftWise header next to Party; bind a key, it opens and closes the farm window (also in combat).
+- [ ] Settings (gear) > Farm tracker: the "Farm window" button opens and closes it.

@@ -1,5 +1,6 @@
 -- Farm tracker window (#126): session stats on the left, the loot list on the right, in the CraftWise
--- style. Movable by its title (unless locked), scalable, position kept in CraftWiseDB.farm.pos. The
+-- style; below them a Fishing panel (#130) while the session has catches. The loot panel shows the list
+-- (per item) or the log (one line per drop, newest first, #130); the view is kept in CraftWiseDB.farm.view. Movable by its title (unless locked), scalable, position kept in CraftWiseDB.farm.pos. The
 -- numbers come from ns.Farm.Totals; this file only draws them. Refreshed once a second while shown and
 -- whenever the session changes (FARM_CHANGED).
 local _, ns = ...
@@ -16,11 +17,31 @@ FF.HEIGHT = 300
 FF.ROW_HEIGHT = 18
 FF.VISIBLE_ROWS = 13
 FF.ZONE_LINES = 3
+FF.FISH_HEIGHT = 120
 FF.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = -300, y = 150 }
 
 local frame
 local offset = 0
 local last -- totals of the last refresh
+local logOffset = 0
+local logEntries -- log of the last refresh, newest first
+
+FF.FISH_MARK = "|TInterface\\Icons\\Trade_Fishing:12:12|t"
+FF.COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
+
+-- "list" or "log".
+function FF.View()
+	local st = ns.db and ns.db.farm
+	return st and st.view == "log" and "log" or "list"
+end
+
+function FF.SetView(view)
+	local st = ns.db and ns.db.farm
+	if st then
+		st.view = view == "log" and "log" or "list"
+	end
+	FF.Refresh()
+end
 
 local function Settings()
 	return ns.db and ns.db.farm
@@ -150,6 +171,105 @@ local function StatLine(parent, i, key)
 	return value
 end
 
+local FISH_KEYS = { "catches", "perCatch", "gph", "best", "opened" }
+local FISH_LABELS = { catches = "Catches", perCatch = "Per catch", gph = "Gold / hour", best = "Best catch",
+	opened = "Containers" }
+local FISH_HELP = {
+	catches = "Fishing loot windows this session (the fishing log's catches), and catches per hour of fishing time: the time between two catches at most two minutes apart.",
+	perCatch = "Coin + items per catch, items at the same values as the loot list. Caught containers you opened count as their contents. Unpriced items are counted apart, not in it.",
+	gph = "Fishing coin + items per hour of fishing time.",
+	best = "The caught item with the highest value per unit.",
+	opened = "Containers caught this session and opened: their contents count as fishing loot.",
+}
+
+local function FishLine(parent, i, key)
+	local y = -32 - (i - 1) * 16
+	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	label:SetPoint("TOPLEFT", 12, y)
+	label:SetText(L[FISH_LABELS[key]])
+	local value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	value:SetPoint("TOPLEFT", 92, y)
+	value:SetWidth(FF.STATS_WIDTH - 2)
+	value:SetJustifyH("LEFT")
+	value:SetWordWrap(false)
+	local hover = CreateFrame("Frame", nil, parent)
+	hover:SetPoint("TOPLEFT", 8, y + 2)
+	hover:SetSize(FF.STATS_WIDTH + 70, 16)
+	hover:EnableMouse(true)
+	hover:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+		GameTooltip:AddLine(L[FISH_LABELS[key]])
+		GameTooltip:AddLine(L[FISH_HELP[key]], 0.8, 0.8, 0.8, true)
+		local f = last and last.fish
+		if key == "perCatch" and f and f.unknownUnits > 0 then
+			GameTooltip:AddLine((L["%d caught items without a price."]):format(f.unknownUnits), 1, 0.6, 0.3, true)
+		end
+		if key == "perCatch" and f and f.coin > 0 then
+			GameTooltip:AddDoubleLine(L["Coin from fishing"], Money(f.coin), 0.8, 0.8, 0.8, 1, 1, 1)
+		end
+		GameTooltip:Show()
+	end)
+	hover:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	return value
+end
+
+local function BuildFish()
+	local fish = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+	fish:SetPoint("TOPLEFT", frame.stats, "BOTTOMLEFT", 0, -6)
+	fish:SetSize(FF.STATS_WIDTH + FF.LIST_WIDTH + 6, FF.FISH_HEIGHT)
+	Style.Panel(fish)
+	frame.fish = fish
+	local title = fish:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	title:SetPoint("TOPLEFT", 12, -10)
+	title:SetText(L["Fishing"])
+	fish.values = {}
+	for i, key in ipairs(FISH_KEYS) do
+		fish.values[key] = FishLine(fish, i, key)
+	end
+	local x = FF.STATS_WIDTH + 100
+	local head = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	head:SetPoint("TOPLEFT", x, -14)
+	head:SetText(Muted(L["Zones"] .. "  ·  " .. L["catches, per catch, per hour"]))
+	fish.zones = {}
+	for i = 1, FF.ZONE_LINES do
+		local name = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		name:SetPoint("TOPLEFT", x, -16 - i * 16)
+		name:SetWidth(96)
+		name:SetJustifyH("LEFT")
+		name:SetWordWrap(false)
+		local value = fish:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		value:SetPoint("TOPRIGHT", -12, -16 - i * 16)
+		value:SetJustifyH("RIGHT")
+		fish.zones[i] = { name = name, value = value }
+	end
+	fish:Hide()
+end
+
+-- The Fishing panel: shown with its numbers while the session has catches, hidden otherwise.
+local function RefreshFish(f)
+	local fish = frame.fish
+	frame:SetHeight(FF.HEIGHT + (f and (FF.FISH_HEIGHT + 6) or 0))
+	if not f then
+		fish:Hide()
+		return
+	end
+	fish:Show()
+	local V = fish.values
+	V.catches:SetText(f.catches .. (f.cph and Muted(("  ·  %s/h"):format(f.cph)) or ""))
+	V.perCatch:SetText(Money(f.perCatch) .. (f.unknownUnits > 0 and ("  " .. C.warn .. "+" .. f.unknownUnits .. " ?|r") or ""))
+	V.gph:SetText(Money(f.gph))
+	local b = f.best
+	V.best:SetText(b and (ItemText(b) .. " " .. ns.FormatMoney(b.unit)) or Muted("-"))
+	V.opened:SetText(f.opened > 0 and tostring(f.opened) or Muted("0"))
+	for i, z in ipairs(fish.zones) do
+		local zone = f.zones[i]
+		z.name:SetText(zone and zone.zone or "")
+		z.value:SetText(zone and (zone.catches .. "  " .. Money(zone.perCatch) .. "  " .. Money(zone.gph) .. Muted("/h")) or "")
+	end
+end
+
 local function RowTooltip(self)
 	local r = self.data
 	if not r then
@@ -203,8 +323,8 @@ local function BuildRows(list)
 		row.name:SetWidth(150)
 		row.name:SetJustifyH("LEFT")
 		row.name:SetWordWrap(false)
-		row.remove = Style.CloseButton(row, function(self)
-			local data = self:GetParent().data
+		row.remove = Style.CloseButton(row, function()
+			local data = row.data
 			if data then
 				Farm.RemoveItem(data.itemID)
 			end
@@ -220,6 +340,82 @@ local function BuildRows(list)
 		end)
 		frame.rows[i] = row
 	end
+end
+
+local function LogTooltip(self)
+	local e = self.data
+	if not e then
+		return
+	end
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	if e.itemID and GameTooltip.SetItemByID then
+		GameTooltip:SetItemByID(e.itemID)
+	else
+		GameTooltip:AddLine(e.itemID and ItemText(e) or L["Coin"])
+	end
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddDoubleLine(L["Looted at"], date("%H:%M:%S", e.t), 0.8, 0.8, 0.8, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Zone"], e.zone, 0.8, 0.8, 0.8, 1, 1, 1)
+	if e.itemID then
+		GameTooltip:AddDoubleLine(L["Count"], tostring(e.n), 0.8, 0.8, 0.8, 1, 1, 1)
+		if e.value then
+			GameTooltip:AddDoubleLine(L["Value"], Money(e.value) .. "  " .. (e.label or e.source or ""), 0.8, 0.8, 0.8, 1, 1, 1)
+		else
+			GameTooltip:AddLine(L["No AH or vendor price known: not valued."], 1, 0.76, 0.3, true)
+		end
+	else
+		GameTooltip:AddDoubleLine(L["Coin"], Money(e.copper), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if e.fish then
+		GameTooltip:AddLine(L["From a fishing catch."], 0.5, 0.8, 1, true)
+	end
+	GameTooltip:Show()
+end
+
+local function BuildLogRows(list)
+	frame.logRows = {}
+	for i = 1, FF.VISIBLE_ROWS do
+		local row = CreateFrame("Button", nil, list)
+		row:SetSize(FF.LIST_WIDTH - 16, FF.ROW_HEIGHT)
+		row:SetPoint("TOPLEFT", 8, -30 - (i - 1) * FF.ROW_HEIGHT)
+		row.bg = row:CreateTexture(nil, "BACKGROUND")
+		row.bg:SetAllPoints()
+		Style.Fill(row.bg, i % 2 == 0 and C.stripe or { 0, 0, 0, 0 })
+		row.time = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		row.time:SetPoint("LEFT", 2, 0)
+		row.time:SetWidth(48)
+		row.time:SetJustifyH("LEFT")
+		row.icon = row:CreateTexture(nil, "ARTWORK")
+		row.icon:SetSize(FF.ROW_HEIGHT - 4, FF.ROW_HEIGHT - 4)
+		row.icon:SetPoint("LEFT", row.time, "RIGHT", 2, 0)
+		row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+		row.name:SetWidth(118)
+		row.name:SetJustifyH("LEFT")
+		row.name:SetWordWrap(false)
+		row.zone = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		row.zone:SetPoint("RIGHT", 0, 0)
+		row.zone:SetWidth(52)
+		row.zone:SetJustifyH("RIGHT")
+		row.zone:SetWordWrap(false)
+		row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		row.value:SetPoint("RIGHT", row.zone, "LEFT", -4, 0)
+		row.value:SetJustifyH("RIGHT")
+		row:SetScript("OnEnter", LogTooltip)
+		row:SetScript("OnLeave", function()
+			GameTooltip:Hide()
+		end)
+		row:Hide()
+		frame.logRows[i] = row
+	end
+end
+
+-- One log line: value cell like the list's ("?" = unknown), coin lines in coin.
+function FF.LogValueText(e)
+	if e.copper then
+		return Money(e.copper)
+	end
+	return FF.ValueText(e)
 end
 
 local function Build()
@@ -332,12 +528,35 @@ local function Build()
 	frame.empty:SetPoint("CENTER")
 	frame.empty:SetWidth(FF.LIST_WIDTH - 40)
 	BuildRows(list)
+	BuildLogRows(list)
+	frame.viewButton = Style.Button(list, 56, 20, "")
+	frame.viewButton:SetPoint("RIGHT", close, "LEFT", -6, 0)
+	frame.viewButton:SetScript("OnClick", function()
+		FF.SetView(FF.View() == "log" and "list" or "log")
+	end)
+	frame.viewButton:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine(FF.View() == "log" and L["Loot list"] or L["Loot log"])
+		GameTooltip:AddLine(FF.View() == "log" and L["Per item: count and value, x removes an item."]
+			or L["One line per drop, newest first: time, item, value, zone; fishing catches marked."], 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	frame.viewButton:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
 	list:EnableMouseWheel(true)
 	list:SetScript("OnMouseWheel", function(_, delta)
-		local n = last and #last.rows or 0
-		offset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), offset - delta * 3))
+		if FF.View() == "log" then
+			local n = logEntries and #logEntries or 0
+			logOffset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), logOffset - delta * 3))
+		else
+			local n = last and #last.rows or 0
+			offset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), offset - delta * 3))
+		end
 		FF.Refresh()
 	end)
+
+	BuildFish()
 
 	local elapsed = 0
 	frame:SetScript("OnUpdate", function(_, dt)
@@ -383,14 +602,22 @@ function FF.Refresh()
 			row.data = nil
 			row:Hide()
 		end
-		frame.listHead:SetText(Muted(L["Loot"]))
+		logEntries, logOffset = nil, 0
+		for _, row in ipairs(frame.logRows) do
+			row.data = nil
+			row:Hide()
+		end
+		frame.viewButton:SetLabel(FF.View() == "log" and L["List"] or L["Log"])
+		frame.listHead:SetText(Muted(FF.View() == "log" and L["Loot log"] or L["Loot"]))
 		frame.empty:SetText(Farm.AutoStart() and L["A session starts with your next loot."]
 			or L["Press Start, then loot."])
 		frame.empty:Show()
+		RefreshFish(nil)
 		return
 	end
 	local t = Farm.Totals(s, now)
 	last = t
+	RefreshFish(t.fish)
 	local state
 	if Farm.Running(s) then
 		state = C.good .. L["running"] .. "|r"
@@ -418,6 +645,19 @@ function FF.Refresh()
 		z.value:SetText(zone and (Farm.FormatTime(zone.seconds) .. "  " .. Money(zone.gph) .. Muted("/h")) or "")
 	end
 
+	frame.viewButton:SetLabel(FF.View() == "log" and L["List"] or L["Log"])
+	if FF.View() == "log" then
+		for _, row in ipairs(frame.rows) do
+			row.data = nil
+			row:Hide()
+		end
+		FF.RefreshLog(s)
+		return
+	end
+	for _, row in ipairs(frame.logRows) do
+		row.data = nil
+		row:Hide()
+	end
 	local n = #t.rows
 	offset = math.max(0, math.min(offset, math.max(0, n - FF.VISIBLE_ROWS)))
 	frame.listHead:SetText(Muted(("%s  ·  %d"):format(L["Loot"], n)))
@@ -439,8 +679,50 @@ function FF.Refresh()
 	end
 end
 
+-- The log view: newest drop on top.
+function FF.RefreshLog(s)
+	logEntries = Farm.LogEntries(s)
+	local n = #logEntries
+	logOffset = math.max(0, math.min(logOffset, math.max(0, n - FF.VISIBLE_ROWS)))
+	local head = ("%s  ·  %d"):format(L["Loot log"], n)
+	if (s.logDropped or 0) > 0 then
+		head = head .. (" (%d %s)"):format(s.logDropped, L["older dropped"])
+	end
+	frame.listHead:SetText(Muted(head))
+	frame.empty:SetText(L["Nothing looted yet."])
+	frame.empty:SetShown(n == 0)
+	for i, row in ipairs(frame.logRows) do
+		local e = logEntries[logOffset + i]
+		row.data = e
+		if e then
+			row.time:SetText(Muted(date("%H:%M:%S", e.t)))
+			if e.itemID then
+				local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.itemID)
+				row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+				row.name:SetText((e.fish and (FF.FISH_MARK .. " ") or "") .. (e.n > 1 and (C.warn .. e.n .. "x|r ") or "") .. ItemText(e))
+			else
+				row.icon:SetTexture(FF.COIN_ICON)
+				row.name:SetText((e.fish and (FF.FISH_MARK .. " ") or "") .. L["Coin"])
+			end
+			row.value:SetText(FF.LogValueText(e))
+			row.zone:SetText(Muted(e.zone))
+			row:Show()
+		else
+			row:Hide()
+		end
+	end
+end
+
 function FF.Rows()
 	return frame and frame.rows
+end
+
+function FF.LogRows()
+	return frame and frame.logRows
+end
+
+function FF.FishPanel()
+	return frame and frame.fish
 end
 
 function FF.Show()

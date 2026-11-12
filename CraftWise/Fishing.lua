@@ -31,6 +31,8 @@
 --   * Containers: a caught item that is opened later (LOOT_OPENED with isFromItem, the opened item is the locked
 --     bag slot whose item has loot) logs its contents against the container's item ID. Only item IDs this
 --     character caught count; another copy of the same item (bought, looted) can't be told apart.
+--   * Each recorded catch and logged opening is passed to subscribers (F.Subscribe, #130): the farm tracker
+--     counts fishing from these, so fishing is detected in this one place.
 --
 -- CraftWiseDB.fishing["<realm>-<name> <surname>"] (account-wide, per character), kept 90 days (Scout default, #69):
 --   catches  = { { t, zone, sub, map, x, y, obj, spawn, clk, same, ff, items = { [itemID] = count } }, ... }
@@ -133,24 +135,25 @@ local function ItemIDOf(link)
 	return link and tonumber(link:match("item:(%d+)")) or nil
 end
 
--- Items of the open loot window: { [itemID] = count }, and whether any slot had one.
+-- Items of the open loot window: { [itemID] = count }, whether any slot had one, and whether a slot holds
+-- coin (GetLootSlotInfo's isCoin; the amount is only a localized text, so not read).
 local function ReadSlots()
-	local items, any = {}, false
+	local items, any, coin = {}, false, false
 	if not (GetNumLootItems and GetLootSlotLink and GetLootSlotInfo) then
-		return items, any
+		return items, any, coin
 	end
 	for slot = 1, Safe(GetNumLootItems()) or 0 do
 		local itemID = ItemIDOf(GetLootSlotLink(slot))
-		if itemID then
-			local _, _, quantity, currencyID, _, _, _, _, _, isCoin = GetLootSlotInfo(slot)
-			quantity, currencyID, isCoin = Safe(quantity), Safe(currencyID), Safe(isCoin)
-			if not (isCoin or currencyID) then
-				items[itemID] = (items[itemID] or 0) + math.max(1, tonumber(quantity) or 1)
-				any = true
-			end
+		local _, _, quantity, currencyID, _, _, _, _, _, isCoin = GetLootSlotInfo(slot)
+		quantity, currencyID, isCoin = Safe(quantity), Safe(currencyID), Safe(isCoin)
+		if isCoin == true then
+			coin = true
+		elseif itemID and not currencyID then
+			items[itemID] = (items[itemID] or 0) + math.max(1, tonumber(quantity) or 1)
+			any = true
 		end
 	end
-	return items, any
+	return items, any, coin
 end
 
 -- A GameObject GUID: guid, object ID, spawn (the GUID's last part). Anything else: nil.
@@ -313,6 +316,27 @@ end
 
 local captured = false -- this loot window was read
 local pending -- items of a window that isn't fishing loot, until LOOT_OPENED says whether it came from an item
+local pendingCoin -- that window had a coin slot
+
+-- Subscribers (#130, the farm tracker): fn("catch", { catch = the stored catch, coin = window had coin }) right
+-- after a catch is recorded, fn("opened", { item = container itemID, items, coin }) after an opening is logged.
+-- Called inside the loot flow, so a subscriber's error never stops it: it is raised again on the next frame.
+local subscribers = {}
+
+function F.Subscribe(fn)
+	subscribers[#subscribers + 1] = fn
+end
+
+local function Emit(kind, data)
+	for _, fn in ipairs(subscribers) do
+		local ok, err = pcall(fn, kind, data)
+		if not ok and C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				error(err, 0)
+			end)
+		end
+	end
+end
 
 local function IsFishing()
 	if not IsFishingLoot then
@@ -329,15 +353,17 @@ function F.Capture()
 		return nil
 	end
 	captured = true
+	local hasCoin = false
 	local ok, result = pcall(function()
-		local items, any = ReadSlots()
+		local items, any, coin = ReadSlots()
 		if not any then
 			return nil
 		end
 		if not IsFishing() then
-			pending = items
+			pending, pendingCoin = items, coin
 			return nil
 		end
+		hasCoin = coin
 		local log = F.Log()
 		if not log then
 			return nil
@@ -367,7 +393,11 @@ function F.Capture()
 		end
 		return catch
 	end)
-	return ok and result or nil
+	if ok and result then
+		Emit("catch", { catch = result, coin = hasCoin })
+		return result
+	end
+	return nil
 end
 
 -- Item IDs this character caught (within the retention).
@@ -404,18 +434,23 @@ local function OnOpened(_, _, isFromItem)
 	if not captured then
 		F.Capture()
 	end
-	local items = pending
-	pending = nil
+	local items, coin = pending, pendingCoin
+	pending, pendingCoin = nil, nil
 	if not (items and Safe(isFromItem) == true) then
 		return
 	end
-	pcall(function()
+	local ok, entry = pcall(function()
 		local log = F.Log()
 		local container = log and OpenedContainer(log)
 		if container then
-			log.opened[#log.opened + 1] = { t = time(), item = container, items = items }
+			local e = { t = time(), item = container, items = items }
+			log.opened[#log.opened + 1] = e
+			return e
 		end
 	end)
+	if ok and entry then
+		Emit("opened", { item = entry.item, items = entry.items, coin = coin or false })
+	end
 end
 
 ns.On("LOOT_READY", function()
@@ -423,7 +458,7 @@ ns.On("LOOT_READY", function()
 end)
 ns.On("LOOT_OPENED", OnOpened)
 ns.On("LOOT_CLOSED", function()
-	captured, pending = false, nil
+	captured, pending, pendingCoin = false, nil, nil
 end)
 ns.On("PLAYER_LOGIN", function()
 	F.Prune()

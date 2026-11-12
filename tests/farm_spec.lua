@@ -401,3 +401,352 @@ it("hidden window: the session is still tracked, and the window stays hidden on 
 	eq(ns.Farm.Counts(ns.Farm.Current())[ORE], 1)
 	eq(CraftWiseFarmFrame == nil or not CraftWiseFarmFrame:IsShown(), true)
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Fishing (#130): the session's catches from Fishing.lua's catch record
+----------------------------------------------------------------------------------------------------
+
+local CRATE, RING = 9004, 9005
+
+-- A loot window: Fishing.lua reads it on LOOT_READY; then the loot lines and the coin reach the feed, as in game.
+local function window(stub, slots, fishing, isFromItem)
+	stub.fishing = fishing
+	stub.loot = {}
+	for _, sl in ipairs(slots) do
+		if sl.copper then
+			stub.loot[#stub.loot + 1] = { coin = true }
+		else
+			stub.loot[#stub.loot + 1] = { link = link(sl.id, stub.items[sl.id].name), qty = sl.n or 1 }
+		end
+	end
+	stub.Fire("LOOT_READY", false)
+	stub.Fire("LOOT_OPENED", false, isFromItem or false)
+	stub.Fire("LOOT_CLOSED")
+	for _, sl in ipairs(slots) do
+		if sl.copper then
+			coin(stub, sl.copper)
+		else
+			loot(stub, sl.id, sl.n)
+		end
+	end
+end
+
+local function fishSetup(opts)
+	local ns, stub = setup(opts)
+	stub.fishing = false
+	IsFishingLoot = function() return stub.fishing end
+	GetLootSlotInfo = function(i)
+		local s = stub.loot[i]
+		if not s then return nil end
+		return "tex", "name", s.qty or 1, nil, 1, false, false, nil, nil, s.coin
+	end
+	stub.items[CRATE] = { name = "Test Crate" } -- no price of its own
+	stub.items[RING] = { name = "Test Ring", sellPrice = 300 }
+	return ns, stub
+end
+
+local function catch(stub, slots)
+	window(stub, slots, true)
+end
+
+it("fishing: catches counted from the fishing log's record, valued like the loot list; no block without catches", function()
+	local ns, stub = fishSetup()
+	local F = ns.Farm
+	window(stub, { { id = ORE, n = 2 }, { copper = 500 } }, false) -- a mob: not fishing
+	eq(F.Totals(F.Current(), stub.clock).fish, nil, "no catches, no fishing block")
+	eq(ns.FarmFrame.FishPanel().shown, false)
+	advance(stub, 30)
+	catch(stub, { { id = CLOTH } }) -- 13
+	advance(stub, 30)
+	catch(stub, { { id = GEM }, { copper = 40 } }) -- 25 + 40 coin
+	advance(stub, 40)
+	catch(stub, { { id = CLOTH, n = 2 } }) -- 26
+	eq(#ns.db.fishing["Forever-EU-Veli"].catches, 3, "the fishing log has the same catches")
+	local f = F.Totals(F.Current(), stub.clock).fish
+	eq(f.catches, 3); eq(f.coin, 40); eq(f.items, 13 + 25 + 26); eq(f.value, 104)
+	eq(f.perCatch, math.floor(104 / 3 + 0.5))
+	eq(f.timed, 2); eq(f.seconds, 70, "the time between catches")
+	eq(f.cph, math.floor(2 * 36000 / 70 + 0.5) / 10)
+	eq(f.gph, math.floor(104 * 2 * 3600 / (3 * 70) + 0.5))
+	eq(f.best.itemID, GEM); eq(f.best.unit, 25)
+	eq(f.unknownUnits, 0); eq(f.opened, 0)
+	local t = F.Totals(F.Current(), stub.clock)
+	eq(t.coin, 540, "the session's coin has the mob's and the catch's"); eq(t.items, 10 + 13 + 25 + 26)
+	eq(ns.FarmFrame.FishPanel().shown, true, "the block shows once there are catches")
+end)
+
+it("fishing: coin only from a catch window with coin; unknown values apart; gaps over FISH_GAP aren't fishing time", function()
+	local ns, stub = fishSetup()
+	local F = ns.Farm
+	catch(stub, { { id = HIDE, n = 3 } }) -- no price at all
+	advance(stub, 10)
+	coin(stub, 77) -- coin loot, but the catch window had none
+	advance(stub, F.FISH_GAP + 1)
+	catch(stub, { { id = CLOTH }, { copper = 5 } })
+	advance(stub, 20)
+	-- A catch window with a coin slot whose coin comes too late: not fishing coin.
+	stub.fishing, stub.loot = true, { { link = link(CLOTH, "Linen Cloth") }, { coin = true } }
+	stub.Fire("LOOT_READY", false)
+	stub.Fire("LOOT_CLOSED")
+	loot(stub, CLOTH, 1)
+	stub.now = stub.now + F.FISH_COIN_SECONDS + 1
+	coin(stub, 9)
+	local f = F.Totals(F.Current(), stub.clock).fish
+	eq(f.catches, 3); eq(f.coin, 5); eq(f.unknownUnits, 3); eq(f.items, 26)
+	eq(f.timed, 1, "the first gap was too long"); eq(f.seconds, 20)
+	eq(f.cph, nil, "no rate from under a minute of fishing")
+	eq(f.perCatch, math.floor(31 / 3 + 0.5), "unknown items are left out of the value")
+end)
+
+it("fishing: per zone, paused and removed items, containers opened count as their contents", function()
+	local ns, stub = fishSetup()
+	local F = ns.Farm
+	catch(stub, { { id = CRATE } })
+	advance(stub, 30)
+	catch(stub, { { id = CLOTH } })
+	stub.zone = "Westfall"
+	stub.Fire("ZONE_CHANGED_NEW_AREA")
+	advance(stub, 30)
+	catch(stub, { { id = GEM } })
+	advance(stub, 30)
+	catch(stub, { { id = GEM } })
+	local f = F.Totals(F.Current(), stub.clock).fish
+	eq(#f.zones, 2); eq(f.zones[1].zone, "Elwynn Forest"); eq(f.zones[1].catches, 2); eq(f.zones[1].unknownUnits, 1)
+	eq(f.zones[2].zone, "Westfall"); eq(f.zones[2].items, 50); eq(f.zones[2].timed, 2); eq(f.zones[2].seconds, 60)
+	-- Open the caught crate in Westfall: a ring and coin; the crate leaves Elwynn's fishing items.
+	stub.bags[0] = { { itemID = CRATE, isLocked = true, hasLoot = true } }
+	window(stub, { { id = RING }, { copper = 200 } }, false, true)
+	eq(#ns.db.fishing["Forever-EU-Veli"].opened, 1)
+	f = F.Totals(F.Current(), stub.clock).fish
+	eq(f.opened, 1); eq(f.zones[1].opened, 1); eq(f.zones[1].unknownUnits, 0)
+	eq(f.zones[1].items, 13 + 300); eq(f.zones[1].coin, 200)
+	eq(f.best.itemID, RING)
+	-- Another opening of a crate not caught this session: left out.
+	window(stub, { { id = RING } }, false, true)
+	eq(F.Totals(F.Current(), stub.clock).fish.opened, 1)
+	-- Remove from the list: gone from fishing too.
+	F.RemoveItem(RING)
+	eq(F.Totals(F.Current(), stub.clock).fish.items, 13 + 50)
+	-- Paused by hand: catches aren't counted.
+	SlashCmdList.CRAFTWISE("farm pause")
+	catch(stub, { { id = GEM } })
+	eq(F.Totals(F.Current(), stub.clock).fish.catches, 4)
+	eq(#ns.db.fishing["Forever-EU-Veli"].catches, 5, "the fishing log still records it")
+end)
+
+it("fishing: the first catch starts a session; history, /craftwise farm history and the snapshot keep the block", function()
+	local ns, stub = fishSetup()
+	local F = ns.Farm
+	stub.zone = "Westfall"
+	catch(stub, { { id = GEM }, { copper = 60 } })
+	assert(F.Current(), "a catch starts the session")
+	for _ = 1, 4 do
+		advance(stub, 30)
+		catch(stub, { { id = CLOTH } })
+	end
+	stub.zone = "Duskwood"
+	advance(stub, 30)
+	catch(stub, { { id = HIDE } })
+	local snap = ns.Snapshot.Build()
+	local cf = snap.farm.current.fish
+	eq(cf.catches, 6); eq(cf.timed, 5); eq(cf.seconds, 150); eq(cf.coin, 60); eq(cf.items, 25 + 52); eq(cf.unknown, 1)
+	eq(cf.opened, 0); eq(cf.best.id, GEM); eq(cf.best.value, 25); eq(cf.best.name, nil, "names in farm.names")
+	eq(snap.farm.names[GEM], "Malachite")
+	eq(#cf.zones, 2); eq(cf.zones[1].zone, "Westfall"); eq(cf.zones[1].catches, 5); eq(cf.zones[2].unknown, 1)
+	eq(cf.perCatch, nil, "rates are left out of the snapshot"); eq(cf.gph, nil)
+	SlashCmdList.CRAFTWISE("farm reset")
+	local h = F.History()[1]
+	eq(h.fish.catches, 6); eq(h.fish.items, 77); eq(h.fish.best.name, "Malachite")
+	eq(h.fish.perCatch, math.floor(137 / 6 + 0.5)); eq(h.fish.gph, math.floor(137 * 5 * 3600 / (6 * 150) + 0.5))
+	stub.items[GEM].sellPrice = 9999
+	eq(F.History()[1].fish.items, 77, "a finished session keeps its values")
+	SlashCmdList.CRAFTWISE("farm history")
+	assert(stub.printed[#stub.printed]:find("6 catches", 1, true), stub.printed[#stub.printed])
+	eq(ns.Snapshot.Build().farm.sessions[1].fish.catches, 6)
+	-- A session without catches has no fishing block anywhere.
+	loot(stub, ORE, 1)
+	advance(stub, 60)
+	SlashCmdList.CRAFTWISE("farm reset")
+	eq(F.History()[1].fish, nil); eq(ns.Snapshot.Build().farm.sessions[1].fish, nil)
+end)
+
+it("fishing window: the block's numbers, hidden again after reset", function()
+	local ns, stub = fishSetup()
+	stub.ah[GEM], stub.ahAge[GEM] = 400, 0 -- 380 after the cut
+	catch(stub, { { id = GEM } })
+	for _ = 1, 2 do
+		advance(stub, 40)
+		catch(stub, { { id = CLOTH }, { copper = 7 } })
+	end
+	catch(stub, { { id = HIDE } })
+	ns.FarmFrame.Refresh()
+	local p = ns.FarmFrame.FishPanel()
+	eq(p.shown, true)
+	assert(p.values.catches.text:find("^4"), p.values.catches.text)
+	assert(p.values.catches.text:find("/h", 1, true), "catches per hour shown")
+	assert(p.values.perCatch.text:find(ns.FormatMoney(math.floor((14 + 380 + 26) / 4 + 0.5)), 1, true), p.values.perCatch.text)
+	assert(p.values.perCatch.text:find("+1 ?", 1, true), "unpriced count shown")
+	assert(p.values.best.text:find("Malachite", 1, true), p.values.best.text)
+	eq(p.values.opened.text, ns.Style.colors.muted .. "0|r")
+	eq(p.zones[1].name.text, "Elwynn Forest")
+	SlashCmdList.CRAFTWISE("farm reset")
+	eq(p.shown, false)
+end)
+
+it("open without typing (#130): the profit window's Farm button, the key binding and the Settings button toggle the window", function()
+	local ns, stub = setup()
+	local function shown() return CraftWiseFarmFrame ~= nil and CraftWiseFarmFrame:IsShown() end
+	eq(shown(), false)
+	ns.ToggleProfitFrame()
+	local btn = ns.PF.frame.farmButton
+	assert(btn, "Farm button in the profit window header")
+	eq(btn.text or (btn.label and btn.label.text), "Farm")
+	btn:GetScript("OnClick")(btn)
+	eq(shown(), true); eq(ns.db.farm.shown, true)
+	btn:GetScript("OnClick")(btn)
+	eq(shown(), false); eq(ns.db.farm.shown, false)
+	-- Key binding: Bindings.xml calls the global, its name is set for the Key Bindings list.
+	local xml = assert(io.open("CraftWise/Bindings.xml")):read("*a")
+	assert(xml:find('<Binding name="CRAFTWISE_FARM" header="CRAFTWISE"', 1, true), "binding in Bindings.xml")
+	assert(xml:find("CraftWise_FarmToggle()", 1, true))
+	eq(BINDING_NAME_CRAFTWISE_FARM, "Toggle CraftWise farm tracker"); eq(BINDING_HEADER_CRAFTWISE, "CraftWise")
+	CraftWise_FarmToggle()
+	eq(shown(), true)
+	CraftWise_FarmToggle()
+	eq(shown(), false)
+	-- Settings, Farm section.
+	ns.ToggleSettings()
+	local b = CraftWiseSettings.farmWindow
+	b:GetScript("OnClick")(b)
+	eq(shown(), true)
+	eq(ns.Farm.Current(), nil, "opening the window starts no session")
+end)
+
+----------------------------------------------------------------------------------------------------
+-- Loot log (#130): one line per drop, newest first
+----------------------------------------------------------------------------------------------------
+
+it("log: one line per drop in order, coin as its own lines, zone, time, value like the list; newest first", function()
+	local ns, stub = fishSetup()
+	local F = ns.Farm
+	stub.ah[ORE], stub.ahAge[ORE] = 100, 0
+	loot(stub, ORE, 3)
+	advance(stub, 5)
+	coin(stub, 120)
+	advance(stub, 5)
+	stub.zone = "Westfall"
+	loot(stub, HIDE, 1)
+	advance(stub, 5)
+	catch(stub, { { id = CLOTH }, { copper = 30 } })
+	advance(stub, 5)
+	loot(stub, CLOTH, 2) -- not from the catch: its cloth line came already
+	local s = F.Current()
+	eq(#s.log, 6)
+	local e = F.LogEntries(s)
+	eq(#e, 6)
+	eq(e[6].itemID, ORE); eq(e[6].n, 3); eq(e[6].value, 285); eq(e[6].source, "auction"); eq(e[6].t, T0); eq(e[6].zone, "Elwynn Forest")
+	eq(e[5].copper, 120); eq(e[5].value, 120); eq(e[5].t, T0 + 5); eq(e[5].fish, nil)
+	eq(e[4].itemID, HIDE); eq(e[4].value, nil, "unknown stays unknown"); eq(e[4].zone, "Westfall")
+	eq(e[3].itemID, CLOTH); eq(e[3].fish, true, "the catch's item is marked"); eq(e[3].t, T0 + 15)
+	eq(e[2].copper, 30); eq(e[2].fish, true, "the catch's coin is marked")
+	eq(e[1].itemID, CLOTH); eq(e[1].n, 2); eq(e[1].fish, nil, "later loot of the same item is not")
+	eq(s.logZones[1], "Elwynn Forest"); eq(s.logZones[2], "Westfall"); eq(#s.logZones, 2)
+	-- Remove from the list: its lines leave the log too. Paused: nothing logged.
+	F.RemoveItem(ORE)
+	eq(#F.LogEntries(s), 5)
+	SlashCmdList.CRAFTWISE("farm pause")
+	loot(stub, GEM, 1)
+	eq(#s.log, 5)
+end)
+
+it("log: capped at LOG_MAX lines per session, the oldest dropped and counted", function()
+	local ns, stub = setup()
+	local F = ns.Farm
+	SlashCmdList.CRAFTWISE("farm idle 0")
+	for i = 1, F.LOG_MAX + 25 do
+		loot(stub, i % 2 == 0 and ORE or CLOTH, i)
+		advance(stub, 1)
+	end
+	local s = F.Current()
+	eq(#s.log, F.LOG_MAX); eq(s.logDropped, 25)
+	local e = F.LogEntries(s)
+	eq(e[1].n, F.LOG_MAX + 25, "newest first"); eq(e[#e].n, 26, "the oldest kept")
+	eq(F.Counts(s)[ORE] + F.Counts(s)[CLOTH], (F.LOG_MAX + 25) * (F.LOG_MAX + 26) / 2, "the totals keep everything")
+	ns.FarmFrame.SetView("log")
+	assert(CraftWiseFarmFrame.listHead.text:find("25 older dropped", 1, true), CraftWiseFarmFrame.listHead.text)
+end)
+
+it("log: kept across /reload, in the history, and the snapshot carries only the open session's newest lines", function()
+	local ns, stub = setup()
+	local F = ns.Farm
+	SlashCmdList.CRAFTWISE("farm idle 0")
+	for i = 1, 30 do
+		if i == 25 then stub.zone = "Westfall" end
+		loot(stub, CLOTH, i)
+		advance(stub, 10)
+	end
+	coin(stub, 99)
+	stub.Fire("PLAYER_LOGOUT")
+	local saved = CraftWiseDB
+	local snapCur = saved.snapshots["Forever-EU-Veli"].farm.current
+	eq(#snapCur.log, F.SNAPSHOT_LOG); eq(snapCur.logLines, 31)
+	eq(snapCur.log[#snapCur.log], "300,c,99,2", "the newest last, packed as in the session")
+	eq(snapCur.logZones[1], "Elwynn Forest"); eq(snapCur.logZones[2], "Westfall")
+	-- The next session of the game.
+	local ns2, stub2 = LoadAddon({ savedDB = saved })
+	stub2.names.player, stub2.realm = "Veli", "Forever-EU"
+	time = function() return T0 + 4000 end
+	stub2.Fire("PLAYER_ENTERING_WORLD")
+	local s2 = ns2.Farm.Current()
+	eq(#s2.log, 31)
+	local e = ns2.Farm.LogEntries(s2)
+	eq(e[1].copper, 99); eq(e[2].n, 30); eq(e[2].zone, "Westfall"); eq(e[31].n, 1); eq(e[31].t, T0)
+	ns2.Farm.Reset(T0 + 4000)
+	local h = ns2.Farm.History()[1]
+	eq(#h.log, 31); eq(h.logZones[2], "Westfall")
+	local snap = ns2.Snapshot.Build()
+	eq(snap.farm.sessions[1].logLines, 31); eq(snap.farm.sessions[1].log, nil, "finished sessions: the count only")
+	-- The newest HISTORY_LOGS finished sessions keep their log, older ones the line count.
+	for i = 1, ns2.Farm.HISTORY_LOGS do
+		ns2.Farm.OnFeed("item", { itemID = ORE, count = i })
+		ns2.Farm.Reset(T0 + 4000)
+	end
+	local hist = ns2.Farm.History()
+	eq(#hist[ns2.Farm.HISTORY_LOGS].log, 1)
+	eq(hist[ns2.Farm.HISTORY_LOGS + 1].log, nil); eq(hist[ns2.Farm.HISTORY_LOGS + 1].logLines, 31)
+end)
+
+it("log view: a button switches list and log, remembered in CraftWiseDB.farm.view; rows newest first", function()
+	local ns, stub = fishSetup()
+	local FF = ns.FarmFrame
+	eq(ns.db.farm.view, "list")
+	loot(stub, ORE, 2)
+	advance(stub, 3)
+	coin(stub, 50)
+	advance(stub, 3)
+	catch(stub, { { id = GEM } })
+	local f = CraftWiseFarmFrame
+	FF.Refresh()
+	eq(f.viewButton.label.text, "Log")
+	eq(FF.Rows()[1].shown, true); eq(FF.LogRows()[1].shown, false)
+	f.viewButton:GetScript("OnClick")(f.viewButton)
+	eq(ns.db.farm.view, "log")
+	eq(f.viewButton.label.text, "List")
+	local rows = FF.LogRows()
+	eq(FF.Rows()[1].shown, false)
+	eq(rows[1].data.itemID, GEM)
+	assert(rows[1].name.text:find(FF.FISH_MARK, 1, true), "catch marked")
+	eq(rows[1].time.text, ns.Style.colors.muted .. date("%H:%M:%S", T0 + 6) .. "|r")
+	eq(rows[2].data.copper, 50); eq(rows[2].icon.texture, FF.COIN_ICON); eq(rows[2].value.text, ns.FormatMoney(50))
+	assert(not rows[2].name.text:find(FF.FISH_MARK, 1, true))
+	eq(rows[3].data.itemID, ORE)
+	assert(rows[3].name.text:find("2x", 1, true)); assert(rows[3].zone.text:find("Elwynn Forest", 1, true))
+	eq(rows[4].shown, false)
+	rows[1]:GetScript("OnEnter")(rows[1])
+	-- Remembered: a new load of the addon opens in the log view.
+	local saved = CraftWiseDB
+	local ns2 = LoadAddon({ savedDB = saved })
+	eq(ns2.db.farm.view, "log"); eq(ns2.FarmFrame.View(), "log")
+	f.viewButton:GetScript("OnClick")(f.viewButton)
+	eq(ns.db.farm.view, "list")
+end)

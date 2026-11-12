@@ -451,6 +451,47 @@ type FarmSession struct {
 	Top       []FarmItem `json:"top"`
 	Running   *bool      `json:"running,omitempty"` // current session only
 	Paused    string     `json:"paused,omitempty"`  // current session only: "manual" or "idle"
+	// Fish: the session's fishing (#130); nil without catches.
+	Fish *FarmFish `json:"fish,omitempty"`
+	// Loot log (#130): LogLines = lines the session's log holds, LogDropped = older lines dropped (at most 500
+	// kept). Log = the newest 20 of the current session only, packed "<seconds since start>,<itemID>,<count>,<zone>[,f]"
+	// or "<seconds since start>,c,<copper>,<zone>[,f]"; zone = 1-based index into LogZones, f = from a fishing catch.
+	LogLines   *int64   `json:"logLines,omitempty"`
+	LogDropped *int64   `json:"logDropped,omitempty"`
+	Log        []string `json:"log,omitempty"`
+	LogZones   []string `json:"logZones,omitempty"`
+}
+
+// FarmFish is a session's fishing (#130). Items valued like the session's items; Unknown = caught units
+// without a price (not in Items). Rates: catches/h = Timed*3600/Seconds, gold/h = (Coin+Items)/Catches *
+// Timed*3600/Seconds (Seconds = time between catches at most 120 s apart, Timed = catches it was measured for).
+type FarmFish struct {
+	Catches   *int64         `json:"catches,omitempty"`
+	Timed     *int64         `json:"timed,omitempty"`
+	Seconds   *int64         `json:"seconds,omitempty"`
+	Coin      *int64         `json:"coin,omitempty"`
+	Items     *int64         `json:"items,omitempty"`
+	Unknown   *int64         `json:"unknown,omitempty"`
+	Opened    *int64         `json:"opened,omitempty"` // caught containers opened; their contents are in Items
+	Best      *FarmFishBest  `json:"best,omitempty"`
+	Zones     []FarmFishZone `json:"zones,omitempty"` // most catches first; nil when all in one zone
+	ZonesMore *int64         `json:"zonesMore,omitempty"`
+}
+
+type FarmFishBest struct {
+	ID    int64  `json:"id"`
+	Value *int64 `json:"value,omitempty"` // per unit
+}
+
+type FarmFishZone struct {
+	Zone    string `json:"zone,omitempty"`
+	Catches *int64 `json:"catches,omitempty"`
+	Timed   *int64 `json:"timed,omitempty"`
+	Seconds *int64 `json:"seconds,omitempty"`
+	Coin    *int64 `json:"coin,omitempty"`
+	Items   *int64 `json:"items,omitempty"`
+	Unknown *int64 `json:"unknown,omitempty"`
+	Opened  *int64 `json:"opened,omitempty"`
 }
 
 type FarmZone struct {
