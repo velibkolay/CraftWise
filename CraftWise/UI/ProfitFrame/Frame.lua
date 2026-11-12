@@ -15,7 +15,7 @@ local function BuildHeader()
 	title:SetPoint("TOPLEFT", PAD, -16)
 	title:SetText("|cffffffffCraftWise|r")
 	local subtitle = PF.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
+	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3) -- below the title: the header row holds the Records button
 	subtitle:SetText(Muted("Profit, gear, loot, fishing"))
 
 	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Level | Upgrades | Bags | Fishing | Music.
@@ -59,6 +59,24 @@ local function BuildHeader()
 		GameTooltip:Hide()
 	end)
 	PF.frame.farmButton = farmBtn
+	-- Records (#137): ledger, auctions, crates, fishing log, market, where to buy, snapshot (UI/Records/).
+	local recordsBtn = Style.Button(PF.frame, 70, 24, L["Records"])
+	recordsBtn:SetPoint("RIGHT", farmBtn, "LEFT", -6, 0)
+	recordsBtn:SetScript("OnClick", function()
+		ns.ToggleRecords()
+	end)
+	recordsBtn:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L["Records"])
+		GameTooltip:AddLine(L["Ledger, auctions, Waylaid crates, fishing log, market prices and scans, where to buy, snapshot."],
+			0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	recordsBtn:SetScript("OnLeave", function(self)
+		GameTooltip:Hide()
+		self:SetSelected(false)
+	end)
+	PF.frame.recordsButton = recordsBtn
 
 	local close = Style.CloseButton(PF.frame, function()
 		PF.frame:Hide()

@@ -3,6 +3,8 @@
 -- Profit prices (#26 phase 2): price basis and the auction house profit uses.
 -- Reagent cost per view (#47): AH or paid cost.
 -- Loot toast (#114) and farm tracker (#126) on/off.
+-- Two columns (#137): the right one holds every switch a slash command has (loot toast move/test/duration/value,
+-- farm lock/idle/scale/history, fishing session gap and own-catch minimum, minimap button).
 local _, ns = ...
 local Style = ns.Style
 local C = Style.colors
@@ -14,11 +16,40 @@ local function T()
 	return ns.db.tooltip
 end
 
+-- A setting with - / +: label, value text (set in render), change(dir) with dir -1 or 1, then a re-render.
+local steppers = {}
+local function Stepper(x, y, label, change)
+	local text = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	text:SetPoint("TOPLEFT", x, y - 5)
+	text:SetWidth(150)
+	text:SetJustifyH("LEFT")
+	text:SetText(label)
+	local down = Style.Button(panel, 24, 22, "-")
+	down:SetPoint("TOPLEFT", x + 156, y)
+	local value = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	value:SetPoint("LEFT", down, "RIGHT", 4, 0)
+	value:SetWidth(52)
+	local up = Style.Button(panel, 24, 22, "+")
+	up:SetPoint("LEFT", value, "RIGHT", 4, 0)
+	local s = { value = value, down = down, up = up }
+	local function click(dir)
+		return function()
+			change(dir)
+			panel.render()
+		end
+	end
+	down:SetScript("OnClick", click(-1))
+	up:SetScript("OnClick", click(1))
+	steppers[#steppers + 1] = s
+	return s
+end
+
 local function Build(parent)
 	panel = CreateFrame("Frame", "CraftWiseSettings", parent or UIParent, "BackdropTemplate")
 	panel:SetFrameStrata("DIALOG")
-	panel:SetSize(316, 240)
+	panel:SetSize(632, 240)
 	panel:EnableMouse(true)
+	panel:SetClampedToScreen(true)
 	Style.Panel(panel)
 	table.insert(UISpecialFrames, "CraftWiseSettings")
 	local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -144,54 +175,145 @@ local function Build(parent)
 	panel.basisHint:SetPoint("TOPLEFT", 12, basisY - 18 - #ns.COST_BASIS_VIEWS * 26)
 	panel.basisHint:SetWidth(292)
 	panel.basisHint:SetJustifyH("LEFT")
-	panel.basisHint:SetText(C.muted .. L["Paid cost: what you paid for the units you hold (/craftwise ledger); a reagent without one uses AH. Intermediates you can craft cost the cheaper of crafting and buying, unless they have a paid cost."] .. "|r")
+	panel.basisHint:SetText(C.muted .. L["Paid cost: what you paid for the units you hold (Records > Ledger); a reagent without one uses AH. Intermediates you can craft cost the cheaper of crafting and buying, unless they have a paid cost."] .. "|r")
+
+	-- Right column (#137): every switch a slash command has (loot toast, farm tracker, fishing, minimap).
+	local RX, RW_ = 332, 288
+	local function Head(y, text)
+		local h = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		h:SetPoint("TOPLEFT", RX, y)
+		h:SetText(C.muted .. text .. "|r")
+		return h
+	end
+	local function Hint(y, text)
+		local h = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		h:SetPoint("TOPLEFT", RX, y)
+		h:SetWidth(RW_)
+		h:SetJustifyH("LEFT")
+		if text then
+			h:SetText(C.muted .. text .. "|r")
+		end
+		return h
+	end
 
 	-- Fast auto-loot (Loot.lua, #41).
-	local lootY = basisY - 18 - #ns.COST_BASIS_VIEWS * 26 - 52
+	Head(-34, L["Loot"])
 	panel.fastLoot = Style.Check(panel, L["Fast auto-loot"], ns.Loot.Enabled(), function(v)
 		ns.Loot.SetEnabled(v)
 		panel.render()
 	end)
-	panel.fastLoot:SetPoint("TOPLEFT", 12, lootY)
-	panel.lootHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	panel.lootHint:SetPoint("TOPLEFT", 12, lootY - 22)
-	panel.lootHint:SetWidth(292)
-	panel.lootHint:SetJustifyH("LEFT")
-	-- Loot toast (LootToast.lua, #114).
-	local toastY = lootY - 52
-	panel.lootToast = Style.Check(panel, L["Loot toast"], ns.LootToast.Enabled(), function(v)
+	panel.fastLoot:SetPoint("TOPLEFT", RX, -54)
+	panel.lootHint = Hint(-76)
+
+	-- Loot toast (LootToast.lua, #114): on/off, value, move, test, reset, duration.
+	local toastY = -112
+	Head(toastY, L["Loot toast"])
+	panel.lootToast = Style.Check(panel, L["Show what you loot"], ns.LootToast.Enabled(), function(v)
 		ns.LootToast.Slash(v and "on" or "off")
 		panel.render()
 	end)
-	panel.lootToast:SetPoint("TOPLEFT", 12, toastY)
-	panel.toastHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	panel.toastHint:SetPoint("TOPLEFT", 12, toastY - 22)
-	panel.toastHint:SetWidth(292)
-	panel.toastHint:SetJustifyH("LEFT")
-	panel.toastHint:SetText(C.muted .. L["Shows what you loot for a few seconds. Move it: /craftwise loottoast unlock"] .. "|r")
-	-- Farm tracker (Farm.lua, #126).
-	local farmY = toastY - 52
+	panel.lootToast:SetPoint("TOPLEFT", RX, toastY - 18)
+	panel.toastValue = Style.Check(panel, L["With value"], ns.db.lootToast.value ~= false, function(v)
+		ns.db.lootToast.value = v
+		panel.render()
+	end)
+	panel.toastValue:SetPoint("TOPLEFT", RX + 170, toastY - 18)
+	panel.toastMove = Style.Button(panel, 90, 22, L["Move"])
+	panel.toastMove:SetPoint("TOPLEFT", RX, toastY - 42)
+	panel.toastMove:SetScript("OnClick", function()
+		ns.LootToast.Slash(ns.db.lootToast.locked == false and "lock" or "unlock")
+		panel.render()
+	end)
+	panel.toastTest = Style.Button(panel, 70, 22, L["Test"])
+	panel.toastTest:SetPoint("LEFT", panel.toastMove, "RIGHT", 6, 0)
+	panel.toastTest:SetScript("OnClick", function()
+		ns.LootToast.Slash("test")
+	end)
+	panel.toastReset = Style.Button(panel, 110, 22, L["Reset position"])
+	panel.toastReset:SetPoint("LEFT", panel.toastTest, "RIGHT", 6, 0)
+	panel.toastReset:SetScript("OnClick", function()
+		ns.LootToast.Slash("reset")
+	end)
+	panel.toastDuration = Stepper(RX, toastY - 72, L["Lines stay"], function(dir)
+		local T = ns.LootToast
+		local v = math.max(T.MIN_DURATION, math.min(T.MAX_DURATION, T.Duration() + dir))
+		ns.db.lootToast.duration = v
+	end)
+
+	-- Farm tracker (Farm.lua, #126): on/off, autostart, lock, idle pause, scale, window, history.
+	local farmY = toastY - 104
+	Head(farmY, L["Farm tracker"])
 	panel.farm = Style.Check(panel, L["Farm tracker"], ns.Farm.Enabled(), function(v)
 		ns.Farm.Slash(v and "on" or "off")
 		panel.render()
 	end)
-	panel.farm:SetPoint("TOPLEFT", 12, farmY)
+	panel.farm:SetPoint("TOPLEFT", RX, farmY - 18)
 	panel.farmAuto = Style.Check(panel, L["Start on first loot"], ns.Farm.AutoStart(), function(v)
 		ns.Farm.Slash(v and "autostart on" or "autostart off")
 		panel.render()
 	end)
-	panel.farmAuto:SetPoint("TOPLEFT", 150, farmY)
-	panel.farmHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	panel.farmHint:SetPoint("TOPLEFT", 12, farmY - 22)
-	panel.farmHint:SetWidth(292)
-	panel.farmHint:SetJustifyH("LEFT")
-	panel.farmHint:SetText(C.muted .. L["Gold per hour while farming, valued with CraftWise prices. Window: /craftwise farm, the Farm button or a key binding."] .. "|r")
-	panel.farmWindow = Style.Button(panel, 110, 20, L["Farm window"])
-	panel.farmWindow:SetPoint("TOPLEFT", 12, farmY - 52)
+	panel.farmAuto:SetPoint("TOPLEFT", RX + 150, farmY - 18)
+	panel.farmLock = Style.Check(panel, L["Lock window"], ns.db.farm.locked and true or false, function(v)
+		ns.Farm.Slash(v and "lock" or "unlock")
+		panel.render()
+	end)
+	panel.farmLock:SetPoint("TOPLEFT", RX, farmY - 40)
+	panel.farmIdle = Stepper(RX, farmY - 66, L["Pause when idle"], function(dir)
+		local v = ns.Farm.IdleMinutes() + dir * (ns.Farm.IdleMinutes() + dir >= 10 and 5 or 1)
+		ns.db.farm.idleMinutes = math.max(0, math.min(ns.Farm.MAX_IDLE, v))
+	end)
+	panel.farmScale = Stepper(RX, farmY - 94, L["Window scale"], function(dir)
+		local cur = tonumber(ns.db.farm.scale) or 1
+		local v = math.floor((cur + dir * 0.1) * 10 + 0.5) / 10
+		v = math.max(ns.Farm.MIN_SCALE, math.min(ns.Farm.MAX_SCALE, v))
+		ns.Farm.Slash(("scale %g"):format(v))
+	end)
+	panel.farmWindow = Style.Button(panel, 110, 22, L["Farm window"])
+	panel.farmWindow:SetPoint("TOPLEFT", RX, farmY - 124)
 	panel.farmWindow:SetScript("OnClick", function()
 		ns.Farm.Slash("toggle")
 	end)
-	panel:SetHeight(-farmY + 84)
+	panel.farmHistory = Style.Button(panel, 110, 22, L["Farm history"])
+	panel.farmHistory:SetPoint("LEFT", panel.farmWindow, "RIGHT", 6, 0)
+	panel.farmHistory:SetScript("OnClick", function()
+		if ns.FarmHistory then
+			ns.FarmHistory.Open()
+		end
+	end)
+	panel.farmHint = Hint(farmY - 152, L["Gold per hour while farming, valued with CraftWise prices. Also: the Farm button or a key binding."])
+
+	-- Fishing (FishingTables.lua #86, FishingZones.lua #88): session gap and own-catch minimum.
+	local fishY = farmY - 190
+	Head(fishY, L["Fishing"])
+	panel.fishGap = Stepper(RX, fishY - 22, L["Session gap"], function(dir)
+		ns.db.settings.fishingSessionGap = math.max(1, math.min(60, ns.Fishing.SessionGap() + dir))
+	end)
+	panel.fishOwnMin = Stepper(RX, fishY - 50, L["Own catches count from"], function(dir)
+		local cur = ns.FishingZones.OwnMin()
+		local step = cur + dir * 10 >= 10 and 10 or 1
+		ns.db.settings.fishingOwnMin = math.max(1, math.min(1000, cur + dir * step))
+		if ns.RefreshProfitFrame then
+			ns.RefreshProfitFrame()
+		end
+	end)
+	Hint(fishY - 74, L["Gap: catches closer than this are one session (per hour). Below the count, a zone shows the local reference."])
+
+	-- Other.
+	local otherY = fishY - 110
+	Head(otherY, L["Other"])
+	panel.minimap = Style.Check(panel, L["Minimap button"], not ns.db.minimap.hide, function(v)
+		if (not ns.db.minimap.hide) ~= v then
+			ns.ToggleMinimapButton()
+		end
+		panel.render()
+	end)
+	panel.minimap:SetPoint("TOPLEFT", RX, otherY - 18)
+	panel.records = Style.Button(panel, 110, 22, L["Records"])
+	panel.records:SetPoint("TOPLEFT", RX + 150, otherY - 16)
+	panel.records:SetScript("OnClick", function()
+		ns.ToggleRecords()
+	end)
+	panel:SetHeight(math.max(-otherY + 56, 640))
 
 	function panel.render()
 		for key, b in pairs(panel.clicks) do
@@ -235,10 +357,22 @@ local function Build(parent)
 			end
 		end
 		panel.fastLoot:SetChecked(ns.Loot.Enabled())
+		local toast = ns.db.lootToast
 		panel.lootToast:SetChecked(ns.LootToast.Enabled())
+		panel.toastValue:SetChecked(toast.value ~= false)
+		panel.toastMove:SetLabel(toast.locked == false and L["Lock"] or L["Move"])
+		panel.toastMove:SetSelected(toast.locked == false)
+		panel.toastDuration.value:SetText(("%gs"):format(ns.LootToast.Duration()))
 		panel.farm:SetChecked(ns.Farm.Enabled())
 		panel.farmAuto:SetChecked(ns.Farm.AutoStart())
 		panel.farmAuto:SetAlpha(ns.Farm.Enabled() and 1 or 0.4)
+		panel.farmLock:SetChecked(ns.db.farm.locked and true or false)
+		local idle = ns.Farm.IdleMinutes()
+		panel.farmIdle.value:SetText(idle > 0 and (idle .. " min") or L["never"])
+		panel.farmScale.value:SetText(("%.1f"):format(tonumber(ns.db.farm.scale) or 1))
+		panel.fishGap.value:SetText(ns.Fishing.SessionGap() .. " min")
+		panel.fishOwnMin.value:SetText(tostring(ns.FishingZones.OwnMin()))
+		panel.minimap:SetChecked(not ns.db.minimap.hide)
 		local other = ns.Loot.Conflict()
 		panel.fastLoot:SetAlpha(other and 0.4 or 1)
 		panel.lootHint:SetText(C.muted .. (other and (other .. " " .. L["is loaded, so CraftWise does not loot."])

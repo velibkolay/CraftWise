@@ -67,4 +67,13 @@ UI\ProfitFrame\Layout.lua
 UI\ProfitFrame\Refresh.lua
 UI\ProfitFrame\Frame.lua
 UI\ProfitFrame\Events.lua
+UI\Records\State.lua
+UI\Records\Ledger.lua
+UI\Records\Auctions.lua
+UI\Records\Crates.lua
+UI\Records\FishingLog.lua
+UI\Records\Market.lua
+UI\Records\Where.lua
+UI\Records\Snapshot.lua
+UI\Records\Frame.lua
 UI\MinimapButton.lua
