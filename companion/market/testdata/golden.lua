@@ -10560,6 +10560,7 @@ CraftWiseItemInfoGolden = {
 ["decoded"] = {
 ["c"] = 7,
 ["i"] = 134190,
+["p"] = 5,
 ["q"] = 1,
 ["s"] = 9,
 ["t"] = 1792115136,
@@ -10567,27 +10568,30 @@ CraftWiseItemInfoGolden = {
 ["input"] = {
 ["c"] = 7,
 ["i"] = 134190,
+["p"] = 5,
 ["q"] = 1,
 ["s"] = 9,
 },
 ["name"] = "everything known",
-["packed"] = "1,2vji,7,9,tmz8w0",
+["packed"] = "1,2vji,7,9,tmz8w0,5",
 ["t"] = 1792115136,
 },
 {
 ["decoded"] = {
 ["c"] = 7,
+["p"] = 25,
 ["q"] = 1,
 ["s"] = 9,
 ["t"] = 1792115136,
 },
 ["input"] = {
 ["c"] = 7,
+["p"] = 25,
 ["q"] = 1,
 ["s"] = 9,
 },
 ["name"] = "no icon",
-["packed"] = "1,,7,9,tmz8w0",
+["packed"] = "1,,7,9,tmz8w0,p",
 ["t"] = 1792115136,
 },
 {
@@ -10599,13 +10603,14 @@ CraftWiseItemInfoGolden = {
 ["q"] = 4,
 },
 ["name"] = "quality only",
-["packed"] = "4,,,,to3n9c",
+["packed"] = "4,,,,to3n9c,",
 ["t"] = 1794000000,
 },
 {
 ["decoded"] = {
 ["c"] = 0,
 ["i"] = 0,
+["p"] = 0,
 ["q"] = 0,
 ["s"] = 0,
 ["t"] = 0,
@@ -10613,11 +10618,12 @@ CraftWiseItemInfoGolden = {
 ["input"] = {
 ["c"] = 0,
 ["i"] = 0,
+["p"] = 0,
 ["q"] = 0,
 ["s"] = 0,
 },
 ["name"] = "zeros",
-["packed"] = "0,0,0,0,0",
+["packed"] = "0,0,0,0,0,0",
 ["t"] = 0,
 },
 {
@@ -10629,17 +10635,19 @@ CraftWiseItemInfoGolden = {
 ["input"] = {
 ["c"] = -5,
 ["i"] = -1,
+["p"] = -1,
 ["q"] = 2,
 ["s"] = 3,
 },
 ["name"] = "negative fields stay unknown",
-["packed"] = "2,,,3,to3n9c",
+["packed"] = "2,,,3,to3n9c,",
 ["t"] = 1794000000,
 },
 {
 ["decoded"] = {
 ["c"] = 15,
 ["i"] = 4294967295,
+["p"] = 2147483647,
 ["q"] = 3,
 ["s"] = 0,
 ["t"] = 1794000001,
@@ -10647,12 +10655,70 @@ CraftWiseItemInfoGolden = {
 ["input"] = {
 ["c"] = 15,
 ["i"] = 4294967295,
+["p"] = 2147483647,
 ["q"] = 3,
 ["s"] = 0,
 },
-["name"] = "big icon ID",
-["packed"] = "3,1z141z3,f,0,to3n9d",
+["name"] = "big icon ID and sell price",
+["packed"] = "3,1z141z3,f,0,to3n9d,zik0zj",
 ["t"] = 1794000001,
+},
+{
+["decoded"] = {
+["c"] = 2,
+["i"] = 1,
+["p"] = 1234567,
+["q"] = 1,
+["s"] = 3,
+},
+["input"] = {
+["c"] = 2,
+["i"] = 1,
+["p"] = 1234567,
+["q"] = 1,
+["s"] = 3,
+},
+["name"] = "no time",
+["packed"] = "1,1,2,3,,qglj",
+},
+{
+["decoded"] = {
+["c"] = 2,
+["i"] = 135321,
+["q"] = 2,
+["s"] = 7,
+["t"] = 1794000000,
+},
+["input"] = {
+["c"] = 2,
+["i"] = 135321,
+["q"] = 2,
+["s"] = 7,
+},
+["name"] = "no sell price",
+["packed"] = "2,2wex,2,7,to3n9c,",
+["t"] = 1794000000,
+},
+}
+CraftWiseItemInfoV1Golden = {
+{
+["decoded"] = {
+["c"] = 7,
+["i"] = 134190,
+["q"] = 1,
+["s"] = 9,
+["t"] = 1794000000,
+},
+["name"] = "format 1, everything known",
+["packed"] = "1,2vji,7,9,to3n9c",
+},
+{
+["decoded"] = {
+["q"] = 4,
+["t"] = 1794000000,
+},
+["name"] = "format 1, quality only",
+["packed"] = "4,,,,to3n9c",
 },
 {
 ["decoded"] = {
@@ -10661,13 +10727,7 @@ CraftWiseItemInfoGolden = {
 ["q"] = 1,
 ["s"] = 3,
 },
-["input"] = {
-["c"] = 2,
-["i"] = 1,
-["q"] = 1,
-["s"] = 3,
-},
-["name"] = "no time",
+["name"] = "format 1, no time",
 ["packed"] = "1,1,2,3,",
 },
 }

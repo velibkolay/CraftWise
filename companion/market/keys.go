@@ -80,18 +80,21 @@ func DecodeAuctionator(s string) (AuctionatorPrice, error) {
 }
 
 // ItemInfo is one CraftWiseMarketDB.itemInfo value (#92): quality (Enum.ItemQuality), icon file ID,
-// class and subclass ID as the client returned them, and when CraftWise read them. A field the
-// client didn't give is nil. The name is not here: it is CraftWiseMarketDB.names[itemID].
+// class and subclass ID as the client returned them, when CraftWise read them, and what a vendor pays
+// for one unit (#120; 0 = vendors don't buy it). A field the client didn't give is nil. The name is
+// not here: it is CraftWiseMarketDB.names[itemID].
 type ItemInfo struct {
-	Quality  *int64 `json:"q,omitempty"`
-	Icon     *int64 `json:"i,omitempty"`
-	Class    *int64 `json:"c,omitempty"`
-	Subclass *int64 `json:"s,omitempty"`
-	T        *int64 `json:"t,omitempty"`
+	Quality   *int64 `json:"q,omitempty"`
+	Icon      *int64 `json:"i,omitempty"`
+	Class     *int64 `json:"c,omitempty"`
+	Subclass  *int64 `json:"s,omitempty"`
+	T         *int64 `json:"t,omitempty"`
+	SellPrice *int64 `json:"p,omitempty"`
 }
 
-// EncodeItemInfo packs item info as Market.lua's EncodeItemInfo does: "q,i,c,s,t" in base 36, an
-// unknown field empty. Unlike the price records, a negative number is written as unknown, not as 0.
+// EncodeItemInfo packs item info as Market.lua's EncodeItemInfo does (format 2, #120): "q,i,c,s,t,p"
+// in base 36, an unknown field empty. Unlike the price records, a negative number is written as
+// unknown, not as 0.
 func EncodeItemInfo(info ItemInfo) string {
 	field := func(p *int64) string {
 		if p == nil || *p < 0 {
@@ -99,18 +102,23 @@ func EncodeItemInfo(info ItemInfo) string {
 		}
 		return base36(*p)
 	}
-	return field(info.Quality) + "," + field(info.Icon) + "," + field(info.Class) + "," + field(info.Subclass) + "," + field(info.T)
+	return field(info.Quality) + "," + field(info.Icon) + "," + field(info.Class) + "," + field(info.Subclass) + "," +
+		field(info.T) + "," + field(info.SellPrice)
 }
 
-// DecodeItemInfo reads "q,i,c,s,t" (Market.lua ItemInfo).
+// DecodeItemInfo reads "q,i,c,s,t,p" (Market.lua ItemInfo), or a format 1 string "q,i,c,s,t" written
+// before #120 (no sell price).
 func DecodeItemInfo(s string) (ItemInfo, error) {
 	f := strings.Split(s, ",")
-	if len(f) != 5 {
-		return ItemInfo{}, malformed("item info %q: want 5 fields", s)
+	if len(f) != 5 && len(f) != 6 {
+		return ItemInfo{}, malformed("item info %q: want 5 or 6 fields", s)
 	}
 	var out ItemInfo
 	var err error
-	for i, dst := range []**int64{&out.Quality, &out.Icon, &out.Class, &out.Subclass, &out.T} {
+	for i, dst := range []**int64{&out.Quality, &out.Icon, &out.Class, &out.Subclass, &out.T, &out.SellPrice} {
+		if i >= len(f) {
+			break
+		}
 		if *dst, err = num(f[i]); err != nil {
 			return ItemInfo{}, err
 		}

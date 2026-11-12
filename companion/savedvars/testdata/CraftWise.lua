@@ -578,6 +578,10 @@ CraftWiseMarketDB = {
 },
 ["v"] = 1,
 },
+["classNames"] = {
+[4] = "Test Armour",
+[7] = "Test Goods",
+},
 ["cutSamples"] = {
 },
 ["houses"] = {
@@ -597,16 +601,17 @@ CraftWiseMarketDB = {
 },
 },
 ["itemInfo"] = {
-[9001] = "1,255t,7,5,tnzxxc",
-[9002] = "1,255u,,,tnzxxc",
-[9003] = "1,,,,tnzxxc",
-[9004] = "1,,,,tnzxxc",
-[9005] = "2,255x,4,2,tnzxxc",
-[9006] = "1,,,,tnzxxc",
-[9007] = "1,,,,to3rzc",
-[9008] = "1,,,,tnzy0o",
-[9009] = "1,,,,to3rzc",
+[9001] = "1,255t,7,5,tnzxxc,d",
+[9002] = "1,255u,,,tnzxxc,1e",
+[9003] = "1,,,,tnzxxc,5",
+[9004] = "1,,,,tnzxxc,p",
+[9005] = "2,255x,4,2,tnzxxc,8c",
+[9006] = "1,,,,tnzxxc,p0",
+[9007] = "1,,,,to3rzc,6",
+[9008] = "1,,,,tnzy0o,k",
+[9009] = "1,,,,to3rzc,2s",
 },
+["itemInfoV"] = 2,
 ["items"] = {
 [9001] = {
 ["Stub Realm|H"] = "to3rio,39,c,1|1nc3qxc,14,2,,78,a,k,u;3s40,c,1,,6i,c|w1e,2z,s,2q,5i,b,1,;2,3m,0,k,14,2,1,i;2,39,0,0,c,1,1,",
@@ -766,6 +771,14 @@ CraftWiseMarketDB = {
 },
 ["skillLines"] = {
 [165] = true,
+},
+},
+["subclassNames"] = {
+[4] = {
+[2] = "Test Leather",
+},
+[7] = {
+[5] = "Test Cloth Type",
 },
 },
 ["v"] = 1,

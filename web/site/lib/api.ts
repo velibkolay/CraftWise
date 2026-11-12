@@ -31,6 +31,11 @@ export interface ItemInfo {
 	icon: number | null;
 	class: number | null;
 	subclass: number | null;
+	// The client's names (#120), null when the addon hasn't uploaded them; the vendor sell price per unit
+	// (0 = vendors don't buy it, null = not known).
+	className: string | null;
+	subclassName: string | null;
+	sellPrice: number | null;
 }
 
 export interface BrowseItem extends ItemInfo {
@@ -52,7 +57,7 @@ export interface Categories {
 	house: string;
 	label: string;
 	lastScan: number | null;
-	categories: { class: number | null; subclass: number | null; items: number }[];
+	categories: { class: number | null; subclass: number | null; className: string | null; subclassName: string | null; items: number }[];
 }
 
 export interface Market {

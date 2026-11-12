@@ -22,11 +22,13 @@ beforeAll(async () => {
 			{ house: BOOTY, t: t0 - 3600, kind: "full", items: 1, lastOnly: 0, source: "ui" },
 		],
 		items: {
-			"2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5 },
+			"2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5, p: 13 },
 			"2447": { n: "Peacebloom", q: 1, i: 133939, c: 7, s: 9 },
 			"8831": { n: "Purple Lotus", q: 1 },
 			"765": { n: "Silverleaf", q: 1 },
 		},
+		classNames: { "7": "Trade Goods" },
+		subclassNames: { "7": { "5": "Cloth", "9": "Herb" } },
 		prices: [
 			{
 				item: "2589",
@@ -80,6 +82,11 @@ describe("public read API", () => {
 		]);
 		body = await (await call("GET", "/api/items?q=2447")).json();
 		expect(body.items.map((i) => i.name)).toEqual(["Peacebloom"]);
+		// #120: the client's names and the sell price with every item (null when not uploaded)
+		const names = await (await call("GET", "/api/items?q=lotus")).json<{ items: Record<string, unknown>[] }>();
+		expect(names.items[0]).toMatchObject({ class: null, className: null, subclassName: null, sellPrice: null });
+		const herb = await (await call("GET", "/api/items?q=peace")).json<{ items: Record<string, unknown>[] }>();
+		expect(herb.items[0]).toMatchObject({ class: 7, subclass: 9, className: "Trade Goods", subclassName: "Herb", sellPrice: null });
 		body = await (await call("GET", "/api/items?q=zzz")).json();
 		expect(body.items).toEqual([]);
 		expect((await call("GET", "/api/items?q=a")).status).toBe(400);
@@ -89,7 +96,19 @@ describe("public read API", () => {
 		const res = await call("GET", "/api/items/2589");
 		expect(res.status).toBe(200);
 		const body = await res.json<{ item: Record<string, unknown>; markets: Record<string, unknown>[] }>();
-		expect(body.item).toEqual({ id: 2589, name: "Linen Cloth", quality: 1, icon: 132889, class: 7, subclass: 5 });
+		expect(body.item).toEqual({
+			id: 2589,
+			name: "Linen Cloth",
+			quality: 1,
+			icon: 132889,
+			class: 7,
+			subclass: 5,
+			className: "Trade Goods",
+			subclassName: "Cloth",
+			sellPrice: 13,
+		});
+		const lotus = await (await call("GET", "/api/items/8831")).json<{ item: Record<string, unknown> }>();
+		expect(lotus.item).toMatchObject({ class: null, className: null, subclassName: null, sellPrice: null });
 		expect(body.markets).toHaveLength(2);
 		const horde = body.markets[0]!;
 		expect(horde).toMatchObject({

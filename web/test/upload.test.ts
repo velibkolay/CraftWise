@@ -114,7 +114,7 @@ describe("POST /api/upload: storage", () => {
 		const res = await upload(token, payload(t));
 		expect(res.status).toBe(200);
 		const out = await res.json<{ received: Record<string, number>; rowsWritten: number }>();
-		expect(out.received).toEqual({ houses: 2, scans: 2, items: 3, prices: 4, points: 2, days: 3 });
+		expect(out.received).toEqual({ houses: 2, scans: 2, items: 3, classNames: 0, prices: 4, points: 2, days: 3 });
 		expect(out.rowsWritten).toBeGreaterThan(0);
 
 		const h = await one<{ id: number; last_scan: number; last_full_scan: number; last_full_scan_items: number }>(
@@ -234,6 +234,56 @@ describe("POST /api/upload: storage", () => {
 		expect(await one("SELECT name, quality, icon FROM items WHERE id = 8831")).toEqual({ name: "Black Lotus", quality: 1, icon: 134200 });
 		const words = await env.DB.prepare("SELECT word FROM item_words WHERE item = 8831 ORDER BY word").all();
 		expect(words.results).toEqual([{ word: "black" }, { word: "lotus" }]);
+	});
+});
+
+describe("POST /api/upload: class names and sell prices (#120)", () => {
+	const base = { v: 1, houses: houses() };
+	const rows = async (res: Response) => {
+		expect(res.status).toBe(200);
+		return (await res.json<{ rowsWritten: number; itemsChanged: number }>());
+	};
+
+	it("stores the sell price with the item info; a later price for a known item writes that row only", async () => {
+		// an item from before #120: info without a sell price
+		await upload(token, { ...base, items: { "2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5 } } });
+		expect(await one("SELECT sell_price FROM items WHERE id = 2589")).toEqual({ sell_price: null });
+		// the sell price arrives (name unchanged: no search words rewritten)
+		let out = await rows(await upload(token, { ...base, items: { "2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5, p: 13 } } }));
+		expect(out.itemsChanged).toBe(1);
+		expect(out.rowsWritten).toBe(2); // the item row and the token's rate-limit row
+		expect(await one("SELECT name, quality, sell_price FROM items WHERE id = 2589")).toEqual({ name: "Linen Cloth", quality: 1, sell_price: 13 });
+		// the same again, or info without p: nothing written, the stored price stays
+		out = await rows(await upload(token, { ...base, items: { "2589": { n: "Linen Cloth", q: 1, i: 132889, c: 7, s: 5, p: 13 } } }));
+		expect([out.itemsChanged, out.rowsWritten]).toEqual([0, 1]);
+		out = await rows(await upload(token, { ...base, items: { "2589": { q: 1 } } }));
+		expect([out.itemsChanged, out.rowsWritten]).toEqual([0, 1]);
+		expect(await one("SELECT sell_price FROM items WHERE id = 2589")).toEqual({ sell_price: 13 });
+		// 0: vendors don't buy it (a value, not missing)
+		out = await rows(await upload(token, { ...base, items: { "2589": { p: 0 } } }));
+		expect(out.itemsChanged).toBe(1);
+		expect(await one("SELECT sell_price FROM items WHERE id = 2589")).toEqual({ sell_price: 0 });
+	});
+
+	it("stores class and subclass names, writing a row only when a name changed", async () => {
+		const names = { classNames: { "7": "Trade Goods", "0": "Consumable" }, subclassNames: { "7": { "9": "Herb", "5": "Cloth" } } };
+		await upload(token, base); // the houses
+		let res = await upload(token, { ...base, ...names });
+		const first = await rows(res.clone());
+		expect(first.rowsWritten).toBe(5);
+		expect((await res.json<{ received: { classNames: number } }>()).received.classNames).toBe(4);
+		expect((await env.DB.prepare("SELECT class, name FROM item_classes ORDER BY class").all()).results).toEqual([
+			{ class: 0, name: "Consumable" },
+			{ class: 7, name: "Trade Goods" },
+		]);
+		expect((await env.DB.prepare("SELECT class, subclass, name FROM item_subclasses ORDER BY subclass").all()).results).toEqual([
+			{ class: 7, subclass: 5, name: "Cloth" },
+			{ class: 7, subclass: 9, name: "Herb" },
+		]);
+		expect((await rows(await upload(token, { ...base, ...names }))).rowsWritten).toBe(1);
+		res = await upload(token, { ...base, classNames: { "7": "Handwerkswaren" }, subclassNames: { "7": { "9": "Herb" } } });
+		expect((await rows(res)).rowsWritten).toBe(2);
+		expect(await one("SELECT name FROM item_classes WHERE class = 7")).toEqual({ name: "Handwerkswaren" });
 	});
 });
 

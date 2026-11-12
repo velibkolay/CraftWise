@@ -196,14 +196,17 @@ export function humanize(id: string): string {
 	return id.replace(/([a-z])([A-Z][a-z])/g, "$1 $2").replace(/([A-Z])([A-Z][a-z])/g, "$1 $2");
 }
 
-export function className(cls: number | null): string {
+// The client's own name when the addon uploaded one (#120), else the enum identifier, else the number.
+export function className(cls: number | null, uploaded?: string | null): string {
 	if (cls === null) return "No item info yet";
+	if (uploaded) return uploaded;
 	const n = ITEM_CLASS[cls];
 	return n ? humanize(n) : `Class ${cls}`;
 }
 
-export function subclassName(cls: number | null, sub: number | null): string {
+export function subclassName(cls: number | null, sub: number | null, uploaded?: string | null): string {
 	if (cls === null || sub === null) return "No item info yet";
+	if (uploaded) return uploaded;
 	const n = ITEM_SUBCLASS[cls]?.[sub];
 	return n ? humanize(n) : `Subclass ${sub}`;
 }
@@ -251,4 +254,30 @@ export function ticks(lo: number, hi: number, count = 5): number[] {
 	const out: number[] = [];
 	for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(Math.round(v));
 	return out;
+}
+
+// ---- Auction house or vendor (#120) ------------------------------------------------------------
+
+// The cut the faction house takes from a sale (CraftWise/Prices.lua ns.AH_CUT, "5% cut (confirmed)" in
+// game). The site's prices are the Horde AH's.
+export const AH_CUT = 0.05;
+
+export interface SellChoice {
+	ah: number | null; // one unit on the auction house after the cut
+	ahBasis: "typical" | "lowest" | null; // the 7-day typical price, else the lowest listing
+	vendor: number | null; // what a vendor pays; 0 = vendors don't buy it; null = not known
+	best: "ah" | "vendor" | null;
+}
+
+// Where one unit brings more, as the addon's ns.GetSellValue picks: the auction house after the cut
+// (typical price, else the lowest listing while listed) unless the vendor pays more; the vendor when
+// the item has no auction house price. `lowest` is null when the item isn't listed.
+export function sellChoice(typical: number | null, lowest: number | null, vendor: number | null): SellChoice {
+	const gross = typical ?? lowest;
+	const ah = gross === null ? null : Math.floor(gross * (1 - AH_CUT));
+	const ahBasis = typical !== null ? "typical" : lowest !== null ? "lowest" : null;
+	let best: SellChoice["best"] = null;
+	if (vendor !== null && vendor > 0 && (ah === null || vendor > ah)) best = "vendor";
+	else if (ah !== null) best = "ah";
+	return { ah, ahBasis, vendor, best };
 }

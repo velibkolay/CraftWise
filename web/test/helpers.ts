@@ -111,20 +111,23 @@ export function access(jwt: string, extra: Record<string, string> = {}): Record<
 
 // Empties every table (storage is shared by the tests of one file).
 export async function clearData(): Promise<void> {
-	const tables = ["houses", "items", "item_words", "prices", "points", "daily", "scans", "cache", "tokens", "usage", "characters", "snapshots", "auctions", "fishing", "ledger", "variants", "variant_days"];
+	const tables = ["houses", "items", "item_words", "prices", "points", "daily", "scans", "cache", "tokens", "usage", "characters", "snapshots", "auctions", "fishing", "ledger", "variants", "variant_days", "item_classes", "item_subclasses"];
 	await env.DB.batch(tables.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
 }
 
 // Test shorthand -> the upload contract (web/docs/api.md):
 //   scans: [{ house, ... }]                      -> scans: { [house]: [...] }
-//   items: { [id]: { n, q, i, c, s } }           -> names + itemInfo
+//   items: { [id]: { n, q, i, c, s, p } }        -> names + itemInfo
+//   classNames, subclassNames                    -> as they are (#120)
 //   prices: [{ item, house, last, raw, days }]   -> items: { [item]: { [house]: entry } }
 //   raw tiers [p, q, p, q]                        -> [{ price, qty }]; days [{ day, ... }] -> { [day]: ... }
 export interface Short {
 	v?: number;
 	houses?: unknown;
 	scans?: ({ house: string } & Record<string, unknown>)[];
-	items?: Record<string, { n?: string; q?: number; i?: number; c?: number; s?: number }>;
+	items?: Record<string, { n?: string; q?: number; i?: number; c?: number; s?: number; p?: number }>;
+	classNames?: Record<string, string>;
+	subclassNames?: Record<string, Record<string, string>>;
 	prices?: {
 		item: string;
 		house: string;
@@ -151,6 +154,8 @@ export function body(s: Short): Record<string, unknown> {
 		out.names = names;
 		out.itemInfo = itemInfo;
 	}
+	if (s.classNames) out.classNames = s.classNames;
+	if (s.subclassNames) out.subclassNames = s.subclassNames;
 	if (s.prices) {
 		const items: Record<string, Record<string, unknown>> = {};
 		for (const p of s.prices) {

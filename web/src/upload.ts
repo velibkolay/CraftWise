@@ -23,7 +23,25 @@ interface ItemRow {
 	icon: number | null;
 	class: number | null;
 	subclass: number | null;
+	sell_price: number | null;
 }
+
+// Item info (#92) and the vendor sell price (#120). The Worker writes only items whose values changed;
+// the WHERE keeps a row that would not change unwritten anyway (D1 counts an update with equal values).
+const ITEMS_SQL = `INSERT INTO items (id, name, quality, icon, class, subclass, sell_price, updated)
+	SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5, value->>6, value->>7 FROM json_each(?1) WHERE true
+	ON CONFLICT (id) DO UPDATE SET name = excluded.name, quality = excluded.quality, icon = excluded.icon,
+		class = excluded.class, subclass = excluded.subclass, sell_price = excluded.sell_price, updated = excluded.updated
+	WHERE items.name IS NOT excluded.name OR items.quality IS NOT excluded.quality OR items.icon IS NOT excluded.icon
+		OR items.class IS NOT excluded.class OR items.subclass IS NOT excluded.subclass OR items.sell_price IS NOT excluded.sell_price`;
+
+// The client's class and subclass names (#120): a row is written only when its name changed.
+const CLASSES_SQL = `INSERT INTO item_classes (class, name)
+	SELECT value->>0, value->>1 FROM json_each(?1) WHERE true
+	ON CONFLICT (class) DO UPDATE SET name = excluded.name WHERE item_classes.name IS NOT excluded.name`;
+const SUBCLASSES_SQL = `INSERT INTO item_subclasses (class, subclass, name)
+	SELECT value->>0, value->>1, value->>2 FROM json_each(?1) WHERE true
+	ON CONFLICT (class, subclass) DO UPDATE SET name = excluded.name WHERE item_subclasses.name IS NOT excluded.name`;
 
 const PRICES_SQL = `INSERT INTO prices (house, item, suffix, t, min, qty, listings, off, depth_t, depth_total, depth)
 	SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5, value->>6, value->>7, value->>8, value->>9, value->>10
@@ -178,7 +196,7 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 			WHERE realm IS NOT excluded.realm OR kind IS NOT excluded.kind OR faction IS NOT excluded.faction OR label IS NOT excluded.label`,
 		).bind(houseRows),
 		db.prepare("SELECT id, key FROM houses WHERE key IN (SELECT value->>0 FROM json_each(?1))").bind(houseRows),
-		db.prepare("SELECT id, name, quality, icon, class, subclass FROM items WHERE id IN (SELECT value FROM json_each(?1))").bind(itemIds),
+		db.prepare("SELECT id, name, quality, icon, class, subclass, sell_price FROM items WHERE id IN (SELECT value FROM json_each(?1))").bind(itemIds),
 		db.prepare(DEPTH_ROWS_SQL).bind(JSON.stringify(suffixed)),
 	]);
 	const houseId = new Map<string, number>();
@@ -200,11 +218,20 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 			icon: i.i ?? o?.icon ?? null,
 			class: i.c ?? o?.class ?? null,
 			subclass: i.s ?? o?.subclass ?? null,
+			sell_price: i.p ?? o?.sell_price ?? null,
 		};
-		if (o && o.name === row.name && o.quality === row.quality && o.icon === row.icon && o.class === row.class && o.subclass === row.subclass) {
+		if (
+			o &&
+			o.name === row.name &&
+			o.quality === row.quality &&
+			o.icon === row.icon &&
+			o.class === row.class &&
+			o.subclass === row.subclass &&
+			o.sell_price === row.sell_price
+		) {
 			continue;
 		}
-		itemRows.push([i.id, row.name, row.quality, row.icon, row.class, row.subclass]);
+		itemRows.push([i.id, row.name, row.quality, row.icon, row.class, row.subclass, row.sell_price, now]);
 		if ((o?.name ?? null) !== row.name) {
 			if (o) renamed.push(i.id);
 			for (const w of row.name ? nameWords(row.name) : []) wordRows.push([w, i.id]);
@@ -215,11 +242,16 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 	const depth = new Set((depthRows!.results as { house: string; item: number; suffix: number }[]).map((r) => `${r.house}\x1f${r.item}:${r.suffix}`));
 	const { prices, dailyLast, dailyDays, points, scans, variants, variantDays } = priceRows(data, hid, depth);
 
+	// 4. Class and subclass names (#120); the WHERE skips unchanged names.
+	const classRows = data.classNames.filter((c) => c.sub === null).map((c) => [c.class, c.name]);
+	const subclassRows = data.classNames.filter((c) => c.sub !== null).map((c) => [c.class, c.sub, c.name]);
+
 	checkBudget(
 		today,
 		// an upper bound: every upserted row counted twice (a daily aggregate costs 2 with daily_typ, the
 		// others 1); a packed variant row never counts more than the companion's 4 per `last`-only entry
 		2 * (itemRows.length + prices.length + dailyLast.length + dailyDays.length + scans.length + variants.length + variantDays.length) +
+			2 * data.classNames.length +
 			renamed.length * 12 + wordRows.length + points.length,
 		now,
 	);
@@ -228,13 +260,9 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 	const add = (sql: string, rows: unknown[]) => {
 		if (rows.length) statements.push(db.prepare(sql).bind(JSON.stringify(rows)));
 	};
-	add(
-		`INSERT INTO items (id, name, quality, icon, class, subclass, updated)
-		SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5, ${now} FROM json_each(?1) WHERE true
-		ON CONFLICT (id) DO UPDATE SET name = excluded.name, quality = excluded.quality, icon = excluded.icon,
-			class = excluded.class, subclass = excluded.subclass, updated = excluded.updated`,
-		itemRows,
-	);
+	add(ITEMS_SQL, itemRows);
+	add(CLASSES_SQL, classRows);
+	add(SUBCLASSES_SQL, subclassRows);
 	add("DELETE FROM item_words WHERE item IN (SELECT value FROM json_each(?1))", renamed);
 	add("INSERT OR IGNORE INTO item_words (word, item) SELECT value->>0, value->>1 FROM json_each(?1)", wordRows);
 	add(PRICES_SQL, prices);
@@ -276,6 +304,7 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 			houses: data.houses.length,
 			scans: data.scans.length,
 			items: data.items.length,
+			classNames: data.classNames.length,
 			prices: data.prices.length,
 			points: points.length,
 			days: dailyDays.length,

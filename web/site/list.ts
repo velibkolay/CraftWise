@@ -2,17 +2,19 @@
 import { type Browse, type BrowseItem, type Categories, get, type House, mainHouse } from "./lib/api";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, slot, statusBar, topBar, type View } from "./lib/dom";
 import { favourites, isFavourite, toggleFavourite } from "./lib/favs";
-import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sparkPath, sparkValues, subclassName } from "./lib/format";
+import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sellChoice, sparkPath, sparkValues, subclassName } from "./lib/format";
 
 const PAGE = 25;
 // Classes listed first in the tree (the materials the site is about), the rest by ID.
 const CLASS_ORDER = [7, 0, 9, 1, 15, 5];
 
-type SortKey = "name" | "market" | "lowest" | "c24" | "c7" | "listed";
+type SortKey = "name" | "market" | "lowest" | "vendor" | "c24" | "c7" | "listed";
 interface Row {
 	item: BrowseItem;
 	market: number | null;
 	lowest: number | null;
+	vendor: number | null; // vendor sell price (#120); 0 = vendors don't buy it
+	toVendor: boolean; // a vendor pays more than the auction house after the cut
 	c24: number | null;
 	c7: number | null;
 	listed: number | null;
@@ -28,6 +30,7 @@ interface State {
 	desc: boolean;
 	rarity: string; // "" = all, else quality ID
 	minListed: number;
+	vendorOnly: boolean; // "Better sold to a vendor" (#120)
 	sel: number | null;
 }
 
@@ -40,10 +43,11 @@ function readState(): State {
 		cat: p.get("c"),
 		q: (p.get("q") ?? "").trim(),
 		page: Math.max(1, Number(p.get("p")) || 1),
-		sort: sort && ["name", "market", "lowest", "c24", "c7", "listed"].includes(sort) ? sort : "market",
+		sort: sort && ["name", "market", "lowest", "vendor", "c24", "c7", "listed"].includes(sort) ? sort : "market",
 		desc: p.get("dir") !== "asc",
 		rarity: p.get("r") ?? "",
 		minListed: Math.max(0, Number(p.get("min")) || 0),
+		vendorOnly: p.get("vendor") === "1",
 		sel: null,
 	};
 }
@@ -57,6 +61,7 @@ function writeState(st: State, push = true): void {
 	if (!st.desc) p.set("dir", "asc");
 	if (st.rarity) p.set("r", st.rarity);
 	if (st.minListed) p.set("min", String(st.minListed));
+	if (st.vendorOnly) p.set("vendor", "1");
 	if (st.page > 1) p.set("p", String(st.page));
 	const url = `/${p.size ? `?${p}` : ""}`;
 	if (url !== location.pathname + location.search) (push ? history.pushState : history.replaceState).call(history, null, "", url);
@@ -80,6 +85,7 @@ const treeToggle = h("button", { type: "button", class: "wbtn dark cat-toggle", 
 const heading = h("h2", { class: "res-title", id: "res-title", tabindex: "-1" });
 const raritySel = h("select", { class: "winput", id: "f-rarity" });
 const minInput = h("input", { class: "winput num-in", id: "f-min", type: "number", min: "0", step: "1", inputmode: "numeric" });
+const vendorBox = h("input", { type: "checkbox", id: "f-vendor" }) as HTMLInputElement;
 const tableWrap = h("div", { class: "tscroll" });
 const pager = h("div", { class: "pager" });
 const favBtn = h("button", { type: "button", class: "wbtn dark", disabled: true }, "Add to Favourites");
@@ -116,6 +122,7 @@ function shell(): void {
 			raritySel,
 			h("label", { class: "field", for: "f-min" }, h("span", { class: "lbl" }, "Listed at least")),
 			minInput,
+			h("label", { class: "field vcheck", for: "f-vendor" }, vendorBox, h("span", { class: "lbl" }, "Better sold to a vendor")),
 		),
 		h("div", { class: "inset" }, tableWrap),
 	);
@@ -131,7 +138,7 @@ function shell(): void {
 			"div",
 			{ class: "footbar" },
 			pager,
-			h("span", { class: "hint" }, "Market Price is the typical price of the last 7 days. Listed is units on the auction house."),
+			h("span", { class: "hint" }, "Market Price is the typical price of the last 7 days. Vendor is what a vendor pays for one. Listed is units on the auction house."),
 			h("span", { class: "grow" }),
 			favBtn,
 			histBtn,
@@ -149,6 +156,12 @@ function wire(): void {
 	});
 	raritySel.addEventListener("change", () => {
 		st.rarity = raritySel.value;
+		st.page = 1;
+		writeState(st, false);
+		renderTable();
+	});
+	vendorBox.addEventListener("change", () => {
+		st.vendorOnly = vendorBox.checked;
 		st.page = 1;
 		writeState(st, false);
 		renderTable();
@@ -181,13 +194,20 @@ function catKey(c: number | null, sub: number | null): string {
 	return c === null ? "none" : `${c}.${sub}`;
 }
 
-function groupedCats(): { cls: number | null; total: number; subs: { sub: number | null; items: number }[] }[] {
-	const groups = new Map<number | null, { cls: number | null; total: number; subs: { sub: number | null; items: number }[] }>();
+interface CatGroup {
+	cls: number | null;
+	name: string; // the client's name (#120), else the enum identifier
+	total: number;
+	subs: { sub: number | null; name: string; items: number }[];
+}
+
+function groupedCats(): CatGroup[] {
+	const groups = new Map<number | null, CatGroup>();
 	for (const c of cats?.categories ?? []) {
 		let g = groups.get(c.class);
-		if (!g) groups.set(c.class, (g = { cls: c.class, total: 0, subs: [] }));
+		if (!g) groups.set(c.class, (g = { cls: c.class, name: className(c.class, c.className), total: 0, subs: [] }));
 		g.total += c.items;
-		g.subs.push({ sub: c.subclass, items: c.items });
+		g.subs.push({ sub: c.subclass, name: subclassName(c.class, c.subclass, c.subclassName), items: c.items });
 	}
 	const rank = (c: number | null) => (c === null ? 1000 : CLASS_ORDER.includes(c) ? CLASS_ORDER.indexOf(c) : 100 + c);
 	return [...groups.values()].sort((a, b) => rank(a.cls) - rank(b.cls));
@@ -219,7 +239,7 @@ function renderTree(): void {
 			const plate = h(
 				"button",
 				{ type: "button", class: "plate", "aria-expanded": String(open), "aria-controls": listId },
-				h("span", {}, className(g.cls)),
+				h("span", {}, g.name),
 				h("span", { class: `pm${open ? "" : " plus"}`, "aria-hidden": "true" }),
 			);
 			plate.addEventListener("click", () => {
@@ -230,7 +250,7 @@ function renderTree(): void {
 			const entries =
 				g.cls === null
 					? [entry("none", "Items without info", g.total)]
-					: g.subs.map((sub) => entry(catKey(g.cls, sub.sub), subclassName(g.cls, sub.sub), sub.items));
+					: g.subs.map((sub) => entry(catKey(g.cls, sub.sub), sub.name, sub.items));
 			return h("div", { class: "cat" }, plate, h("div", { class: "entries", id: listId, hidden: !open }, entries));
 		}),
 	);
@@ -257,10 +277,14 @@ function entry(key: string, label: string, n: number): HTMLElement {
 function toRow(item: BrowseItem, today: number): Row {
 	const ch = changes(item.days, today);
 	const cur = item.current;
+	const market = item.typical.status === "ok" ? item.typical.price : null;
+	const lowest = cur && cur.listed ? cur.min : null;
 	return {
 		item,
-		market: item.typical.status === "ok" ? item.typical.price : null,
-		lowest: cur && cur.listed ? cur.min : null,
+		market,
+		lowest,
+		vendor: item.sellPrice,
+		toVendor: sellChoice(market, lowest, item.sellPrice).best === "vendor",
 		c24: ch.c24,
 		c7: ch.c7,
 		listed: cur && cur.listed ? cur.qty : cur ? 0 : null,
@@ -283,7 +307,9 @@ function sortRows(list: Row[]): Row[] {
 }
 
 function filtered(): Row[] {
-	return rows.filter((r) => (st.rarity === "" || String(r.item.quality) === st.rarity) && (st.minListed === 0 || (r.listed ?? 0) >= st.minListed));
+	return rows.filter(
+		(r) => (st.rarity === "" || String(r.item.quality) === st.rarity) && (st.minListed === 0 || (r.listed ?? 0) >= st.minListed) && (!st.vendorOnly || r.toVendor),
+	);
 }
 
 async function load(): Promise<void> {
@@ -291,6 +317,7 @@ async function load(): Promise<void> {
 	const seq = ++loadSeq;
 	searchInput.value = st.q;
 	minInput.value = st.minListed ? String(st.minListed) : "";
+	vendorBox.checked = st.vendorOnly;
 	syncTabs();
 	try {
 		if (!house) {
@@ -354,7 +381,9 @@ function title(): string {
 	if (st.cat === "none") return "Items without info";
 	if (st.cat) {
 		const [c, sub] = st.cat.split(".").map((v) => (v === "null" ? null : Number(v)));
-		return sub === undefined ? className(c ?? null) : subclassName(c ?? null, sub);
+		const g = groupedCats().find((x) => x.cls === (c ?? null));
+		if (sub === undefined) return g?.name ?? className(c ?? null);
+		return g?.subs.find((x) => x.sub === sub)?.name ?? subclassName(c ?? null, sub);
 	}
 	return "Auction House";
 }
@@ -383,6 +412,7 @@ const COLUMNS: { key: SortKey | null; label: string; cls: string; firstDesc: boo
 	{ key: "name", label: "Name", cls: "c-name", firstDesc: false },
 	{ key: "market", label: "Market Price", cls: "r", firstDesc: true },
 	{ key: "lowest", label: "Lowest", cls: "r", firstDesc: true },
+	{ key: "vendor", label: "Vendor", cls: "r", firstDesc: true },
 	{ key: "c24", label: "24h", cls: "r", firstDesc: true },
 	{ key: "c7", label: "7d", cls: "r", firstDesc: true },
 	{ key: null, label: "Last 7 Days", cls: "c-spark", firstDesc: false },
@@ -459,6 +489,7 @@ function rowEl(r: Row, fav: boolean, today: number): HTMLElement {
 		),
 		h("td", { class: "r" }, moneyEl(r.market)),
 		h("td", { class: "r" }, cur && !cur.listed ? h("span", { class: "hint" }, "not listed") : moneyEl(r.lowest)),
+		vendorCell(r),
 		changeCell(r.c24, "24 hours"),
 		changeCell(r.c7, "7 days"),
 		h(
@@ -481,6 +512,14 @@ function rowEl(r: Row, fav: boolean, today: number): HTMLElement {
 	});
 	tr.addEventListener("focusin", () => setSelection(it.id));
 	return tr;
+}
+
+// The vendor sell price (#120): "no sale" when vendors don't buy it, "–" when not known yet; marked when a
+// vendor pays more than the auction house after the cut.
+function vendorCell(r: Row): HTMLElement {
+	if (r.vendor === null) return h("td", { class: "r" }, moneyEl(null));
+	if (r.vendor === 0) return h("td", { class: "r" }, h("span", { class: "hint" }, "no sale"));
+	return h("td", { class: "r", title: r.toVendor ? "A vendor pays more than the auction house after the cut" : null }, moneyEl(r.vendor), r.toVendor ? h("span", { class: "hint" }, " best") : null);
 }
 
 function changeCell(v: number | null, span: string): HTMLElement {

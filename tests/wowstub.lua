@@ -222,6 +222,13 @@ C_Item.GetItemInfoInstant = function(id)
 	return id, nil, nil, item and item.equipLoc or "", item and item.icon, stub.itemClass[id], stub.itemSubclass[id]
 end
 C_Item.GetItemNameByID = function(id) return stub.items[id] and stub.items[id].name end
+-- The client's (localized) class and subclass names: stub.classNames[classID], stub.subclassNames[classID][subclassID].
+stub.classNames, stub.subclassNames = {}, {}
+C_Item.GetItemClassInfo = function(classID) return stub.classNames[classID] end
+C_Item.GetItemSubClassInfo = function(classID, subclassID)
+	local subs = stub.subclassNames[classID]
+	return subs and subs[subclassID], false
+end
 C_Item.GetItemMaxStackSizeByID = function(id) return stub.items[id] and stub.items[id].stack end
 
 -- Time and the player's profession list (skill per skill line).

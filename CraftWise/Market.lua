@@ -29,9 +29,13 @@
 -- into items[]. t = when CraftWise read it, age = days since Auctionator saw it (its API).
 -- names = { [itemID] = name } for the items above, from the client, so the saved file can be read
 -- without the game (#90). Not part of any record; rebuilt from the client's cache at logout.
--- itemInfo = { [itemID] = "q,i,c,s,t" } for the same items (#92): quality, icon file ID, class and
--- subclass ID as the client returns them, t = when read; base 36, an unknown field empty. The name
--- stays in names (one name store). Read again after INFO_REFRESH; dropped with the records.
+-- itemInfo = { [itemID] = "q,i,c,s,t,p" } for the same items (#92): quality, icon file ID, class and
+-- subclass ID as the client returns them, t = when read, p = what a vendor pays for one unit
+-- (C_Item.GetItemInfo's sellPrice, #120; 0 = vendors don't buy it); base 36, an unknown field empty.
+-- The name stays in names (one name store). Read again after INFO_REFRESH; dropped with the records.
+-- Format 2 (itemInfoV = 2, #120); a format 1 string "q,i,c,s,t" has no p and is read again soon.
+-- classNames = { [classID] = name }, subclassNames = { [classID] = { [subclassID] = name } } (#120): the
+-- client's own (localized) names of the item classes and subclasses in itemInfo, read once a session.
 --
 -- Never stored: seller names, bids, per-auction rows beyond the tiers.
 local _, ns = ...
@@ -1395,40 +1399,76 @@ local function InfoNum(v)
 	return type(v) == "number" and v or nil
 end
 
--- "q,i,c,s,t" in base 36; an unknown field stays empty. Negative numbers aren't expected from the
+M.ITEM_INFO_FORMAT = 2
+
+-- "q,i,c,s,t,p" in base 36; an unknown field stays empty. Negative numbers aren't expected from the
 -- client; one would be stored as unknown rather than as a wrong 0.
 function M.EncodeItemInfo(info, t)
 	local function field(v)
 		v = InfoNum(v)
 		return v and v >= 0 and Base36(v) or ""
 	end
-	return table.concat({ field(info.q), field(info.i), field(info.c), field(info.s), field(t) }, ",")
+	return table.concat({ field(info.q), field(info.i), field(info.c), field(info.s), field(t), field(info.p) }, ",")
 end
 
--- { n, q, i, c, s, t } for an item, nil when nothing is stored. n comes from names; any field the
--- client didn't give is nil.
+-- { n, q, i, c, s, t, p } for an item, nil when nothing is stored. n comes from names; any field the
+-- client didn't give is nil (p also in a format 1 string).
 function M.ItemInfo(itemID)
 	local packed = db and db.itemInfo[itemID]
 	if type(packed) ~= "string" then
 		return nil
 	end
 	local f = Split(packed, ",")
-	return { n = db.names[itemID], q = Num(f[1]), i = Num(f[2]), c = Num(f[3]), s = Num(f[4]), t = Num(f[5]) }
+	return { n = db.names[itemID], q = Num(f[1]), i = Num(f[2]), c = Num(f[3]), s = Num(f[4]), t = Num(f[5]), p = Num(f[6]) }
 end
 
+-- When the info was read, and whether it has everything the client gives once the item is loaded
+-- (the sell price comes only from a loaded item; a format 1 string has none).
 local function InfoTime(packed)
-	return type(packed) == "string" and Num(packed:match("([^,]*)$")) or nil
+	return type(packed) == "string" and Num(packed:match("^[^,]*,[^,]*,[^,]*,[^,]*,([^,]*)")) or nil
+end
+local function InfoComplete(packed)
+	return type(packed) == "string" and packed:match("^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]+$") ~= nil
 end
 
--- What the client says about an item now: its name (nil when not cached) and { q, i, c, s }, nil
+-- The client's names of an item class and subclass (#120), read once a session and kept as the client
+-- gives them (localized), so the site can show "Trade Goods" / "Herb" instead of enum identifiers.
+local classNamesRead = {}
+local function RecordClassNames(classID, subclassID)
+	if classID == nil or not C_Item then
+		return
+	end
+	local function valid(name)
+		return type(name) == "string" and name ~= "" and name or nil
+	end
+	if not classNamesRead[classID] and C_Item.GetItemClassInfo then
+		classNamesRead[classID] = true
+		local name = valid(C_Item.GetItemClassInfo(classID))
+		if name then
+			db.classNames[classID] = name
+		end
+	end
+	local key = classID .. ":" .. tostring(subclassID)
+	if subclassID ~= nil and not classNamesRead[key] and C_Item.GetItemSubClassInfo then
+		classNamesRead[key] = true
+		local name = valid((C_Item.GetItemSubClassInfo(classID, subclassID)))
+		if name then
+			db.subclassNames[classID] = db.subclassNames[classID] or {}
+			db.subclassNames[classID][subclassID] = name
+		end
+	end
+end
+
+-- What the client says about an item now: its name (nil when not cached) and { q, i, c, s, p }, nil
 -- while the quality is unknown. hint = { q, i } from a complete full-scan row, used when the cache
 -- doesn't have the item yet. Class, subclass and icon come from GetItemInfoInstant, which the client
--- answers without loading the item.
+-- answers without loading the item. The sell price comes from GetItemInfo of a loaded item, else from
+-- what the client returned earlier (CraftWiseDB.sellPrices, #83); never from the bundled table.
 local function ClientItemInfo(itemID, hint)
-	local name, quality, texture, classID, subclassID
+	local name, quality, texture, classID, subclassID, sellPrice
 	if C_Item and C_Item.GetItemInfo then
 		local r = { C_Item.GetItemInfo(itemID) }
-		name, quality, texture, classID, subclassID = r[1], r[3], r[10], r[12], r[13]
+		name, quality, texture, sellPrice, classID, subclassID = r[1], r[3], r[10], r[11], r[12], r[13]
 	end
 	local icon, iClass, iSubclass
 	if C_Item and C_Item.GetItemInfoInstant then
@@ -1442,15 +1482,18 @@ local function ClientItemInfo(itemID, hint)
 	if quality == nil then
 		return name, nil
 	end
+	local saved = ns.db and ns.db.sellPrices and ns.db.sellPrices[itemID]
 	return name, {
 		q = quality,
 		i = InfoNum(icon) or InfoNum(texture) or (hint and InfoNum(hint.i)),
 		c = InfoNum(iClass) or InfoNum(classID),
 		s = InfoNum(iSubclass) or InfoNum(subclassID),
+		p = InfoNum(sellPrice) or InfoNum(saved),
 	}
 end
 
--- Writes what the client knows now. Returns true when the info was stored.
+-- Writes what the client knows now. Returns true when the info is complete (with the sell price); an
+-- item known only from a full-scan row is stored without it and loaded for the rest.
 local function StoreItemInfo(itemID, hint, now)
 	local name, info = ClientItemInfo(itemID, hint)
 	if name and db.names[itemID] == nil then
@@ -1460,7 +1503,8 @@ local function StoreItemInfo(itemID, hint, now)
 		return false
 	end
 	db.itemInfo[itemID] = M.EncodeItemInfo(info, now or time())
-	return true
+	RecordClassNames(info.c, info.s)
+	return info.p ~= nil
 end
 
 -- Every item ID with a price: per-house records (suffix variants count once) and Auctionator exports.
@@ -1538,8 +1582,9 @@ function M.FillItemInfo(hints)
 	local now = time()
 	Chunked(#list, INFO_PER_FRAME, function(i)
 		local itemID = list[i]
-		local t = InfoTime(db.itemInfo[itemID])
-		if t and now - t < INFO_REFRESH then
+		local packed = db.itemInfo[itemID]
+		local t = InfoTime(packed)
+		if t and now - t < INFO_REFRESH and InfoComplete(packed) then
 			return
 		end
 		if not StoreItemInfo(itemID, hints[itemID], now) and not inInfoQueue[itemID] then
@@ -1574,7 +1619,7 @@ local function FillNames()
 				db.names[itemID] = name
 			end
 		end
-		if db.itemInfo[itemID] == nil then
+		if not InfoComplete(db.itemInfo[itemID]) then
 			StoreItemInfo(itemID, nil, now)
 		end
 	end
@@ -2105,6 +2150,9 @@ ns.Listen("DB_READY", function()
 	db.scope.skillLines = db.scope.skillLines or {}
 	db.names = db.names or {}
 	db.itemInfo = db.itemInfo or {}
+	db.itemInfoV = M.ITEM_INFO_FORMAT
+	db.classNames = db.classNames or {}
+	db.subclassNames = db.subclassNames or {}
 	db.auctionator = db.auctionator or {}
 	db.auctionator.source = "auctionator"
 	db.auctionator.house = M.AUCTIONATOR_HOUSE

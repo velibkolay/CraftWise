@@ -18,6 +18,7 @@ import {
 	qualityClass,
 	sparkPath,
 	sparkValues,
+	sellChoice,
 	subclassName,
 	ticks,
 } from "../site/lib/format";
@@ -161,6 +162,11 @@ describe("names and time", () => {
 		expect(className(null)).toBe("No item info yet");
 		expect(subclassName(0, 1)).toBe("Potion");
 		expect(subclassName(7, 9)).toBe("Subclass 9");
+		// #120: the client's own names win when the addon uploaded them
+		expect(className(7, "Trade Goods")).toBe("Trade Goods");
+		expect(className(7, null)).toBe("Tradegoods");
+		expect(subclassName(7, 9, "Herb")).toBe("Herb");
+		expect(subclassName(null, null, "Herb")).toBe("No item info yet");
 		expect(qualityClass(2)).toBe("q-uncommon");
 		expect(qualityClass(null)).toBe("q-common");
 	});
@@ -173,5 +179,21 @@ describe("names and time", () => {
 		expect(freshness(0)).toBe(1);
 		expect(freshness(43200)).toBe(0.5);
 		expect(freshness(100000)).toBe(0);
+	});
+});
+
+describe("auction house or vendor (#120)", () => {
+	it("compares the auction house after the 5% cut with the vendor price", () => {
+		// typical price wins over the lowest listing; floor after the cut
+		expect(sellChoice(101, 90, 50)).toEqual({ ah: 95, ahBasis: "typical", vendor: 50, best: "ah" });
+		expect(sellChoice(null, 100, 96)).toEqual({ ah: 95, ahBasis: "lowest", vendor: 96, best: "vendor" });
+		// equal: the auction house, as the addon picks the vendor only when it pays more
+		expect(sellChoice(100, null, 95).best).toBe("ah");
+		// no auction house price: the vendor; vendors don't buy it (0): the auction house
+		expect(sellChoice(null, null, 12)).toEqual({ ah: null, ahBasis: null, vendor: 12, best: "vendor" });
+		expect(sellChoice(10, null, 0).best).toBe("ah");
+		expect(sellChoice(null, null, 0).best).toBe(null);
+		expect(sellChoice(10, null, null)).toEqual({ ah: 9, ahBasis: "typical", vendor: null, best: "ah" });
+		expect(sellChoice(null, null, null).best).toBe(null);
 	});
 });

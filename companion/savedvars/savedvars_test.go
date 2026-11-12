@@ -127,6 +127,14 @@ func TestItemInfoAndAuctionator(t *testing.T) {
 	if i64(ore.Quality) != 1 || ore.Icon != nil || ore.Class != nil {
 		t.Fatalf("ore info: unknown fields must stay missing, got %+v", ore)
 	}
+	// #120: sell prices as the client returned them, the class and subclass names, the format.
+	if i64(cloth.SellPrice) != 13 || i64(m.ItemInfo[9006].SellPrice) != 900 || i64(m.ItemInfoV) != 2 {
+		t.Fatalf("sell prices %+v %+v, format %v", cloth, m.ItemInfo[9006], m.ItemInfoV)
+	}
+	if m.ClassNames[7] != "Test Goods" || m.ClassNames[4] != "Test Armour" || len(m.ClassNames) != 2 ||
+		m.SubclassNames[7][5] != "Test Cloth Type" || m.SubclassNames[4][2] != "Test Leather" || len(m.SubclassNames) != 2 {
+		t.Fatalf("class names %v %v", m.ClassNames, m.SubclassNames)
+	}
 	a := m.Auctionator
 	if a.Source != "auctionator" || a.House != "unknown" || a.Label != "Auctionator (house unknown)" || len(a.Items) != 2 {
 		t.Fatalf("auctionator %+v", a)
@@ -304,7 +312,7 @@ CraftWiseMarketDB = {
 		[3] = { ["R|H"] = { ["last"] = { ["t"] = 1, ["min"] = 2 }, ["raw"] = { { ["t"] = 5, ["tiers"] = { 10, 2, 20 } } } } },
 		[4] = { ["R|H"] = { ["last"] = { ["t"] = 1 }, ["raw"] = { { ["t"] = 5, ["total"] = 3, ["tiers"] = { 10, 2, 20, 1 } } }, ["days"] = { [20000] = { ["lo"] = 10 } } } },
 	},
-	["itemInfo"] = { [1] = "1,,,,", [2] = "bad" },
+	["itemInfo"] = { [1] = "1,,,,", [2] = "bad", [3] = "1,,,,,5" },
 	["auctionator"] = { ["items"] = { [1] = "a,b,c", [2] = "a,b" } },
 	["ledger"] = { ["entries"] = { { ["t"] = 1.5, ["k"] = "vbuy" } } },
 }
@@ -322,7 +330,7 @@ CraftWiseDB = { ["snapshots"] = { ["R-A B"] = { ["char"] = { ["level"] = "x", ["
 		`CraftWiseDB.snapshots["R-A B"].char.level: want number, got string`,
 		`CraftWiseMarketDB.auctionator.items[2]: malformed market entry: auctionator price "a,b": want 3 fields`,
 		`CraftWiseMarketDB.houses["R|H"].label: want string, got number`,
-		`CraftWiseMarketDB.itemInfo[2]: malformed market entry: item info "bad": want 5 fields`,
+		`CraftWiseMarketDB.itemInfo[2]: malformed market entry: item info "bad": want 5 or 6 fields`,
 		`CraftWiseMarketDB.items["x:y"]: item key "x:y" is not an item ID`,
 		`CraftWiseMarketDB.items[1]["R|H"]: malformed market entry: want 3 parts separated by '|', got 4`,
 		`CraftWiseMarketDB.items[3]["R|H"].raw[1].tiers: odd number of values`,
@@ -342,7 +350,7 @@ CraftWiseDB = { ["snapshots"] = { ["R-A B"] = { ["char"] = { ["level"] = "x", ["
 	if market.Encode(table) != "1,,,|a,3,,,k,2,k,1|uv4,a,,,,,," {
 		t.Fatalf("table entry packs to %q", market.Encode(table))
 	}
-	if len(m.ItemInfo) != 1 || m.Auctionator.Items[1].Copper == nil || len(m.Ledger.Entries) != 1 || m.Ledger.Entries[0].T != nil {
+	if len(m.ItemInfo) != 2 || i64(m.ItemInfo[3].SellPrice) != 5 || m.Auctionator.Items[1].Copper == nil || len(m.Ledger.Entries) != 1 || m.Ledger.Entries[0].T != nil {
 		t.Fatalf("partial reads %+v %+v %+v", m.ItemInfo, m.Auctionator, m.Ledger)
 	}
 	if c := f.DB.Snapshots["R-A B"].Char; c.Name != "A" || c.Level != nil {
@@ -353,5 +361,21 @@ CraftWiseDB = { ["snapshots"] = { ["R-A B"] = { ["char"] = { ["level"] = "x", ["
 func TestSyntaxErrorIsReturned(t *testing.T) {
 	if _, err := Read(strings.NewReader("CraftWiseDB = {")); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+// #120: the game writes a table whose keys run 1..n as a list ("-- [n]" comments); class and
+// subclass IDs start at 0, so a names table is part list, part [0].
+func TestClassNamesListPart(t *testing.T) {
+	src := "CraftWiseMarketDB = {\n[\"classNames\"] = {\n\"Container\", -- [1]\n\"Weapon\", -- [2]\n[0] = \"Consumable\",\n},\n" +
+		"[\"subclassNames\"] = {\n[0] = {\n\"Potion\", -- [1]\n[0] = \"Generic\",\n},\n},\n}\n"
+	f, err := Read(strings.NewReader(src))
+	if err != nil || len(f.Problems) != 0 {
+		t.Fatal(err, f.Problems)
+	}
+	m := f.Market
+	if m.ClassNames[0] != "Consumable" || m.ClassNames[1] != "Container" || m.ClassNames[2] != "Weapon" ||
+		m.SubclassNames[0][0] != "Generic" || m.SubclassNames[0][1] != "Potion" {
+		t.Fatalf("%v %v", m.ClassNames, m.SubclassNames)
 	}
 }

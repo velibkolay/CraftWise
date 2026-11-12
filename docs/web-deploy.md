@@ -27,6 +27,17 @@ value set in the dashboard is the Access audience tag.
    pending: `npx wrangler d1 migrations list craftwise --remote`.
    Don't paste the SQL into the D1 console instead: wrangler would not know it ran and would try
    again.
+4. A PR that adds a migration is applied from its branch, before the merge. For #120
+   (`0003_names_sell_price.sql`: class and subclass names, the items' sell price), in PowerShell:
+   ```powershell
+   cd C:\Users\Veli\Documents\GitHub\craftwise\web
+   git fetch origin
+   git switch names-sellprice-120
+   npx wrangler d1 migrations apply craftwise --remote
+   git switch main
+   ```
+   wrangler lists `0003_names_sell_price.sql` and asks to confirm; answer yes. Then merge the PR. The
+   running Worker keeps working in between (it doesn't read the new column or tables yet).
 
 ## 2. Worker with Workers Builds
 1. **Workers & Pages > Create > Import a repository**, GitHub `velibkolay/CraftWise`.

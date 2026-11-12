@@ -43,7 +43,7 @@ Rules for the companion:
 
 The body is a subset of `CraftWiseMarketDB` as the companion's Go readers (#93,
 `companion/savedvars.MarketDB` with the decoded `market.Entry` values) marshal it to JSON, plus `v`:
-`houses`, `scans`, `items`, `names`, `itemInfo`. Other fields (`cut`, `auctionator`, `ledger`, ...)
+`houses`, `scans`, `items`, `names`, `itemInfo`, `classNames`, `subclassNames`. Other fields (`cut`, `auctionator`, `ledger`, ...)
 are ignored on this endpoint.
 
 ```json
@@ -57,7 +57,9 @@ are ignored on this endpoint.
     "CAMWOW EU4 Realm 8 PvP|H": [ { "t": 1794400000, "kind": "full", "items": 1480, "lastOnly": 8520, "source": "auctionator" } ]
   },
   "names": { "2589": "Linen Cloth" },
-  "itemInfo": { "2589": { "q": 1, "i": 132889, "c": 7, "s": 5, "t": 1794400000 } },
+  "itemInfo": { "2589": { "q": 1, "i": 132889, "c": 7, "s": 5, "t": 1794400000, "p": 13 } },
+  "classNames": { "7": "Trade Goods" },
+  "subclassNames": { "7": { "5": "Cloth", "9": "Herb" } },
   "items": {
     "2589": {
       "CAMWOW EU4 Realm 8 PvP|H": {
@@ -79,17 +81,23 @@ are ignored on this endpoint.
 | `houses` | `CraftWiseMarketDB.houses`: `realm`, `kind`, `faction`, `label` | Every house used in `scans` or `items` must be listed. Key `<realm>\|H`, `<realm>\|A` or `<realm>\|N:<Name>`; `realm` must match the key; faction houses carry `faction` (`H` = Horde, `A` = Alliance), neutral houses none. At most 20. |
 | `scans` | `CraftWiseMarketDB.scans`: per house `t`, `kind`, `items`, `lastOnly`, `source` | `t` and `kind` (lower-case letters: `full`, `search`, `gear`) required. At most 200. Optional; drives "last scanned" per house. |
 | `names` | `CraftWiseMarketDB.names` | Optional. Names as the client gave them. |
-| `itemInfo` | `CraftWiseMarketDB.itemInfo` decoded (#92): `q` quality, `i` icon file ID, `c` class, `s` subclass, `t` | Optional. `t` is checked, not stored. |
+| `itemInfo` | `CraftWiseMarketDB.itemInfo` decoded (#92): `q` quality, `i` icon file ID, `c` class, `s` subclass, `t`, `p` vendor sell price per unit (#120, format 2; `0` = vendors don't buy it) | Optional. `t` is checked, not stored. `p` is missing in format 1 strings (older addon) and for items the client hasn't loaded yet. |
+| `classNames` | `CraftWiseMarketDB.classNames` (#120): `{ "<classID>": name }`, the client's own (localized) names | Optional. IDs 0 to 65535, names 1 to 64 characters, no control characters. |
+| `subclassNames` | `CraftWiseMarketDB.subclassNames` (#120): `{ "<classID>": { "<subclassID>": name } }` | Optional, as `classNames`; together at most 1,000 names per request. |
 | `items[<item key>][<house key>]` | `CraftWiseMarketDB.items` decoded (`Market.lua` `DecodeEntry`) | Item key `"<itemID>"` or `"<itemID>:<suffixID>"`. At most 2,000 item/house entries per request. |
 | … `.last` | `t`, `min`, `qty`, `listings`, `off` | `t`, `min`, `qty` required; `listings` (browse results have none) and `off` optional. |
 | … `.raw[]` | `t`, `total`, `listings`, `m`, `tiers: [{ price, qty }]` | Scope items only. `t`, `total` required; at most 8 tiers, prices rising; at most 500 points. |
 | … `.days` | `{ "<day>": { lo, typ, hi, qtyMax, listMax, n, gone } }` | Scope items only. At most 400 days. |
 
 `names` and `itemInfo` together at most 5,000 item IDs per request. A field left out keeps the value
-stored before; only items whose info changed are written. An entry needs at least one of `last`,
+stored before; only items whose info changed are written (a sell price arriving for a known item is
+such a change). A class or subclass name is written only when it differs from the stored one. An entry needs at least one of `last`,
 `raw`, `days`. Times must lie between 2020-09-13 and now + 1 day.
 
 How it is stored (schema: `web/migrations/`):
+- `items`: one row per item: name, quality, icon, class, subclass and `sell_price` (#120,
+  `0003_names_sell_price.sql`); `item_words` its search words. `item_classes` / `item_subclasses`: the
+  client's class and subclass names, one row each.
 - `prices`: one row per item and house: the latest `last` (an older one never replaces a newer one)
   and the cheapest tiers of the latest raw point.
 - Random-suffix variants (`"<itemID>:<suffixID>"`) without raw points (#118, `0002_variants.sql`):
@@ -105,7 +113,11 @@ How it is stored (schema: `web/migrations/`):
   `src` 0 row, never the other way round, and replaces an older aggregate only when it covers at
   least as many points (`n`).
 
-Response: `{ "ok": true, "received": { "houses", "scans", "items" (item IDs with names or info), "prices" (item/house entries), "points", "days" }, "itemsChanged", "rowsWritten" }`.
+Response: `{ "ok": true, "received": { "houses", "scans", "items" (item IDs with names or info), "classNames" (class and subclass names), "prices" (item/house entries), "points", "days" }, "itemsChanged", "rowsWritten" }`.
+
+The companion keeps what it sent (state file) and sends a class or subclass name only when it is new
+or changed, and an item's name and info only when one of them changed (the read time `t` alone is no
+change), so after the first upload names and sell prices cost no writes.
 
 ### `POST /api/private/upload`: private data
 
@@ -144,10 +156,10 @@ Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledg
 |---|---|
 | `/api/houses` | `{ houses: [{ key, realm, kind, faction, label, lastScan, lastFullScan, lastFullScanItems }] }`, faction houses first |
 | `/api/scans?limit=20&house=<key>` | `{ scans: [{ house, label, t, kind, items, lastOnly, source }] }`, newest first (limit 1..100, kept 90 days) |
-| `/api/items?q=<text or item ID>&limit=20` | `{ query, items: [{ id, name, quality, icon, class, subclass, prices: [{ house, label, suffix, t, min, qty, listings, off, listed }] }] }`. Every word of `q` matches the start of a word of the name (`lot` finds Purple Lotus); "of", "the" and the like are ignored; at least 2 letters. |
-| `/api/items/<id>?days=90&hours=48` | `{ id, item, markets: [...] }`, one market per house (and random suffix), see below |
+| `/api/items?q=<text or item ID>&limit=20` | `{ query, items: [{ id, name, quality, icon, class, subclass, className, subclassName, sellPrice, prices: [{ house, label, suffix, t, min, qty, listings, off, listed }] }] }`. Every word of `q` matches the start of a word of the name (`lot` finds Purple Lotus); "of", "the" and the like are ignored; at least 2 letters. |
+| `/api/items/<id>?days=90&hours=48` | `{ id, item, markets: [...] }`, one market per house (and random suffix), see below; `item` as in `/api/items` without `prices` |
 | `/api/movers?house=<key>&limit=10` | `{ house, label, computedAt, up: [...], down: [...] }`, see below |
-| `/api/categories?house=<key>` | `{ house, label, lastScan, computedAt, categories: [{ class, subclass, items }] }`: items priced at the house (no random suffix) per item class and subclass; `class` and `subclass` are `null` for items without item info yet |
+| `/api/categories?house=<key>` | `{ house, label, lastScan, computedAt, categories: [{ class, subclass, className, subclassName, items }] }`: items priced at the house (no random suffix) per item class and subclass; `class` and `subclass` are `null` for items without item info yet |
 | `/api/browse?house=<key>&class=<id>[&subclass=<id>]`, `...&q=<text>`, `...&ids=<id>,<id>` | `{ house, label, lastScan, today, more, items: [...] }`, the site's item list (#97), see below |
 
 A market of `/api/items/<id>`:
@@ -182,12 +194,18 @@ next UTC day.
 
 `/api/browse` takes exactly one of `class` (an item class ID, or `none` for items without info; optionally
 `subclass`), `q` (as `/api/items`, at most 50 items) or `ids` (at most 100 item IDs, the site's favourites). Each
-item: `{ id, name, quality, icon, class, subclass, current, typical, days }` with `current` and `typical` as on
+item: `{ id, name, quality, icon, class, subclass, className, subclassName, sellPrice, current, typical, days }` with `current` and `typical` as on
 `/api/items/<id>` (house of the request, suffix 0; `current` `null` when the house has no price) and `days` the
 daily rows of the last 9 days (`{ day, src, lo, typ, hi, qtyMax }`), enough for a 24 h and a 7 day change and a
 7 day sparkline. At most 500 items (`more: true` beyond). The class index behind `/api/categories` and
 `class=` reads one row per priced item and its info, so it is cached in D1 like the top movers (until the house's
 next scan or the next UTC day); a browse then reads about 10 rows per item.
+
+Names and sell prices (#120): `className` / `subclassName` are the client's own names as the addon
+recorded them (`C_Item.GetItemClassInfo` / `GetItemSubClassInfo`), `null` where none was uploaded yet (the site
+then shows Blizzard's enum identifier from `site/lib/enums.ts`, or "Subclass N"). `sellPrice` is what a vendor pays
+for one unit (`C_Item.GetItemInfo`'s sellPrice), `0` when vendors don't buy the item, `null` when not known yet. The
+names are read on every request (a few dozen rows), not cached with the class index.
 
 ## Private API (`/api/me/*`, Cloudflare Access)
 
@@ -271,11 +289,19 @@ per request (a batch counts as one), 100 bound parameters per statement.
   42,131 / 11,295 / 15,055 rows for the first upload, a second browse and the next day's (before
   #118: 69,611 / 31,275 / 42,525).
 
+  Class names and sell prices (#120, `test/names-budget.test.ts`, invented data: 18,000 items already
+  stored with names and info, 18 classes with 10 subclasses each, 11 requests as the companion splits
+  them): the first upload after the update writes **18,209 rows** (one `items` row per item for its sell
+  price, 198 name rows, 11 rate-limit rows), once; the same upload again 11 (the rate-limit rows only).
+  On a fresh install the sell price comes with the item's first info and costs nothing extra (57,570
+  rows without, 57,768 with, the difference being the 198 names). After that a sell price costs a write
+  only when the client reports a new one, a name only when it changes (another client language).
+
   What a row costs: an insert or an update of a `prices`, `points`, `variants` or `variant_days`
   row and of a `daily` row built from `last` 1 (no secondary index); a CraftWise daily aggregate 2
   (the row and `daily_typ`, which the top movers need); an item 1 plus one per search word (2.6
   words per item on average); a ledger entry 2 (the row and `ledger_by_char`); a house 2 (`key` is
-  unique). The two indexes stay: without them the top movers and the ledger page would read every
+  unique); a class or subclass name 1. The two indexes stay: without them the top movers and the ledger page would read every
   row of a house's history or of the ledger. Uploads stop with `429 write_budget` when the next
   request could take the day over 90,000 rows (an upper bound per request: every upserted row is
   counted twice, a packed row too, so a variant never counts more than the companion's estimate of 4
@@ -294,9 +320,11 @@ per request (a batch counts as one), 100 bound parameters per statement.
   DELETE FROM variant_days WHERE day < (strftime('%s', 'now') / 86400) - 365;
   ```
 
-- **Reads:** a search reads the matching words plus 1 row per item and house (and variant); an
+- **Reads:** a search reads the matching words plus 1 row per item and house (and variant), plus its
+  classes' names; an
   item page about 100 rows per house (plus one `variant_days` row per day with variants); top movers about 10 rows per item with history, once per scan and day; the
-  category index 2 rows per priced item, once per scan and day; a browse about 10 rows per item listed.
+  category index 2 rows per priced item, once per scan and day, plus the names of its classes (a few dozen
+  rows) per request; a browse about 10 rows per item listed, plus its classes' names.
 - Daily cron (03:17 UTC) deletes expired raw points, scans, usage and cache rows.
 
 ## Development
