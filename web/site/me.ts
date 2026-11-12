@@ -629,7 +629,7 @@ function usagePane(): HTMLElement {
 		h(
 			"div",
 			{ class: "meter" },
-			h("p", { class: "prof-line" }, h("span", { class: "lbl" }, "Rows written"), h("span", { class: "hint" }, `uploads stop at ${u.budget.toLocaleString("en-US")}`)),
+			h("p", { class: "prof-line" }, h("span", { class: "lbl" }, "Rows written"), h("span", { class: "hint" }, `item info waits from ${n(u.softBudget)}, uploads stop at ${n(u.budget)}`)),
 			bar("", u.rowsWritten, u.budget, `${n(u.rowsWritten)} / ${n(u.budget)}`, `${n(u.rowsWritten)} of ${n(u.budget)} rows written today`),
 		),
 		u.dbBytes !== null

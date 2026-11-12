@@ -180,7 +180,7 @@ export function priceRows(data: PublicUpload, hid: (key: string) => number, dept
 }
 
 export async function publicUpload(request: Request, env: Env, now: number): Promise<Response> {
-	const { written: today } = await uploadAuth(request, env, "public", now);
+	const { today } = await uploadAuth(request, env, "public", now);
 	const data = validatePublic(parseJson(await readBody(request, MAX_PUBLIC_BYTES)), now);
 	const db = env.DB;
 
@@ -253,6 +253,9 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 		2 * (itemRows.length + prices.length + dailyLast.length + dailyDays.length + scans.length + variants.length + variantDays.length) +
 			2 * data.classNames.length +
 			renamed.length * 12 + wordRows.length + points.length,
+		// low priority (#145): item info, names, sell prices and search words that would change a row,
+		// and class names (rarely sent; unchanged ones would write nothing)
+		itemRows.length > 0 || data.classNames.length > 0,
 		now,
 	);
 
@@ -317,9 +320,10 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 const DOC_TABLES = ["snapshots", "auctions", "fishing"] as const;
 
 export async function privateUpload(request: Request, env: Env, now: number): Promise<Response> {
-	const { written: today } = await uploadAuth(request, env, "private", now);
+	const { today } = await uploadAuth(request, env, "private", now);
 	const data = validatePrivate(parseJson(await readBody(request, MAX_PRIVATE_BYTES)), now);
-	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length, now);
+	// private data is never low priority: it goes through up to the full budget
+	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length, false, now);
 	const db = env.DB;
 	const statements: D1PreparedStatement[] = [];
 

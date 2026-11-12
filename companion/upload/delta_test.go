@@ -47,14 +47,29 @@ func TestFirstUploadSendsEverythingOnce(t *testing.T) {
 	f := readFixture(t)
 	st := NewState("https://example.test", "CraftWise.lua")
 	plan := Build(f, st, Options{Now: fixtureNow, Private: true})
-	if len(plan.Public) != 1 || len(plan.Private) != 1 {
-		t.Fatalf("want 1 public and 1 private request, got %d and %d (skipped %v)", len(plan.Public), len(plan.Private), plan.SkippedText())
+	// #145: scans and prices first, item info and class names in a request of their own after them
+	if len(plan.Public) != 2 || len(plan.Private) != 1 {
+		t.Fatalf("want 2 public and 1 private request, got %d and %d (skipped %v)", len(plan.Public), len(plan.Private), plan.SkippedText())
 	}
 	if len(plan.Skipped) != 0 {
 		t.Errorf("skipped: %v", plan.SkippedText())
 	}
 
 	pub := asJSON(t, plan.Public[0].Body)
+	low := asJSON(t, plan.Public[1].Body)
+	for _, k := range []string{"names", "itemInfo", "classNames", "subclassNames"} {
+		if _, has := pub[k]; has {
+			t.Errorf("%s in the price request", k)
+		}
+	}
+	for _, k := range []string{"items", "scans"} {
+		if _, has := low[k]; has {
+			t.Errorf("%s in the item info request", k)
+		}
+	}
+	if len(low["houses"].(map[string]any)) != 2 {
+		t.Errorf("houses missing in the item info request")
+	}
 	if pub["v"].(float64) != 1 {
 		t.Errorf("v = %v", pub["v"])
 	}
@@ -83,24 +98,24 @@ func TestFirstUploadSendsEverythingOnce(t *testing.T) {
 	if gotEntries != wantEntries || plan.Public[0].Counts["prices"] != wantEntries {
 		t.Errorf("entries: got %d (counted %d), want %d", gotEntries, plan.Public[0].Counts["prices"], wantEntries)
 	}
-	if len(pub["names"].(map[string]any)) != len(f.Market.Names) {
-		t.Errorf("names: %v", pub["names"])
+	if len(low["names"].(map[string]any)) != len(f.Market.Names) {
+		t.Errorf("names: %v", low["names"])
 	}
-	if len(pub["itemInfo"].(map[string]any)) != len(f.Market.ItemInfo) {
-		t.Errorf("itemInfo: %v", pub["itemInfo"])
+	if len(low["itemInfo"].(map[string]any)) != len(f.Market.ItemInfo) {
+		t.Errorf("itemInfo: %v", low["itemInfo"])
 	}
 	// #120: sell prices in itemInfo, the client's class and subclass names.
-	if p := pub["itemInfo"].(map[string]any)["9001"].(map[string]any)["p"]; p != 13.0 {
+	if p := low["itemInfo"].(map[string]any)["9001"].(map[string]any)["p"]; p != 13.0 {
 		t.Errorf("sell price of 9001: %v", p)
 	}
-	if c := pub["classNames"].(map[string]any); len(c) != 2 || c["7"] != "Test Goods" {
+	if c := low["classNames"].(map[string]any); len(c) != 2 || c["7"] != "Test Goods" {
 		t.Errorf("classNames: %v", c)
 	}
-	if sc := pub["subclassNames"].(map[string]any); len(sc) != 2 || sc["7"].(map[string]any)["5"] != "Test Cloth Type" {
+	if sc := low["subclassNames"].(map[string]any); len(sc) != 2 || sc["7"].(map[string]any)["5"] != "Test Cloth Type" {
 		t.Errorf("subclassNames: %v", sc)
 	}
-	if plan.Public[0].Counts["classes"] != 4 {
-		t.Errorf("classes counted %d", plan.Public[0].Counts["classes"])
+	if plan.Public[1].Counts["classes"] != 4 {
+		t.Errorf("classes counted %d", plan.Public[1].Counts["classes"])
 	}
 	scans := 0
 	for _, list := range pub["scans"].(map[string]any) {
@@ -183,18 +198,24 @@ func smallMarket() *savedvars.MarketDB {
 func TestPayloadShape(t *testing.T) {
 	m := smallMarket()
 	plan := Build(&savedvars.File{Market: m}, NewState("s", "f"), Options{Now: fixtureNow})
-	if len(plan.Public) != 1 {
+	if len(plan.Public) != 2 {
 		t.Fatalf("%d requests", len(plan.Public))
 	}
-	got, err := json.Marshal(plan.Public[0].Body)
+	houses := `"houses":{"R|H":{"realm":"R","kind":"faction","faction":"Horde","label":"Horde AH"},"R|N:BootyBay":{"realm":"R","kind":"neutral","label":"Booty Bay"}},`
+	// #145: item info after the prices, in a request of its own
+	got, err := json.Marshal(plan.Public[1].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"v":1,` + houses + `"names":{"2589":"Linen Cloth"},"itemInfo":{"2589":{"q":1,"i":132889,"c":7,"s":5,"t":1794009900}}}`; string(got) != want {
+		t.Errorf("item info payload\n got %s\nwant %s", got, want)
+	}
+	got, err = json.Marshal(plan.Public[0].Body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	day := int64(fixtureNow / 86400)
-	want := `{"v":1,` +
-		`"houses":{"R|H":{"realm":"R","kind":"faction","faction":"Horde","label":"Horde AH"},"R|N:BootyBay":{"realm":"R","kind":"neutral","label":"Booty Bay"}},` +
-		`"names":{"2589":"Linen Cloth"},` +
-		`"itemInfo":{"2589":{"q":1,"i":132889,"c":7,"s":5,"t":1794009900}},` +
+	want := `{"v":1,` + houses +
 		`"items":{` +
 		`"15210:1017":{"R|N:BootyBay":{"last":{"t":1794009400,"min":25000,"qty":1}}},` +
 		`"2589":{"R|H":{"last":{"t":1794009900,"min":95,"qty":400,"listings":6},` +
@@ -435,10 +456,10 @@ func TestClassNamesAndSellPricesDelta(t *testing.T) {
 	m := smallMarket()
 	st := NewState("s", "f")
 	plan := Build(&savedvars.File{Market: m}, st, Options{Now: fixtureNow})
-	if len(plan.Public) != 1 || plan.Public[0].Body.ClassNames != nil || plan.Public[0].Body.SubclassNames != nil {
+	if len(plan.Public) != 2 || plan.Public[1].Body.ClassNames != nil || plan.Public[1].Body.SubclassNames != nil {
 		t.Fatalf("a file without class names: %+v", plan.Public)
 	}
-	if info := plan.Public[0].Body.ItemInfo[2589]; info.SellPrice != nil {
+	if info := plan.Public[1].Body.ItemInfo[2589]; info.SellPrice != nil {
 		t.Fatalf("no sell price in a format 1 file, got %v", *info.SellPrice)
 	}
 	commitAll(plan, st)
@@ -495,7 +516,7 @@ func TestClassNamesInvalidLeftOut(t *testing.T) {
 	m.ClassNames = map[int64]string{7: "Trade Goods", 8: "", 9: strings.Repeat("x", 65), -1: "Negative", 10: "Bad\nName"}
 	m.SubclassNames = map[int64]map[int64]string{7: {5: "Cloth", 70000: "Too Big"}}
 	plan := Build(&savedvars.File{Market: m}, NewState("s", "f"), Options{Now: fixtureNow})
-	b := plan.Public[0].Body
+	b := plan.Public[len(plan.Public)-1].Body
 	if len(b.ClassNames) != 1 || len(b.SubclassNames[7]) != 1 {
 		t.Fatalf("names %v %v", b.ClassNames, b.SubclassNames)
 	}

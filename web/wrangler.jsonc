@@ -26,7 +26,12 @@
 		}
 	],
 	"vars": {
-		"ACCESS_TEAM_DOMAIN": "velikopter.cloudflareaccess.com"
+		"ACCESS_TEAM_DOMAIN": "velikopter.cloudflareaccess.com",
+		// Rows written a day CraftWise may use (#145): a cap, item info and names stop at 80% of it
+		// (web/docs/api.md "Budget"). Workers Paid: 1000000, effectively no limit (D1 has no daily
+		// limit; 30M a month at most, inside the 50M included). Workers Free: 30000 (100,000 a day per
+		// account, shared with Hivemind's D1). Missing or invalid (not 1 to 1000000): 1000000.
+		"WRITE_BUDGET": "1000000"
 	},
 	// Daily retention (raw points, scan log, rate-limit and usage rows). Cron triggers are free.
 	"triggers": { "crons": ["17 3 * * *"] },

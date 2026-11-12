@@ -71,6 +71,18 @@ Worker `craftwise-web` > **Settings > Variables and Secrets > Add**:
 `ACCESS_TEAM_DOMAIN` (`velikopter.cloudflareaccess.com`) is already in `wrangler.jsonc`. Without
 `ACCESS_AUD` the private API answers 503 and stays closed.
 
+`WRITE_BUDGET` (#145), also in `wrangler.jsonc`: the rows written a day CraftWise may use; above 80%
+of it item info and names wait for the next day, prices and private data go on until 100%.
+- **Workers Paid** (the account's plan since 2026-11-12): `1000000`, the default. D1 has no daily
+  limit; 50 million rows a month are included, then $1 per million. 1,000,000 a day is effectively
+  no limit and at most 30 million a month, so it never costs extra.
+- **Workers Free:** `30000`. D1 Free's 100,000 rows a day are per Cloudflare **account**, shared by
+  every D1 database on it: Hivemind uses D1 on the same account. When the account reaches 100,000,
+  all of them refuse writes until 00:00 UTC.
+
+To change it, edit `vars` in `wrangler.jsonc` and deploy. A value set in the dashboard works at once
+but the next deploy puts back the one in `wrangler.jsonc`.
+
 ## 6. Check
 - `https://wow.velikopter.com/` shows the price list (empty until the first upload);
   `https://wow.velikopter.com/api/houses` answers `{"houses":[]}` before the first upload.
@@ -97,7 +109,9 @@ token (an Access login without an e-mail) only read: `POST` and `DELETE` answer 
 Revoke it under Service Tokens; nothing else changes.
 
 ## Watching the free limits
-- `https://wow.velikopter.com/api/me/usage`: rows written today (uploads stop at 90,000 of D1's
-  100,000) and the database size (free: 500 MB). See "Budget" in `web/docs/api.md`.
+- `https://wow.velikopter.com/api/me/usage`: rows written today against `budget` (`WRITE_BUDGET`;
+  item info waits from `softBudget`, 80%) and the database size (free: 500 MB). See "Budget" in
+  `web/docs/api.md`. On Workers Free the 100,000 rows a day are for the whole account, other D1 users
+  such as Hivemind included: check their writes too (dashboard > **D1** > Metrics).
 - Errors and logs: Worker > **Observability** (Workers Logs, free tier).
 - Rollback: Worker > **Deployments** > an earlier version > Rollback.

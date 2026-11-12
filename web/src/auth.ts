@@ -1,7 +1,7 @@
 // Upload tokens (bearer, hashed in D1) and the Cloudflare Access check for /me and /api/me/*.
 import type { Env } from "./env";
 import { HttpError } from "./http";
-import { DAY, UPLOADS_PER_MINUTE, WRITE_BUDGET } from "./limits";
+import { DAY, parseWriteBudget, softBudget, UPLOADS_PER_MINUTE } from "./limits";
 
 export type Scope = "public" | "private";
 export const SCOPES: readonly Scope[] = ["public", "private"];
@@ -27,9 +27,15 @@ export function newToken(): string {
 	return "cw_" + base64url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
+// Today's rows written and the budget they count against (the Worker var WRITE_BUDGET, #145).
+export interface Today {
+	written: number;
+	budget: number;
+}
+
 // Checks the bearer token, counts the request against the token's per-minute limit and reads
 // today's rows written. One D1 batch; an unknown or revoked token writes nothing.
-export async function uploadAuth(request: Request, env: Env, scope: Scope, now: number): Promise<{ tokenId: number; written: number }> {
+export async function uploadAuth(request: Request, env: Env, scope: Scope, now: number): Promise<{ tokenId: number; today: Today }> {
 	const m = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "");
 	if (!m || !TOKEN.test(m[1]!)) {
 		throw new HttpError(401, "unauthorized", "missing or malformed bearer token", { "www-authenticate": "Bearer" });
@@ -57,22 +63,35 @@ export async function uploadAuth(request: Request, env: Env, scope: Scope, now: 
 		});
 	}
 	const written = usage?.results[0]?.rows_written ?? 0;
-	if (written >= WRITE_BUDGET) {
-		throw new HttpError(429, "write_budget", `daily write budget (${WRITE_BUDGET} rows) used up; resets 00:00 UTC`, {
+	const budget = parseWriteBudget(env.WRITE_BUDGET);
+	if (written >= budget) {
+		throw new HttpError(429, "write_budget", `daily write budget (${budget} rows) used up; resets 00:00 UTC`, {
 			"retry-after": String(DAY - (now % DAY)),
 		});
 	}
-	return { tokenId: row.id, written };
+	return { tokenId: row.id, today: { written, budget } };
 }
 
 // Refuses an upload whose rows (an upper bound: rows that don't change are not written) would take
-// today's total over the budget. A refused upload writes nothing; the companion retries after
-// Retry-After (00:00 UTC). D1 itself stops all writes at 100,000 rows a day on the free plan.
-export function checkBudget(written: number, estimate: number, now: number): void {
-	if (written + estimate > WRITE_BUDGET) {
-		throw new HttpError(429, "write_budget", `upload needs up to ${estimate} rows, ${WRITE_BUDGET - written} left today; resets 00:00 UTC`, {
-			"retry-after": String(DAY - (now % DAY)),
-		});
+// today's total over the budget. An upload with low-priority writes (item info, names, sell prices,
+// search words, class names: `low`) is refused already when it would cross the soft limit (80% of
+// the budget), so price data and private data keep the rest of the day (#145). A refused upload
+// writes nothing; the companion retries after Retry-After (00:00 UTC). On Workers Free D1 stops all
+// writes at 100,000 rows a day for the whole Cloudflare account, other projects' databases included.
+export function checkBudget(today: Today, estimate: number, low: boolean, now: number): void {
+	const { written, budget } = today;
+	const headers = { "retry-after": String(DAY - (now % DAY)) };
+	if (written + estimate > budget) {
+		throw new HttpError(429, "write_budget", `upload needs up to ${estimate} rows, ${budget - written} left today; resets 00:00 UTC`, headers);
+	}
+	const soft = softBudget(budget);
+	if (low && written + estimate > soft) {
+		throw new HttpError(
+			429,
+			"write_budget",
+			`item info and names wait for tomorrow above ${soft} of ${budget} rows written (${written} today); send prices on their own; resets 00:00 UTC`,
+			headers,
+		);
 	}
 }
 
