@@ -45,6 +45,7 @@ Baganator.lua
 Upgrades.lua
 UpgradeSearch.lua
 Leveling.lua
+HeroCards.lua
 Music.lua
 Video.lua
 FlightPaths.lua
