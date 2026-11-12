@@ -1,6 +1,8 @@
-// Item page (/item/<id>): tooltip, cheapest listings, price history (#97).
+// Item page (/item/<id>): tooltip, cheapest listings, price history (#97); crafting profit (#143).
 import { chart, type Point, type Series } from "./chart";
-import { ApiError, get, type House, type ItemDetail, type ItemInfo, type Market, mainHouse } from "./lib/api";
+import { ApiError, type Browse, get, type House, type ItemDetail, type ItemInfo, type Market, mainHouse } from "./lib/api";
+import { type CraftNames, craftBreakdown, craftItBreakdown } from "./lib/craftview";
+import { craft, makersOf, type Quote, quoteOf, RECIPES_URL, type RecipeData, recipeItemOf, recipeRow, teachOf } from "./lib/recipes";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, pctText, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
 import { isFavourite, toggleFavourite } from "./lib/favs";
 import {
@@ -90,6 +92,107 @@ async function main(): Promise<void> {
 		return fail("The prices could not be loaded. Check your connection and reload the page.");
 	}
 	render(detail, house);
+	void loadCrafting(detail, house);
+}
+
+// ---- Crafting (#143) ------------------------------------------------------------------------------
+
+interface Crafting {
+	data: RecipeData;
+	quotes: Map<number, Quote>;
+	names: CraftNames;
+	status: "loading" | "ok" | "failed";
+}
+let crafting: Crafting | null = null;
+
+// This item's own quote: the main house's typical price and current listing, and its vendor sell price.
+function ownQuote(m: Market | null, it: ItemInfo | null): Quote {
+	return {
+		typical: m?.typical.status === "ok" ? m.typical.price : null,
+		lowest: m?.current && m.current.listed ? m.current.min : null,
+		sellPrice: it?.sellPrice ?? null,
+	};
+}
+
+// The recipe data, then the Horde AH prices of the reagents, products and recipe items the blocks show.
+async function loadCrafting(d: ItemDetail, house: House | null): Promise<void> {
+	let data: RecipeData;
+	try {
+		data = await get<RecipeData>(RECIPES_URL);
+	} catch {
+		return; // without the recipe data the page simply has no crafting blocks
+	}
+	const makers = makersOf(data, d.id);
+	const teach = teachOf(data, d.id);
+	if (!makers.length && !teach?.spell) return;
+	const m = d.markets.filter((x) => x.house === house?.key).sort((a, b) => a.suffix - b.suffix)[0] ?? null;
+	const c: Crafting = { data, quotes: new Map([[d.id, ownQuote(m, d.item)]]), names: new Map([[d.id, { name: d.item?.name ?? null, quality: d.item?.quality ?? null }]]), status: "loading" };
+	crafting = c;
+	redraw?.();
+	const ids = new Set<number>();
+	for (const s of [...makers, ...(teach?.spell ? [teach.spell] : [])]) {
+		if (s.output) ids.add(s.output);
+		for (const r of s.reagents) ids.add(r.item);
+		const rec = recipeItemOf(data, s.id);
+		if (rec) ids.add(rec.item);
+	}
+	ids.delete(d.id);
+	const list = [...ids];
+	try {
+		if (!house) throw new Error("no house");
+		for (let i = 0; i < list.length; i += 100) {
+			const b = await get<Browse>(`/api/browse?house=${encodeURIComponent(house.key)}&ids=${list.slice(i, i + 100).join(",")}`);
+			for (const it of b.items) {
+				c.quotes.set(it.id, quoteOf(it));
+				c.names.set(it.id, { name: it.name, quality: it.quality });
+			}
+		}
+		c.status = "ok";
+	} catch {
+		c.status = "failed";
+	}
+	redraw?.();
+}
+
+const CRAFT_NOTE =
+	"Reagents at the Horde AH's market price (else its lowest listing) or from a vendor, whichever is cheaper; the product after the 5% cut, or what a vendor pays if that is more. No price, no profit: nothing is guessed.";
+
+function craftBlocks(d: ItemDetail): HTMLElement[] {
+	const c = crafting;
+	if (!c) return [];
+	const status = c.status === "loading" ? h("p", { class: "hint padx", "aria-busy": "true" }, "Pricing the reagents") : c.status === "failed" ? h("p", { class: "hint padx" }, "The reagent prices could not be loaded.") : null;
+	const out: HTMLElement[] = [];
+	const makers = makersOf(c.data, d.id);
+	if (makers.length) {
+		out.push(
+			h(
+				"div",
+				{ class: "block" },
+				h("h2", { class: "bar-head", id: "craft-title" }, "Craft It"),
+				status ??
+					h(
+						"div",
+						{ class: "inset", role: "group", "aria-labelledby": "craft-title" },
+						makers.map((s) => h("div", { class: "craftbox" }, craftItBreakdown(craft(c.data, s, c.quotes), recipeItemOf(c.data, s.id), c.names))),
+					),
+				status ? null : h("p", { class: "hint padx" }, CRAFT_NOTE),
+			),
+		);
+	}
+	const teach = teachOf(c.data, d.id);
+	if (teach?.spell) {
+		const rec = recipeRow(c.data, d.id, c.quotes.get(d.id), c.quotes);
+		out.push(
+			h(
+				"div",
+				{ class: "block" },
+				h("h2", { class: "bar-head", id: "teach-title" }, "Teaches"),
+				status ?? h("div", { class: "inset", role: "group", "aria-labelledby": "teach-title" }, h("div", { class: "craftbox" }, craftBreakdown(rec, c.names, d.item?.name ?? null))),
+				status ? null : h("p", { class: "hint padx" }, `${CRAFT_NOTE} Pays back: crafts until the recipe's AH price is earned back.`),
+			),
+		);
+	}
+	return out;
 }
 
 function render(d: ItemDetail, house: House | null): void {
@@ -176,6 +279,7 @@ function render(d: ItemDetail, house: House | null): void {
 		h("div", { class: "pane-head" }, slot(name, q, "ring"), h("div", { class: "grow" }, h("p", { class: `${q} pane-name` }, name), cls ? h("p", { class: "hint" }, cls) : null), favBtn),
 		tooltip,
 		sellBlock(m, it),
+		...craftBlocks(d),
 		listings(m),
 	);
 

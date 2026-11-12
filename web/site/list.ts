@@ -1,14 +1,18 @@
-// Item list (/): category tree, search, filters, sortable table, favourites (#97).
+// Item list (/): category tree, search, filters, sortable table, favourites (#97), crafting profit of recipe
+// items (#143).
 import { type Browse, type BrowseItem, type Categories, get, type House, mainHouse } from "./lib/api";
-import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, slot, statusBar, topBar, type View } from "./lib/dom";
+import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, skinMoney, slot, statusBar, topBar, type View } from "./lib/dom";
 import { favourites, isFavourite, toggleFavourite } from "./lib/favs";
 import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sellChoice, sparkPath, sparkValues, subclassName } from "./lib/format";
+import { type CraftNames, craftBreakdown, craftsText, profitEl } from "./lib/craftview";
+import { itemsNeeded, type Quote, quoteOf, RECIPES_URL, type RecipeData, type RecipeRow, recipeRow } from "./lib/recipes";
 
 const PAGE = 25;
 // Classes listed first in the tree (the materials the site is about), the rest by ID.
 const CLASS_ORDER = [7, 0, 9, 1, 15, 5];
 
-type SortKey = "name" | "market" | "lowest" | "vendor" | "c24" | "c7" | "listed";
+type SortKey = "name" | "market" | "lowest" | "vendor" | "profit" | "payback" | "c24" | "c7" | "listed";
+const SORT_KEYS: SortKey[] = ["name", "market", "lowest", "vendor", "profit", "payback", "c24", "c7", "listed"];
 interface Row {
 	item: BrowseItem;
 	market: number | null;
@@ -19,6 +23,9 @@ interface Row {
 	c7: number | null;
 	listed: number | null;
 	quality: string;
+	recipe: RecipeRow | null; // recipe items (#143): the craft with today's prices, once they are loaded
+	profit: number | null;
+	payback: number | null;
 }
 
 interface State {
@@ -43,7 +50,7 @@ function readState(): State {
 		cat: p.get("c"),
 		q: (p.get("q") ?? "").trim(),
 		page: Math.max(1, Number(p.get("p")) || 1),
-		sort: sort && ["name", "market", "lowest", "vendor", "c24", "c7", "listed"].includes(sort) ? sort : "market",
+		sort: sort && SORT_KEYS.includes(sort) ? sort : "market",
 		desc: p.get("dir") !== "asc",
 		rarity: p.get("r") ?? "",
 		minListed: Math.max(0, Number(p.get("min")) || 0),
@@ -74,6 +81,15 @@ let data: Browse | null = null;
 let rows: Row[] = [];
 let loadSeq = 0;
 
+// Crafting profit (#143): the recipe data (public/data/recipes.json) and the prices and names of products and
+// reagents, fetched once per page view and kept while the visitor moves between categories.
+let recipeData: RecipeData | null = null;
+let recipeFetch: Promise<RecipeData> | null = null;
+const quotes = new Map<number, Quote>();
+const itemNames: CraftNames = new Map();
+let pricing: "idle" | "loading" | "failed" = "idle";
+const openRows = new Set<number>(); // rows whose breakdown is open
+
 // ---- Shell ------------------------------------------------------------------------------------
 
 const app = document.getElementById("app")!;
@@ -91,6 +107,7 @@ const pager = h("div", { class: "pager" });
 const favBtn = h("button", { type: "button", class: "wbtn dark", disabled: true }, "Add to Favourites");
 const histBtn = h("a", { class: "wbtn", "aria-disabled": "true" }, "Price History");
 const footnote = h("p", { class: "hint footnote" });
+const colHint = h("span", { class: "hint" });
 
 function shell(): void {
 	const side = h(
@@ -138,7 +155,7 @@ function shell(): void {
 			"div",
 			{ class: "footbar" },
 			pager,
-			h("span", { class: "hint" }, "Market Price is the typical price of the last 7 days. Vendor is what a vendor pays for one. Listed is units on the auction house."),
+			colHint,
 			h("span", { class: "grow" }),
 			favBtn,
 			histBtn,
@@ -289,7 +306,69 @@ function toRow(item: BrowseItem, today: number): Row {
 		c7: ch.c7,
 		listed: cur && cur.listed ? cur.qty : cur ? 0 : null,
 		quality: qualityClass(item.quality),
+		recipe: null,
+		profit: null,
+		payback: null,
 	};
+}
+
+// A list with recipe items gets the Profit and Pays back columns.
+function isRecipeItem(item: BrowseItem): boolean {
+	return item.class === 9 || (recipeData !== null && recipeData.teach[String(item.id)] !== undefined);
+}
+
+function recipeMode(): boolean {
+	return rows.some((r) => isRecipeItem(r.item));
+}
+
+function remember(items: BrowseItem[]): void {
+	for (const it of items) {
+		quotes.set(it.id, quoteOf(it));
+		if (it.name !== null || !itemNames.has(it.id)) itemNames.set(it.id, { name: it.name, quality: it.quality });
+	}
+}
+
+// The recipe data, then the Horde AH prices of every product and reagent the listed recipes need that this page
+// view hasn't fetched yet: 100 items per /api/browse request, three requests at a time.
+async function loadRecipes(seq: number): Promise<void> {
+	if (!recipeMode()) return;
+	pricing = "loading";
+	try {
+		recipeFetch ??= get<RecipeData>(RECIPES_URL);
+		recipeData = await recipeFetch;
+		const need = itemsNeeded(
+			recipeData,
+			rows.map((r) => r.item.id),
+		).filter((id) => !quotes.has(id));
+		const chunks: number[][] = [];
+		for (let i = 0; i < need.length; i += 100) chunks.push(need.slice(i, i + 100));
+		const houseKey = encodeURIComponent(house!.key);
+		const worker = async () => {
+			for (let c = chunks.shift(); c; c = chunks.shift()) remember((await get<Browse>(`/api/browse?house=${houseKey}&ids=${c.join(",")}`)).items);
+		};
+		await Promise.all([worker(), worker(), worker()]);
+		if (seq !== loadSeq) return;
+		pricing = "idle";
+	} catch {
+		recipeFetch = null;
+		if (seq !== loadSeq) return;
+		// Without the AH prices a craft would be priced from vendor prices alone: show no profit at all instead.
+		pricing = "failed";
+		for (const r of rows) r.recipe = r.profit = r.payback = null;
+		return renderTable();
+	}
+	priceRecipes();
+	renderTable();
+}
+
+function priceRecipes(): void {
+	if (!recipeData) return;
+	for (const r of rows) {
+		if (!isRecipeItem(r.item)) continue;
+		r.recipe = recipeRow(recipeData, r.item.id, quoteOf(r.item), quotes);
+		r.profit = r.recipe.craft?.profit ?? null;
+		r.payback = r.recipe.payback;
+	}
 }
 
 function sortRows(list: Row[]): Row[] {
@@ -352,8 +431,17 @@ async function load(): Promise<void> {
 		if (seq !== loadSeq) return;
 		data = res;
 		rows = res.items.map((i) => toRow(i, res.today));
+		remember(res.items);
+		openRows.clear();
+		if (recipeMode()) {
+			if (recipeData && res.items.every((i) => !isRecipeItem(i) || itemsNeeded(recipeData!, [i.id]).every((id) => quotes.has(id)))) {
+				priceRecipes();
+				pricing = "idle";
+			} else pricing = "loading";
+		}
 		renderRarity();
 		renderTable();
+		if (pricing === "loading") void loadRecipes(seq);
 	} catch (e) {
 		if (seq !== loadSeq) return;
 		const msg = e instanceof Error && e.message === "no house" ? "No auction house has been scanned yet." : "The prices could not be loaded. Check your connection and reload the page.";
@@ -419,21 +507,37 @@ const COLUMNS: { key: SortKey | null; label: string; cls: string; firstDesc: boo
 	{ key: "listed", label: "Listed", cls: "r", firstDesc: true },
 ];
 
+// Recipe lists (#143): Profit and Pays back right after the name (in view on a phone too); no sparkline.
+const RECIPE_COLUMNS: typeof COLUMNS = [
+	COLUMNS[0]!,
+	{ key: "profit", label: "Profit", cls: "r c-profit", firstDesc: true },
+	{ key: "payback", label: "Pays back", cls: "r c-payback", firstDesc: false },
+	...COLUMNS.slice(1).filter((c) => c.cls !== "c-spark"),
+];
+
+function columns(): typeof COLUMNS {
+	return recipeMode() ? RECIPE_COLUMNS : COLUMNS;
+}
+
 function renderTable(): void {
 	if (!data) return;
+	const cols = columns();
+	const recipes = cols === RECIPE_COLUMNS;
 	const list = sortRows(filtered());
 	const pages = Math.max(1, Math.ceil(list.length / PAGE));
 	st.page = Math.min(st.page, pages);
 	const shown = list.slice((st.page - 1) * PAGE, st.page * PAGE);
 	const count = list.length === rows.length ? `${rows.length} items` : `${list.length} of ${rows.length} items`;
-	clear(heading, title(), " ", h("span", { class: "hint count" }, count + (data.more ? ", first 500 shown" : "")));
+	const priceNote = recipes && pricing === "loading" ? ", pricing the recipes" : recipes && pricing === "failed" ? ", the recipe prices could not be loaded" : "";
+	clear(heading, title(), " ", h("span", { class: "hint count" }, count + (data.more ? ", first 500 shown" : "") + priceNote));
+	clear(colHint, recipes ? "Profit is one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more) minus its reagents, each where it is cheaper: AH or vendor. Pays back: crafts until the recipe's AH price is earned back. Press a profit for the breakdown." : "Market Price is the typical price of the last 7 days. Vendor is what a vendor pays for one. Listed is units on the auction house.");
 	document.title = `${title()} - Velikopter Market`;
 
 	const favs = new Set(favourites());
 	const head = h(
 		"tr",
 		{},
-		COLUMNS.map((c) => {
+		cols.map((c) => {
 			const sorted = c.key === st.sort;
 			const th = h("th", { class: c.cls, scope: "col", "aria-sort": sorted ? (st.desc ? "descending" : "ascending") : null });
 			if (!c.key) return append2(th, c.label);
@@ -454,10 +558,10 @@ function renderTable(): void {
 		"tbody",
 		{},
 		shown.length
-			? shown.map((r) => rowEl(r, favs.has(r.item.id), data!.today))
-			: h("tr", {}, h("td", { colspan: COLUMNS.length, class: "empty" }, rows.length ? "No items match the filters." : "No items here yet.")),
+			? shown.map((r) => [rowEl(r, favs.has(r.item.id), data!.today, recipes), recipes && openRows.has(r.item.id) ? detailRow(r, cols.length) : null])
+			: h("tr", {}, h("td", { colspan: cols.length, class: "empty" }, rows.length ? "No items match the filters." : "No items here yet.")),
 	);
-	clear(tableWrap, h("table", { class: "tbl list", "aria-labelledby": "res-title" }, h("thead", {}, head), body));
+	clear(tableWrap, h("table", { class: recipes ? "tbl list recipes" : "tbl list", "aria-labelledby": "res-title" }, h("thead", {}, head), body));
 	if (st.sel !== null && !shown.some((r) => r.item.id === st.sel)) setSelection(null);
 	else setSelection(st.sel);
 	renderPager(pages);
@@ -468,7 +572,7 @@ function append2(el: HTMLElement, ...c: (Node | string)[]): HTMLElement {
 	return el;
 }
 
-function rowEl(r: Row, fav: boolean, today: number): HTMLElement {
+function rowEl(r: Row, fav: boolean, today: number, recipes: boolean): HTMLElement {
 	const it = r.item;
 	const name = it.name ?? `Item ${it.id}`;
 	const spark = sparkPath(sparkValues(it.days, today), 96, 20, 2);
@@ -487,18 +591,22 @@ function rowEl(r: Row, fav: boolean, today: number): HTMLElement {
 				fav ? h("span", { class: "star", role: "img", "aria-label": "Favourite" }) : null,
 			),
 		),
+		recipes ? profitCell(r) : null,
+		recipes ? h("td", { class: "r num c-payback" }, r.payback !== null ? craftsText(r.payback) : h("span", { class: "hint" }, "–")) : null,
 		h("td", { class: "r" }, moneyEl(r.market)),
 		h("td", { class: "r" }, cur && !cur.listed ? h("span", { class: "hint" }, "not listed") : moneyEl(r.lowest)),
 		vendorCell(r),
 		changeCell(r.c24, "24 hours"),
 		changeCell(r.c7, "7 days"),
-		h(
-			"td",
-			{ class: "c-spark" },
-			spark
-				? s("svg", { width: 96, height: 20, viewBox: "0 0 96 20", "aria-hidden": "true", class: "spark" }, s("path", { d: spark, class: "under" }), s("path", { d: spark, class: "over" }))
-				: null,
-		),
+		recipes
+			? null
+			: h(
+					"td",
+					{ class: "c-spark" },
+					spark
+						? s("svg", { width: 96, height: 20, viewBox: "0 0 96 20", "aria-hidden": "true", class: "spark" }, s("path", { d: spark, class: "under" }), s("path", { d: spark, class: "over" }))
+						: null,
+				),
 		h(
 			"td",
 			{ class: "r num" },
@@ -507,7 +615,7 @@ function rowEl(r: Row, fav: boolean, today: number): HTMLElement {
 		),
 	);
 	tr.addEventListener("click", (e) => {
-		if ((e.target as Element).closest("a")) return;
+		if ((e.target as Element).closest("a, button")) return;
 		setSelection(it.id);
 	});
 	tr.addEventListener("focusin", () => setSelection(it.id));
@@ -520,6 +628,45 @@ function vendorCell(r: Row): HTMLElement {
 	if (r.vendor === null) return h("td", { class: "r" }, moneyEl(null));
 	if (r.vendor === 0) return h("td", { class: "r" }, h("span", { class: "hint" }, "no sale"));
 	return h("td", { class: "r", title: r.toVendor ? "A vendor pays more than the auction house after the cut" : null }, moneyEl(r.vendor), r.toVendor ? h("span", { class: "hint" }, " best") : null);
+}
+
+// Profit per craft (#143): money, a loss marked; a button that opens the breakdown under the row. Unknown says why.
+function profitCell(r: Row): HTMLElement {
+	if (!isRecipeItem(r.item)) return h("td", { class: "r c-profit" });
+	const rec = r.recipe;
+	if (!rec) return h("td", { class: "r c-profit" }, h("span", { class: "hint" }, pricing === "failed" ? "–" : "…"));
+	if (rec.status === "not_in_data" || rec.status === "no_reagents") {
+		return h("td", { class: "r c-profit", title: "The bundled recipe data doesn't know what this recipe makes or its reagents" }, h("span", { class: "hint" }, "no data"));
+	}
+	const open = openRows.has(r.item.id);
+	const c = rec.craft!;
+	const label = rec.status === "no_item" ? h("span", { class: "hint" }, "no item") : r.profit === null ? h("span", { class: "hint" }, "unknown") : profitEl(r.profit);
+	const tip =
+		rec.status === "no_item"
+			? "It makes no item (an enchant or the like): no product to value"
+			: r.profit === null
+				? "Unknown: a reagent or the product has no price"
+				: `Product ${skinMoney(c.revenue!).short} - reagents ${skinMoney(c.cost!).short}`;
+	const btn = h(
+		"button",
+		{ type: "button", class: "pbtn", "aria-expanded": String(open), "aria-controls": `bd-${r.item.id}`, title: tip },
+		h("span", { class: `chev${open ? " open" : ""}`, "aria-hidden": "true" }),
+		label,
+		h("span", { class: "sr" }, ", breakdown"),
+	);
+	btn.addEventListener("click", () => {
+		if (openRows.has(r.item.id)) openRows.delete(r.item.id);
+		else openRows.add(r.item.id);
+		setSelection(r.item.id);
+		renderTable();
+		tableWrap.querySelector<HTMLButtonElement>(`tr[data-id="${r.item.id}"] .pbtn`)?.focus();
+	});
+	return h("td", { class: "r c-profit" }, btn);
+}
+
+function detailRow(r: Row, span: number): HTMLElement | null {
+	if (!r.recipe?.craft) return null;
+	return h("tr", { class: "detail" }, h("td", { colspan: span }, h("div", { class: "breakdown", id: `bd-${r.item.id}` }, craftBreakdown(r.recipe, itemNames, r.item.name))));
 }
 
 function changeCell(v: number | null, span: string): HTMLElement {
