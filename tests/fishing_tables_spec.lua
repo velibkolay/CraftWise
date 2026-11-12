@@ -202,14 +202,15 @@ it("long-run catch rate (#136): timed catches per hour, overall and per water ty
 	eq(r.waters.open.timed, 2); eq(r.waters.open.seconds, 60); eq(r.waters.open.perHour, 2 * 3600 / 60)
 	eq(r.waters.pool.timed, 2); eq(r.waters.pool.perHour, 2 * 3600 / 40)
 	eq(r.enough, false, "4 timed catches are too few")
-	eq(ns.FarmFrame.RateText(r), ns.Style.colors.muted .. "4 timed catches, too few (50)|r")
-	-- From ownMin timed catches on it counts; the farm window's line shows it with the water types that have enough.
+	eq(ns.FarmFrame.RateText(r), "your usual rate: 4 of 50 timed catches")
+	-- From ownMin timed catches on it counts; the tracker's fishing card shows it, its tooltip each water type.
 	ns.db.settings.fishingOwnMin = 3
 	r = ns.Fishing.CatchRate()
 	eq(r.enough, true); eq(r.waters.open.enough, false)
-	eq(ns.FarmFrame.RateText(r), "144/h")
+	eq(ns.FarmFrame.RateText(r), "your usual rate 144/h")
 	ns.db.settings.fishingOwnMin = 2
-	eq(ns.FarmFrame.RateText(ns.Fishing.CatchRate()), "144/h" .. ns.Style.colors.muted .. "  ·  open 120  ·  pools 180|r")
+	local lines = ns.FarmFrame.RateLines(ns.Fishing.CatchRate())
+	eq(lines[1], "All water: 144/h (4 timed, 2 min)"); eq(lines[2], "Open water: 120/h (2 timed, 1 min)"); eq(lines[3], "Pools: 180/h (2 timed, 1 min)")
 	-- Catches older than the log keeps don't count, even before the log was pruned.
 	stub.clock = stub.clock + ns.Fishing.KEEP_DAYS * 86400 + 3600
 	eq(ns.Fishing.CatchRate().timed, 0)

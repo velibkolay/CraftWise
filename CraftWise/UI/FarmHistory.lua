@@ -1,5 +1,5 @@
--- Farm history view (#137): the finished farm sessions (`/craftwise farm history`) in the farm window. A History
--- button next to List/Log lays this panel over the whole window: one line per session (date, duration, zone,
+-- Farm history view (#137): the finished farm sessions (`/craftwise farm history`) beside the farm tracker. The
+-- tracker's History link and button (#158) open this panel next to it: one line per session (date, duration, zone,
 -- coin, items, gold per hour, fishing); a click on one shows its details (stats, zones, top items, fishing) and
 -- its loot log, kept for the newest Farm.HISTORY_LOGS sessions. Back returns to the list, then to the session.
 -- The numbers are the ones each session kept when it ended (Farm.Summary); this file only draws them, its
@@ -16,7 +16,8 @@ FH.ROW_HEIGHT = 18
 FH.VISIBLE_ROWS = 12
 FH.LOG_ROWS = 12
 FH.STAT_LINES = 20
-FH.HEIGHT = 360 -- over the farm window from its top; taller than it without the Fishing panel
+FH.WIDTH = 572
+FH.HEIGHT = 360 -- beside the tracker, from its top (UI/FarmFrame.lua, FF.PlaceBeside)
 
 local panel
 local state = { offset = 0, logOffset = 0, index = nil }
@@ -236,8 +237,7 @@ end
 
 local function Build(parent)
 	panel = CreateFrame("Frame", "CraftWiseFarmHistory", parent, "BackdropTemplate")
-	panel:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-	panel:SetSize(parent:GetWidth() or 572, FH.HEIGHT)
+	panel:SetSize(FH.WIDTH, FH.HEIGHT)
 	panel:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
 	panel:EnableMouse(true)
 	Style.Panel(panel)
@@ -349,7 +349,8 @@ function FH.Refresh()
 	end
 end
 
--- Shows the history over the farm window (opening it when hidden); index opens one session's details.
+-- Shows the history beside the farm tracker (opening it when hidden; the loot panel makes room); index opens
+-- one session's details.
 function FH.Open(index)
 	local ff = ns.FarmFrame
 	if not (ff and ff.Window) then
@@ -364,6 +365,12 @@ function FH.Open(index)
 	end
 	if not panel then
 		Build(parent)
+	end
+	if ff.HideLoot then
+		ff.HideLoot()
+	end
+	if ff.PlaceBeside then
+		ff.PlaceBeside(panel, FH.WIDTH)
 	end
 	if index ~= state.index then
 		state.logOffset = 0
