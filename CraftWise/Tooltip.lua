@@ -13,7 +13,6 @@ ns.TOOLTIP_LINES = {
 	{ key = "soldBy", label = "Sold by (merchants you opened)" },
 }
 
-local ACCENT = "|cff4fb3ff"
 local MUTED = "|cff8c95a6"
 local WARN = "|cffffc24d"
 
@@ -244,6 +243,19 @@ function ns.TrackedBalanceLines(itemID)
 	return out
 end
 
+-- How old the auction price is, "3h old", and whether it is over 24 h (shown in C.danger). Market quotes
+-- know their scan time; Auctionator only gives whole days.
+local DAY = 86400
+function ns.SaleAgeText(sale)
+	local quote = sale and sale.quote
+	if quote and quote.t then
+		local seconds = math.max(0, time() - quote.t)
+		return ns.Market.FormatAge(seconds) .. " old", seconds > DAY
+	elseif sale and sale.age then
+		return (sale.age == 0 and "today" or ("%dd old"):format(sale.age)), sale.age >= 1
+	end
+end
+
 function ns.AddTooltipLines(tooltip, itemID)
 	local s = Settings()
 	if not (s and s.enabled and itemID and ns.db) then
@@ -266,17 +278,27 @@ function ns.AddTooltipLines(tooltip, itemID)
 		local count = BagCount(itemID)
 		local vendor, ahNet, best, sale = ns.ItemAdvice(itemID, count)
 		if vendor or sale then
-			local parts = {}
-			parts[#parts + 1] = "Vendor " .. (vendor and ns.FormatMoney(vendor) or "-")
-			parts[#parts + 1] = "AH " .. (ahNet and ns.FormatMoney(ahNet) or sale and sale.cutUnverified and "?" or "-")
-			local left = count > 1 and ("Sell x%d"):format(count) or "Sell"
-			local advice = best == "auction" and "|cff4fd18cAuction|r" or best == "vendor" and "|cff4fd18cVendor|r" or ""
-			lines[#lines + 1] = { left, table.concat(parts, MUTED .. "  ·  |r") .. "  " .. advice }
-			-- Which price the AH figure is, and which cut was taken off it.
+			local style = ns.Style
+			local best_, rest = "|cffffffff", style.Hex("text2")
+			local function figure(text, isBest)
+				return (isBest and best_ or rest) .. text .. "|r"
+			end
+			local ahText = "AH " .. (ahNet and ns.FormatMoney(ahNet) or sale and sale.cutUnverified and "?" or "-")
+			local vendorText = "Vendor " .. (vendor and ns.FormatMoney(vendor) or "-")
+			local left = count > 1 and ("Sell ×%d"):format(count) or "Sell"
+			-- The better way is white, the other one grey.
+			lines[#lines + 1] = { left, figure(ahText, best == "auction") .. style.Hex("text3") .. " · |r"
+				.. figure(vendorText, best == "vendor") }
+			-- Which price the AH figure is, how old, and which cut was taken off it.
 			if sale then
 				local cutText = sale.cutDiffers and ("|cffffc24d" .. sale.cutText .. "|r") or (MUTED .. sale.cutText .. "|r")
 				local gross = sale.cutUnverified and (" · gross " .. ns.FormatMoney(sale.gross)) or ""
-				lines[#lines + 1] = { "  AH price", MUTED .. sale.label .. "|r" .. gross .. MUTED .. " · |r" .. cutText }
+				local age, stale = ns.SaleAgeText(sale)
+				local ageText = ""
+				if age then
+					ageText = MUTED .. " · |r" .. (stale and (style.Hex("danger") .. age .. "|r") or (MUTED .. age .. "|r"))
+				end
+				lines[#lines + 1] = { "  AH price", MUTED .. sale.label .. "|r" .. gross .. ageText .. MUTED .. " · |r" .. cutText }
 			else
 				lines[#lines + 1] = { "  AH price", MUTED .. ns.Market.NO_DATA .. "|r" }
 			end
@@ -322,10 +344,11 @@ function ns.AddTooltipLines(tooltip, itemID)
 	if #lines == 0 then
 		return false
 	end
+	-- Header: the W key and the name in C.keyGold, then label (grey 0.75) / value (white) pairs.
 	tooltip:AddLine(" ")
-	tooltip:AddLine(ACCENT .. "CraftWise|r")
+	tooltip:AddLine(("|T%s:12|t %sCraftWise|r"):format(ns.Style.Media.keyW, ns.Style.Hex("keyGold")))
 	for _, l in ipairs(lines) do
-		tooltip:AddDoubleLine(l[1], l[2], 0.8, 0.8, 0.8, 1, 1, 1)
+		tooltip:AddDoubleLine(l[1], l[2], 0.75, 0.75, 0.75, 1, 1, 1)
 	end
 	tooltip:Show()
 	return true

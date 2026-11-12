@@ -9,6 +9,7 @@ ns.Junk = Junk
 local STEP = 0.2 -- seconds between sales
 local job -- { slots, index, elapsed, sold, copper }
 local button, merchantOpen = nil, false
+local inCombat = false
 
 -- Bag slots holding marked junk that a vendor buys.
 function Junk.Slots()
@@ -30,8 +31,46 @@ local function Value(s)
 	return each and each * s.count or 0
 end
 
+-- "35s", "12g 40s": plain digits, at most two units (spec: Money).
+local function ShortMoney(copper)
+	local parts = {}
+	for part in ns.FormatMoney(copper, true):gmatch("%S+") do
+		parts[#parts + 1] = part
+		if #parts == 2 then
+			break
+		end
+	end
+	return table.concat(parts, " ")
+end
+Junk.ShortMoney = ShortMoney
+
+local function InCombat()
+	return inCombat or (UnitAffectingCombat and UnitAffectingCombat("player")) and true or false
+end
+Junk.InCombat = InCombat
+
+-- "Selling 3 of 5" and the orange diamond next to the button, only while a job runs.
+local function UpdateProgress()
+	if not button then
+		return
+	end
+	local selling = job ~= nil
+	button.progress:SetShown(selling)
+	button.nokta:SetShown(selling)
+	if selling then
+		button.progress:SetText(("Selling %d of %d"):format(math.max(1, math.min(job.index - 1, #job.slots)), #job.slots))
+	end
+end
+
 local function UpdateButton()
 	if not button then
+		return
+	end
+	if job then
+		-- Mid-sale the label keeps the amount it started with; the button waits.
+		button:Disable()
+		button:SetAlpha(0.5)
+		UpdateProgress()
 		return
 	end
 	local slots = Junk.Slots()
@@ -40,8 +79,17 @@ local function UpdateButton()
 		copper = copper + Value(s)
 	end
 	button.count, button.copper = #slots, copper
-	button:SetLabel(job and ns.L["Selling..."] or (ns.L["Sell junk"] .. (#slots > 0 and (" (" .. #slots .. ")") or "")))
-	button:SetAlpha(#slots > 0 and 1 or 0.5)
+	button:SetLabel(ns.L["Sell junk"] .. " · " .. ShortMoney(copper))
+	-- Nothing marked: nothing to show.
+	button:SetShown(#slots > 0)
+	if InCombat() then
+		button:Disable()
+		button:SetAlpha(0.5)
+	else
+		button:Enable()
+		button:SetAlpha(1)
+	end
+	UpdateProgress()
 end
 
 local function Finish()
@@ -73,6 +121,7 @@ local function Step(_, elapsed)
 		return Finish()
 	end
 	job.index = job.index + 1
+	UpdateProgress()
 	-- The slot may have changed since the list was made: only sell what is still marked junk.
 	local item = C_Container.GetContainerItemInfo(s.bag, s.slot)
 	if item and item.itemID == s.itemID and not item.isLocked and ns.db.junk[s.itemID] then
@@ -83,7 +132,7 @@ local function Step(_, elapsed)
 end
 
 function Junk.Sell()
-	if job or not merchantOpen then
+	if job or not merchantOpen or InCombat() then
 		return false
 	end
 	local slots = Junk.Slots()
@@ -106,25 +155,35 @@ local function CreateButton()
 	if button or not MerchantFrame then
 		return
 	end
-	button = ns.Style.Button(MerchantFrame, 110, 24, ns.L["Sell junk"])
-	if MerchantSellAllJunkButton then
-		button:SetPoint("RIGHT", MerchantSellAllJunkButton, "LEFT", -8, 0)
-	else
-		button:SetPoint("BOTTOMLEFT", MerchantFrame, "BOTTOMLEFT", 12, 34)
-	end
+	-- Folded C.action, cut 10, 28 tall, bottom left above the tabs (spec: On Blizzard frames).
+	button = ns.Style.ActionButton(MerchantFrame, ns.L["Sell junk"], nil, 28)
+	button:SetPoint("BOTTOMLEFT", MerchantFrame, "BOTTOMLEFT", 12, 34)
 	button:SetFrameLevel((MerchantFrame:GetFrameLevel() or 1) + 5)
 	button:SetScript("OnClick", Junk.Sell)
+	button.nokta = ns.Style.Nokta(button, "live")
+	button.nokta:MoveTo(button, "RIGHT", 14, 0, true)
+	button.progress = ns.Style.Text(button, "Small", "text2")
+	button.progress:SetPoint("LEFT", button, "RIGHT", 26, 0)
+	local fold = button:GetScript("OnEnter")
 	button:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine("CraftWise: sell junk")
-		GameTooltip:AddLine(("%d marked %s, %s"):format(self.count or 0, (self.count or 0) == 1 and "stack" or "stacks",
-			ns.FormatMoney(self.copper or 0)), 1, 1, 1)
-		GameTooltip:AddLine("Mark items: middle-click them in your bags, or click them in CraftWise > Bags.", 0.7, 0.7, 0.7, true)
-		GameTooltip:Show()
+		if fold then
+			fold(self)
+		end
+		local lines = { ("%d marked %s, %s"):format(self.count or 0, (self.count or 0) == 1 and "stack" or "stacks",
+			ShortMoney(self.copper or 0)) }
+		if InCombat() then
+			lines[#lines + 1] = "Unavailable in combat. It works again when combat ends."
+		else
+			lines[#lines + 1] = "Mark items: middle-click them in your bags, or click them in CraftWise > Bags."
+		end
+		ns.Style.ShowTip(self, "Sell junk", unpack(lines))
 	end)
+	local unfold = button:GetScript("OnLeave")
 	button:SetScript("OnLeave", function(self)
-		GameTooltip:Hide()
-		self:SetSelected(false)
+		if unfold then
+			unfold(self)
+		end
+		ns.Style.HideTip(self)
 	end)
 	Junk.button = button
 end
@@ -141,6 +200,21 @@ ns.On("MERCHANT_CLOSED", function()
 	end
 end)
 ns.Listen("BAGS_CHANGED", function()
+	if merchantOpen then
+		UpdateButton()
+	end
+end)
+
+-- Combat: the button waits, a running sale stops (the rest stays marked).
+ns.On("PLAYER_REGEN_DISABLED", function()
+	inCombat = true
+	if job then
+		Finish()
+	end
+	UpdateButton()
+end)
+ns.On("PLAYER_REGEN_ENABLED", function()
+	inCombat = false
 	if merchantOpen then
 		UpdateButton()
 	end

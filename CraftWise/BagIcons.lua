@@ -1,53 +1,96 @@
--- Junk icon on items you marked as junk, in the game's bags and in Bagnon (issue #12).
--- Uses the bag button's own JunkIcon, re-textured from Blizzard's coin to a red X so it doesn't look
--- like the "Sell on AH" icon (a small auctioneer icon in the top-left corner). Baganator shows the
--- same JunkIcon texture for its junk widget, so the X shows there too.
+-- Marks on bag slots (issues #12, #160): a folded corner on the slot's top right, 13 units.
+-- Sell on AH: C.coinGold corner. Junk: C.text3 corner and the slot's icon desaturated and dimmed to 55 %.
+-- Keep has no mark (it is the default). Works on the game's bags, Bagnon and Baganator (Baganator.lua
+-- calls ns.ApplySlotMark too). Only marks are added; the client's slot art is left alone.
 local _, ns = ...
 
-ns.AH_ICON = "Interface\\Minimap\\Tracking\\Auctioneer"
+ns.SLOT_CORNER = 13
+ns.JUNK_DIM = 0.55
 
 local function IsAH(itemID)
 	return itemID and ns.db and ns.db.sellAH and ns.db.sellAH[itemID] or false
-end
-
-local ahIcons = setmetatable({}, { __mode = "k" }) -- [button] = texture
-ns.AHIcons = ahIcons
-
-local function SetAHIcon(button, show)
-	local t = ahIcons[button]
-	if not t then
-		if not show then
-			return
-		end
-		t = button:CreateTexture(nil, "OVERLAY", nil, 7)
-		t:SetTexture(ns.AH_ICON)
-		t:SetSize(14, 14)
-		t:SetPoint("TOPLEFT", 1, -1)
-		ahIcons[button] = t
-	end
-	t:SetShown(show and true or false)
-end
-
-ns.JUNK_ICON = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"
-
-local styled = setmetatable({}, { __mode = "k" }) -- [JunkIcon texture] = true
-function ns.StyleJunkIcon(button)
-	local icon = button and button.JunkIcon
-	if type(icon) == "table" and not styled[icon] and icon.SetTexture then
-		icon:SetTexture(ns.JUNK_ICON)
-		icon:SetSize(16, 16)
-		styled[icon] = true
-	end
 end
 
 local function IsJunk(itemID)
 	return itemID and ns.db and ns.db.junk and ns.db.junk[itemID] or false
 end
 
+-- "ah", "junk" or nil for an item.
+function ns.SlotMark(itemID)
+	if IsJunk(itemID) then
+		return "junk"
+	elseif IsAH(itemID) then
+		return "ah"
+	end
+end
+
+local MARK_COLOR = { ah = "coinGold", junk = "text3" }
+
+local corners = setmetatable({}, { __mode = "k" }) -- [button] = corner texture
+ns.SlotCorners = corners
+local dimmed = setmetatable({}, { __mode = "k" }) -- [button] = true while we hold its icon dimmed
+ns.SlotDimmed = dimmed
+
+local function Corner(button)
+	local t = corners[button]
+	if not t then
+		t = button:CreateTexture(nil, "OVERLAY", nil, 7)
+		t:SetTexture(ns.Style.Media.fold)
+		t:SetSize(ns.SLOT_CORNER, ns.SLOT_CORNER)
+		t:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
+		corners[button] = t
+	end
+	return t
+end
+
+local function IconOf(button)
+	local icon = button.icon or button.Icon
+	if type(icon) == "table" and icon.SetDesaturated then
+		return icon
+	end
+end
+
+-- Junk: the slot's icon desaturated and dimmed to 55 %; back to normal when the mark goes.
+function ns.SetSlotDim(button, dim)
+	local icon = button and IconOf(button)
+	if not icon then
+		return
+	end
+	if dim then
+		icon:SetDesaturated(true)
+		icon:SetAlpha(ns.JUNK_DIM)
+		dimmed[button] = true
+	elseif dimmed[button] then
+		icon:SetDesaturated(false)
+		icon:SetAlpha(1)
+		dimmed[button] = nil
+	end
+end
+
+-- Mark a slot for `mark` ("ah", "junk" or nil), or clear it.
+function ns.SetSlotMark(button, mark)
+	if not button then
+		return
+	end
+	local t = corners[button]
+	if mark then
+		t = Corner(button)
+		local c = ns.Style.Color(MARK_COLOR[mark])
+		t:SetVertexColor(c[1], c[2], c[3], 1)
+		t:Show()
+	elseif t then
+		t:Hide()
+	end
+	ns.SetSlotDim(button, mark == "junk")
+end
+
+function ns.ApplySlotMark(button, itemID)
+	ns.SetSlotMark(button, ns.SlotMark(itemID))
+end
+
 -- Blizzard bags: every item button of the combined bag and the single bag frames.
-local refresh = false
 local function UpdateButton(button)
-	if not (button and button.JunkIcon and button.GetBagID) then
+	if not (button and button.GetBagID) then
 		return
 	end
 	local ok, bag = pcall(button.GetBagID, button)
@@ -55,16 +98,8 @@ local function UpdateButton(button)
 	if not ok or not bag or not slot then
 		return
 	end
-	ns.StyleJunkIcon(button)
 	local info = C_Container.GetContainerItemInfo(bag, slot)
-	SetAHIcon(button, IsAH(info and info.itemID))
-	if IsJunk(info and info.itemID) then
-		button.JunkIcon:Show()
-	elseif refresh then
-		-- Unmarked: back to Blizzard's own rule (grey items while a merchant is open).
-		local poor = info and info.quality == 0 and not info.hasNoValue
-		button.JunkIcon:SetShown(poor and MerchantFrame and MerchantFrame:IsShown() or false)
-	end
+	ns.ApplySlotMark(button, info and info.itemID)
 end
 
 local function UpdateContainer(frame)
@@ -90,18 +125,15 @@ local function HookBlizzard()
 	end)
 end
 
--- Bagnon: its item class decides the junk icon in UpdateBorder; show ours after it.
+-- Bagnon: marks are drawn after its UpdateBorder.
 local function HookBagnon()
 	local Bagnon = _G.Bagnon or _G.Bagnonium
 	if not (Bagnon and Bagnon.Item and Bagnon.Item.UpdateBorder) then
 		return nil
 	end
 	hooksecurefunc(Bagnon.Item, "UpdateBorder", function(item)
-		ns.StyleJunkIcon(item)
-		SetAHIcon(item, not (item.IsCached and item:IsCached()) and IsAH(item.info and item.info.itemID))
-		if item.JunkIcon and not (item.IsCached and item:IsCached()) and IsJunk(item.info and item.info.itemID) then
-			item.JunkIcon:Show()
-		end
+		local cached = item.IsCached and item:IsCached()
+		ns.ApplySlotMark(item, not cached and item.info and item.info.itemID or nil)
 	end)
 	return Bagnon
 end
@@ -112,13 +144,11 @@ ns.On("PLAYER_LOGIN", function()
 	bagnon = HookBagnon()
 end)
 
--- Marking or unmarking redraws the icons. Blizzard's frames are not re-run from here (that could
--- taint the bag buttons); only the icon textures are set.
+-- Marking or unmarking redraws the marks. Blizzard's frames are not re-run from here (that could
+-- taint the bag buttons); only our corner and the icon's tint are set.
 ns.Listen("JUNK_CHANGED", function()
 	if bagnon and bagnon.Frames and bagnon.Frames.Update then
 		pcall(bagnon.Frames.Update, bagnon.Frames)
 	end
-	refresh = true
 	ContainerFrames(UpdateContainer)
-	refresh = false
 end)
