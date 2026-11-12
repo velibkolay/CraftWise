@@ -11,6 +11,7 @@ return {
 		["C_TradeSkillUI.IsTradeSkillGuild"] = UI .. "Blizzard_ProfessionsRecipeList.lua",
 		["C_TradeSkillUI.IsTradeSkillLinked"] = UI .. "Blizzard_ProfessionsFrame.lua",
 		CreateFrame = UI .. "everywhere; " .. GAME,
+		CreateFont = UI .. "Blizzard_SharedXML/FontableFrameMixin.lua (self.fontObject = CreateFont(name), then :SetFont)",
 		GetInventoryItemID = UI .. "Mainline/PaperDollFrame.lua; " .. GAME .. " (Upgrades view)",
 		GetInventoryItemLink = UI .. "Mainline/ContainerFrame.lua",
 		GetInventorySlotInfo = UI .. "SecureAuraHeader.lua; " .. GAME .. " (Upgrades view)",

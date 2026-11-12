@@ -27,8 +27,31 @@ function frameMeta.CreateFontString() return widget() end
 function frameMeta.GetStringWidth() return 80 end
 function frameMeta.GetFrameLevel() return 2 end
 function frameMeta.CreateTexture() return widget() end
-function frameMeta.SetPoint(self, ...) self.lastPoint = { ... } end
+-- Anchors and sizes are recorded so specs can work out where a region sits (tests/style_spec.lua).
+function frameMeta.SetPoint(self, ...)
+	self.lastPoint = { ... }
+	self.points = self.points or {}
+	table.insert(self.points, { ... })
+end
+function frameMeta.ClearAllPoints(self) self.points = {} end
+function frameMeta.SetAllPoints(self, rel) self.points = { { "TOPLEFT", rel, "TOPLEFT", 0, 0 }, { "BOTTOMRIGHT", rel, "BOTTOMRIGHT", 0, 0 } } end
+function frameMeta.SetSize(self, w, h) self.width, self.height = w, h end
+function frameMeta.SetWidth(self, w) self.width = w end
+function frameMeta.SetHeight(self, h) self.height = h end
+function frameMeta.SetVertexColor(self, r, g, b, a) self.vertexColor = { r, g, b, a } end
+function frameMeta.SetTextColor(self, r, g, b, a) self.textColor = { r, g, b, a } end
+function frameMeta.SetFont(self, path, size, flags) self.font = { path, size, flags } end
+function frameMeta.GetFont(self) if self.font then return unpack(self.font) end end
+function frameMeta.SetFontObject(self, f) self.fontObject = f end
 function frameMeta.SetAlpha(self, a) self.alpha = a end
+
+-- Font objects (CreateFont): named ones become globals, as in the client.
+function CreateFont(name)
+	local f = widget()
+	f.name = name
+	if name then _G[name] = f end
+	return f
+end
 
 stub.frames = {}
 function CreateFrame(_, name)
