@@ -27,6 +27,12 @@ function frameMeta.CreateFontString() return widget() end
 function frameMeta.GetStringWidth() return 80 end
 function frameMeta.GetFrameLevel() return 2 end
 function frameMeta.CreateTexture() return widget() end
+-- Line objects (Region:CreateLine): start and end points, thickness and colour are recorded.
+function frameMeta.CreateLine() local l = widget(); l.isLine = true; return l end
+function frameMeta.SetStartPoint(self, ...) self.startPoint = { ... } end
+function frameMeta.SetEndPoint(self, ...) self.endPoint = { ... } end
+function frameMeta.SetThickness(self, n) self.thickness = n end
+function frameMeta.SetColorTexture(self, r, g, b, a) self.colorTexture = { r, g, b, a } end
 -- Anchors and sizes are recorded so specs can work out where a region sits (tests/style_spec.lua).
 function frameMeta.SetPoint(self, ...)
 	self.lastPoint = { ... }

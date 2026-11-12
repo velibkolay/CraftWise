@@ -62,25 +62,7 @@ local function UpdateControls()
 		button:SetSelected(key == View())
 	end
 	PF.frame.fits:SetShown(learnView)
-	local upgradesView = View() == "upgrades"
-	local ahSection = upgradesView and PF.UpgradeSection() == "ah"
-	local rightButton = ahSection and PF.frame.searchAH or nil
-	PF.frame.summary:SetPoint("RIGHT", rightButton or PF.frame, rightButton and "LEFT" or "RIGHT", rightButton and -12 or -PAD, 0)
-	PF.frame.showDismissed:SetShown(upgradesView)
-	for key, button in pairs(PF.frame.sectionButtons) do
-		button:SetShown(upgradesView)
-		button:SetSelected(key == PF.UpgradeSection())
-	end
-	PF.frame.searchAH:SetShown(ahSection)
-	if ahSection then
-		local running = ns.UpgradeSearch.Running()
-		PF.frame.searchAH:SetLabel(running and L["Searching..."] or L["Search AH"])
-		PF.frame.searchAH.label:SetAlpha((not running and ns.UpgradeSearch.CanSearch()) and 1 or 0.5)
-	end
-	PF.frame.musicOn:SetShown(View() == "music")
-	PF.frame.partyBtn:SetShown(View() == "music")
-	PF.frame.partyBtn:SetLabel(ns.Music.PartyActive() and "Stop party" or "Party!")
-	PF.frame.partyBtn:SetSelected(ns.Music.PartyActive())
+	PF.frame.summary:SetPoint("RIGHT", PF.frame, "RIGHT", -PAD, 0)
 	local levelView = View() == "level"
 	PF.frame.priced:SetShown(not learnView and not levelView and not ItemView())
 	PF.frame.unlearned:SetShown(not learnView and not levelView and not ItemView())

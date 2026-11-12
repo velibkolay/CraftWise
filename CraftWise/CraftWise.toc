@@ -63,14 +63,11 @@ UI\ProfitFrame\State.lua
 UI\ProfitFrame\Data.lua
 UI\ProfitFrame\Rows.lua
 UI\ProfitFrame\Tooltips.lua
-UI\ProfitFrame\SongPicker.lua
 UI\ProfitFrame\Layout.lua
 UI\ProfitFrame\Refresh.lua
 UI\ProfitFrame\Frame.lua
 UI\ProfitFrame\Events.lua
 UI\Records\State.lua
-UI\Records\Market.lua
-UI\Records\Where.lua
 UI\Records\Snapshot.lua
 UI\Records\Frame.lua
 UI\Main\Shell.lua
@@ -85,4 +82,8 @@ UI\Main\Pages\Ledger.lua
 UI\Main\Pages\Farm.lua
 UI\Main\Pages\Fishing.lua
 UI\Main\Pages\Crates.lua
+UI\Main\Pages\Items.lua
+UI\Main\Pages\Upgrades.lua
+UI\Main\Pages\Music.lua
+UI\Main\Pages\Settings.lua
 UI\MinimapButton.lua

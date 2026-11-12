@@ -1,7 +1,7 @@
--- Issue #137: every feature reachable from the UI. The Records window (market, where to buy, snapshot; ledger
--- and auctions moved to Sell, #155: tests/sell_pages_spec.lua; crates and the fishing log to Gather, #156:
--- tests/gather_spec.lua), its view models, the main window's Records button, the item menu entries, the
--- Settings toggles, and the slash commands still working.
+-- Issue #137: every feature reachable from the UI. The Records window (snapshot; ledger and auctions moved to
+-- Sell, #155: tests/sell_pages_spec.lua; crates and the fishing log to Gather, #156: tests/gather_spec.lua;
+-- market and where to buy to Look up › Items, #157: tests/lookup_items_spec.lua), its view models, the main
+-- window's Records button, the Settings toggles, and the slash commands still working.
 local NOW = os.time({ year = 2026, month = 11, day = 12, hour = 15 })
 local DAY = 86400
 local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
@@ -88,12 +88,12 @@ it("the main window's Records button opens the Records window; every tab builds 
 	-- the order of the tabs
 	local keys = {}
 	for _, tab in ipairs(ns.RW.tabs) do keys[#keys + 1] = tab.key end
-	eq(table.concat(keys, ","), "market,where,snapshot")
+	eq(table.concat(keys, ","), "snapshot")
 	-- toggling: same tab closes, another tab switches
 	ns.ToggleRecords("snapshot")
 	eq(CraftWiseRecordsFrame:IsShown(), false)
-	ns.ToggleRecords("market")
-	eq(CraftWiseRecordsFrame:IsShown(), true); eq(ns.RW.CurrentTab(), "market")
+	ns.ToggleRecords("snapshot")
+	eq(CraftWiseRecordsFrame:IsShown(), true); eq(ns.RW.CurrentTab(), "snapshot")
 end)
 
 it("every tab's columns fit the window, at most six, the first is the name", function()
@@ -111,77 +111,6 @@ it("every tab's columns fit the window, at most six, the first is the name", fun
 			assert(w <= room, ("%s: columns %d px wide, room %d"):format(tab.key, w, room))
 		end
 	end
-end)
-
-------------------------------------------------------------------------------------------- market
-
-it("market: scope items by default, any recorded item by name, ID or link; a row per house with details", function()
-	local ns = Load()
-	seedMarket(LINEN, HORDE, { typs = { 15, 16, 14, 15, 15 }, tiers = { 14, 40, 16, 60 }, total = 100, listings = 2 })
-	seedMarket(LINEN, BOOTY, { min = 20, total = 5 })
-	seedMarket(BOOTS, HORDE, { min = 900, total = 1 })
-	CraftWiseMarketDB.scope.items[LINEN] = true
-	CraftWiseMarketDB.names[BOOTS] = "Old Boots"
-	-- default: the scope only
-	local keys = ns.RW.Market.Keys("")
-	eq(#keys, 1); eq(keys[1], LINEN)
-	local m = ns.RW.Market.Model()
-	eq(#m.rows, 2, "Linen Cloth at both houses")
-	eq(m.rows[1].cells.house, "Horde AH")
-	eq(m.rows[1].cells.last, ns.FormatMoney(14))
-	has(m.rows[1].cells.typical, ns.FormatMoney(15))
-	local tips = {}
-	for _, t in ipairs(m.rows[1].tip) do tips[#tips + 1] = type(t) == "table" and (t[1] .. " " .. t[2]) or t end
-	has(table.concat(tips, "\n"), "Cheapest")
-	has(m.summary, "Horde AH: full scan")
-	-- a name search finds items outside the scope
-	ns.RW.SetQuery("market", "boots")
-	m = ns.RW.Market.Model()
-	eq(#m.rows, 1); eq(m.rows[1].itemID, BOOTS); eq(m.rows[1].cells.last, ns.FormatMoney(900))
-	-- an item ID and a link
-	eq(ns.RW.Market.Keys(tostring(BOOTS))[1], BOOTS)
-	eq(ns.RW.Market.Keys("|cffffffff|Hitem:" .. BOOTS .. "::::|h[Old Boots]|h|r")[1], BOOTS)
-	ns.RW.SetQuery("market", "nothing like it")
-	m = ns.RW.Market.Model()
-	eq(#m.rows, 0); has(m.empty, "No recorded item matches")
-end)
-
-it("market: at most MARKET_MAX items are listed, the rest counted", function()
-	local ns = Load()
-	ns.RW.MARKET_MAX = 3
-	for id = 1, 5 do
-		CraftWiseMarketDB.items[100 + id] = { [HORDE] = { raw = {}, days = {}, last = { t = NOW, min = 10, qty = 1 } } }
-		CraftWiseMarketDB.scope.items[100 + id] = true
-	end
-	local keys, more = ns.RW.Market.Keys("")
-	eq(#keys, 3); eq(more, 2)
-	has(ns.RW.Market.Model().summary, "2 more")
-end)
-
-------------------------------------------------------------------------------------------- where
-
-it("where to buy: sellers of an item by name or ID, cheapest first, with place, price and stock", function()
-	local ns = Load()
-	ns.db.merchants[3027] = { name = "Sewa Mistrunner", zone = "Thunder Bluff", sub = "Lower Rise", x = 47.2, y = 58.1, t = NOW - 3600,
-		items = { [SALT] = { name = "Salt", p = 40, s = 1, n = -1, t = NOW - 3600 } } }
-	ns.db.merchants[3081] = { name = "Wunna Darkmane", zone = "Mulgore", t = NOW - 60,
-		items = { [SALT] = { name = "Salt", p = 50, s = 1, n = 3, t = NOW - 60 } } }
-	local items = ns.RW.Where.Items("sal")
-	eq(#items, 1); eq(items[1], SALT)
-	ns.RW.SetQuery("where", "salt")
-	local m = ns.RW.Where.Model()
-	eq(#m.rows, 2)
-	eq(m.rows[1].name, "Sewa Mistrunner")
-	has(m.rows[1].cells.place, "Thunder Bluff, Lower Rise")
-	has(m.rows[2].cells.stock, "3 in stock")
-	has(m.summary, "2 merchants recorded")
-	ns.RW.SetQuery("where", tostring(SALT))
-	eq(#ns.RW.Where.Model().rows, 2)
-	ns.RW.SetQuery("where", "")
-	m = ns.RW.Where.Model()
-	eq(#m.rows, 0); has(m.empty, "Search for an item")
-	ns.RW.SetQuery("where", "unobtainium")
-	has(ns.RW.Where.Model().empty, "No merchant you opened sells an item named")
 end)
 
 ------------------------------------------------------------------------------------------- snapshot
@@ -206,20 +135,8 @@ end)
 
 ------------------------------------------------------------------------------------------- frame
 
-it("window: search box, buttons, rows, tooltips, item clicks open the item menu, scrolling", function()
+it("window: the tab's buttons are real buttons, scrolling", function()
 	local ns, stub = Load()
-	seedMarket(LINEN, HORDE, { min = 14, total = 100 })
-	CraftWiseMarketDB.scope.items[LINEN] = true
-	ns.ShowRecords("market")
-	local rows = visibleRows(stub)
-	eq(#rows, 1); eq(rows[1].itemID, LINEN)
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.cells and f.sub and f.shown ~= false then
-			f.scripts.OnEnter(f); f.scripts.OnLeave(f)
-			f.scripts.OnClick(f, "LeftButton")
-		end
-	end
-	assert(CraftWiseItemMenu and CraftWiseItemMenu:IsShown(), "item menu opened from the row")
 	-- the tab's buttons are real buttons: Reload UI on the Snapshot tab
 	ns.ShowRecords("snapshot")
 	local reloaded = false
@@ -227,32 +144,8 @@ it("window: search box, buttons, rows, tooltips, item clicks open the item menu,
 	local reload = findButton(stub, "Reload UI")
 	reload.scripts.OnClick(reload)
 	eq(reloaded, true)
-	-- search box drives the market tab's query
-	ns.ShowRecords("market")
-	local box = CraftWiseRecordsFrame.search
-	box:SetText("linen")
-	box.scripts.OnTextChanged(box)
-	eq(ns.RW.Query("market"), "linen")
 	CraftWiseRecordsFrame.scripts.OnMouseWheel(CraftWiseRecordsFrame, -1)
 	CraftWiseRecordsFrame.scripts.OnUpdate(CraftWiseRecordsFrame, 2)
-	-- opening with a query fills the box
-	ns.ShowRecords("where", "salt")
-	eq(CraftWiseRecordsFrame.search:GetText(), "salt")
-	eq(ns.RW.Query("where"), "salt")
-end)
-
-it("item menu: Where to buy and Price history open the Records window for the item (until Look up › Items, #157)", function()
-	local ns, stub = Load()
-	ns.ShowItemMenu(SALT)
-	local where = CraftWiseItemMenu.buttons.where
-	where.scripts.OnClick(where)
-	eq(ns.RW.CurrentTab(), "where"); eq(ns.RW.Query("where"), tostring(SALT))
-	ns.ShowItemMenu(LINEN)
-	local history = CraftWiseItemMenu.buttons.history
-	history.scripts.OnEnter(history); history.scripts.OnLeave(history)
-	history.scripts.OnClick(history)
-	eq(ns.RW.CurrentTab(), "market"); eq(ns.RW.Query("market"), tostring(LINEN))
-	eq(CraftWiseRecordsFrame:IsShown(), true)
 end)
 
 ------------------------------------------------------------------------------------------- settings

@@ -69,36 +69,55 @@ it("plays for crafting recipes of a profession and cycles back to no song", func
 	eq(ns.db.music.professions.Leatherworking.song, nil)
 end)
 
-it("music view: clicking a profession opens the song picker with preview and mode", function()
+it("Music page: a row per profession; the Song list chooses and previews, Next cast and volume; add a song by name", function()
 	local ns, stub = setup()
-	ns.db.settings.view = "music"
-	ns.ToggleProfitFrame()
-	local row
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.name == "Skinning" then row = f end
-	end
-	eq(row.data.song, "Song")
-	row.scripts.OnEnter(row)
-	row.scripts.OnClick(row, "LeftButton")
-	local picker = CraftWiseSongPicker
-	assert(picker and picker.shown ~= false, "picker shown")
-	-- options: No music, Other, Song
-	eq(picker.songs[3].pick.selected, true)
-	picker.restart.scripts.OnClick(picker.restart)
-	eq(ns.db.music.professions.Skinning.mode, "restart")
-	picker.songs[2].play.scripts.OnClick(picker.songs[2].play) -- preview Other
+	local M = ns.Main
+	M.Open("music")
+	eq(M.shown.page, "music")
+	local body = M.SlotsOf("music").body
+	local rows = M.Music.lastRows
+	eq(rows[1].party, true); eq(rows[2].name, "Skinning"); eq(rows[2].song, "Song")
+	local r = body.list.rows[2]
+	eq(r.name.text, "Skinning"); eq(r.skill.text, "30")
+	eq(r.song.text.text, "Song"); eq(r.video.text.text, "No video")
+	eq(r.mode.selected, 1, "Resume")
+	r.song.scripts.OnClick(r.song)
+	local menu = CraftWiseMusicMenu
+	eq(menu.shown, true)
+	-- options: No song, Other, Song
+	eq(menu.rows[1].label.text, "No song"); eq(menu.rows[3].current, true)
+	menu.rows[2].play.scripts.OnClick(menu.rows[2].play) -- preview Other
 	eq(ns.Music.PreviewSong(), "Other")
 	eq(stub.sounds[#stub.sounds].file, "P\\001.ogg")
-	picker.songs[2].pick.scripts.OnClick(picker.songs[2].pick)
-	eq(ns.db.music.professions.Skinning.song, "Other")
-	picker.songs[1].pick.scripts.OnClick(picker.songs[1].pick)
-	eq(ns.db.music.professions.Skinning.song, nil)
+	eq(menu.rows[2].play.label.text, "Stop")
+	menu.rows[2].scripts.OnClick(menu.rows[2])
+	eq(ns.db.music.professions.Skinning.song, "Other"); eq(menu.shown, false)
 	eq(ns.db.music.position.Other, nil) -- preview never saves a position
-	picker.addBox:SetText("Jingle.ogg")
-	picker.addBtn.scripts.OnClick(picker.addBtn)
+	r = body.list.rows[2]
+	eq(r.song.text.text, "Other")
+	r.mode.buttons[2].scripts.OnClick(r.mode.buttons[2])
+	eq(ns.db.music.professions.Skinning.mode, "restart")
+	r.volume.scripts.OnValueChanged(r.volume, 0.4)
+	eq(ns.Music.Volume("Skinning"), 0.4)
+	r.song.scripts.OnClick(r.song)
+	menu.rows[1].scripts.OnClick(menu.rows[1])
+	eq(ns.db.music.professions.Skinning.song, nil)
+	body.add.box:SetText("Jingle.ogg")
+	body.add.btn.scripts.OnClick(body.add.btn)
 	eq(ns.db.music.files.Jingle, "Jingle.ogg")
-	eq(ns.db.music.professions.Skinning.song, "Jingle") -- added song is picked
-	assert(picker.addMsg.text:find("Added"))
+	assert(body.add.msg.text:find("Added Jingle", 1, true), body.add.msg.text)
+	eq(body.add.box:GetText(), "")
+	r.song.scripts.OnClick(r.song) -- a song added by name can be removed from the list
+	local jingle
+	for _, row in ipairs(menu.rows) do
+		if row.opt and row.opt.value == "Jingle" and row.shown ~= false then jingle = row end
+	end
+	eq(jingle.remove.shown, true)
+	jingle.remove.scripts.OnClick(jingle.remove)
+	eq(ns.db.music.files.Jingle, nil)
+	body.add.box:SetText("Song.wav")
+	body.add.btn.scripts.OnClick(body.add.btn)
+	eq(body.add.msg.text, "Only .mp3 and .ogg files play in WoW.")
 end)
 
 it("adds a song file from the Songs folder by name; it plays from the start and can be removed", function()
@@ -191,16 +210,43 @@ it("party: one toggle dances and starts song + video, ignores casts, stops on th
 	eq(ns.Music.PartyActive(), false)
 end)
 
-it("music view lists Party first with a party button", function()
+it("Music page: the orange Playing card while a song plays; Music on and Party! there, else in the list bar", function()
 	local ns, stub = setup()
-	ns.db.settings.view = "music"
-	ns.ToggleProfitFrame()
-	local first
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.party then first = f end
-	end
-	assert(first, "party row")
-	first.scripts.OnEnter(first)
+	local M = ns.Main
+	M.Open("music")
+	local body = M.SlotsOf("music").body
+	eq(body.card.shown, false)
+	eq(body.listBar.on.shown, true); eq(body.listBar.party.shown, true)
+	eq(body.listBar.on.on, true, "Music on")
+	stub.Fire("UNIT_SPELLCAST_START", "player", "c1", 8613)
+	stub.now = stub.now + 1
+	body.scripts.OnUpdate(body, 1) -- the page polls what plays
+	eq(body.card.shown, true)
+	eq(body.card.label.text, "Playing · while you cast Skinning")
+	eq(body.card.name.text, "Song")
+	eq(body.card.sub.text, "chunk 1 of 3 · resumes here next cast")
+	eq(body.card.bar.from.text, "0:01"); eq(body.card.bar.to.text, "0:06")
+	eq(body.listBar.on.shown, false)
+	body.card.on.scripts.OnClick(body.card.on)
+	eq(ns.db.music.enabled, false); eq(ns.Music.IsPlaying(), false)
+	body.scripts.OnUpdate(body, 1)
+	eq(body.card.shown, false)
+	eq(body.listBar.on.on, false)
+	body.listBar.on.scripts.OnClick(body.listBar.on)
+	eq(ns.db.music.enabled, true)
+	ns.Music.SetSong("Party", "Song")
+	body.listBar.party.scripts.OnClick(body.listBar.party)
+	eq(ns.Music.PartyActive(), true)
+	body.scripts.OnUpdate(body, 1)
+	eq(body.card.label.text, "Playing · Party")
+	eq(body.card.party.label.text, "Stop party")
+	body.card.party.scripts.OnClick(body.card.party)
+	eq(ns.Music.PartyActive(), false)
+	-- Party is the first row; its name explains the key
+	local party = body.list.rows[1]
+	eq(party.name.text, "Party"); eq(party.mode.shown, false)
+	party.nameHit.scripts.OnEnter(party.nameHit)
+	eq(CraftWiseInverseTip.title.text, "Party")
 end)
 
 it("start-over and party play the full file (looping), resume plays chunks", function()

@@ -270,6 +270,17 @@ local function Place()
 	frame:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
 end
 
+-- Settings › Look › Reset window positions (#157): back to the default place.
+function FF.ResetPosition()
+	local s = Settings()
+	if s then
+		s.pos = nil
+	end
+	if frame then
+		Place()
+	end
+end
+
 local function StartDrag()
 	if frame and not frame.locked then
 		frame:StartMoving()

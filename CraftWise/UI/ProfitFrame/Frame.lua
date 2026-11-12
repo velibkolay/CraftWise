@@ -8,7 +8,7 @@ local WIDTH, HEIGHT, PAD, ROW_HEIGHT, HEADER_Y, LIST_TOP, VISIBLE_ROWS =
 local COLUMN_DEFS, VIEWS, CELL_KEYS = PF.COLUMN_DEFS, PF.VIEWS, PF.CELL_KEYS
 local rows, viewButtons, state = PF.rows, PF.viewButtons, PF.state
 local Settings, Muted, View = PF.Settings, PF.Muted, PF.View
-local Refresh, ShowTooltip, ShowPicker = PF.Refresh, PF.ShowTooltip, PF.ShowPicker
+local Refresh, ShowTooltip = PF.Refresh, PF.ShowTooltip
 
 local function BuildHeader()
 	local title = PF.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -18,20 +18,17 @@ local function BuildHeader()
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3) -- below the title: the header row holds the Records button
 	subtitle:SetText(Muted("Profit, gear, loot"))
 
-	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Level | Upgrades | Music.
-	-- Bags moved to the main window's Sell › Bags (#155), Fishing to Gather › Fishing (#156).
-	local musicBtn = Style.Button(PF.frame, 64, 24, L["Music"])
-	musicBtn:SetPoint("TOPRIGHT", -66, -14)
-	local upgradesBtn = Style.Button(PF.frame, 86, 24, L["Upgrades"])
-	upgradesBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
+	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Level.
+	-- Bags moved to the main window's Sell › Bags (#155), Fishing to Gather › Fishing (#156), Upgrades and
+	-- Music to Look up › Upgrades and Music (#157).
 	local levelBtn = Style.Button(PF.frame, 64, 24, L["Level"])
-	levelBtn:SetPoint("RIGHT", upgradesBtn, "LEFT", -6, 0)
+	levelBtn:SetPoint("TOPRIGHT", -66, -14)
 	local learnBtn = Style.Button(PF.frame, 64, 24, L["Learn"])
 	learnBtn:SetPoint("RIGHT", levelBtn, "LEFT", -6, 0)
 	local profitBtn = Style.Button(PF.frame, 64, 24, L["Profit"])
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
 	viewButtons.profit, viewButtons.learn = profitBtn, learnBtn
-	viewButtons.upgrades, viewButtons.music, viewButtons.level = upgradesBtn, musicBtn, levelBtn
+	viewButtons.level = levelBtn
 	for key, button in pairs(viewButtons) do
 		button:SetScript("OnClick", function()
 			Settings().view, state.offset = key, 0
@@ -136,60 +133,7 @@ local function BuildHeader()
 		Refresh()
 	end)
 	fits:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	local showDismissed = Style.Check(PF.frame, L["Show dismissed"], Settings().showDismissed, function(v)
-		Settings().showDismissed, state.offset = v, 0
-		Refresh()
-	end)
-	showDismissed:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	PF.frame.unlearned, PF.frame.priced, PF.frame.fits = unlearned, priced, fits
-	PF.frame.showDismissed = showDismissed
-
-	-- Upgrades: sections Craftable (#16) | General / AH (#50), and the AH search button (#50).
-	local craftSection = Style.Button(PF.frame, 90, 22, L["Craftable"])
-	craftSection:SetPoint("TOPLEFT", PAD + 222, -98)
-	local ahSection = Style.Button(PF.frame, 104, 22, L["General / AH"])
-	ahSection:SetPoint("LEFT", craftSection, "RIGHT", 6, 0)
-	PF.frame.sectionButtons = { craft = craftSection, ah = ahSection }
-	for key, button in pairs(PF.frame.sectionButtons) do
-		button:SetScript("OnClick", function()
-			Settings().upgradeSection, state.offset = key, 0
-			Refresh()
-		end)
-	end
-	local searchAH = Style.Button(PF.frame, 120, 22, L["Search AH"])
-	searchAH:SetPoint("TOPRIGHT", -PAD, -126)
-	searchAH:SetScript("OnClick", function()
-		ns.UpgradeSearch.Start() -- a click: the hardware event the AH search starts from
-		Refresh()
-	end)
-	searchAH:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:AddLine(L["Search AH"])
-		GameTooltip:AddLine("One search per equipment slot for gear you can wear now, while the auction house is open. Nothing runs in the background.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	searchAH:SetScript("OnLeave", function(self)
-		GameTooltip:Hide()
-		self:SetSelected(false)
-	end)
-	PF.frame.searchAH = searchAH
-
-	local musicOn = Style.Check(PF.frame, L["Music on"], ns.db.music.enabled, function(v)
-		ns.db.music.enabled = v
-		if not v then
-			ns.Music.Stop()
-		end
-		Refresh()
-	end)
-	musicOn:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	PF.frame.musicOn = musicOn
-	local partyBtn = Style.Button(PF.frame, 96, 22, L["Party!"])
-	partyBtn:SetPoint("RIGHT", musicOn, "LEFT", -24, 0)
-	partyBtn:SetScript("OnClick", function()
-		ns.Music.ToggleParty()
-		Refresh()
-	end)
-	PF.frame.partyBtn = partyBtn
 
 	PF.frame.summary = PF.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	PF.frame.summary:SetPoint("TOPLEFT", PAD, -130)
@@ -210,20 +154,12 @@ local function BuildColumns()
 		header:SetScript("OnClick", function()
 			local s = Settings()
 			local ascending = key == "name" or key == "whereText" or key == "required"
-			if View() == "music" then
-				return
-			elseif View() == "level" then
+			if View() == "level" then
 				if (s.levelSortKey or "perPoint") == key then
 					s.levelSortDesc = not s.levelSortDesc
 				else
 					-- money columns: best first (lowest cost / per point); chance and sale: highest first
 					s.levelSortKey, s.levelSortDesc = key, key == "chance" or key == "saleValue"
-				end
-			elseif View() == "upgrades" then
-				if (s.upgradeSortKey or "gain") == key then
-					s.upgradeSortDesc = not (s.upgradeSortDesc ~= false)
-				else
-					s.upgradeSortKey, s.upgradeSortDesc = key, not (key == "name" or key == "equippedText" or key == "cost")
 				end
 			elseif View() == "learn" then
 				if s.learnSortKey == key then
@@ -297,12 +233,7 @@ local function BuildRows()
 			if not r then
 				return
 			end
-			if View() == "music" then
-				ShowPicker(self, r.name)
-			elseif View() == "upgrades" and mouse == "RightButton" and r.itemID then
-				ns.ToggleDismissed(r.itemID)
-				ShowTooltip(self)
-			elseif C_TradeSkillUI.OpenRecipe then
+			if C_TradeSkillUI.OpenRecipe then
 				pcall(C_TradeSkillUI.OpenRecipe, r.recipeID)
 			end
 		end)

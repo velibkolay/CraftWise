@@ -1,5 +1,6 @@
--- Records window (#137): what CraftWise recorded, in tabs (Market, Where to buy, Snapshot; Ledger and Auctions
--- moved to the main window's Sell section, #155, Crates and Fishing log to Gather, #156). Everything that was
+-- Records window (#137): what CraftWise recorded, in tabs (Snapshot; Ledger and Auctions moved to the main
+-- window's Sell section, #155, Crates and Fishing log to Gather, #156, Market and Where to buy to Look up ›
+-- Items, #157). Everything that was
 -- only printed to chat by a slash command gets a view here; the slash commands stay as another way in.
 -- The window is split like the profit window: State (constants, tab registry, helpers), one file per tab
 -- (its columns, controls and Model), Frame (widgets, refresh, opening). The files share internals through
@@ -20,8 +21,6 @@ local RW = {
 	PAD = 16,
 	ROW_HEIGHT = 30,
 	HEADER_Y = -150, -- top of the column header row
-	MARKET_MAX = 150, -- market rows listed at once; a search narrows them
-	WHERE_MAX = 5, -- items listed for one name search
 }
 RW.LIST_TOP = RW.HEADER_Y - 22
 RW.VISIBLE_ROWS = math.floor((RW.HEIGHT + RW.LIST_TOP - 40) / RW.ROW_HEIGHT)

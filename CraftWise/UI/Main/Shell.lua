@@ -10,6 +10,8 @@
 --   kind = "list" (hero card + list, the default) | "custom" (the page draws its own body),
 --   profession = true   uses the shared profession choice; the First run state applies
 --   prices = true       uses AH prices: the header shows the AH status; No prices and Stale apply
+--   pricesOptional = true   with prices: the AH status shows, but No prices doesn't replace the page
+--                           (pages that also work without the AH, e.g. Look up › Items)
 --   events = { "BAGS_CHANGED", ... }   ns.Notify names that refresh the page while it shows
 --   Model(ctx) -> model           list pages: { rows, hero, empty, footer, footerRight, listTitle,
 --                                  listNote }; rows are plain tables (itemID, icon, name, cells = {}, key)
@@ -456,7 +458,7 @@ function M.BlockingState(page, ctx)
 	if page.profession and not (ctx.prof and next(ctx.prof.recipes or {})) then
 		return "firstRun"
 	end
-	if page.prices and not (ctx.prices and ctx.prices.hasData) and not M.state.vendorOnly[page.key] then
+	if page.prices and not page.pricesOptional and not (ctx.prices and ctx.prices.hasData) and not M.state.vendorOnly[page.key] then
 		return "noPrices"
 	end
 	return nil

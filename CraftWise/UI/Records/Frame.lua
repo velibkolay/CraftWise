@@ -52,7 +52,7 @@ local function ShowRowTooltip(self)
 		end
 	end
 	if r.itemID and not r.onClick then
-		GameTooltip:AddLine(L["Click: item menu (Keep, Junk, Where to buy, Market prices)."], 0.55, 0.55, 0.6, true)
+		GameTooltip:AddLine(L["Click: item menu (Keep, Junk, Where to buy, Price history)."], 0.55, 0.55, 0.6, true)
 	end
 	GameTooltip:Show()
 end
@@ -201,7 +201,7 @@ local function BuildHeader()
 	title:SetText("|cffffffffCraftWise|r")
 	local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("LEFT", title, "RIGHT", 10, -1)
-	subtitle:SetText(Muted(L["Records: market, merchants, snapshot"]))
+	subtitle:SetText(Muted(L["Records: snapshot"]))
 	local close = Style.CloseButton(frame, function()
 		frame:Hide()
 	end)
@@ -489,11 +489,6 @@ end
 
 function RW.Frame()
 	return frame
-end
-
--- Market prices for one item (item menu).
-function ns.ShowMarketPrices(itemID)
-	RW.Open("market", tostring(itemID))
 end
 
 ns.Listen("PRICES_CHANGED", function()

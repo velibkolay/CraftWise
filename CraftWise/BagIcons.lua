@@ -15,8 +15,16 @@ local function IsJunk(itemID)
 	return itemID and ns.db and ns.db.junk and ns.db.junk[itemID] or false
 end
 
--- "ah", "junk" or nil for an item.
+-- Settings › Bags and loot › Bag slot marks (#157): on unless switched off.
+function ns.SlotMarksOn()
+	return not (ns.db and ns.db.settings and ns.db.settings.slotMarks == false)
+end
+
+-- "ah", "junk" or nil for an item (nil for every item while the marks are off).
 function ns.SlotMark(itemID)
+	if not ns.SlotMarksOn() then
+		return nil
+	end
 	if IsJunk(itemID) then
 		return "junk"
 	elseif IsAH(itemID) then

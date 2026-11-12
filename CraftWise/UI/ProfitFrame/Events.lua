@@ -21,16 +21,6 @@ ns.Listen("BAGS_CHANGED", function()
 		Refresh()
 	end
 end)
-ns.Listen("MUSIC_CHANGED", function()
-	if PF.frame and PF.frame:IsShown() and View() == "music" then
-		Refresh()
-	end
-end)
-ns.Listen("UPGRADES_CHANGED", function()
-	if PF.frame and PF.frame:IsShown() and View() == "upgrades" then
-		Refresh()
-	end
-end)
 ns.On("AUCTION_HOUSE_CLOSED", Refresh) -- Auctionator prices may have changed during a scan
 -- A purchase changes the paid cost of a reagent (#46/#47); only views on the paid-cost basis show it.
 ns.Listen("LEDGER_CHANGED", function()
