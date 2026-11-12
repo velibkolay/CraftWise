@@ -1,4 +1,4 @@
--- Issue #48: the profit view's "Sells for" shows a source tag (vendor / AH) and the recipe tooltip
+-- Issue #48: Make › Craft's "cost → sells" (the profit view's "Sells for" before #154) shows a source tag (vendor / AH) and the recipe tooltip
 -- always lists both sale options, the chosen one marked.
 local NOW = 1794000000
 local DAY = 86400
@@ -49,31 +49,30 @@ local function Row(ns)
 	return ns.BuildRows(165, false)[1]
 end
 
+local Make = dofile("tests/make_helpers.lua")
+
 local function Lines(ns, r)
 	local out = {}
-	for i, l in ipairs(ns.PF.SaleOptionLines(r)) do
+	for i, l in ipairs(ns.Main.Make.SaleOptionLines(r)) do
 		out[i] = { Plain(l[1]), Plain(l[2]), l[3] }
 	end
 	return out
 end
 
--- The text the profit view's "Sells for" cell shows for the first row.
-local function SellsForCell(ns, stub)
-	ns.db.settings.view = "profit"
-	ns.ToggleProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.cells and f.cells.sellsFor then
-			return Plain(f.cells.sellsFor:GetText() or "")
-		end
-	end
+-- What Make › Craft's "cost → sells" caption says after the arrow for the first row (#154).
+local function SellsForCell(ns)
+	Make.Open(ns, "craft", 165)
+	local r = Make.Rows(ns, "craft")[1]
+	return r and Plain(r.view.sellsText)
 end
 
 it("sale tag: vendor, AH, AH gross when the cut is unverified, nothing without a sale", function()
 	local ns = Load()
-	eq(ns.PF.SaleTag("vendor"), "vendor")
-	eq(ns.PF.SaleTag("auction"), "AH")
-	eq(ns.PF.SaleTag("auction", true), "AH gross")
-	eq(ns.PF.SaleTag(nil), nil)
+	local MK = ns.Main.Make
+	eq(MK.SaleTag("vendor"), "vendor")
+	eq(MK.SaleTag("auction"), "AH")
+	eq(MK.SaleTag("auction", true), "AH gross")
+	eq(MK.SaleTag(nil), nil)
 end)
 
 it("vendor wins: row tagged vendor, tooltip shows both with vendor marked (Light Leather Pants 5s99)", function()
@@ -89,7 +88,7 @@ it("vendor wins: row tagged vendor, tooltip shows both with vendor marked (Light
 	eq(lines[1][1], "  Vendor (used)"); eq(lines[1][2], "5s 99c (no cut)"); eq(lines[1][3], true)
 	eq(lines[2][1], "  AH net"); eq(lines[2][3], false)
 	eq(lines[2][2], "5s 70c (gross 6s, 5% cut (confirmed), typical · Horde AH)")
-	eq(SellsForCell(ns, stub), "5s 99c  vendor")
+	eq(SellsForCell(ns, stub), "5s 99c vendor")
 end)
 
 it("AH wins: row tagged AH, both lines, AH marked; quantities follow the recipe's output count", function()
@@ -103,7 +102,7 @@ it("AH wins: row tagged AH, both lines, AH marked; quantities follow the recipe'
 	eq(lines[1][1], "  Vendor"); eq(lines[1][2], "11s 98c (no cut)"); eq(lines[1][3], false)
 	eq(lines[2][1], "  AH net (used)"); eq(lines[2][3], true)
 	eq(lines[2][2], "38s (gross 40s, 5% cut (confirmed), typical · Horde AH)")
-	eq(SellsForCell(ns, stub), "38s  AH")
+	eq(SellsForCell(ns, stub), "38s AH")
 end)
 
 it("unverified cut: AH line shows the gross and says cut unverified; tag says AH gross", function()
@@ -117,7 +116,7 @@ it("unverified cut: AH line shows the gross and says cut unverified; tag says AH
 	local lines = Lines(ns, r)
 	eq(lines[1][2], "5s 99c (no cut)"); eq(lines[1][3], false)
 	eq(lines[2][1], "  AH (used)"); eq(lines[2][2], "gross 15s, cut unverified, current lowest, too little history · Booty Bay")
-	eq(SellsForCell(ns, stub), "15s  AH gross")
+	eq(SellsForCell(ns, stub), "15s AH gross")
 end)
 
 it("missing values stay missing: no AH data, vendor price not loaded or zero", function()
@@ -147,11 +146,8 @@ it("the recipe tooltip renders the sale options", function()
 		seen[#seen + 1] = Plain(l) .. " | " .. Plain(r)
 		return add(self, l, r, ...)
 	end
-	ns.db.settings.view = "profit"
-	ns.ToggleProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.scripts.OnEnter then f.scripts.OnEnter(f) break end
-	end
+	Make.Open(ns, "craft", 165)
+	assert(Make.Hover(ns, "craft", 3759), "pants row shown")
 	GameTooltip.AddDoubleLine = add
 	local text = table.concat(seen, "\n")
 	assert(text:find("Sells for | 5s 99c  vendor", 1, true), text)

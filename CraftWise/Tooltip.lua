@@ -354,6 +354,22 @@ function ns.AddTooltipLines(tooltip, itemID)
 	return true
 end
 
+-- Is a frame part of a main window row marked cwOwnTooltip (Make's recipe rows)? Its tooltip already has
+-- the CraftWise lines.
+function ns.InOwnWindow(owner)
+	local f = owner
+	for _ = 1, 6 do
+		if not f then
+			return false
+		end
+		if f.cwOwnTooltip then
+			return true
+		end
+		f = f.GetParent and f:GetParent()
+	end
+	return false
+end
+
 local function OnItemTooltip(tooltip, data)
 	if not (data and data.id) or tooltip == ShoppingTooltip1 or tooltip == ShoppingTooltip2 then
 		return

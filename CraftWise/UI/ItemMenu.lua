@@ -37,7 +37,7 @@ local OPTIONS = {
 	-- Gear only (#157, spec "Upgrades": dismiss from the item menu); the label flips once dismissed.
 	{ key = "dismiss", label = "Don't suggest as upgrade", undo = "Suggest as upgrade again", gear = true,
 		note = "Look up › Upgrades leaves it out (Settings › Bags and loot › Show dismissed upgrades lists it again)" },
-	{ key = "recipes", label = "Recipes using this", note = "Opens the Profit view with every recipe of yours that uses it" },
+	{ key = "recipes", label = "Recipes using this", note = "Opens Make › Craft with every recipe of yours that uses it" },
 }
 ns.ItemMenuOptions = OPTIONS
 local MARKS = { keep = true, junk = true, auction = true, normal = true }

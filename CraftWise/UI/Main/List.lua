@@ -16,8 +16,13 @@ local OPEN_PAD_X, OPEN_PAD_Y = 14, 10
 
 local List = {}
 
-local function ShowRowTip(owner, data)
-	if data.itemID and GameTooltip and GameTooltip.SetItemByID then
+local function ShowRowTip(list, owner, data)
+	if list.page.RowTooltip then
+		local ok, err = M.Call(list.page.RowTooltip, owner, data, list.ctx)
+		if not ok and list.onError then
+			list.onError(err)
+		end
+	elseif data.itemID and GameTooltip and GameTooltip.SetItemByID then
 		GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 		GameTooltip:SetItemByID(data.itemID)
 		GameTooltip:Show()
@@ -87,6 +92,7 @@ end
 
 local function BuildRow(list, b)
 	b.cw = true
+	b.cwOwnTooltip = list.page.RowTooltip ~= nil -- Tooltip.lua: no second CraftWise section
 	b.bg = b:CreateTexture(nil, "BACKGROUND")
 	b.bg:SetAllPoints(b)
 	Style.Fill(b.bg, C.selected)
@@ -103,7 +109,7 @@ local function BuildRow(list, b)
 	end)
 	b:SetScript("OnEnter", function(self)
 		if self.element then
-			ShowRowTip(self, self.element.row)
+			ShowRowTip(list, self, self.element.row)
 		end
 	end)
 	b:SetScript("OnLeave", function(self)
@@ -127,7 +133,7 @@ local function Hit(list, b, i)
 			if tip then
 				Style.ShowTip(self, unpack(tip))
 			elseif data then
-				ShowRowTip(self, data)
+				ShowRowTip(list, self, data)
 			end
 		end)
 		hit:SetScript("OnLeave", function(self)

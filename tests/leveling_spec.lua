@@ -1,3 +1,4 @@
+local Make = dofile("tests/make_helpers.lua")
 local function setup()
 	local ns, stub = LoadAddon({ auctionator = true })
 	stub.items[2318] = { name = "Light Leather" }
@@ -80,40 +81,49 @@ it("ranks known recipes by money per skill-up: (reagents - sale) / chance", func
 	eq(t[99999].saleSource, "vendor"); eq(t[99999].perPoint, 5)
 end)
 
-it("shows the Level view sorted best first, with the maths in the tooltip", function()
+it("Make › Level up: sorted best first, chance bars, the maths in the tooltip", function()
 	local ns, stub = setup()
-	ns.db.settings.view = "level"
-	ns.ToggleProfitFrame()
-	local shown = {}
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.recipeID then
-			shown[#shown + 1] = f
-		end
-	end
-	local names = {}
-	for _, f in ipairs(shown) do
-		names[#names + 1] = f.data.name
+	local list = Make.Open(ns, "level", 165)
+	eq(Make.Names(ns, "level"), "Murloc Scale Belt,Bound Thing,Fine Leather Belt")
+	for _, f in ipairs(Make.Frames(ns, "level")) do
 		f.scripts.OnEnter(f)
 		f.scripts.OnLeave(f)
 	end
-	eq(table.concat(names, ","), "Murloc Scale Belt,Bound Thing,Fine Leather Belt")
+	local murloc = Make.Frame(ns, "level", 6702)
+	eq(murloc.cwChance.text.text, "83%", "measured: white")
+	eq(murloc.cwChance.track.width, 60)
+	assert(math.abs(murloc.cwChance.fill.width - 60 * 5 / 6) < 1e-6)
+	local r = murloc.elementData.row
+	eq(r.view.cells.perSkill, "+" .. ns.FormatCoins(90), "earns: +")
+	eq(r.view.cells.netEarn, "+" .. ns.FormatCoins(75))
+	local fine = Make.Frame(ns, "level", 3763).elementData.row
+	eq(fine.view.cells.perSkill, "−60c"); eq(fine.view.colors.perSkill, "danger")
+	-- hero: the first row
+	local f = ns.Main.Frame()
+	eq(f.hero.label.text, "Best skill-up right now"); eq(f.hero.name.text, "Murloc Scale Belt")
+	eq(f.hero.figureLabel.text, "Per skill-up"); eq(f.hero.figure.text, "+" .. ns.FormatCoins(90))
+	eq(ns.Main.SlotsOf("level").hero.pct.text, "83%")
+	eq(ns.Main.SlotsOf("level").hero.note.text, "measured · 6 of your crafts")
 	-- sort by every column without errors
-	for _, f in ipairs(stub.frames) do
-		if f.scripts.OnClick and not f.data and not f.scripts.OnDragStart and f.label then f.scripts.OnClick(f) end
+	for _, h in ipairs(list.headers) do
+		if h.col and h.col.sort then h.scripts.OnClick(h) end
 	end
-	ns.db.settings.levelSortKey, ns.db.settings.levelSortDesc = nil, nil
-	ns.db.settings.view = "level"
+	ns.Main.state.sort.level = nil
 	-- nothing recorded: yellow/green rows fall back to the formula estimate, tooltips still render
 	ns.db.skillups = {}
-	ns.RefreshProfitFrame()
+	ns.Main.Refresh()
 	local estimates = 0
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.recipeID then
-			f.scripts.OnEnter(f)
-			if f.data.chanceInfo and f.data.chanceInfo.kind == "formula" then estimates = estimates + 1 end
+	for _, fr in ipairs(Make.Frames(ns, "level")) do
+		fr.scripts.OnEnter(fr)
+		local row = fr.elementData.row
+		if row.chanceInfo and row.chanceInfo.kind == "formula" then
+			estimates = estimates + 1
+			assert(fr.cwChance.text.text:find("^~"), "an estimate carries ~")
+			eq(row.view.chanceColor, "text2")
 		end
 	end
 	eq(estimates, 2)
+	eq(f.foot.left.text, "Chance: your own crafts at this colour; ~ marks the community formula while you have too few. Grey recipes are left out.")
 end)
 
 it("shows the chance next to each recipe in the game's profession window", function()

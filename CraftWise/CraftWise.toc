@@ -60,14 +60,6 @@ UI\AHRule.lua
 UI\Settings.lua
 UI\FarmFrame.lua
 UI\FarmHistory.lua
-UI\ProfitFrame\State.lua
-UI\ProfitFrame\Data.lua
-UI\ProfitFrame\Rows.lua
-UI\ProfitFrame\Tooltips.lua
-UI\ProfitFrame\Layout.lua
-UI\ProfitFrame\Refresh.lua
-UI\ProfitFrame\Frame.lua
-UI\ProfitFrame\Events.lua
 UI\Records\State.lua
 UI\Records\Snapshot.lua
 UI\Records\Frame.lua
@@ -75,7 +67,6 @@ UI\Main\Shell.lua
 UI\Main\States.lua
 UI\Main\List.lua
 UI\Main\Frame.lua
-UI\Main\Pages\Bridges.lua
 UI\Main\Pages\Sell.lua
 UI\Main\Pages\Bags.lua
 UI\Main\Pages\Auctions.lua
@@ -87,4 +78,9 @@ UI\Main\Pages\Items.lua
 UI\Main\Pages\Upgrades.lua
 UI\Main\Pages\Music.lua
 UI\Main\Pages\Settings.lua
+UI\Main\Pages\Make.lua
+UI\Main\Pages\MakeTooltips.lua
+UI\Main\Pages\Craft.lua
+UI\Main\Pages\Learn.lua
+UI\Main\Pages\LevelUp.lua
 UI\MinimapButton.lua

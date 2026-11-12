@@ -16,14 +16,12 @@ local function Settings()
 	return ns.db.minimap
 end
 
--- What the clicks do. The main window (#153) and the docked layout (#161) plug in here when they exist:
--- ns.ToggleMainWindow() and ns.ToggleDock(); until then the profit window opens and Shift-click does what
--- a click does.
+-- What the clicks do: the main window (#153); the docked layout (#161) plugs in ns.ToggleDock() when it
+-- exists, until then Shift-click does what a click does.
 function ns.ToggleCraftWise()
 	if ns.ToggleMainWindow then
 		return ns.ToggleMainWindow()
 	end
-	return ns.ToggleProfitFrame()
 end
 
 function ns.CanDock()

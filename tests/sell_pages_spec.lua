@@ -463,8 +463,6 @@ it("Sell pages replace their bridges; the profit window has no Bags view, Record
 	local order = {}
 	for _, p in ipairs(M.SectionPages("sell")) do order[#order + 1] = p.key end
 	eq(table.concat(order, ","), "bags,auctions,ledger")
-	ns.db.settings.view = "bags"
-	eq(ns.PF.View(), "profit", "a saved Bags view falls back to Profit")
-	eq(ns.PF.viewButtons.bags, nil)
+	eq(ns.PF, nil, "the profit window is gone (#154)")
 	eq(ns.RW.byKey.ledger, nil); eq(ns.RW.byKey.auctions, nil)
 end)

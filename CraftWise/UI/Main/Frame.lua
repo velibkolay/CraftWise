@@ -337,6 +337,10 @@ local function BuildBody()
 	hero.sub:SetWordWrap(false)
 	hero.figure = Style.Text(hero, "FigureL", "text")
 	hero.figure:SetJustifyH("RIGHT")
+	hero.figureLabel = Style.Text(hero, "Label", "text3") -- above the figure ("Pays off after")
+	hero.figureLabel:SetJustifyH("RIGHT")
+	hero.figureUnit = Style.Text(hero, "Small", "text2") -- after the figure ("crafts")
+	hero.figureUnit:SetJustifyH("RIGHT")
 	hero.middle = CreateFrame("Frame", nil, hero) -- the page's rails go here
 	hero:Hide()
 
@@ -388,10 +392,27 @@ local function PlaceHero(model, m)
 	hero.sub:SetPoint("TOPLEFT", hero.name, "BOTTOMLEFT", 0, -1)
 	hero.sub:SetWidth(m.heroLeft)
 	hero.sub:SetText(h.sub or "")
+	-- The figure, optionally with a label above it and a unit after it (boards "Learn", "Level up").
+	local hasLabel, hasUnit = (h.figureLabel or "") ~= "", (h.figureUnit or "") ~= ""
+	local dy = hasLabel and -6 or 0
+	hero.figureUnit:ClearAllPoints()
+	hero.figureUnit:SetText(h.figureUnit or "")
+	hero.figureUnit:SetShown(hasUnit)
 	hero.figure:ClearAllPoints()
-	hero.figure:SetPoint("RIGHT", hero, "RIGHT", -px, 0)
+	if hasUnit then
+		hero.figureUnit:SetPoint("RIGHT", hero, "RIGHT", -px, dy - 3)
+		hero.figure:SetPoint("RIGHT", hero.figureUnit, "LEFT", -4, 3)
+	else
+		hero.figure:SetPoint("RIGHT", hero, "RIGHT", -px, dy)
+	end
 	hero.figure:SetWidth(m.heroRight)
 	hero.figure:SetText(h.figure or "")
+	local fc = Style.Color(h.figureColor or "text")
+	hero.figure:SetTextColor(fc[1], fc[2], fc[3], 1)
+	hero.figureLabel:ClearAllPoints()
+	hero.figureLabel:SetPoint("BOTTOMRIGHT", hero, "RIGHT", -px, 8)
+	hero.figureLabel:SetText(h.figureLabel or "")
+	hero.figureLabel:SetShown(hasLabel)
 	-- h.full: the page draws the figures itself, over the whole card inside its padding (label still
 	-- the shell's). h.bare: no card at all; the page draws its own cards in the slot (Auctions).
 	hero.sheet:SetShown(not h.bare)
