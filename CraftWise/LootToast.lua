@@ -368,7 +368,7 @@ function T.Slash(arg)
 		s.locked = arg == "lock"
 		Build()
 		ApplyLock()
-		ns.Print(arg == "unlock" and "Loot toast unlocked: drag the blue bar, then /craftwise loottoast lock."
+		ns.Print(arg == "unlock" and "Loot toast unlocked: drag the blue bar, then Lock in the Settings (or /craftwise loottoast lock)."
 			or "Loot toast locked.")
 	elseif arg == "test" then
 		T.Test()

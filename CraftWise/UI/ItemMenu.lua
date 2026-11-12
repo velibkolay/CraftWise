@@ -1,6 +1,7 @@
 -- Item menu (issue #12): Keep / Junk / Sell on AH / Normal for one item, opened by clicking a row in the Bags
 -- view, or on an item in the game's bags (Blizzard, Bagnon, Baganator) with the click chosen in
--- the settings: middle click (default) or Alt + right-click.
+-- the settings: middle click (default) or Alt + right-click. Also from a Records window row (#137); Where to buy and
+-- Market prices open the Records window for the item.
 -- Middle click: Blizzard's bag buttons only listen to left and right clicks, and neither Bagnon nor
 -- Baganator uses it, so nothing else happens. Alt + click is "highlight similar items" in Baganator.
 local _, ns = ...
@@ -14,6 +15,8 @@ local OPTIONS = {
 	{ key = "auction", label = "Sell on AH", note = "Always advised for the auction house, grouped first in the selling part of a bag sort" },
 	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
 	{ key = "recipes", label = "Recipes using this", note = "Opens the Profit view with every recipe of yours that uses it" },
+	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it (Records window)" },
+	{ key = "market", label = "Market prices", note = "Auction house prices recorded for it (Records window)" },
 }
 
 local function State(itemID)
@@ -63,6 +66,10 @@ local function Build()
 				if menu.itemID then
 					ns.ShowRecipesUsing(menu.itemID)
 				end
+			elseif opt.key == "where" or opt.key == "market" then
+				if menu.itemID then
+					(opt.key == "where" and ns.ShowWhereToBuy or ns.ShowMarketPrices)(menu.itemID)
+				end
 			elseif menu.itemID and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
 				ns.SetItemState(menu.itemID, opt.key)
 			end
@@ -106,6 +113,10 @@ function ns.ShowItemMenu(itemID, anchor)
 		b:SetSelected(b.current)
 		if key == "recipes" then
 			b:SetAlpha(usedByMe and 1 or 0.4)
+		elseif key == "where" or key == "market" then
+			b.current = false
+			b:SetSelected(false)
+			b:SetAlpha(1)
 		else
 			b:SetAlpha(menu.quest and key ~= "keep" and 0.4 or 1)
 		end
