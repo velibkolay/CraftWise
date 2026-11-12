@@ -10,9 +10,18 @@
 -- farm history (UI/FarmHistory.lua). FF.OpenLog, FF.OpenList and FF.OpenHistory are the only places to
 -- point at the new page.
 --
--- Hooks for the follow-ups: mini mode (#164) can draw from FF.Model and FF.ApplyFlap and hide frame.full;
--- the fade (#163) owns frame's OnEnter/OnLeave (unused here); background alpha (#162) is
--- frame.cwSheet:SetAlpha.
+-- Mini mode (#164): the – button at the top right (or Settings) swaps frame.full for frame.mini, a strip
+-- 30 tall with a cut 12 corner in the state colour: timer, gold per hour, "/ h"; paused "Paused" and the
+-- session total. Click opens the full tracker, right-click pauses or resumes, drag moves it. The mode is
+-- CraftWiseDB.farm.mini; both modes share the tracker's position (CraftWiseDB.farm.pos), and switching
+-- keeps the top left corner where it is.
+--
+-- Fade (#163): with CraftWiseDB.farm.fade on, the whole tracker (full or mini, with the panels beside it)
+-- sits at 40 % alpha while the mouse is away and returns to 100 % on hover, in 140 ms. The frame's
+-- OnEnter/OnLeave drive it; the per-frame OnUpdate also checks, because moving onto a child (a row, a
+-- button) or a panel beside the tracker doesn't fire the tracker's own OnEnter/OnLeave.
+--
+-- Background alpha (#162) is frame.cwSheet:SetAlpha.
 local _, ns = ...
 local Style, L = ns.Style, ns.L
 local C = Style.C
@@ -31,6 +40,15 @@ FF.SPLIT_HEIGHT = 6
 FF.SPLIT_GAP = 2
 FF.BUTTON_HEIGHT = 28
 FF.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = -300, y = 150 }
+-- Mini mode (#164): strip height, corner, padding left / right, gap between its parts.
+FF.MINI_HEIGHT = 30
+FF.MINI_CUT = 12
+FF.MINI_PAD_LEFT = 12
+FF.MINI_PAD_RIGHT = 26
+FF.MINI_GAP = 12
+-- Fade (#163): alpha away from the mouse, and how long a change takes.
+FF.FADE_ALPHA = 0.4
+FF.FADE_TIME = 0.14
 -- The loot panel (Log link) until #156.
 FF.PANEL_WIDTH = 330
 FF.PANEL_HEIGHT = 300
@@ -46,6 +64,7 @@ local panel -- the loot panel
 local last -- model of the last refresh
 local offset, logOffset = 0, 0
 local logEntries -- loot panel log of the last refresh, newest first
+local besides = {} -- panels placed beside the tracker (FF.PlaceBeside): hovering them counts as the tracker
 
 local function Settings()
 	return ns.db and ns.db.farm
@@ -315,6 +334,20 @@ function FF.PlaceBeside(region, width)
 		region:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, 0)
 	end
 	region.side = left and "left" or "right"
+	besides[region] = true
+end
+
+-- Re-anchors the tracker by its top left corner (kept in CraftWiseDB.farm.pos), so a change of size
+-- (mini <-> full) grows or shrinks to the right and down. Nothing happens while the client can't say
+-- where the frame is.
+local function AnchorTopLeft()
+	local left, top = frame:GetLeft(), frame:GetTop()
+	if type(left) ~= "number" or type(top) ~= "number" then
+		return
+	end
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+	SavePosition()
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -352,8 +385,29 @@ local function BuildTop(full)
 	Style.SmallBold(frame.word)
 	frame.word:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 8, 0)
 	frame.timer = Style.Text(full, "Figure", "text")
-	frame.timer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, -14)
+	frame.timer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -46, -14)
 	frame.timer:SetJustifyH("RIGHT")
+	-- The – button (#164): a 8 x 2 bar in text2 (text while hovered) between the timer and the dog-ear.
+	local minus = CreateFrame("Button", nil, full)
+	minus:SetSize(16, 20)
+	minus:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -11)
+	minus.bar = minus:CreateTexture(nil, "ARTWORK")
+	Style.Fill(minus.bar, C.text2)
+	minus.bar:SetSize(8, 2)
+	minus.bar:SetPoint("CENTER", minus, "CENTER", 0, 0)
+	minus:SetScript("OnClick", function()
+		FF.SetMini(true)
+	end)
+	minus:SetScript("OnEnter", function(self)
+		Style.Fill(self.bar, C.text)
+		Style.ShowTip(self, L["Mini mode"], L["Click the strip to open the full tracker again."])
+	end)
+	minus:SetScript("OnLeave", function(self)
+		Style.Fill(self.bar, C.text2)
+		Style.HideTip(self)
+	end)
+	ForwardDrag(minus)
+	frame.minus = minus
 end
 
 local HERO_TIP = {
@@ -866,6 +920,169 @@ local function BuildPanel()
 	panel:Hide()
 end
 
+----------------------------------------------------------------------------------------------------
+-- Build: the mini strip (#164)
+----------------------------------------------------------------------------------------------------
+
+local function BuildMini()
+	local mini = CreateFrame("Button", nil, frame)
+	mini:SetAllPoints(frame)
+	mini:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	frame.mini = mini
+	-- Running: timer, gold per hour, "/ h". Paused: word ("Paused"), session total. No session: word.
+	mini.timer = Style.Text(mini, "Figure", "text2")
+	mini.timer:SetPoint("LEFT", mini, "LEFT", FF.MINI_PAD_LEFT, 0)
+	mini.word = Style.Text(mini, "Small", "text2")
+	Style.SmallBold(mini.word)
+	mini.word:SetPoint("LEFT", mini, "LEFT", FF.MINI_PAD_LEFT, 0)
+	mini.second = Style.Text(mini, "FigureBold", "text")
+	mini.unit = Style.Text(mini, "Caption", "text3")
+	mini.unit:SetPoint("LEFT", mini.second, "RIGHT", FF.MINI_GAP, 0)
+	mini.unit:SetText(L["/ h"])
+	ForwardDrag(mini)
+	-- A drag ends with a mouse up over the strip; that is not a click.
+	mini:SetScript("OnMouseDown", function(self)
+		self.cwDragged = false
+	end)
+	mini:SetScript("OnDragStart", function(self)
+		self.cwDragged = true
+		StartDrag()
+	end)
+	mini:SetScript("OnClick", function(self, button)
+		if self.cwDragged then
+			self.cwDragged = false
+			return
+		end
+		if button == "RightButton" then
+			-- Pause or resume; without a session there is nothing to pause.
+			if Farm.Current() then
+				Farm.TogglePause()
+			end
+		else
+			FF.SetMini(false)
+		end
+	end)
+	mini:SetScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Farm"], L["Click: open the full tracker"], L["Right-click: pause / resume"],
+			L["Drag: move (unless locked)"])
+	end)
+	mini:SetScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	mini:Hide()
+end
+
+----------------------------------------------------------------------------------------------------
+-- Fade (#163)
+----------------------------------------------------------------------------------------------------
+
+local fadeAlpha, fadeTarget = 1, 1
+
+function FF.FadeEnabled()
+	local s = Settings()
+	return s ~= nil and s.fade == true
+end
+
+-- The mouse is over the tracker or a panel beside it (they are its children and fade with it).
+function FF.Hovered()
+	if not frame then
+		return false
+	end
+	if frame:IsMouseOver() then
+		return true
+	end
+	for region in pairs(besides) do
+		if region:IsShown() and region:IsMouseOver() then
+			return true
+		end
+	end
+	return false
+end
+
+local function SetFadeAlpha(a)
+	fadeAlpha = a
+	frame:SetAlpha(a)
+end
+
+-- Moves the tracker's alpha to where the setting and the mouse say: 1 with the fade off or while hovered,
+-- FF.FADE_ALPHA otherwise; over FF.FADE_TIME unless instant.
+function FF.ApplyFade(instant)
+	if not frame then
+		return
+	end
+	local target = (FF.FadeEnabled() and not FF.Hovered()) and FF.FADE_ALPHA or 1
+	if target == fadeTarget and not instant then
+		return
+	end
+	fadeTarget = target
+	if instant or fadeAlpha == target then
+		-- Replaces a running fade (Style.Tween keeps one per owner and key) and sets the alpha now.
+		Style.Tween(frame, "fade", 0.001, "linear", function()
+			SetFadeAlpha(target)
+		end)
+		return
+	end
+	local from = fadeAlpha
+	Style.Tween(frame, "fade", FF.FADE_TIME, "linear", function(p)
+		SetFadeAlpha(from + (target - from) * p)
+	end)
+end
+
+-- Settings: "Fade farm tracker to 40 % away from the mouse".
+function FF.SetFade(on)
+	local s = Settings()
+	if s then
+		s.fade = on and true or false
+	end
+	FF.ApplyFade()
+end
+
+function FF.Alpha()
+	return fadeAlpha
+end
+
+----------------------------------------------------------------------------------------------------
+-- Mini mode (#164)
+----------------------------------------------------------------------------------------------------
+
+function FF.IsMini()
+	local s = Settings()
+	return s ~= nil and s.mini == true
+end
+
+-- Shows the mode's content and corner; the next refresh sizes the frame.
+local function ApplyMode()
+	local mini = FF.IsMini()
+	frame.full:SetShown(not mini)
+	frame.mini:SetShown(mini)
+	frame.cwSheet:SetCut(mini and FF.MINI_CUT or FF.CUT)
+	if mini then
+		frame:SetHeight(FF.MINI_HEIGHT)
+		FF.HideLoot()
+		if ns.FarmHistory and ns.FarmHistory.Close then
+			ns.FarmHistory.Close()
+		end
+	else
+		frame:SetWidth(FF.WIDTH)
+	end
+end
+
+-- The – button and Settings: mini (true) or the full tracker (false); remembered in CraftWiseDB.farm.mini.
+function FF.SetMini(on)
+	local s = Settings()
+	if not s then
+		return
+	end
+	s.mini = on and true or false
+	if not frame then
+		return
+	end
+	AnchorTopLeft()
+	Style.HideTip()
+	ApplyMode()
+	FF.Refresh()
+end
+
 local function Build()
 	if frame then
 		return frame
@@ -891,9 +1108,21 @@ local function Build()
 	BuildLoot(full)
 	BuildButtons(full)
 	BuildPanel()
+	BuildMini()
+
+	-- Fade (#163): the frame's own enter and leave, and a check every frame for children and side panels.
+	frame:SetScript("OnEnter", function()
+		FF.ApplyFade()
+	end)
+	frame:SetScript("OnLeave", function()
+		FF.ApplyFade()
+	end)
 
 	local elapsed = 0
 	frame:SetScript("OnUpdate", function(_, dt)
+		if FF.FadeEnabled() then
+			FF.ApplyFade()
+		end
 		elapsed = elapsed + (dt or 0)
 		if elapsed >= 1 then
 			elapsed = 0
@@ -905,6 +1134,7 @@ local function Build()
 	Place()
 	FF.ApplyLock()
 	FF.ApplyScale()
+	ApplyMode()
 	return frame
 end
 
@@ -1018,6 +1248,43 @@ function FF.Layout()
 	frame:SetHeight(math.floor(-y + 14 + 0.5))
 end
 
+-- The mini strip: running timer, gold per hour, "/ h"; paused "Paused" and the session total; no session
+-- the state word alone. Its width follows the text.
+local function RefreshMini(m)
+	local mini = frame.mini
+	local running, none = m.state == "running", m.state == "none"
+	mini.timer:SetShown(running)
+	mini.word:SetShown(not running)
+	mini.second:SetShown(not none)
+	mini.unit:SetShown(running)
+	local first = running and mini.timer or mini.word
+	if running then
+		mini.timer:SetText(m.timer)
+		mini.second:SetText(FF.Coins(m.hero))
+	elseif none then
+		mini.word:SetText(m.word)
+		SetColor(mini.word, "text3")
+	else
+		mini.word:SetText(L["Paused"])
+		SetColor(mini.word, "text2")
+		mini.second:SetText(FF.Coins(m.totals.total))
+	end
+	mini.second:ClearAllPoints()
+	mini.second:SetPoint("LEFT", first, "RIGHT", FF.MINI_GAP, 0)
+	local function width(fs)
+		return math.ceil(fs:GetStringWidth() or 0)
+	end
+	local w = FF.MINI_PAD_LEFT + width(first) + FF.MINI_PAD_RIGHT
+	if not none then
+		w = w + FF.MINI_GAP + width(mini.second)
+	end
+	if mini.unit:IsShown() then
+		w = w + FF.MINI_GAP + width(mini.unit)
+	end
+	frame:SetWidth(w)
+	frame:SetHeight(FF.MINI_HEIGHT)
+end
+
 function FF.Refresh()
 	if not (frame and frame:IsShown()) then
 		return
@@ -1026,6 +1293,10 @@ function FF.Refresh()
 	local m = FF.Model(s, Farm.Now())
 	last = m
 	FF.ApplyFlap(m.flap)
+	if FF.IsMini() then
+		RefreshMini(m)
+		return
+	end
 	frame.word:SetText(m.word)
 	SetColor(frame.word, m.wordColor)
 	frame.timer:SetText(m.timer or "")
@@ -1161,6 +1432,9 @@ end
 
 local function ShowPanel(view)
 	FF.Show()
+	if FF.IsMini() then
+		FF.SetMini(false)
+	end
 	if ns.FarmHistory then
 		ns.FarmHistory.Close()
 	end
@@ -1229,6 +1503,12 @@ function FF.Show()
 	Build()
 	frame:Show()
 	FF.Refresh()
+	FF.ApplyFade(true)
+end
+
+-- The mini strip, for the specs.
+function FF.Mini()
+	return frame and frame.mini
 end
 
 function FF.Hide()

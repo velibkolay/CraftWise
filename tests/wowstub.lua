@@ -44,6 +44,8 @@ function frameMeta.SetFont(self, path, size, flags) self.font = { path, size, fl
 function frameMeta.GetFont(self) if self.font then return unpack(self.font) end end
 function frameMeta.SetFontObject(self, f) self.fontObject = f end
 function frameMeta.SetAlpha(self, a) self.alpha = a end
+-- Mouse over a frame: specs set f.mouseOver.
+function frameMeta.IsMouseOver(self) return self.mouseOver == true end
 function frameMeta.SetDesaturated(self, v) self.desaturated = v and true or false end
 function frameMeta.IsDesaturated(self) return self.desaturated == true end
 function frameMeta.Disable(self) self.disabled = true end
