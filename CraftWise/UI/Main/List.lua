@@ -314,9 +314,12 @@ function List:SetRows(rows, ctx, columns, metrics, emptyText)
 	self.emptyText = emptyText
 	self.rowHeight = self.page.rowHeight or metrics.rowHeight or 36
 	self.positions = M.ColumnLayout(self.columns, metrics.width, metrics.pad)
-	self.head:SetHeight(metrics.listHeader or 24)
+	-- noHeader: lists whose group rows carry the 2 unit rule (board "Bags") have no header row.
+	local headHeight = self.page.noHeader and 0 or (metrics.listHeader or 24)
+	self.head:SetHeight(headHeight)
+	self.head:SetShown(not self.page.noHeader)
 	self.box:ClearAllPoints()
-	self.box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -(metrics.listHeader or 24))
+	self.box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -headHeight)
 	self.box:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
 	local still = false
 	for _, row in ipairs(self.rows) do

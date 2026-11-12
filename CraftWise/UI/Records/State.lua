@@ -1,6 +1,6 @@
--- Records window (#137): what CraftWise recorded, in tabs (Ledger, Auctions, Crates, Fishing log, Market, Where to
--- buy, Snapshot). Everything that was only printed to chat by a slash command gets a view here; the slash
--- commands stay as another way in.
+-- Records window (#137): what CraftWise recorded, in tabs (Crates, Fishing log, Market, Where to buy, Snapshot;
+-- Ledger and Auctions moved to the main window's Sell section, #155). Everything that was only printed to chat
+-- by a slash command gets a view here; the slash commands stay as another way in.
 -- The window is split like the profit window: State (constants, tab registry, helpers), one file per tab
 -- (its columns, controls and Model), Frame (widgets, refresh, opening). The files share internals through
 -- ns.RW and load in the order CraftWise.toc lists them: a file only uses what the files before it export.
@@ -22,14 +22,13 @@ local RW = {
 	HEADER_Y = -150, -- top of the column header row
 	MARKET_MAX = 150, -- market rows listed at once; a search narrows them
 	WHERE_MAX = 5, -- items listed for one name search
-	ARM_SECONDS = 5, -- a button that changes data (ledger reset) asks for a second click within this time
 }
 RW.LIST_TOP = RW.HEADER_Y - 22
 RW.VISIBLE_ROWS = math.floor((RW.HEIGHT + RW.LIST_TOP - 40) / RW.ROW_HEIGHT)
 RW.QUESTION_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 RW.tabs, RW.byKey = {}, {}
--- Per tab: offset (scroll), query (search text); plus what a tab keeps (ledger mode, fishing water, ...).
+-- Per tab: offset (scroll), query (search text); plus what a tab keeps (fishing water, ...).
 RW.state = { tab = nil, offsets = {}, queries = {} }
 
 function RW.Register(tab)

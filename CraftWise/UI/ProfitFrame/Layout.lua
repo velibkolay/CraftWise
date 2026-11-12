@@ -4,7 +4,7 @@ local PF = ns.PF
 local L = ns.L
 local PAD, HEADER_Y, VIEWS, CELL_KEYS = PF.PAD, PF.HEADER_Y, PF.VIEWS, PF.CELL_KEYS
 local rows, tabs, viewButtons, state = PF.rows, PF.tabs, PF.viewButtons, PF.state
-local Settings, Money, View, ItemView = PF.Settings, PF.Money, PF.View, PF.ItemView
+local View, ItemView = PF.View, PF.ItemView
 
 -- Positions headers and cells for a view. In the profit view the learn columns only show with
 -- unlearned recipes; without them the recipe column takes their space.
@@ -61,17 +61,10 @@ local function UpdateControls()
 	for key, button in pairs(viewButtons) do
 		button:SetSelected(key == View())
 	end
-	local bagsView = View() == "bags"
 	PF.frame.fits:SetShown(learnView)
 	local upgradesView = View() == "upgrades"
-	PF.frame.showKept:SetShown(bagsView)
-	PF.frame.sortBtn:SetShown(bagsView)
-	PF.frame.matsOnly:SetShown(bagsView)
-	PF.frame.ahLimit:SetShown(bagsView)
-	PF.frame.ahLimit:SetLabel(("%s: +%d%%, min %s"):format(L["AH rule"], Settings().ahMinPercent or 20,
-		Money(Settings().ahMinCopper or 0)))
 	local ahSection = upgradesView and PF.UpgradeSection() == "ah"
-	local rightButton = bagsView and PF.frame.ahLimit or ahSection and PF.frame.searchAH or nil
+	local rightButton = ahSection and PF.frame.searchAH or nil
 	PF.frame.summary:SetPoint("RIGHT", rightButton or PF.frame, rightButton and "LEFT" or "RIGHT", rightButton and -12 or -PAD, 0)
 	PF.frame.showDismissed:SetShown(upgradesView)
 	for key, button in pairs(PF.frame.sectionButtons) do

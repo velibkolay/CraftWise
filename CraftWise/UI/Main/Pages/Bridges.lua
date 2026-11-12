@@ -41,9 +41,6 @@ local BRIDGES = {
 	{ "craft", "make", L["Craft"], 1, { { Open(PROFIT), ProfitView("profit") } } },
 	{ "learn", "make", L["Learn"], 2, { { Open(PROFIT), ProfitView("learn") } } },
 	{ "level", "make", L["Level up"], 3, { { Open(PROFIT), ProfitView("level") } } },
-	{ "bags", "sell", L["Bags"], 1, { { Open(PROFIT), ProfitView("bags") } } },
-	{ "auctions", "sell", L["Auctions"], 2, { { Open(RECORDS), RecordsTab("Auctions") } } },
-	{ "ledger", "sell", L["Ledger"], 3, { { Open(RECORDS), RecordsTab("Ledger") } } },
 	{ "farm", "gather", L["Farm"], 1, {
 		{ L["History in the farm window"], function()
 			if ns.FarmHistory and ns.FarmHistory.Open then

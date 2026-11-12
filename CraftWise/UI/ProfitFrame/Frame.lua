@@ -18,22 +18,21 @@ local function BuildHeader()
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3) -- below the title: the header row holds the Records button
 	subtitle:SetText(Muted("Profit, gear, loot, fishing"))
 
-	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Level | Upgrades | Bags | Fishing | Music.
+	-- View switch: Profit (what to craft) | Learn (what to learn and where) | Level | Upgrades | Fishing | Music.
+	-- Bags moved to the main window's Sell › Bags (#155).
 	local musicBtn = Style.Button(PF.frame, 64, 24, L["Music"])
 	musicBtn:SetPoint("TOPRIGHT", -66, -14)
 	local fishingBtn = Style.Button(PF.frame, 70, 24, L["Fishing"])
 	fishingBtn:SetPoint("RIGHT", musicBtn, "LEFT", -6, 0)
-	local bagsBtn = Style.Button(PF.frame, 60, 24, L["Bags"])
-	bagsBtn:SetPoint("RIGHT", fishingBtn, "LEFT", -6, 0)
 	local upgradesBtn = Style.Button(PF.frame, 86, 24, L["Upgrades"])
-	upgradesBtn:SetPoint("RIGHT", bagsBtn, "LEFT", -6, 0)
+	upgradesBtn:SetPoint("RIGHT", fishingBtn, "LEFT", -6, 0)
 	local levelBtn = Style.Button(PF.frame, 64, 24, L["Level"])
 	levelBtn:SetPoint("RIGHT", upgradesBtn, "LEFT", -6, 0)
 	local learnBtn = Style.Button(PF.frame, 64, 24, L["Learn"])
 	learnBtn:SetPoint("RIGHT", levelBtn, "LEFT", -6, 0)
 	local profitBtn = Style.Button(PF.frame, 64, 24, L["Profit"])
 	profitBtn:SetPoint("RIGHT", learnBtn, "LEFT", -6, 0)
-	viewButtons.profit, viewButtons.learn, viewButtons.bags = profitBtn, learnBtn, bagsBtn
+	viewButtons.profit, viewButtons.learn = profitBtn, learnBtn
 	viewButtons.upgrades, viewButtons.music, viewButtons.level = upgradesBtn, musicBtn, levelBtn
 	viewButtons.fishing = fishingBtn
 	for key, button in pairs(viewButtons) do
@@ -140,39 +139,12 @@ local function BuildHeader()
 		Refresh()
 	end)
 	fits:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	local showKept = Style.Check(PF.frame, L["Show kept items"], Settings().showKept, function(v)
-		Settings().showKept, state.offset = v, 0
-		Refresh()
-	end)
-	showKept:SetPoint("TOPRIGHT", -PAD - 110, -100)
 	local showDismissed = Style.Check(PF.frame, L["Show dismissed"], Settings().showDismissed, function(v)
 		Settings().showDismissed, state.offset = v, 0
 		Refresh()
 	end)
 	showDismissed:SetPoint("TOPRIGHT", -PAD - 110, -100)
-	PF.frame.unlearned, PF.frame.priced, PF.frame.fits, PF.frame.showKept = unlearned, priced, fits, showKept
-	local sortBtn = Style.Button(PF.frame, 96, 22, L["Sort bags"])
-	sortBtn:SetPoint("RIGHT", showKept, "LEFT", -24, 0)
-	sortBtn:SetScript("OnClick", function()
-		ns.BagSort.Start()
-	end)
-	sortBtn:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:AddLine("Sort bags")
-		GameTooltip:AddLine("Kept items and reagents first, then free slots, then items to sell (best value first) in the last bag.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	sortBtn:SetScript("OnLeave", function(self)
-		GameTooltip:Hide()
-		self:SetSelected(false)
-	end)
-	PF.frame.sortBtn = sortBtn
-	local mats = Style.Check(PF.frame, L["My crafting materials"], Settings().bagsMatsOnly, function(v)
-		Settings().bagsMatsOnly, state.offset = v, 0
-		Refresh()
-	end)
-	mats:SetPoint("RIGHT", sortBtn, "LEFT", -24, 0)
-	PF.frame.matsOnly = mats
+	PF.frame.unlearned, PF.frame.priced, PF.frame.fits = unlearned, priced, fits
 	PF.frame.showDismissed = showDismissed
 
 	-- Upgrades: sections Craftable (#16) | General / AH (#50), and the AH search button (#50).
@@ -240,25 +212,6 @@ local function BuildHeader()
 	end)
 	PF.frame.partyBtn = partyBtn
 
-	-- Bags: the AH rule (percent and minimum copper above vendor), shown as a button that opens a
-	-- small panel with - / + for both.
-	local ahLimit = Style.Button(PF.frame, 200, 22, "")
-	ahLimit:SetPoint("TOPRIGHT", -PAD, -126)
-	ahLimit:SetScript("OnClick", function(self)
-		ns.ToggleAHRule(self)
-	end)
-	ahLimit:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:AddLine(L["AH rule"])
-		GameTooltip:AddLine("When CraftWise advises the AH instead of a vendor. Click to change.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	ahLimit:SetScript("OnLeave", function(self)
-		GameTooltip:Hide()
-		self:SetSelected(false)
-	end)
-	PF.frame.ahLimit = ahLimit
-
 	PF.frame.summary = PF.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	PF.frame.summary:SetPoint("TOPLEFT", PAD, -130)
 	PF.frame.summary:SetPoint("RIGHT", -PAD, 0)
@@ -302,12 +255,6 @@ local function BuildColumns()
 					s.upgradeSortDesc = not (s.upgradeSortDesc ~= false)
 				else
 					s.upgradeSortKey, s.upgradeSortDesc = key, not (key == "name" or key == "equippedText" or key == "cost")
-				end
-			elseif View() == "bags" then
-				if (s.bagSortKey or "bestValue") == key then
-					s.bagSortDesc = not (s.bagSortDesc ~= false)
-				else
-					s.bagSortKey, s.bagSortDesc = key, key ~= "name"
 				end
 			elseif View() == "learn" then
 				if s.learnSortKey == key then
@@ -384,9 +331,6 @@ local function BuildRows()
 			if View() == "fishing" then
 				GameTooltip:Hide()
 				PF.FishingClick(r, mouse)
-			elseif View() == "bags" then
-				GameTooltip:Hide()
-				ns.ShowItemMenu(r.itemID, self)
 			elseif View() == "music" then
 				ShowPicker(self, r.name)
 			elseif View() == "upgrades" and mouse == "RightButton" and r.itemID then

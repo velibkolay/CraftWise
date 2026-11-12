@@ -38,21 +38,6 @@ local function FilteredRows()
 		end
 		return out, hidden
 	end
-	if View() == "bags" then
-		local query = state.query:lower()
-		local out = {}
-		local hidden = 0
-		for _, r in ipairs(ns.BagRows()) do
-			if query == "" or r.name:lower():find(query, 1, true) then
-				if (r.kept and not s.showKept) or (s.bagsMatsOnly and not r.usedMine) then
-					hidden = hidden + 1
-				else
-					out[#out + 1] = r
-				end
-			end
-		end
-		return out, hidden
-	end
 	if View() == "level" then
 		local all, skill = {}, nil
 		if state.professionID then
@@ -124,8 +109,6 @@ local function SortSettings()
 		return s.learnSortKey or "required", s.learnSortDesc
 	elseif View() == "level" then
 		return s.levelSortKey or "perPoint", s.levelSortDesc or false
-	elseif View() == "bags" then
-		return s.bagSortKey or "bestValue", s.bagSortDesc ~= false
 	elseif View() == "upgrades" then
 		return s.upgradeSortKey or "gain", s.upgradeSortDesc ~= false
 	elseif View() == "music" then

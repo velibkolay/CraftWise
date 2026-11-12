@@ -3,7 +3,7 @@ local _, ns = ...
 local PF = ns.PF
 local Style, L, C = ns.Style, ns.L, ns.Style.colors
 local PAD, VISIBLE_ROWS = PF.PAD, PF.VISIBLE_ROWS
-local QUALITY_COLORS, BEST_TEXT, SKILL_COLORS = PF.QUALITY_COLORS, PF.BEST_TEXT, PF.SKILL_COLORS
+local QUALITY_COLORS, SKILL_COLORS = PF.QUALITY_COLORS, PF.SKILL_COLORS
 local tabs, state = PF.tabs, PF.state
 local Money, Muted, StatusLine, View = PF.Money, PF.Muted, PF.StatusLine, PF.View
 
@@ -103,29 +103,6 @@ local function RenderSummary(ids)
 			text = text .. Muted(("  ·  %d dismissed"):format(dismissed))
 		end
 		text = text .. "\n" .. Muted("Upgrade = higher item level, or same item level with more armour. Cost = reagents + learning. Hover for the stat changes.")
-	elseif View() == "bags" then
-		local vendor, auction, best, deable, kept = 0, 0, 0, 0, 0
-		for _, r in ipairs(state.data) do
-			if r.kept then
-				kept = kept + 1
-			else
-				vendor = vendor + (r.vendorValue or 0)
-				auction = auction + (r.ahValue or 0)
-				best = best + (r.bestValue or 0)
-				if r.canDisenchant then
-					deable = deable + 1
-				end
-			end
-		end
-		text = ("%d items to sell  ·  best total %s%s|r  ·  vendor %s  ·  auction %s"):format(#state.data - kept, C.good,
-			Money(best), Money(vendor), Money(auction))
-		kept = kept + state.hidden
-		if kept > 0 then
-			text = text .. Muted(("  ·  %d kept"):format(kept))
-		end
-		if deable > 0 and not ns.DisenchantData then
-			text = text .. "\n" .. Muted(("%d %s can be disenchanted; disenchant values come with the disenchant data (issue #11)."):format(deable, deable == 1 and "item" or "items"))
-		end
 	elseif #ids == 0 then
 		text = C.warn .. "Open a profession window once so CraftWise can read your recipes.|r"
 	elseif View() == "level" then
@@ -193,64 +170,6 @@ local function RenderSummary(ids)
 			.. BasisNote("profit") .. ". Change them in Settings: gear button.")
 	end
 	PF.frame.summary:SetText(text)
-end
-
-local function RenderBagRow(row, r)
-	row.icon:SetTexture(r.icon or 134400)
-	row.icon:SetDesaturated(r.kept)
-	row.name:SetText((r.kept and C.muted or (QUALITY_COLORS[r.quality] or "|cffffffff")) .. r.name .. "|r")
-	local notes = { ("x%d"):format(r.count) }
-	if r.bound then
-		notes[#notes + 1] = "soulbound"
-	end
-	if r.canDisenchant then
-		notes[#notes + 1] = "can be disenchanted"
-	end
-	if r.reagent then
-		notes[#notes + 1] = C.info .. "reagent for your recipes|r" .. C.muted
-	end
-	if r.ammo then
-		notes[#notes + 1] = C.info .. "ammo|r" .. C.muted
-	end
-	row.status:SetText(Muted(table.concat(notes, " · ")))
-	local cells = row.cells
-	cells.vendorValue:SetText(r.vendorValue and Money(r.vendorValue) or Muted("-"))
-	cells.ahValue:SetText(r.ahValue and Money(r.ahValue) or Muted(r.bound and "bound" or r.ahCutUnverified and "cut ?" or "-"))
-	-- Used in: up to two professions, the ones you have first. Green = you know a recipe with it,
-	-- white = your profession, grey = another profession.
-	local parts = {}
-	for i, g in ipairs(r.usedIn or {}) do
-		if i > 2 then
-			parts[#parts + 1] = Muted(("+%d"):format(#r.usedIn - 2))
-			break
-		end
-		local color = g.known > 0 and C.good or g.mine and "|cffffffff" or C.muted
-		parts[#parts + 1] = ("%s%s %d|r"):format(color, g.profession, g.count)
-	end
-	cells.usedCount:SetText(#parts > 0 and table.concat(parts, Muted("  ·  ")) or Muted("-"))
-	if r.deValue then
-		cells.deValue:SetText(Money(r.deValue))
-	else
-		cells.deValue:SetText(Muted(r.canDisenchant and "?" or "-"))
-	end
-	if r.junk then
-		cells.bestValue:SetText(C.bad .. L["Junk"] .. "|r" .. Muted("  " .. L["sold with Sell junk"]))
-	elseif r.markedAH then
-		cells.bestValue:SetText(C.good .. L["Auction"] .. "|r" .. Muted("  " .. L["marked"]))
-	elseif r.questItem then
-		cells.bestValue:SetText(C.info .. "Quest item|r")
-	elseif r.kept then
-		cells.bestValue:SetText(C.info .. "Kept|r")
-	elseif r.best and r.ahSmallEdge then
-		local more = r.ahSmallEdge > 0 and ("AH +" .. Money(r.ahSmallEdge) .. ", too little") or "AH no better"
-		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. Muted("  " .. more))
-	elseif r.best then
-		local margin = r.margin and r.margin > 0 and Muted(("  +%s"):format(Money(r.margin))) or ""
-		cells.bestValue:SetText(C.good .. BEST_TEXT[r.best] .. "|r" .. margin)
-	else
-		cells.bestValue:SetText(Muted("no value"))
-	end
-	row:Show()
 end
 
 local function RenderUpgradeRow(row, r)
@@ -399,9 +318,7 @@ local function RenderRow(row, r, index)
 	elseif View() == "fishing" then
 		return PF.RenderFishingRow(row, r)
 	end
-	if View() == "bags" then
-		return RenderBagRow(row, r)
-	elseif View() == "level" then
+	if View() == "level" then
 		return RenderLevelRow(row, r)
 	elseif View() == "upgrades" then
 		return RenderUpgradeRow(row, r)

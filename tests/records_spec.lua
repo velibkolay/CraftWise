@@ -1,5 +1,5 @@
--- Issue #137: every feature reachable from the UI. The Records window (ledger, auctions, crates, fishing log,
--- market, where to buy, snapshot), its view models, the main window's Records button, the item menu entries,
+-- Issue #137: every feature reachable from the UI. The Records window (crates, fishing log, market, where to
+-- buy, snapshot; ledger and auctions moved to Sell, #155: tests/sell_pages_spec.lua), its view models, the main window's Records button, the item menu entries,
 -- the Settings toggles, and the slash commands still working.
 local NOW = os.time({ year = 2026, month = 11, day = 12, hour = 15 })
 local DAY = 86400
@@ -87,12 +87,12 @@ it("the main window's Records button opens the Records window; every tab builds 
 	-- the order of the tabs
 	local keys = {}
 	for _, tab in ipairs(ns.RW.tabs) do keys[#keys + 1] = tab.key end
-	eq(table.concat(keys, ","), "ledger,auctions,crates,fishing,market,where,snapshot")
+	eq(table.concat(keys, ","), "crates,fishing,market,where,snapshot")
 	-- toggling: same tab closes, another tab switches
 	ns.ToggleRecords("snapshot")
 	eq(CraftWiseRecordsFrame:IsShown(), false)
-	ns.ToggleRecords("ledger")
-	eq(CraftWiseRecordsFrame:IsShown(), true); eq(ns.RW.CurrentTab(), "ledger")
+	ns.ToggleRecords("crates")
+	eq(CraftWiseRecordsFrame:IsShown(), true); eq(ns.RW.CurrentTab(), "crates")
 end)
 
 it("every tab's columns fit the window, at most six, the first is the name", function()
@@ -100,7 +100,7 @@ it("every tab's columns fit the window, at most six, the first is the name", fun
 	local RW = ns.RW
 	local room = RW.WIDTH - 2 * RW.PAD - 34 - 14
 	for _, tab in ipairs(RW.tabs) do
-		for _, mode in ipairs({ {}, { ledgerDays = true }, { fishWater = "visits" } }) do
+		for _, mode in ipairs({ {}, { fishWater = "visits" } }) do
 			local cols = type(tab.columns) == "function" and tab.columns(mode) or tab.columns
 			assert(#cols <= 6, tab.key .. ": too many columns")
 			eq(cols[1].key, "name")
@@ -110,71 +110,6 @@ it("every tab's columns fit the window, at most six, the first is the name", fun
 			assert(w <= room, ("%s: columns %d px wide, room %d"):format(tab.key, w, room))
 		end
 	end
-end)
-
-------------------------------------------------------------------------------------------- ledger
-
-it("ledger: item rows of the chosen view, per day, and reset only on a second click", function()
-	local ns, stub = Load()
-	ns.Ledger.Record("vbuy", SALT, 5, 60, "vendor")
-	ns.Ledger.Record("vsell", BOOTS, 1, 70, "vendor")
-	local m = ns.RW.Ledger.Model(ns.RW.state)
-	eq(#m.rows, 2)
-	local salt
-	for _, r in ipairs(m.rows) do if r.itemID == SALT then salt = r end end
-	eq(salt.name, "Salt")
-	local c = cells(salt)
-	eq(c.bought, "5"); eq(c.spent, ns.FormatMoney(60)); eq(c.where, "vendor")
-	has(m.summary, "since last reset")
-	-- the view buttons set the same setting /craftwise ledger uses
-	local st = ns.RW.state
-	local buttons = ns.RW.Ledger.buttons(st)
-	eq(#buttons, 5)
-	buttons[2].onClick()
-	eq(ns.db.settings.ledgerView, "today")
-	has(ns.RW.Ledger.Model(st).summary, "today")
-	-- per day: one line per recorded day
-	ns.RW.Ledger.buttons(st)[4].onClick()
-	eq(ns.RW.Ledger.Mode(st), "days")
-	local days = ns.RW.Ledger.Model(st)
-	assert(#days.rows >= 1, "a day row")
-	eq(ns.RW.Ledger.columns(st)[2].key, "start")
-	-- reset: the first click only arms it
-	eq(ns.RW.Ledger.ClickReset(st, NOW), "armed")
-	eq(#ns.RW.Ledger.Model(st).rows >= 1, true)
-	has(ns.RW.Ledger.buttons(st)[5].label, "Click again")
-	-- a second click after the arm time arms again
-	eq(ns.RW.Ledger.ClickReset(st, NOW + ns.RW.ARM_SECONDS + 1), "armed")
-	stub.clock = NOW + 10
-	eq(ns.RW.Ledger.ClickReset(st, NOW + ns.RW.ARM_SECONDS + 2), "reset")
-	eq(ns.db.settings.ledgerView, "reset"); eq(ns.RW.Ledger.Mode(st), "items")
-	eq(#ns.RW.Ledger.Model(st).rows, 0, "nothing since the reset")
-end)
-
-------------------------------------------------------------------------------------------- auctions
-
-it("auctions: listed, sold awaiting mail and returning rows, gold on its way", function()
-	local ns = Load()
-	local key = ns.CharKey()
-	CraftWiseMarketDB.auctions.chars[key] = { list = {
-		{ id = 1, i = LINEN, n = "Linen Cloth", q = 20, h = HORDE, st = "active", t = NOW - 600, exp = NOW + 3600, unit = 15 },
-		{ id = 2, i = BOOTS, n = "Old Boots", q = 1, h = HORDE, st = "sold", t = NOW - 7200, soldT = NOW - 1800, unit = 500 },
-		{ id = 3, i = SALT, n = "Salt", q = 5, h = HORDE, st = "expired", t = NOW - DAY, expT = NOW - 3600 },
-	} }
-	local m = ns.RW.Auctions.Model()
-	eq(#m.rows, 3)
-	has(m.rows[1].cells.status, "listed"); eq(m.rows[1].cells.qty, "20")
-	has(m.rows[1].cells.when, "ends in")
-	has(m.rows[2].cells.status, "sold, awaiting mail")
-	has(m.rows[3].cells.status, "expired")
-	has(m.summary, "1 listed"); has(m.summary, "On its way:")
-end)
-
-it("auctions: a character with nothing recorded gets a hint, no error", function()
-	local ns = Load()
-	local m = ns.RW.Auctions.Model()
-	eq(#m.rows, 0)
-	assert(m.empty ~= "")
 end)
 
 ------------------------------------------------------------------------------------------- crates
@@ -317,10 +252,11 @@ end)
 
 it("window: search box, buttons, rows, tooltips, item clicks open the item menu, scrolling", function()
 	local ns, stub = Load()
-	ns.Ledger.Record("vbuy", SALT, 5, 60, "vendor")
-	ns.ShowRecords("ledger")
+	seedMarket(LINEN, HORDE, { min = 14, total = 100 })
+	CraftWiseMarketDB.scope.items[LINEN] = true
+	ns.ShowRecords("market")
 	local rows = visibleRows(stub)
-	eq(#rows, 1); eq(rows[1].itemID, SALT)
+	eq(#rows, 1); eq(rows[1].itemID, LINEN)
 	for _, f in ipairs(stub.frames) do
 		if f.data and f.cells and f.sub and f.shown ~= false then
 			f.scripts.OnEnter(f); f.scripts.OnLeave(f)
@@ -328,10 +264,13 @@ it("window: search box, buttons, rows, tooltips, item clicks open the item menu,
 		end
 	end
 	assert(CraftWiseItemMenu and CraftWiseItemMenu:IsShown(), "item menu opened from the row")
-	-- the tab's buttons are real buttons: Today
-	local today = findButton(stub, "Today")
-	today.scripts.OnClick(today)
-	eq(ns.db.settings.ledgerView, "today")
+	-- the tab's buttons are real buttons: Reload UI on the Snapshot tab
+	ns.ShowRecords("snapshot")
+	local reloaded = false
+	C_UI = { Reload = function() reloaded = true end }
+	local reload = findButton(stub, "Reload UI")
+	reload.scripts.OnClick(reload)
+	eq(reloaded, true)
 	-- search box drives the market tab's query
 	ns.ShowRecords("market")
 	local box = CraftWiseRecordsFrame.search

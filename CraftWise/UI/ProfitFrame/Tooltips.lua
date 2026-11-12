@@ -2,7 +2,7 @@
 local _, ns = ...
 local PF = ns.PF
 local C = ns.Style.colors
-local BEST_TEXT, SKILL_COLORS = PF.BEST_TEXT, PF.SKILL_COLORS
+local SKILL_COLORS = PF.SKILL_COLORS
 local state = PF.state
 local Money, Muted, ItemName, StatusLine, View = PF.Money, PF.Muted, PF.ItemName, PF.StatusLine, PF.View
 
@@ -138,92 +138,6 @@ local function AddMarketSection(r)
 		GameTooltip:AddLine("Crafted item", 0.9, 0.9, 0.9)
 		AddLines(sell)
 	end
-end
-
-local function ShowBagTooltip(row, r)
-	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-	if GameTooltip.SetItemByID then
-		GameTooltip:SetItemByID(r.itemID)
-	else
-		GameTooltip:AddLine(r.name)
-	end
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine("CraftWise", C.accent[1], C.accent[2], C.accent[3])
-	GameTooltip:AddDoubleLine(("Vendor (x%d)"):format(r.count), r.vendorValue and Money(r.vendorValue) or "-", 0.8, 0.8, 0.8, 1, 1, 1)
-	if r.ahCutUnverified then
-		GameTooltip:AddDoubleLine("Auction", WARN .. ("%s gross, cut unverified|r"):format(Money(r.ahGross or 0)), 0.8, 0.8, 0.8, 1, 1, 1)
-	else
-		GameTooltip:AddDoubleLine("Auction, after cut", r.ahValue and Money(r.ahValue) or (r.bound and "soulbound" or ns.Market.NO_DATA), 0.8, 0.8, 0.8, 1, 1, 1)
-	end
-	if r.ahLabel then
-		GameTooltip:AddLine("  " .. r.ahLabel .. " · " .. (r.ahCutDiffers and WARN or "") .. (r.ahCutText or "") .. (r.ahCutDiffers and "|r" or ""), 0.55, 0.55, 0.6)
-	end
-	if r.canDisenchant then
-		GameTooltip:AddDoubleLine("Disenchant", r.deValue and Money(r.deValue) or "needs disenchant data", 0.8, 0.8, 0.8, 1, 1, 1)
-		if r.deValue and r.deDetails then
-			GameTooltip:AddLine("  " .. table.concat(r.deDetails.labels, ", ") .. " · " .. table.concat(r.deDetails.cutTexts, ", "), 0.55, 0.55, 0.6)
-		end
-	end
-	if r.questItem then
-		GameTooltip:AddLine("Quest item - always kept.", 0.54, 0.7, 1)
-	elseif r.kept then
-		GameTooltip:AddLine("Kept - not counted.", 0.54, 0.7, 1)
-	elseif r.best then
-		local line = BEST_TEXT[r.best]:upper()
-		if r.margin and r.margin > 0 then
-			line = line .. (" pays %s more"):format(Money(r.margin))
-		end
-		GameTooltip:AddLine(line, 0.3, 0.82, 0.55)
-		if r.ahSmallEdge then
-			local s = ns.db.settings
-			GameTooltip:AddLine(("The AH pays %s more after the cut (%s) - under your AH rule (+%d%% and at least %s), so vendor it: no deposit at risk, no trip to the AH. Change it with \"AH rule\" at the top of the Bags view."):format(
-				Money(math.max(0, r.ahSmallEdge)), r.ahCutText or "cut", s.ahMinPercent or 20, Money(s.ahMinCopper or 0)), 0.8, 0.8, 0.8, true)
-		end
-	end
-	local used = ns.UsedIn(r.itemID)
-	if #used > 0 then
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(("Used in %d %s"):format(#used, #used == 1 and "recipe" or "recipes"), 1, 0.82, 0)
-		local shown, lastProf, perProf = 0, nil, 0
-		for _, e in ipairs(used) do
-			if e.profession ~= lastProf then
-				lastProf, perProf = e.profession, 0
-				if shown < 14 then
-					GameTooltip:AddLine("  " .. e.profession, e.state == "other" and 0.6 or 1, e.state == "other" and 0.6 or 1,
-						e.state == "other" and 0.6 or 1)
-				end
-			end
-			perProf = perProf + 1
-			if shown < 14 and perProf <= 4 then
-				local right
-				if e.state == "known" then
-					right = C.good .. "known|r"
-				elseif e.state == "learnable" then
-					right = e.required and ((e.tooLow and C.warn or C.good) .. "learn at " .. e.required .. "|r") or Muted("learnable")
-				else
-					right = Muted("other profession")
-				end
-				GameTooltip:AddDoubleLine(("    %s  ×%d"):format(e.name, e.quantity), right, 0.9, 0.9, 0.9, 1, 1, 1)
-				shown = shown + 1
-			end
-		end
-		if shown < #used then
-			GameTooltip:AddLine(("    +%d more - click the item: Recipes using this"):format(#used - shown), 0.6, 0.6, 0.6)
-		end
-	else
-		GameTooltip:AddLine("Not used in any recipe.", 0.6, 0.6, 0.6)
-	end
-	if r.ammo then
-		GameTooltip:AddLine("Ammo - keep what you shoot.", 0.54, 0.7, 1)
-	end
-	if r.ahAge and r.ahAge > 1 then
-		GameTooltip:AddLine(("AH price is %d days old."):format(r.ahAge), 1, 0.6, 0.3)
-	end
-	if not r.questItem then
-		local how = ({ middle = "middle click", altright = "Alt + right-click" })[ns.db.settings.menuClick or "middle"]
-		GameTooltip:AddLine("Click: Keep / Junk / Normal" .. (how and ("  ·  in your bags: " .. how) or ""), 0.55, 0.55, 0.6)
-	end
-	GameTooltip:Show()
 end
 
 local function StatLabel(key)
@@ -435,9 +349,7 @@ local function ShowTooltip(row)
 	if not r then
 		return
 	end
-	if View() == "bags" then
-		return ShowBagTooltip(row, r)
-	elseif View() == "fishing" then
+	if View() == "fishing" then
 		return PF.ShowFishingTooltip(row, r)
 	elseif View() == "upgrades" then
 		return ShowUpgradeTooltip(row, r)
