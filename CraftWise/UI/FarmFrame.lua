@@ -59,38 +59,13 @@ local function Paint(text, color)
 	return Style.Hex(color) .. text .. "|r"
 end
 
--- The units of a money figure, at most two (spec: "Money is mono digits in coin colours (12g 40s, 66s
--- 20c), at most two units"): gold and silver (rounded to the silver), else silver and copper, else
--- copper. Zero units after the first are left out.
-local function Units(copper)
-	copper = math.floor(math.abs(copper) + 0.5)
-	local out = {}
-	if copper >= 10000 then
-		local silver = math.floor(copper / 100 + 0.5)
-		out[1] = { math.floor(silver / 100), "g", "coinGold" }
-		out[2] = { silver % 100, "s", "coinSilver" }
-	elseif copper >= 100 then
-		out[1] = { math.floor(copper / 100), "s", "coinSilver" }
-		out[2] = { copper % 100, "c", "coinCopper" }
-	else
-		out[1] = { copper, "c", "coinCopper" }
-	end
-	if out[2] and out[2][1] == 0 then
-		out[2] = nil
-	end
-	return out
-end
-
--- Money in coin colours: "|cffF2C14E12g|r |cffC3C9D240s|r"; nil is "—" in text3 (no figure, never a guess).
+-- Money in coin colours, at most two units (ns.FormatCoins, Money.lua); nil is "—" in text3 (no figure,
+-- never a guess).
 function FF.Coins(copper)
 	if copper == nil then
 		return Paint("—", "text3")
 	end
-	local parts = {}
-	for i, u in ipairs(Units(copper)) do
-		parts[i] = Paint(u[1] .. u[2], u[3])
-	end
-	return (copper < 0 and "−" or "") .. table.concat(parts, " ")
+	return ns.FormatCoins(copper)
 end
 
 -- The same without colours, for the inverse tooltip (dark text on a light sheet).
@@ -98,11 +73,7 @@ function FF.PlainCoins(copper)
 	if copper == nil then
 		return "—"
 	end
-	local parts = {}
-	for i, u in ipairs(Units(copper)) do
-		parts[i] = u[1] .. u[2]
-	end
-	return (copper < 0 and "−" or "") .. table.concat(parts, " ")
+	return (ns.FormatCoins(copper):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
 end
 
 -- "0:41:05" (board "Farm tracker states").
@@ -120,11 +91,10 @@ function FF.ItemName(row)
 	return name or ("item " .. tostring(row.itemID))
 end
 
--- Colour name for an item's quality (spec: q-* constants); text when the quality has none or is unknown.
-local QUALITY = { [0] = "qPoor", "qCommon", "qUncommon", "qRare", "qEpic" }
+-- Colour of an item's quality (Style.QualityColor, spec: q-* constants); text when it has none or is unknown.
 function FF.ItemColor(itemID)
 	local quality = C_Item and C_Item.GetItemInfo and select(3, C_Item.GetItemInfo(itemID))
-	return QUALITY[quality] or "text"
+	return Style.QualityColor(quality) or C.text
 end
 
 -- Item text for the loot panel and the history: name in its link's colour, brackets dropped.
