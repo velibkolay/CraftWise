@@ -5,6 +5,9 @@
 -- time, the nokta moves to it; again closes it); right- or middle-click on an item row opens the item
 -- menu; Shift-click puts the item link into chat; hovering an item shows its GameTooltip with the
 -- CraftWise lines, any other row (or a column's own tip) the inverse tooltip.
+-- Docked (#161): the same list draws two-line rows 44 tall (spec, board "Docked layout"): icon, the name
+-- over its rail (or a note line), the result right with the sub-figure under it. What a row shows comes
+-- from M.DockedView: the page's DockedRow(row, ctx), else the Make pages' row.view, else its columns.
 local _, ns = ...
 local M = ns.Main
 local Style = ns.Style
@@ -12,6 +15,7 @@ local C = Style.C
 
 local ICON = 22
 local OPEN_MARGIN = { left = 56, right = 22, bottom = 8 } -- board "Window layout": the opened row's card
+-- (the layout's metrics give left and right: openLeft, openRight; docked 18 and 18)
 local OPEN_PAD_X, OPEN_PAD_Y = 14, 10
 
 local List = {}
@@ -160,6 +164,9 @@ function List:InitRow(b, element)
 		BuildRow(self, b)
 	end
 	b.element = element
+	if self.docked then
+		return self:InitDockedRow(b, element)
+	end
 	local data = element.row
 	local open = self.openKey ~= nil and self.openKey == M.RowKey(data)
 	b.bg:SetShown(open)
@@ -254,13 +261,15 @@ function List:InitDetail(f, element)
 	if not f.cw then
 		f.cw = true
 		f.card = CreateFrame("Frame", nil, f)
-		f.card:SetPoint("TOPLEFT", f, "TOPLEFT", OPEN_MARGIN.left, 0)
-		f.card:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -OPEN_MARGIN.right, OPEN_MARGIN.bottom)
 		Style.Sheet(f.card, C.card, C.cardFlap, 10, false)
 		f.content = CreateFrame("Frame", nil, f.card)
 		f.content:SetPoint("TOPLEFT", f.card, "TOPLEFT", OPEN_PAD_X, -OPEN_PAD_Y)
 		f.content:SetPoint("BOTTOMRIGHT", f.card, "BOTTOMRIGHT", -OPEN_PAD_X, OPEN_PAD_Y)
 	end
+	local m = self.metrics or {}
+	f.card:ClearAllPoints()
+	f.card:SetPoint("TOPLEFT", f, "TOPLEFT", m.openLeft or OPEN_MARGIN.left, 0)
+	f.card:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(m.openRight or OPEN_MARGIN.right), OPEN_MARGIN.bottom)
 	f.element = element
 	local ok, err = M.Call(self.page.Open, f.content, element.row, self.ctx)
 	if not ok and self.onError then
@@ -334,12 +343,12 @@ end
 function List:SetRows(rows, ctx, columns, metrics, emptyText)
 	self.rows, self.ctx, self.columns, self.metrics = rows or {}, ctx, columns or {}, metrics
 	self.emptyText = emptyText
-	self.rowHeight = self.page.rowHeight or metrics.rowHeight or 36
+	self.rowHeight = (not self.docked and self.page.rowHeight) or metrics.rowHeight or 36
 	self.positions = M.ColumnLayout(self.columns, metrics.width, metrics.pad)
 	-- noHeader: lists whose group rows carry the 2 unit rule (board "Bags") have no header row.
 	local headHeight = self.page.noHeader and 0 or (metrics.listHeader or 24)
 	self.head:SetHeight(headHeight)
-	self.head:SetShown(not self.page.noHeader)
+	self.head:SetShown(not self.page.noHeader and headHeight > 0)
 	self.box:ClearAllPoints()
 	self.box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -headHeight)
 	self.box:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
@@ -354,12 +363,13 @@ function List:SetRows(rows, ctx, columns, metrics, emptyText)
 	self:Render()
 end
 
-function M.List(parent, page)
+function M.List(parent, page, docked)
 	local list = CreateFrame("Frame", nil, parent)
 	for k, f in pairs(List) do
 		list[k] = f
 	end
 	list.page, list.rows, list.columns, list.headers = page, {}, {}, {}
+	list.docked = docked and true or false
 	list.head = CreateFrame("Frame", nil, list)
 	list.head:SetPoint("TOPLEFT", list, "TOPLEFT", 0, 0)
 	list.head:SetPoint("TOPRIGHT", list, "TOPRIGHT", 0, 0)
@@ -403,6 +413,319 @@ function M.List(parent, page)
 	list.empty:SetJustifyH("LEFT")
 	list.empty:Hide()
 	return list
+end
+
+----------------------------------------------------------------------------------------------------
+-- Docked rows (#161)
+----------------------------------------------------------------------------------------------------
+
+-- Inner width of an opened row's card in a layout (its content frame): pages lay their opened rows out
+-- in it.
+function M.OpenInnerWidth(ctx)
+	local m = ctx and ctx.metrics or {}
+	return (m.width or 880) - (m.openLeft or OPEN_MARGIN.left) - (m.openRight or OPEN_MARGIN.right) - 2 * OPEN_PAD_X
+end
+
+-- What a docked row shows (pure):
+--   group = { title, note, right }        a group header row (Bags, Upgrades): title, note, total right
+--   line, lineColor                       a row of one line of text
+--   icon (texture) | itemID, desaturate   the icon when the page's list has one (icon = false: none)
+--   name, nameColor, nameFont             line 1, left
+--   rail = { value, max, zeroAt, point, low, high, selected }   line 2, under the name
+--   note, noteColor, live                 line 2 when there is no rail (live: the orange nokta before it)
+--   result, resultColor, sub, subColor    right: the result, the sub-figure under it
+--   tag                                   a line tag under the result (the Bags mark)
+--   tip                                   the result's own tip (why a figure is missing)
+--   missing                               the result is still missing: a skeleton bar while scanning
+--   here                                  the row is "here" (Ledger: today): C.selected and the nokta
+-- From the page's DockedRow(row, ctx) when it returns one; else the Make pages' row.view; else derived
+-- from its columns: the name column, the rail column, the last column as the result, a right aligned
+-- column before it as the sub-figure and the other columns as the note.
+local function ColText(col, data)
+	local t = CellText(col, data)
+	return t ~= "" and t or nil
+end
+
+local function ColColor(col, data)
+	return col.color and col.color(data) or nil
+end
+
+function M.DockedView(page, data, ctx, columns)
+	if page.DockedRow then
+		local ok, v = M.Call(page.DockedRow, data, ctx)
+		if not ok then
+			error(v, 0)
+		end
+		if v then
+			return v
+		end
+	end
+	columns = columns or {}
+	local v = {}
+	local hasIcon, railCol, nameCol = false, nil, nil
+	local texts = {}
+	for _, col in ipairs(columns) do
+		if col.icon then
+			hasIcon = true
+		elseif col.rail then
+			railCol = railCol or col
+		elseif not nameCol and (col.key == "name") then
+			nameCol = col
+		else
+			texts[#texts + 1] = col
+		end
+	end
+	if not nameCol and texts[1] then
+		nameCol = table.remove(texts, 1)
+	end
+	v.icon = hasIcon and (data.icon or (data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID))) or nil
+	if not hasIcon then
+		v.icon = false
+	end
+	local view = data.view
+	if view then
+		v.name, v.nameColor = view.name, view.nameColor
+		v.result, v.resultColor, v.sub = view.result, view.resultColor, view.sub
+		v.missing = view.missing
+		if view.rail then
+			v.rail = { value = view.rail.value, max = ctx and ctx.railMax, zeroAt = view.rail.zeroAt }
+		end
+		v.tip = view.tips and (view.tips.profit or view.tips.perSkill)
+		return v
+	end
+	if nameCol then
+		v.name, v.nameColor = ColText(nameCol, data), ColColor(nameCol, data)
+	end
+	local resultCol = table.remove(texts)
+	if resultCol then
+		v.result, v.resultColor = ColText(resultCol, data), ColColor(resultCol, data)
+		v.tip = resultCol.tip and resultCol.tip(data) or nil
+	end
+	local last = texts[#texts]
+	if last and last.align == "RIGHT" then
+		table.remove(texts)
+		v.sub = ColText(last, data)
+	end
+	if railCol then
+		v.rail = railCol.rail(data, ctx) or {}
+	end
+	local notes = {}
+	for _, col in ipairs(texts) do
+		notes[#notes + 1] = ColText(col, data)
+	end
+	v.note = #notes > 0 and table.concat(notes, " · ") or nil
+	return v
+end
+
+local DOCK_ICON_GAP, DOCK_LINE1, DOCK_LINE2, DOCK_RAIL = 10, -7, -25, -27
+
+local function DockedParts(b)
+	local d = b.dk
+	if d then
+		return d
+	end
+	d = {}
+	d.icon = b:CreateTexture(nil, "ARTWORK")
+	d.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	d.icon:SetSize(ICON, ICON)
+	d.name = Style.Text(b, "Body", "text")
+	d.name:SetJustifyH("LEFT")
+	d.name:SetWordWrap(false)
+	d.note = Style.Text(b, "Caption", "text3")
+	d.note:SetJustifyH("LEFT")
+	d.note:SetWordWrap(false)
+	d.result = Style.Text(b, "FigureBold", "text")
+	d.result:SetJustifyH("RIGHT")
+	d.result:SetWordWrap(false)
+	d.sub = Style.Text(b, "Caption", "text3")
+	d.sub:SetJustifyH("RIGHT")
+	d.sub:SetWordWrap(false)
+	d.live = Style.Nokta(b, C.live)
+	d.live:Hide()
+	d.title = Style.Text(b, "Section", "text")
+	d.gnote = Style.Text(b, "Caption", "text3")
+	d.gnote:SetWordWrap(false)
+	d.right = Style.Text(b, "Figure", "text")
+	d.right:SetJustifyH("RIGHT")
+	d.rule = b:CreateTexture(nil, "ARTWORK")
+	Style.Fill(d.rule, C.text)
+	d.rule:SetHeight(2)
+	d.rule:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
+	d.rule:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+	d.line = Style.Text(b, "Small", "text3")
+	d.line:SetJustifyH("LEFT")
+	d.line:SetWordWrap(false)
+	d.tag = CreateFrame("Frame", nil, b)
+	d.tag:SetHeight(14)
+	d.tag.border = Style.Border(d.tag, C.ruleStrong)
+	d.tag.label = Style.Text(d.tag, "Label", "text2")
+	d.tag.label:SetPoint("CENTER", d.tag, "CENTER", 0, 0)
+	b.dk = d
+	return d
+end
+
+local function Paint(fs, color)
+	local c = Style.Color(color or "text")
+	fs:SetTextColor(c[1], c[2], c[3], 1)
+end
+
+function List:InitDockedRow(b, element)
+	local data = element.row
+	local m = self.metrics or {}
+	local d = DockedParts(b)
+	local ok, v = pcall(M.DockedView, self.page, data, self.ctx, self.columns)
+	if not ok then
+		if self.onError then
+			self.onError(v)
+		end
+		v = {}
+	end
+	b.dockedView = v
+	local width, pad = m.width or 380, m.pad or 18
+	local open = self.openKey ~= nil and self.openKey == M.RowKey(data)
+	local here = open or v.here
+	b.bg:SetShown(here and true or false)
+	if here then
+		b.nokta:MoveTo(b, "LEFT", pad / 2, 0, self.justOpened ~= M.RowKey(data))
+		if self.justOpened == M.RowKey(data) then
+			self.justOpened = nil
+		end
+	else
+		b.nokta:Hide()
+	end
+	local all = { d.icon, d.name, d.note, d.result, d.sub, d.live, d.title, d.gnote, d.right, d.rule, d.line, d.tag }
+	for _, r in ipairs(all) do
+		r:Hide()
+	end
+	if b.rails.dock then
+		b.rails.dock:Hide()
+	end
+	if b.hits.dock then
+		b.hits.dock:Hide()
+	end
+	if b.cwSkeleton then
+		b.cwSkeleton:Hide()
+	end
+	b.hair:SetShown(not v.group)
+	if v.group then
+		-- A group header (board "Bags"): title, its note, the total right, the 2 unit C.text rule.
+		local g = v.group
+		d.title:ClearAllPoints()
+		d.title:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", pad, 8)
+		d.title:SetText(g.title or "")
+		d.gnote:ClearAllPoints()
+		d.gnote:SetPoint("BOTTOMLEFT", d.title, "BOTTOMRIGHT", 8, 1)
+		d.gnote:SetWidth(math.max(width - 2 * pad - 80 - 8 - 90, 40))
+		d.gnote:SetText(g.note or "")
+		d.right:ClearAllPoints()
+		d.right:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -pad, 8)
+		d.right:SetText(g.right or "")
+		for _, r in ipairs({ d.title, d.gnote, d.right, d.rule }) do
+			r:Show()
+		end
+	elseif v.line then
+		d.line:ClearAllPoints()
+		d.line:SetPoint("LEFT", b, "LEFT", pad, 0)
+		d.line:SetWidth(width - 2 * pad)
+		d.line:SetText(v.line)
+		Paint(d.line, v.lineColor or "text3")
+		d.line:Show()
+	else
+		local x = pad
+		local iconCol = false
+		for _, col in ipairs(self.columns or {}) do
+			iconCol = iconCol or col.icon and true or false
+		end
+		if v.icon ~= false and (v.icon or v.itemID or iconCol) then
+			local tex = v.icon or (v.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(v.itemID)) or nil
+			d.icon:SetTexture(tex)
+			d.icon:SetDesaturated(v.desaturate and true or false)
+			d.icon:ClearAllPoints()
+			d.icon:SetPoint("LEFT", b, "LEFT", pad, 0)
+			d.icon:Show()
+			x = pad + ICON + DOCK_ICON_GAP
+		end
+		local right = m.rightColumn or 132
+		local nameW = width - x - pad - right - DOCK_ICON_GAP
+		d.name:ClearAllPoints()
+		d.name:SetPoint("TOPLEFT", b, "TOPLEFT", x, DOCK_LINE1)
+		d.name:SetWidth(nameW)
+		d.name:SetFontObject(Style.Fonts[v.nameFont or "Body"])
+		d.name:SetText(v.name or "")
+		Paint(d.name, v.nameColor)
+		d.name:Show()
+		if v.rail then
+			local spec = v.rail
+			if spec.selected == nil then
+				spec.selected = here and true or false
+			end
+			local r = M.DrawRail(b, "dock", { x = x, width = nameW }, spec)
+			r:ClearAllPoints()
+			r:SetPoint("TOPLEFT", b, "TOPLEFT", x, DOCK_RAIL)
+			r:SetSize(nameW, 8)
+			r.zero:SetHeight(8)
+			if r.Relayout and not spec.point then
+				r:Relayout()
+			end
+		elseif v.note then
+			local nx = x
+			if v.live then
+				d.live:SetSize(8, 8)
+				d.live:ClearAllPoints()
+				d.live:SetPoint("CENTER", b, "TOPLEFT", x + 4, DOCK_LINE2 - 6)
+				d.live:Show()
+				nx = x + 12
+			end
+			d.note:ClearAllPoints()
+			d.note:SetPoint("TOPLEFT", b, "TOPLEFT", nx, DOCK_LINE2)
+			d.note:SetWidth(nameW - (nx - x))
+			d.note:SetText(v.note)
+			Paint(d.note, v.noteColor or "text3")
+			d.note:Show()
+		end
+		local scanning = v.missing and self.ctx and self.ctx.prices and self.ctx.prices.scanning
+		d.result:ClearAllPoints()
+		d.result:SetPoint("TOPRIGHT", b, "TOPRIGHT", -pad, DOCK_LINE1 + 1)
+		d.result:SetWidth(right)
+		d.result:SetText(scanning and "" or (v.result or ""))
+		Paint(d.result, v.resultColor)
+		d.result:Show()
+		if scanning then
+			b.cwSkeleton = b.cwSkeleton or M.Skeleton(b, 50, 8)
+			b.cwSkeleton:ClearAllPoints()
+			b.cwSkeleton:SetPoint("TOPRIGHT", b, "TOPRIGHT", -pad, DOCK_LINE1 - 3)
+			b.cwSkeleton:Show()
+		end
+		if v.tag then
+			d.tag.label:SetText(v.tag)
+			d.tag:SetWidth(math.floor((d.tag.label:GetStringWidth() or 0) + 12 + 0.5))
+			d.tag:ClearAllPoints()
+			d.tag:SetPoint("TOPRIGHT", b, "TOPRIGHT", -pad, DOCK_LINE2 + 2)
+			d.tag:Show()
+		end
+		if v.sub then
+			d.sub:ClearAllPoints()
+			d.sub:SetPoint("TOPRIGHT", b, "TOPRIGHT", v.tag and -(pad + (d.tag:GetWidth() or 0) + 6) or -pad, DOCK_LINE2)
+			d.sub:SetWidth(right)
+			d.sub:SetText(v.sub)
+			Paint(d.sub, v.subColor or "text3")
+			d.sub:Show()
+		end
+		if v.tip then
+			local hit = Hit(self, b, "dock")
+			hit.col = { tip = function() return v.tip end }
+			hit:ClearAllPoints()
+			hit:SetPoint("TOPRIGHT", b, "TOPRIGHT", -pad, 0)
+			hit:SetSize(right, (m.rowHeight or 44))
+			hit:Show()
+		end
+	end
+	if self.page.DockedInitRow then
+		local okInit, err = M.Call(self.page.DockedInitRow, b, data, self.ctx, v)
+		if not okInit and self.onError then
+			self.onError(err)
+		end
+	end
 end
 
 ----------------------------------------------------------------------------------------------------

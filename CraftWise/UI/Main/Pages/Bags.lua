@@ -211,7 +211,7 @@ function P.Model(ctx)
 	local value = ns.HeroCards.BagValue(all)
 	if value then
 		model.hero = { label = L["What your bags would bring"], full = true, height = 88, total = value.total,
-			parts = P.HeroParts(value), uncounted = value.uncounted }
+			parts = P.HeroParts(value), uncounted = value.uncounted, middle = P.DOCKED_HERO_MIDDLE }
 	end
 	if hidden > 0 then
 		model.footerRight = (L["%d hidden by the filters"]):format(hidden)
@@ -361,6 +361,50 @@ function P.Hero(card, hero, ctx, slot)
 end
 
 ----------------------------------------------------------------------------------------------------
+-- Docked (#161): two-line rows (name over the count and note, the value right with the mark's tag under
+-- it), group rows as headers, and the hero stacked: the total, the three-part bar, one line per part.
+----------------------------------------------------------------------------------------------------
+
+function P.DockedRow(data)
+	if data.group then
+		return { group = { title = data.title, note = data.note, right = data.total and ns.FormatCoins(data.total) or "" } }
+	end
+	local note = data.count and ("×" .. data.count) or nil
+	if data.note and data.note ~= "" then
+		note = (note and (note .. " · ") or "") .. data.note
+	end
+	return {
+		icon = data.icon or (data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID)),
+		desaturate = data.kept, name = data.name, nameColor = S.QualityColor(data.quality), note = note,
+		result = P.columns[VALUE_COLUMN].text(data), tag = data.mark, missing = data.noValue,
+		tip = data.reason and { L["No value"], data.reason } or nil,
+	}
+end
+
+P.DOCKED_HERO_MIDDLE = 28 + 12 + 6 + 6 + 8 + 3 * 16
+
+function P.DockedHero(card, hero, ctx, slot)
+	if not slot.total then
+		slot.total = Style.Text(slot, "FigureL", "text")
+		slot.total:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
+		slot.uncounted = Style.Text(slot, "Caption", "text3")
+		slot.uncounted:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -28)
+		slot.bar = S.SplitBar(slot, 6)
+		slot.bar:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -46)
+		slot.bar:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, -46)
+	end
+	slot.total:SetText(ns.FormatCoins(hero.total))
+	slot.uncounted:SetText(hero.uncounted > 0
+		and (L["%s without a price not counted"]):format(S.Count(hero.uncounted, L["item"], L["items"])) or "")
+	slot.bar:Set(hero.parts, S.HeroInner(ctx))
+	local lines = {}
+	for i, p in ipairs(hero.parts) do
+		lines[i] = { label = p.label, value = ns.FormatCoins(p.copper), square = p.color }
+	end
+	M.Docked.StatLines(slot, lines, 60)
+end
+
+----------------------------------------------------------------------------------------------------
 -- Tools (sub bar): My crafting materials, Show kept, Sort bags. Show dismissed stays in Settings.
 ----------------------------------------------------------------------------------------------------
 
@@ -419,6 +463,7 @@ M.RegisterPage({
 	key = "bags", section = "sell", label = L["Bags"], order = 1, prices = true, noHeader = true,
 	events = { "BAGS_CHANGED", "JUNK_CHANGED" },
 	columns = P.columns, Model = P.Model, InitRow = P.InitRow, Hero = P.Hero, OnClick = P.OnClick,
+	DockedRow = P.DockedRow, DockedHero = P.DockedHero, dockedListToolsWidth = 0,
 	Tools = P.Tools, UpdateTools = P.UpdateTools,
 	P = P,
 })

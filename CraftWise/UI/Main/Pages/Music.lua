@@ -5,6 +5,8 @@
 -- Music.ToggleParty, Video.lua clips. The dropdowns also preview a song or clip and remove a song file
 -- added by name; a song file is added by name under the rows (today's song picker, moved here).
 -- Row data (Mu.Rows, Mu.Playing) is built apart from the drawing, so the docked layout (#161) can draw it.
+-- Provisional (#161 Q3), docked: the page scrolls; each profession row stacks into lines (Song, Video,
+-- Next cast, then volume, each with its label), the Playing card stacks too (DockedRows, DockedCard).
 local _, ns = ...
 local M = ns.Main
 local Style, L = ns.Style, ns.L
@@ -386,6 +388,13 @@ local function DrawRows(list, rows, width)
 		r:SetPoint("TOPRIGHT", list, "TOPRIGHT", 0, -(i - 1) * Mu.ROW_HEIGHT)
 		r.name:SetText(d.party and L["Party"] or d.name)
 		r.skill:SetText(d.skill and tostring(d.skill) or "")
+		r:SetHeight(Mu.ROW_HEIGHT)
+		r.name:ClearAllPoints()
+		r.name:SetPoint("LEFT", r, "LEFT", PAD, 0)
+		r.nameHit:SetSize(COLS.name, Mu.ROW_HEIGHT)
+		for _, t in pairs(r.dl or {}) do
+			t:Hide()
+		end
 		local x = PAD + COLS.name + GAP
 		for _, key in ipairs({ "song", "video" }) do
 			local dd = r[key]
@@ -411,6 +420,109 @@ local function DrawRows(list, rows, width)
 	for i = #rows + 1, #list.rows do
 		list.rows[i]:Hide()
 	end
+end
+
+----------------------------------------------------------------------------------------------------
+-- Provisional (#161 Q3): docked rows and card
+----------------------------------------------------------------------------------------------------
+
+Mu.DOCKED_LINE, Mu.DOCKED_LABEL = 30, 76
+
+-- Lines of a docked row, in order: { key, label } (Party has no Next cast: it always plays from the start).
+function Mu.DockedLines(d)
+	local lines = { { "song", L["Song"] }, { "video", L["Video"] } }
+	if not d.party then
+		lines[#lines + 1] = { "mode", L["Next cast"] }
+	end
+	lines[#lines + 1] = { "volume", L["Volume"] }
+	return lines
+end
+
+function Mu.DockedRowHeight(d)
+	return 10 + 18 + 6 + #Mu.DockedLines(d) * Mu.DOCKED_LINE + 4
+end
+
+local function DockedRows(list, rows, width, pad)
+	local ctlW = width - 2 * pad - Mu.DOCKED_LABEL
+	local y = 0
+	for i, d in ipairs(rows) do
+		local r = list.rows[i] or BuildRow(list, i)
+		r.data = d
+		local h = Mu.DockedRowHeight(d)
+		r:ClearAllPoints()
+		r:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -y)
+		r:SetPoint("TOPRIGHT", list, "TOPRIGHT", 0, -y)
+		r:SetHeight(h)
+		r.name:SetText(d.party and L["Party"] or d.name)
+		r.name:ClearAllPoints()
+		r.name:SetPoint("TOPLEFT", r, "TOPLEFT", pad, -10)
+		r.skill:SetText(d.skill and tostring(d.skill) or "")
+		r.nameHit:SetSize(width - 2 * pad, 22)
+		r.dl = r.dl or {}
+		for _, t in pairs(r.dl) do
+			t:Hide()
+		end
+		local ly = 10 + 18 + 6
+		for _, line in ipairs(Mu.DockedLines(d)) do
+			local key = line[1]
+			local label = r.dl[key]
+			if not label then
+				label = Style.Text(r, "Label", "text3")
+				r.dl[key] = label
+			end
+			label:SetText(line[2])
+			label:ClearAllPoints()
+			label:SetPoint("LEFT", r, "TOPLEFT", pad, -(ly + Mu.DOCKED_LINE / 2 - 2))
+			label:Show()
+			local ctl = r[key]
+			ctl:ClearAllPoints()
+			ctl:SetPoint("LEFT", r, "TOPLEFT", pad + Mu.DOCKED_LABEL, -(ly + Mu.DOCKED_LINE / 2 - 2))
+			if key == "song" or key == "video" then
+				ctl.profession = d.name
+				ctl:SetWidth(ctlW)
+				ctl.text:SetText(key == "song" and d.songLabel or d.videoLabel)
+				local c = (key == "song" and d.song or key == "video" and d.video) and C.text or C.text3
+				ctl.text:SetTextColor(c[1], c[2], c[3], 1)
+			elseif key == "mode" then
+				ctl:SetSelected(d.mode == "restart" and 2 or 1)
+			elseif key == "volume" then
+				ctl:SetValueQuietly(d.volume)
+			end
+			ly = ly + Mu.DOCKED_LINE
+		end
+		r.mode:SetShown(not d.party)
+		r:Show()
+		y = y + h
+	end
+	for i = #rows + 1, #list.rows do
+		list.rows[i]:Hide()
+	end
+	return y
+end
+
+-- The Playing card: window, one line with the time bar and the toggles right; docked, stacked: label,
+-- song, chunk, the time bar across, then Music on and Party!.
+Mu.CARD_HEIGHT, Mu.DOCKED_CARD_HEIGHT = 76, 14 + 12 + 26 + 14 + 10 + 4 + 16 + 8 + 28 + 14
+local function LayoutCard(card, docked)
+	local bar = card.bar
+	card.party:ClearAllPoints()
+	card.on:ClearAllPoints()
+	bar:ClearAllPoints()
+	if docked then
+		card:SetHeight(Mu.DOCKED_CARD_HEIGHT)
+		bar:SetPoint("TOPLEFT", card.sub, "BOTTOMLEFT", -26, -10)
+		bar:SetPoint("RIGHT", card, "RIGHT", -16, 0)
+		card.on:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 16, 14)
+		card.party:SetPoint("LEFT", card.on, "RIGHT", 8, 0)
+	else
+		card:SetHeight(Mu.CARD_HEIGHT)
+		card.party:SetPoint("RIGHT", card, "RIGHT", -16, 0)
+		card.on:SetPoint("RIGHT", card.party, "LEFT", -8, 0)
+		bar:SetSize(220, 4)
+		bar:SetPoint("RIGHT", card.on, "LEFT", -18, 6)
+	end
+	card.barWidth = docked and nil or 220
+	card.nokta:MoveTo(card, docked and "TOPLEFT" or "LEFT", 16 + 5.5, docked and -20 or 0, true)
 end
 
 local function BuildCard(body)
@@ -461,7 +573,7 @@ local function UpdateTime(card, playing)
 	bar.from:SetShown(has and true or false)
 	bar.to:SetShown(has and true or false)
 	if has then
-		bar.fill:SetWidth(math.max(220 * playing.progress, 0.01))
+		bar.fill:SetWidth(math.max((card.barWidth or card.dockedBarWidth or 220) * playing.progress, 0.01))
 		bar.from:SetText(Mu.Clock(playing.elapsed))
 		bar.to:SetText(Mu.Clock(playing.duration))
 	end
@@ -565,33 +677,85 @@ local function Build(body)
 	end)
 end
 
+-- Docked or window: the page's parts sit in the scroll's child (docked) or on the body.
+local function Container(body, docked)
+	if not docked then
+		if body.dscroll then
+			body.dscroll:Hide()
+		end
+		for _, part in ipairs({ body.card, body.listBar, body.list, body.add }) do
+			part:SetParent(body)
+		end
+		body.head:Show()
+		return body
+	end
+	if not body.dscroll then
+		body.dscroll = M.Docked.Scroll(body)
+		body.dscroll:SetAllPoints(body)
+	end
+	local child = body.dscroll.child
+	for _, part in ipairs({ body.card, body.listBar, body.list, body.add }) do
+		part:SetParent(child)
+	end
+	body.head:Hide() -- no columns to head: each row names its lines
+	body.dscroll:Show()
+	return child
+end
+
 local function Refresh(body, ctx)
 	local width = ctx and ctx.metrics and ctx.metrics.width or 880
+	local docked = M.IsDocked(ctx)
+	local pad = docked and ctx.metrics.pad or PAD
 	local playing = Mu.Playing()
 	body.playingKey = PlayingKey(playing)
 	Mu.lastPlaying = playing
-	local y = 16
+	local parent = Container(body, docked)
+	if docked then
+		parent:SetWidth(width)
+	end
+	local y = docked and 0 or 16
 	local card = body.card
 	card:SetShown(playing ~= nil)
+	LayoutCard(card, docked)
+	card.dockedBarWidth = width - 2 * pad - 32
 	if playing then
 		card:ClearAllPoints()
-		card:SetPoint("TOPLEFT", body, "TOPLEFT", PAD, -y)
-		card:SetPoint("TOPRIGHT", body, "TOPRIGHT", -PAD, -y)
+		card:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -y)
+		card:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -pad, -y)
 		card.label:SetText(playing.label)
 		card.name:SetText(playing.name)
 		card.sub:SetText(playing.sub or "")
 		UpdateTime(card, playing)
 		PaintToggles(card.on, card.party)
-		y = y + 76
+		y = y + (docked and (Mu.DOCKED_CARD_HEIGHT + 8) or 76)
 	end
 	local bar = body.listBar
 	bar:ClearAllPoints()
-	bar:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
-	bar:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, -y)
+	bar:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
+	bar:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
 	bar.on:SetShown(not playing)
 	bar.party:SetShown(not playing)
 	PaintToggles(bar.on, bar.party)
-	y = y + 44
+	bar.title:ClearAllPoints()
+	bar.note:ClearAllPoints()
+	bar.party:ClearAllPoints()
+	if docked then
+		-- the title with the toggles right, its note under it
+		bar:SetHeight(48)
+		bar.title:SetPoint("TOPLEFT", bar, "TOPLEFT", pad, -8)
+		bar.note:SetPoint("TOPLEFT", bar.title, "BOTTOMLEFT", 0, -4)
+		bar.note:SetWidth(width - 2 * pad)
+		bar.note:SetWordWrap(false)
+		bar.party:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -pad, -4)
+		y = y + 48
+	else
+		bar:SetHeight(44)
+		bar.title:SetPoint("LEFT", bar, "LEFT", PAD, 0)
+		bar.note:SetPoint("LEFT", bar.title, "RIGHT", 8, 0)
+		bar.note:SetWidth(0)
+		bar.party:SetPoint("RIGHT", bar, "RIGHT", -PAD, 0)
+		y = y + 44
+	end
 	local head = body.head
 	head:ClearAllPoints()
 	head:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
@@ -603,21 +767,44 @@ local function Refresh(body, ctx)
 		head.labels[i]:SetPoint("LEFT", head, "LEFT", x, 0)
 		x = x + w + GAP
 	end
-	y = y + 24
+	if not docked then
+		y = y + 24
+	end
 	local rows = Mu.Rows()
 	Mu.lastRows = rows
 	local list = body.list
 	list:ClearAllPoints()
-	list:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
-	list:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, -y)
-	list:SetHeight(#rows * Mu.ROW_HEIGHT)
-	DrawRows(list, rows, width)
-	y = y + #rows * Mu.ROW_HEIGHT + 14
+	list:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
+	list:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
+	if docked then
+		local h = DockedRows(list, rows, width, pad)
+		list:SetHeight(h)
+		y = y + h + 14
+	else
+		list:SetHeight(#rows * Mu.ROW_HEIGHT)
+		DrawRows(list, rows, width)
+		y = y + #rows * Mu.ROW_HEIGHT + 14
+	end
 	local add = body.add
 	add:ClearAllPoints()
-	add:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
-	add:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, -y)
-	add.help:SetWidth(width - 2 * PAD)
+	add:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
+	add:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
+	add.help:ClearAllPoints()
+	add.help:SetPoint("TOPLEFT", add, "TOPLEFT", pad, 0)
+	add.help:SetWidth(width - 2 * pad)
+	add.help:SetWordWrap(true)
+	add.msg:ClearAllPoints()
+	if docked then
+		-- the message under the box (no room beside it)
+		add.box:SetWidth(width - 2 * pad - 60)
+		add.msg:SetPoint("TOPLEFT", add.box, "BOTTOMLEFT", 0, -6)
+		add:SetHeight(84)
+		body.dscroll:SetContentHeight(y + 84 + 16)
+	else
+		add.box:SetWidth(220)
+		add.msg:SetPoint("LEFT", add.btn, "RIGHT", 12, 0)
+		add:SetHeight(60)
+	end
 	local msg = Mu.message
 	add.msg:SetText(msg and msg[1] or (#ns.Music.SongNames() == 0 and L["No songs yet."] or ""))
 	local c = Style.Color(msg and msg[2] or "text3")

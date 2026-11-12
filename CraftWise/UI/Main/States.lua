@@ -52,6 +52,20 @@ function Panel:Set(spec)
 	self:Show()
 end
 
+-- Fits the panel to a layout: the docked sheet is 380 wide (#161), so its text column narrows to it.
+function Panel:Fit(m)
+	local pad = m and m.docked and m.pad or PANEL_PAD
+	local text = m and m.docked and (m.width - 2 * pad) or PANEL_TEXT_WIDTH
+	self.inner:ClearAllPoints()
+	self.inner:SetPoint("LEFT", self, "LEFT", pad, 0)
+	self.inner:SetSize(text + (m and m.docked and 0 or 120), 1)
+	self.title:SetWidth(m and m.docked and text or 0)
+	self.title:SetWordWrap(m and m.docked and true or false)
+	self.body:SetWidth(text)
+	self.errorHolder:SetSize(m and m.docked and text or PANEL_TEXT_WIDTH + 100, 84)
+	self.fitWidth = text
+end
+
 -- Show error text: the client has no clipboard API, so the text sits selected in an edit box.
 function Panel:ShowErrorText()
 	local box = self.errorBox

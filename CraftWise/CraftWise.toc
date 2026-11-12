@@ -62,6 +62,7 @@ UI\Main\Shell.lua
 UI\Main\States.lua
 UI\Main\List.lua
 UI\Main\Frame.lua
+UI\Main\Docked.lua
 UI\Main\Pages\Sell.lua
 UI\Main\Pages\Bags.lua
 UI\Main\Pages\Auctions.lua

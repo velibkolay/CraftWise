@@ -22,6 +22,8 @@ escape's colour), so one file serves every colour; the header art and the W key 
                                    4 units filled, in a 14 unit box
   cw-close.tga           32 x 32   the header's close button: two diagonals, stroke 1.6, square caps, in a
                                    12 unit box
+  cw-undock.tga          32 x 32   the docked header's undock button (#161, board "Docked layout, on your
+                                   screen"): the same frame with a title bar line (M1.5 5h11), stroke 1.4
 
 The header files hold the boards' polygons scaled to the texture: drawn over the whole header (880 x 56 in
 the window, 380 x 64 docked) they give the board's shapes. Stretch them horizontally only if a layout ever
@@ -397,6 +399,10 @@ def main():
     c.fill([rect(1.5 - h, 2 - h, 12.5 + h, 12 + h), rect(1.5 + h, 2 + h, 12.5 - h, 12 - h, clockwise=False),
             rect(1.5 - h, 2 - h, 5.5 + h, 12 + h)], WHITE, sx=32 / 14, sy=32 / 14)
     write_tga(MEDIA / "cw-dock.tga", c)
+    c = Canvas(32, 32)  # viewBox 0 0 14 14: rect 1.5 2 11 10 and M1.5 5h11, stroke 1.4 (#161)
+    c.fill([rect(1.5 - h, 2 - h, 12.5 + h, 12 + h), rect(1.5 + h, 2 + h, 12.5 - h, 12 - h, clockwise=False),
+            rect(1.5 - h, 5 - h, 12.5 + h, 5 + h)], WHITE, sx=32 / 14, sy=32 / 14)
+    write_tga(MEDIA / "cw-undock.tga", c)
     c = Canvas(32, 32)  # viewBox 0 0 12 12: M2 2l8 8M10 2l-8 8, stroke 1.6, square caps
     c.fill([stroke_segment(2, 2, 10, 10, 1.6, square=True), stroke_segment(10, 2, 2, 10, 1.6, square=True)],
            WHITE, sx=32 / 12, sy=32 / 12)

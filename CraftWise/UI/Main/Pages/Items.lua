@@ -17,6 +17,10 @@
 --
 -- Row data (Items.Row, Items.ListModel, Items.Card) is built apart from the drawing below, so the docked
 -- layout (#161) can draw the same data its own way.
+-- Provisional (#161 Q1), docked: the list across the sheet (chips in its header), and a click on an item
+-- swaps to its card across the sheet, scrolling, with Back in the sub bar in place of the search box.
+-- Items.state.dockedCard says which of the two shows (Items.Select shows the card, Back, a chip or a
+-- search the list).
 local _, ns = ...
 local M = ns.Main
 local Style, L = ns.Style, ns.L
@@ -74,6 +78,13 @@ end
 
 function Items.SetChip(key)
 	Saved().chip = key
+	Items.state.dockedCard = false
+	M.Refresh()
+end
+
+-- Docked: back from the card to the list (provisional, #161 Q1).
+function Items.Back()
+	Items.state.dockedCard = false
 	M.Refresh()
 end
 
@@ -90,6 +101,7 @@ function Items.Select(itemID, focus)
 	local saved = Saved()
 	saved.item = itemID
 	Items.state.focus = focus
+	Items.state.dockedCard = true -- docked: the card shows (provisional, #161 Q1)
 	local recent = saved.recent
 	for i = #recent, 1, -1 do
 		if recent[i] == itemID then
@@ -105,6 +117,7 @@ end
 
 function Items.SetQuery(text)
 	Items.state.query = text or ""
+	Items.state.dockedCard = false
 	M.Refresh()
 end
 
@@ -714,6 +727,8 @@ local function InitListRow(b, row)
 	b.bg:SetShown(row.itemID == Items.Selected())
 	b.icon:SetTexture(row.icon or (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(row.itemID)) or 134400)
 	b.name:SetText(row.name)
+	b.name:SetWidth(Items.rowNameWidth or 150)
+	b.note:SetWidth(Items.rowNameWidth or 150)
 	SetColor(b.name, Style.QualityColor(row.quality) or "text")
 	b.note:SetText(row.note or "")
 	b.price:SetText(row.priceText or "")
@@ -1056,7 +1071,7 @@ local function DrawChart(card, chartData, width)
 	end
 end
 
-local function DrawCard(body, data, width)
+local function DrawCard(body, data, width, docked)
 	local card = body.card
 	card.data = data
 	local shown = data ~= nil
@@ -1087,15 +1102,18 @@ local function DrawCard(body, data, width)
 	if data.watched ~= nil then
 		card.watch:SetOn(data.watched)
 	end
-	local colW = (width - 3 * FIG_GAP) / 4
+	-- Figures: four in a row; docked two by two.
+	local perRow = docked and 2 or 4
+	local colW = (width - (perRow - 1) * FIG_GAP) / perRow
 	for i, f in ipairs(card.figs) do
 		local fig = data.figures[f.key]
+		local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
 		f:ClearAllPoints()
-		f:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X + (i - 1) * (colW + FIG_GAP), -FIG_TOP)
+		f:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X + col * (colW + FIG_GAP), -(FIG_TOP + row * (44 + 8)))
 		f:SetWidth(colW)
 		f.value:SetText(fig and fig.text or "")
 	end
-	local chartTop = FIG_TOP + 44 + 12
+	local chartTop = FIG_TOP + math.ceil(#card.figs / perRow) * (44 + 8) + 4
 	card.chart:ClearAllPoints()
 	card.chart:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -chartTop)
 	card.chart:SetWidth(width)
@@ -1104,15 +1122,22 @@ local function DrawCard(body, data, width)
 	card.chart.note:SetWidth(width)
 	DrawChart(card, data.chart, width)
 	local blockTop = chartTop + (data.chart and data.chart.mode == "chart" and (Items.CHART_HEIGHT + 22) or 36)
-	local half = (width - 20) / 2
+	local blockH = 22 + 5 * KV_ROW
+	local half = docked and width or (width - 20) / 2 -- docked: Used in over Where to buy
 	card.used:ClearAllPoints()
 	card.used:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -blockTop)
-	card.used:SetSize(half, 22 + 5 * KV_ROW)
+	card.used:SetSize(half, blockH)
 	card.used:Set(data.usedIn)
 	card.where:ClearAllPoints()
-	card.where:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X + half + 20, -blockTop)
-	card.where:SetSize(half, 22 + 5 * KV_ROW)
+	if docked then
+		card.where:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -(blockTop + blockH + 12))
+	else
+		card.where:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X + half + 20, -blockTop)
+	end
+	card.where:SetSize(half, blockH)
 	card.where:Set(data.where)
+	-- the card's whole height (docked: what the scroll holds)
+	card.contentHeight = (docked and (blockTop + 2 * blockH + 12) or (blockTop + blockH)) + CARD_PAD_Y
 end
 
 -- Search box in the sub bar (board: 300 x 26, 1 unit C.text border).
@@ -1172,12 +1197,24 @@ M.RegisterPage({
 	events = { "MERCHANTS_CHANGED", "LEDGER_CHANGED", "BAGS_CHANGED", "ITEM_WATCH_CHANGED" },
 	Tools = function(slot)
 		BuildSearch(slot, slot)
+		-- Docked: Back from the card to the list, in place of the search box (provisional, #161 Q1).
+		slot.back = Style.LineButton(slot, L["Back"], nil, 26)
+		slot.back:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+		slot.back:SetScript("OnClick", function()
+			Items.Back()
+		end)
+		slot.back:Hide()
 	end,
-	UpdateTools = function(slot)
+	UpdateTools = function(slot, ctx)
 		local box = Items.searchBox
 		if box and (box:GetText() or "") ~= Items.state.query then
 			box:SetText(Items.state.query)
 		end
+		local docked = M.IsDocked(ctx)
+		local card = Items.DockedShowsCard(ctx)
+		box:SetWidth(docked and Items.DOCKED_SEARCH_WIDTH or 300)
+		box:SetShown(not card)
+		slot.back:SetShown(card)
 	end,
 	Build = function(body)
 		BuildList(body)
@@ -1185,15 +1222,78 @@ M.RegisterPage({
 		body.search = Items.searchBox
 	end,
 	Refresh = function(body, ctx)
-		local width = (ctx and ctx.metrics and ctx.metrics.width or 880) - Items.LIST_WIDTH - 1 - 2 * CARD_PAD_X
 		local model = Items.Model()
 		Items.lastModel = model
 		body.search = Items.searchBox
+		Items.body = body
+		if M.IsDocked(ctx) then
+			return Items.DockedRefresh(body, ctx, model)
+		end
+		-- Window: the list left, the card right (put back after a docked draw).
+		local width = (ctx and ctx.metrics and ctx.metrics.width or 880) - Items.LIST_WIDTH - 1 - 2 * CARD_PAD_X
+		local left, card = body.left, body.card
+		left:SetWidth(Items.LIST_WIDTH)
+		left.empty:SetWidth(Items.LIST_WIDTH - 32)
+		left.rule:Show()
+		left:Show()
+		if body.dscroll then
+			body.dscroll:Hide()
+		end
+		card:SetParent(body)
+		card:ClearAllPoints()
+		card:SetPoint("TOPLEFT", body, "TOPLEFT", Items.LIST_WIDTH + 1, 0)
+		card:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+		card:Show()
+		Items.rowNameWidth = nil
 		DrawList(body, model.list)
 		DrawCard(body, model.card, width)
-		Items.body = body
 	end,
 })
+
+----------------------------------------------------------------------------------------------------
+-- Provisional (#161 Q1): the docked Items page. The list across the sheet, or the card across it in a
+-- scroll, never both.
+----------------------------------------------------------------------------------------------------
+
+Items.DOCKED_SEARCH_WIDTH = 170
+
+-- Docked and an item chosen to look at: the card shows, not the list.
+function Items.DockedShowsCard(ctx)
+	return M.IsDocked(ctx) and Items.state.dockedCard and Items.Selected() ~= nil and true or false
+end
+
+function Items.DockedRefresh(body, ctx, model)
+	local m = ctx.metrics
+	local left, card = body.left, body.card
+	local showCard = Items.DockedShowsCard(ctx)
+	left:SetShown(not showCard)
+	left.rule:Hide()
+	if not body.dscroll then
+		body.dscroll = M.Docked.Scroll(body)
+		body.dscroll:SetAllPoints(body)
+	end
+	local scroll = body.dscroll
+	if showCard then
+		card:SetParent(scroll.child)
+		card:ClearAllPoints()
+		card:SetPoint("TOPLEFT", scroll.child, "TOPLEFT", 0, 0)
+		card:SetWidth(m.width)
+		card:Show()
+		scroll.child:SetWidth(m.width)
+		scroll:Show()
+		DrawCard(body, model.card, m.width - 2 * CARD_PAD_X, true)
+		local h = card.contentHeight or 0
+		card:SetHeight(h)
+		scroll:SetContentHeight(h)
+		return
+	end
+	scroll:Hide()
+	card:Hide()
+	left:SetWidth(m.width)
+	left.empty:SetWidth(m.width - 32)
+	Items.rowNameWidth = m.width - 46 - 16 - 110
+	DrawList(body, model.list)
+end
 
 -- The item menu's Where to buy and Price history (UI/ItemMenu.lua), the tooltip hints and old callers.
 function ns.ShowItemLookup(itemID, focus)

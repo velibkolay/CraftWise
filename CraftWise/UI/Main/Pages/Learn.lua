@@ -152,7 +152,7 @@ M.RegisterPage({
 	UpdateListTools = function(slot)
 		MK.UpdateChips(slot.chips)
 	end,
-	Open = function(content, r)
+	Open = function(content, r, ctx)
 		local where = {}
 		for i, w in ipairs(r.where or {}) do
 			if i > 6 then
@@ -160,10 +160,10 @@ M.RegisterPage({
 			end
 			where[i] = { text = w.text, label = w.label }
 		end
-		MK.DrawOpen(content, r, { where = where })
+		MK.DrawOpen(content, r, { where = where }, ctx)
 	end,
-	OpenHeight = function(r)
-		return MK.OpenHeight(r, math.min(#(r.where or {}), 6))
+	OpenHeight = function(r, ctx)
+		return MK.OpenHeight(r, math.min(#(r.where or {}), 6), ctx)
 	end,
 	RowTooltip = function(owner, r)
 		MK.ShowRecipeTooltip(owner, r, "learn")

@@ -137,7 +137,7 @@ function P.Model(ctx)
 		local days = Ledger.Days()
 		local hero = P.DaysHero(days)
 		if hero then
-			hero.full, hero.height = true, 80
+			hero.full, hero.height, hero.middle = true, 80, P.DOCKED_HERO_MIDDLE
 		end
 		return { rows = P.DayRows(days, Ledger.DayKey()), hero = hero,
 			footer = L["A day ends with the money the next recorded day started with."],
@@ -150,7 +150,7 @@ function P.Model(ctx)
 	local rows, ids = P.ItemRows(sum)
 	S.LoadNames(ids)
 	local hero = P.SummaryHero(sum)
-	hero.full, hero.height = true, 80
+	hero.full, hero.height, hero.middle = true, 80, P.DOCKED_HERO_MIDDLE
 	return { rows = rows, hero = hero,
 		footer = L["Net = received − spent. Not from logged trades: loot, quests, repairs, fees."],
 		empty = L["No purchase or sale recorded in this period."] }
@@ -262,6 +262,49 @@ function P.Hero(card, hero, ctx, slot)
 	slot.parts[1]:Set(L["Spent"], S.Coins(hero.spent))
 	slot.parts[2]:Set(L["Received"], S.Coins(hero.received))
 	slot.parts[3]:Set(L["Not from logged trades"], S.Signed(hero.other), L["loot, quests, mail"])
+end
+
+----------------------------------------------------------------------------------------------------
+-- Docked (#161): a day over its money change rail (today with the nokta), the signed change right with
+-- spent and received under it; an item over where it was bought, its net right. The hero stacked: the
+-- change, then Spent, Received and Not from logged trades, one line each.
+----------------------------------------------------------------------------------------------------
+
+P.DOCKED_HERO_MIDDLE = 28 + 14 + 6 + 3 * 16
+
+function P.DockedRow(data, ctx)
+	if data.day ~= nil then
+		return {
+			name = data.name, nameFont = "BodyBold", here = data.today,
+			rail = { value = data.change, max = ctx and ctx.railMax or 0, zeroAt = P.ZERO_AT, selected = data.today },
+			result = S.Signed(data.change) or M.DASH, resultColor = data.change == nil and "text3" or ChangeColor(data.change),
+			sub = Minus(data.spent) .. "  " .. Plus(data.received), tip = P.DAY_COLUMNS[6].tip(data),
+		}
+	end
+	return {
+		icon = data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID) or nil,
+		name = data.name, nameColor = S.QualityColor(data.quality), note = data.where,
+		result = S.Signed(data.net), resultColor = ChangeColor(data.net),
+		sub = Minus(data.spent) .. "  " .. Plus(data.received),
+	}
+end
+
+function P.DockedHero(card, hero, ctx, slot)
+	if not slot.change then
+		slot.change = Style.Text(slot, "FigureL", "text")
+		slot.change:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
+		slot.caption = Style.Text(slot, "Caption", "text3")
+		slot.caption:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -28)
+	end
+	slot.change:SetText(S.Signed(hero.change) or M.DASH)
+	local c = Style.Color(hero.change and ChangeColor(hero.change) or "text3")
+	slot.change:SetTextColor(c[1], c[2], c[3], 1)
+	slot.caption:SetText(hero.caption or "")
+	M.Docked.StatLines(slot, {
+		{ label = L["Spent"], value = S.Coins(hero.spent) },
+		{ label = L["Received"], value = S.Coins(hero.received) },
+		{ label = L["Not from logged trades"] .. " · " .. L["loot, quests, mail"], value = S.Signed(hero.other) },
+	}, 48)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -389,6 +432,7 @@ ns.OpenLedgerPage = P.OpenFromSlash
 M.RegisterPage({
 	key = "ledger", section = "sell", label = L["Ledger"], order = 3, events = { "LEDGER_CHANGED" },
 	columns = P.Columns, Model = Model, InitRow = P.InitRow, Hero = P.Hero,
+	DockedRow = P.DockedRow, DockedHero = P.DockedHero,
 	Tools = P.Tools, UpdateTools = P.UpdateTools, FooterTools = P.FooterTools, UpdateFooterTools = P.UpdateFooterTools,
 	P = P,
 })

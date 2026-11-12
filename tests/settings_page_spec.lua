@@ -65,13 +65,14 @@ it("Settings › Look: layout, scale (on release), fade, lock, Escape, minimap b
 	local ns, stub, M = Load()
 	M.Open("settings")
 	local row = Group(M, "look")
-	-- Layout lists the registered layouts: Window until #161 registers the docked ones
+	-- Layout lists the registered layouts: Window, Docked left, Docked right (#161)
 	local seg = row("layout").holder.control
-	eq(#seg.buttons, 1); eq(seg.buttons[1].label.text, "Window"); eq(seg.selected, 1)
-	M.RegisterLayout("dockLeft", { label = "Docked left", docked = true, metrics = M.WINDOW_METRICS, Apply = function() end })
-	M.Settings.SelectGroup("prices"); M.Settings.SelectGroup("look")
+	eq(#seg.buttons, 3); eq(seg.buttons[1].label.text, "Window"); eq(seg.selected, 1)
+	eq(seg.buttons[2].label.text, "Docked left"); eq(seg.buttons[3].label.text, "Docked right")
 	Seg(row("layout"), 2)
 	eq(M.UI().layout, "dockLeft")
+	Seg(M.Settings.DockedRowOf("look", "layout"), 1) -- the docked Settings page swaps back
+	eq(M.UI().layout, "window")
 	-- Scale: 70-130 %, applied when the drag ends
 	local s = row("scale").holder.control
 	s.scripts.OnValueChanged(s, 1.2)

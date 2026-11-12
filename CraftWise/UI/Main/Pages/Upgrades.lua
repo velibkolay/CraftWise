@@ -423,6 +423,44 @@ local function InitRow(b, data)
 	end
 end
 
+-- Docked (#161): group rows as headers, the item over its gain, the cost right with the slot under it;
+-- the search row keeps its chip (right aligned).
+local function DockedRow(data)
+	if data.header then
+		return { group = { title = data.title, note = data.note, right = data.right } }
+	elseif data.emptyLine then
+		return { line = data.emptyLine }
+	elseif data.search then
+		return { line = "" }
+	end
+	local how = data.how
+	if data.dismissed then
+		how = (how and (how .. " · ") or "") .. L["dismissed"]
+	end
+	return {
+		icon = data.icon or (data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID)) or nil,
+		desaturate = data.dismissed, name = data.name, nameColor = COLUMNS[2].color(data),
+		note = (data.gainText or "") .. (how and how ~= "" and (" · " .. how) or ""), noteColor = "text2",
+		result = data.costText, sub = data.slot, tip = Up.CostTip(data),
+	}
+end
+
+local function DockedInitRow(b, data, ctx)
+	local x = Extra(b)
+	for _, key in ipairs({ "how", "title", "note", "right", "rule", "line" }) do
+		x[key]:Hide()
+	end
+	x.chip:SetShown(data.search and true or false)
+	if data.search then
+		InitRow(b, data) -- the chip's label, state and tip, right aligned
+		for _, key in ipairs({ "how", "title", "note", "right", "rule", "line" }) do
+			x[key]:Hide()
+		end
+		x.chip:ClearAllPoints()
+		x.chip:SetPoint("RIGHT", b, "RIGHT", -(ctx and ctx.metrics and ctx.metrics.pad or 18), 0)
+	end
+end
+
 local function Character()
 	local name = UnitName and UnitName("player") or nil
 	local level = UnitLevel and UnitLevel("player") or nil
@@ -460,6 +498,8 @@ M.RegisterPage({
 		}
 	end,
 	InitRow = InitRow,
+	DockedRow = DockedRow,
+	DockedInitRow = DockedInitRow,
 	OnClick = function() end,
 	Tools = function(slot)
 		slot.text = Style.Text(slot, "Caption", "text3")

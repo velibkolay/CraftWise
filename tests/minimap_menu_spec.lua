@@ -132,13 +132,14 @@ it("minimap button: 34 round, the client's ring, the W key at 20 inside", functi
 	eq(btn.icon.lastPoint[1], "CENTER", "centred in the ring")
 end)
 
-it("minimap button: click opens CraftWise, right-click the farm tracker, Shift-click docks once #161 exists", function()
+it("minimap button: click opens CraftWise, right-click the farm tracker, Shift-click docks (#161)", function()
 	local ns = setup()
 	local opened, docked = 0, 0
-	eq(ns.ToggleDock, nil, "no docked layout registered yet (#161)")
+	eq(ns.ToggleDock, ns.Main.ToggleDock, "the docked layouts (#161) plug in the Shift-click")
 	ns.ToggleMainWindow = function() opened = opened + 1 end
 	eq(ns.MinimapClick("LeftButton", false), "open")
-	eq(ns.MinimapClick("LeftButton", true), "open", "no docked layout yet: Shift-click opens too")
+	ns.ToggleDock = nil
+	eq(ns.MinimapClick("LeftButton", true), "open", "without a docked layout Shift-click opens too")
 	eq(opened, 2)
 	eq(ns.MinimapClick("RightButton", false), "farm")
 	eq(ns.FarmFrame.IsShown(), true)
@@ -162,13 +163,14 @@ it("minimap button: hover shows the inverse tooltip with one line per action", f
 	local tip = CraftWiseInverseTip
 	eq(tip.shown, true); eq(tip.owner, btn)
 	eq(tip.title.text, "CraftWise")
-	eq(tip.body.text, "Click: open\nRight-click: farm tracker\nDrag: move")
+	eq(tip.body.text, "Click: open\nRight-click: farm tracker\nShift-click: dock / undock\nDrag: move")
 	eq(tip.sheet.fill, ns.Style.C.text, "inverse: light sheet")
 	btn.scripts.OnLeave(btn)
 	eq(tip.shown, false)
-	ns.ToggleDock = function() end
+	ns.ToggleDock = nil
 	btn.scripts.OnEnter(btn)
-	eq(tip.body.text, "Click: open\nRight-click: farm tracker\nShift-click: dock / undock\nDrag: move")
+	eq(tip.body.text, "Click: open\nRight-click: farm tracker\nDrag: move", "no Shift-click line without docking")
+	ns.ToggleDock = ns.Main.ToggleDock
 	btn.scripts.OnDragStart(btn)
 	eq(tip.shown, false, "dragging hides it")
 end)
