@@ -278,14 +278,15 @@ local function Choose(own, ref, min)
 end
 
 -- All zones from both sources, ranked by value per catch (low end), best first.
--- opts = { filter = zone name part (any case), key = character key, prefer = "own"|"ref" (force a side) }
+-- opts = { filter = zone name part (any case), key = character key, prefer = "own"|"ref" (force a side),
+--   water = "open"|"pool" (own catches from that water only, as F.Tables; the reference has no water split) }
 -- { zones = { zone }, ref = reference loaded?, refGenerated, own = catches, ownMin, days }
 -- zone = { name, key, source, n, perCatch, perCatchHigh, perHour, unpriced, items, own = side|nil, ref = side|nil,
 --   rate, timed, top }
 function Z.Rank(opts)
 	opts = opts or {}
 	local F = ns.Fishing
-	local t = F and F.Tables and F.Tables({ key = opts.key }) or nil
+	local t = F and F.Tables and F.Tables({ key = opts.key, water = opts.water }) or nil
 	local log = F and F.Log and F.Log(opts.key) or nil
 	local ctx = NewContext(log)
 	local min = Z.OwnMin()

@@ -1,5 +1,5 @@
 -- Issue #88: Fishing zones ranked by value per catch from own catches and the optional local reference
--- (CraftWise_FishingRef), containers valued by their contents, the Fishing tab, /craftwise fishing zones, and
+-- (CraftWise_FishingRef), containers valued by their contents, Gather › Fishing, /craftwise fishing zones, and
 -- the converter tools/fishing_ref.py on a synthetic fixture. Zones, items, counts and prices are made up.
 local NOW = 1794000000
 local SNAPPER, EEL, TRUNK, RING, PURSE, PEARL = 9101, 9102, 9103, 9201, 9202, 9104
@@ -249,49 +249,45 @@ it("snapshot zones carry the own timing behind value per hour (#128)", function(
 	eq(z.items, nil); eq(fz.compare[1].zone, "Own Lake"); eq(fz.compare[1].own, EEL .. " 60 60 100")
 end)
 
-it("Fishing tab: zone list, tooltips, loot table, source switch, back, sorting", function()
+it("Gather › Fishing (#156): zone list, tooltips, sorting by every header, a zone's fish, the source switch", function()
 	local ns, stub = setup()
 	reference()
 	addCatches(ns, "Testwater Bay", 10, { [SNAPPER] = 1 })
-	ns.db.settings.view = "fishing"
-	ns.ToggleProfitFrame()
-	local PF = ns.PF
-	eq(#PF.state.data, 2); eq(PF.state.data[1].name, "Testwater Bay")
-	has(PF.frame.summary:GetText(), "reference: ")
-	local row = PF.rows[1]
-	eq(row.data.key, "testwater bay")
+	local M = ns.Main
+	M.Open("fishing")
+	local list = M.ListOf("fishing")
+	eq(#list.rows, 2); eq(list.rows[1].name, "Testwater Bay", "by value per catch while there is no catch rate yet")
+	has(M.Frame().foot.right.text, "reference: ")
+	local row = list.box.frames[1]
+	eq(row.elementData.row.key, "testwater bay")
 	row.scripts.OnEnter(row); row.scripts.OnLeave(row)
-	-- Sort by every header in the zone list.
-	for _, header in pairs(PF.frame.headers) do
+	for _, hit in pairs(row.hits) do hit.scripts.OnEnter(hit); hit.scripts.OnLeave(hit) end
+	-- Sort by every header that sorts.
+	for _, header in ipairs(list.headers) do
 		if header:IsShown() then header.scripts.OnClick(header) end
 	end
-	ns.db.settings.fishSortKey, ns.db.settings.fishSortDesc = "perCatch", true
-	ns.RefreshProfitFrame()
-	-- Open the zone: its loot table, reference side (10 own < 50).
-	row = PF.rows[1]
+	M.state.sort.fishing = nil
+	M.Refresh()
+	-- Open the zone: the reference side (10 own < 50), the eel first by value per catch.
+	row = list.box.frames[1]
 	row.scripts.OnClick(row, "LeftButton")
-	eq(PF.state.fishZone, "testwater bay"); eq(#PF.state.data, 3)
-	eq(PF.state.data[1].itemID, EEL)
-	eq(PF.frame.fishBack:IsShown(), true); eq(PF.frame.fishSource:IsShown(), true)
-	for i = 1, 3 do PF.rows[i].scripts.OnEnter(PF.rows[i]) end
-	for _, header in pairs(PF.frame.headers) do
-		if header:IsShown() then header.scripts.OnClick(header) end
+	local detail = list.box.frames[2]
+	eq(detail.elementData.open, true)
+	local z = detail.elementData.row.zone
+	eq(z.side.source, "ref")
+	local fish = ns.GatherFishing.FishLines(z.side)
+	eq(fish[1].itemID, EEL); eq(#fish, 3)
+	-- Switch to own catches.
+	local switch
+	for _, b in ipairs(detail.content.cwPool.kinds.button) do
+		if b.shown ~= false and b.label.text == "Show own catches" then switch = b end
 	end
-	-- Switch to own catches and back to all zones.
-	PF.frame.fishSource.scripts.OnClick(PF.frame.fishSource)
-	eq(PF.state.fishOpen.source, "own"); eq(#PF.state.data, 1)
-	PF.rows[1].scripts.OnClick(PF.rows[1], "RightButton")
-	eq(PF.state.fishZone, nil); eq(#PF.state.data, 2)
-	eq(PF.frame.fishBack:IsShown(), false)
-	-- Search filters zones; other views still work afterwards.
-	PF.frame.search:SetText("pond")
-	PF.frame.search.scripts.OnTextChanged(PF.frame.search)
-	eq(#PF.state.data, 1)
-	PF.frame.search:SetText("")
-	PF.frame.search.scripts.OnTextChanged(PF.frame.search)
-	ns.db.settings.view = "bags"
-	ns.RefreshProfitFrame()
-	eq(PF.frame.fishBack:IsShown(), false)
+	switch.scripts.OnClick(switch)
+	eq(ns.GatherFishing.state.prefer["testwater bay"], "own")
+	eq(#ns.GatherFishing.FishLines(z.own), 1)
+	-- Click again closes the zone.
+	list.box.frames[1].scripts.OnClick(list.box.frames[1], "LeftButton")
+	eq(#list.box.frames, 2)
 end)
 
 it("tools/fishing_ref.py turns the synthetic fixture into a reference CraftWise reads", function()

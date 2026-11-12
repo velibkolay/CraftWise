@@ -23,16 +23,15 @@ local function Refresh()
 	end
 	UpdateControls()
 	local showLearn = View() == "learn" or Settings().includeUnlearned
-	local layoutView = View() == "fishing" and PF.FishingLayout() or View()
+	local layoutView = View()
 	if state.layout ~= layoutView .. tostring(showLearn) then
 		Layout(layoutView, showLearn)
 	end
 
 	state.data, state.hidden = FilteredRows()
-	PF.UpdateFishingControls()
 	local sortKey, sortDesc = SortSettings()
 	local compare = ns.Profit.Comparator(sortKey, sortDesc)
-	if ItemView() and View() ~= "music" and View() ~= "fishing" then
+	if ItemView() and View() ~= "music" then
 		local inner = compare
 		compare = function(a, b)
 			if a.dismissed ~= b.dismissed then
@@ -50,8 +49,6 @@ local function Refresh()
 		local label = header.label
 		if key == "name" and View() == "music" then
 			label = L["PROFESSION"]
-		elseif key == "name" and View() == "fishing" then
-			label = state.fishZone and L["ITEM"] or L["ZONE"]
 		elseif key == "name" and ItemView() then
 			label = L["ITEM"]
 		elseif key == "cost" and View() == "upgrades" then
@@ -69,8 +66,7 @@ local function Refresh()
 			rows[i]:Hide()
 		end
 	end
-	local unit = View() == "music" and "professions" or View() == "fishing" and not state.fishZone and "zones"
-		or ItemView() and "items" or "recipes"
+	local unit = View() == "music" and "professions" or ItemView() and "items" or "recipes"
 	PF.frame.count:SetText(Muted(("%d %s"):format(#state.data, unit)))
 	local empty = "No recipes match. Clear the search or tick \"Show unlearned\"."
 	if View() == "learn" then
@@ -78,9 +74,6 @@ local function Refresh()
 	elseif View() == "upgrades" and PF.UpgradeSection() == "ah" then
 		empty = ns.UpgradeSearch.LastRun() and "No AH gear beats what you wear. Search again at the auction house later."
 			or "No AH search yet. Open the auction house and click Search AH."
-	elseif View() == "fishing" then
-		empty = state.query ~= "" and "No zone matches the search."
-			or "No catches yet and no local reference. Fish a while, or see docs/fishing-reference.md."
 	elseif View() == "upgrades" then
 		empty = "No upgrades from recipes you know or can learn now. Open your professions once so CraftWise knows them."
 	end

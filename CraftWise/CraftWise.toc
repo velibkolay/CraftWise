@@ -60,7 +60,6 @@ UI\Settings.lua
 UI\FarmFrame.lua
 UI\FarmHistory.lua
 UI\ProfitFrame\State.lua
-UI\ProfitFrame\Fishing.lua
 UI\ProfitFrame\Data.lua
 UI\ProfitFrame\Rows.lua
 UI\ProfitFrame\Tooltips.lua
@@ -70,8 +69,6 @@ UI\ProfitFrame\Refresh.lua
 UI\ProfitFrame\Frame.lua
 UI\ProfitFrame\Events.lua
 UI\Records\State.lua
-UI\Records\Crates.lua
-UI\Records\FishingLog.lua
 UI\Records\Market.lua
 UI\Records\Where.lua
 UI\Records\Snapshot.lua
@@ -85,4 +82,7 @@ UI\Main\Pages\Sell.lua
 UI\Main\Pages\Bags.lua
 UI\Main\Pages\Auctions.lua
 UI\Main\Pages\Ledger.lua
+UI\Main\Pages\Farm.lua
+UI\Main\Pages\Fishing.lua
+UI\Main\Pages\Crates.lua
 UI\MinimapButton.lua

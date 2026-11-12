@@ -57,7 +57,8 @@ end
 
 it("Main: five sections in the spec's order; every sub-page of #150 has a page (a bridge until it moves)", function()
 	local _, _, M = Load()
-	local moved = { bags = true, auctions = true, ledger = true } -- Sell (#155)
+	local moved = { bags = true, auctions = true, ledger = true, -- Sell (#155)
+		farm = true, fishing = true, crates = true } -- Gather (#156)
 	local labels = {}
 	for _, s in ipairs(M.SECTIONS) do labels[#labels + 1] = s.label end
 	eq(table.concat(labels, ","), "Make,Sell,Gather,Look up,Music")
@@ -542,16 +543,15 @@ it("Bridges: each page not moved yet says so and opens its old home", function()
 	b.scripts.OnClick(b)
 	eq(ns.db.settings.view, "learn")
 	assert(ns.PF.frame and ns.PF.frame:IsShown(), "profit window open on Learn")
-	M.ShowPage("crates")
+	M.ShowPage("items")
 	local opened
 	ns.ShowRecords = function(key) opened = key end
-	local lb = M.SlotsOf("crates").body.panel.buttons[1]
-	eq(lb.label.text, "Open in the Records window")
+	local lb = M.SlotsOf("items").body.panel.buttons[1]
+	eq(lb.label.text, "Market in the Records window")
 	lb.scripts.OnClick(lb)
-	eq(opened, ns.RW.Crates.key)
-	-- two homes: Fishing (Spots, Log), Items (Market, Where to buy); Settings: panel, AH rule, Snapshot
-	M.ShowPage("fishing")
-	eq(M.SlotsOf("fishing").body.panel.buttons[2].shown, true)
+	eq(opened, ns.RW.Market.key)
+	-- two homes: Items (Market, Where to buy); Settings: panel, AH rule, Snapshot
+	eq(M.SlotsOf("items").body.panel.buttons[2].shown, true)
 	M.ToggleSettings()
 	local sp = M.SlotsOf("settings").body.panel
 	eq(sp.buttons[3].label.text, "Snapshot in the Records window")
