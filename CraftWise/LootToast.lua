@@ -11,6 +11,8 @@
 --     its timer, so an area loot of five corpses is one line per item, not five.
 --   * Settings in CraftWiseDB.lootToast (Core.lua defaults): enabled, duration (seconds fully shown),
 --     fade (seconds of fade-out), value (show the value text), locked, pos (anchor position).
+--   * Look (#159, Origami): each line a folded strip, the newest with the turkuaz flap; lines step down in
+--     alpha (1, 0.75, 0.5); background alpha from db.settings.alpha.toast (default 0.70).
 --     `/craftwise loottoast on|off|lock|unlock|test|duration <s>|value on|off|reset`.
 local _, ns = ...
 
@@ -19,8 +21,8 @@ ns.LootToast = T
 
 T.MAX_LINES = 8 -- older lines are dropped when a new one would be the ninth
 T.MIN_DURATION, T.MAX_DURATION = 1, 30
-T.ROW_HEIGHT = 20
-T.WIDTH = 260
+T.ROW_HEIGHT = 28
+T.WIDTH = 260 -- width of the Move handle and outline; the strips are as wide as their text
 T.COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 T.UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 T.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = 300, y = 120 }
@@ -133,39 +135,92 @@ local function ItemIcon(itemID)
 	return icon or T.UNKNOWN_ICON
 end
 
--- Text of a line: item name in its link's quality colour (brackets dropped) and count, or the coins.
-function T.LineText(line)
+-- Name of a line's item: the link's text without brackets, else the client's name, else "item <id>".
+function T.ItemName(line)
+	local name = line.link and line.link:match("|h%[(.-)%]|h")
+	if not name or name == "" then
+		name = ns.ItemInfoNow(line.itemID)
+	end
+	return name or ("item " .. tostring(line.itemID))
+end
+
+-- Quality of the line's item (C_Item.GetItemQualityByID, else the item info), nil while unknown.
+function T.Quality(itemID)
+	if not itemID then
+		return nil
+	end
+	local q = C_Item.GetItemQualityByID and C_Item.GetItemQualityByID(itemID)
+	if q == nil and C_Item.GetItemInfo then
+		q = select(3, C_Item.GetItemInfo(itemID))
+	end
+	return q
+end
+
+-- What a line shows (#159, spec "Loot toast"): name in its quality colour, "×count" (C.text2), the stack's
+-- value in coin digits with its source word (AH / vendor) when "With value" is on, and "test" on the Test
+-- lines. The coin line is "Coin" and the coins themselves.
+--   { name, color = Style colour, count = "×4" | nil, money = coins text | nil, source = "AH" | "vendor" | nil,
+--     test = true | nil }
+function T.LineParts(line)
+	local Style = ns.Style
+	local parts = { test = line.test and true or nil }
 	if line.key == "money" then
-		return ns.FormatMoney(line.copper or 0)
+		parts.name, parts.color = "Coin", Style.C.text
+		parts.money = ns.FormatCoins(line.copper or 0)
+		return parts
 	end
-	local name = (line.link or ""):gsub("|h%[(.-)%]|h", "|h%1|h")
-	if name == "" then
-		name = ns.ItemInfoNow(line.itemID) or ("item " .. tostring(line.itemID))
-	end
-	if (line.count or 1) > 1 then
-		name = name .. " |cffffffffx" .. line.count .. "|r"
-	end
-	return name
-end
-
--- Small value text of a line ("12s 30c AH" / "45c vendor"), nil when off or unknown.
-function T.ValueText(line)
+	parts.name = T.ItemName(line)
+	parts.color = Style.QualityColor(T.Quality(line.itemID)) or Style.C.text
+	parts.count = "×" .. tostring(line.count or 1)
 	local s = Settings()
-	if line.key == "money" or (s and s.value == false) then
-		return nil
+	if not (s and s.value == false) then
+		local copper, source = T.Value(line.itemID, line.count)
+		if copper then
+			parts.money = ns.FormatCoins(copper)
+			parts.source = source == "auction" and "AH" or "vendor"
+		end
 	end
-	local copper, source = T.Value(line.itemID, line.count)
-	if not copper then
-		return nil
+	return parts
+end
+
+-- Alpha by position: the newest line 1, the next 0.75, every older one 0.5 (spec "Loot toast").
+T.STEPS = { 1, 0.75, 0.5 }
+function T.StepAlpha(index)
+	return T.STEPS[math.min(math.max(index or 1, 1), #T.STEPS)]
+end
+
+-- A line's alpha: its step times its own timer (shown for "Lines stay", then the fade-out).
+function T.LineAlpha(index, line, now)
+	return T.StepAlpha(index) * T.Alpha(line, now)
+end
+
+-- Background transparency of the strips (Settings › Look, db.settings.alpha.toast; #162 adds the
+-- control). Only the strips' fill and shadow use it; icon, text and the turkuaz flap of the newest line
+-- follow the line's own alpha.
+T.DEFAULT_ALPHA = 0.70
+function T.BackgroundAlpha()
+	local set = ns.db and ns.db.settings
+	local a = set and type(set.alpha) == "table" and tonumber(set.alpha.toast)
+	if not a then
+		return T.DEFAULT_ALPHA
 	end
-	return ns.FormatMoney(copper) .. " " .. (source == "auction" and "AH" or "vendor")
+	return math.min(math.max(a, 0), 1)
 end
 
 ----------------------------------------------------------------------------------------------------
--- Frame
+-- Frame: each line a folded strip (cut 8, hard shadow), 28 tall, 6 apart, newest on top. Padding 6 left
+-- and 20 right (room for the dog-ear), parts 8 apart; the strip is as wide as what it shows.
 ----------------------------------------------------------------------------------------------------
 
-local anchor -- movable frame the rows hang from
+T.CUT = 8
+T.GAP = 6
+T.PAD_LEFT, T.PAD_RIGHT = 6, 20
+T.ICON = 18
+T.SPACE = 8
+T.HANDLE = 16 -- the Move handle above the lines
+T.MOVE_LINES = 3 -- the Move outline covers this many lines
+
+local anchor -- movable frame the rows hang from; while unlocked it is the drag handle
 local rows = {}
 
 local function SavePosition()
@@ -186,25 +241,67 @@ local function PlaceAnchor()
 	anchor:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
 end
 
+-- Top of line i below the anchor.
+function T.RowOffset(i)
+	return -(i - 1) * (T.ROW_HEIGHT + T.GAP)
+end
+
 local function Row(i)
 	local row = rows[i]
 	if row then
 		return row
 	end
+	local Style = ns.Style
+	local C = Style.C
 	row = CreateFrame("Frame", nil, anchor)
-	row:SetSize(T.WIDTH, T.ROW_HEIGHT)
-	row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -(i - 1) * T.ROW_HEIGHT)
+	row:SetHeight(T.ROW_HEIGHT)
+	row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, T.RowOffset(i))
+	row.sheet = Style.Sheet(row, C.sheet, C.flap, T.CUT, true)
 	row.icon = row:CreateTexture(nil, "ARTWORK")
-	row.icon:SetSize(T.ROW_HEIGHT - 2, T.ROW_HEIGHT - 2)
-	row.icon:SetPoint("LEFT")
-	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	row.text:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-	row.text:SetJustifyH("LEFT")
-	row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.value:SetPoint("LEFT", row.text, "RIGHT", 8, 0)
-	row.value:SetJustifyH("LEFT")
+	row.icon:SetSize(T.ICON, T.ICON)
+	row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	row.icon:SetPoint("LEFT", row, "LEFT", T.PAD_LEFT, 0)
+	row.name = Style.Text(row, "Body", "text")
+	row.count = Style.Text(row, "Figure", "text2")
+	row.money = Style.Text(row, "Figure", "text")
+	row.source = Style.Text(row, "Caption", "text3")
+	row.test = Style.Text(row, "Caption", "text3")
+	row.test:SetText("test")
+	row.parts = { row.name, row.count, row.money, row.source, row.test }
+	for _, fs in ipairs(row.parts) do
+		fs:SetJustifyH("LEFT")
+		fs:SetWordWrap(false)
+	end
 	rows[i] = row
 	return row
+end
+
+-- Fills a row with a line's parts; places them left to right and sizes the strip to them.
+local function Fill(row, parts)
+	row.name:SetText(parts.name)
+	row.name:SetTextColor(parts.color[1], parts.color[2], parts.color[3], 1)
+	row.count:SetText(parts.count or "")
+	row.money:SetText(parts.money or "")
+	row.source:SetText(parts.source or "")
+	local shown = { row.name, parts.count and row.count, parts.money and row.money, parts.source and row.source,
+		parts.test and row.test }
+	local x = T.PAD_LEFT + T.ICON + T.SPACE
+	local first = true
+	for i, fs in ipairs(row.parts) do
+		if shown[i] then
+			if not first then
+				x = x + T.SPACE
+			end
+			first = false
+			fs:ClearAllPoints()
+			fs:SetPoint("LEFT", row, "LEFT", x, 0)
+			fs:Show()
+			x = x + math.ceil(fs:GetStringWidth() or 0)
+		else
+			fs:Hide()
+		end
+	end
+	row:SetWidth(x + T.PAD_RIGHT)
 end
 
 -- Draws the lines at `now`; drops the faded ones first.
@@ -212,14 +309,20 @@ function T.Render(now)
 	if not anchor then
 		return
 	end
+	local C = ns.Style.C
 	local active = T.Expire(now)
+	local bg = T.BackgroundAlpha()
 	for i, line in ipairs(lines) do
 		local row = Row(i)
 		row.icon:SetTexture(line.icon)
-		row.text:SetText(T.LineText(line))
-		local value = T.ValueText(line)
-		row.value:SetText(value and ((ns.Style and ns.Style.colors.muted or "") .. value .. "|r") or "")
-		row:SetAlpha(T.Alpha(line, now))
+		Fill(row, T.LineParts(line))
+		row.sheet:SetFlap(i == 1 and C.nokta or C.flap)
+		row.sheet:SetAlpha(bg)
+		-- The flap of the newest line is "here": it keeps full strength whatever the background alpha.
+		if i == 1 then
+			row.sheet.pieces.c:SetVertexColor(C.nokta[1], C.nokta[2], C.nokta[3], 1)
+		end
+		row:SetAlpha(T.LineAlpha(i, line, now))
 		row:Show()
 	end
 	for i = #lines + 1, #rows do
@@ -234,20 +337,24 @@ local function OnUpdate()
 	T.Render(GetTime())
 end
 
+-- Move (unlocked): a 1 unit C.text outline over the first three lines' place and a handle above it to drag.
 local function ApplyLock()
 	local s = Settings()
 	local locked = not s or s.locked ~= false
 	anchor:EnableMouse(not locked)
-	anchor.bg:SetShown(not locked)
+	anchor.handle:SetShown(not locked)
 	anchor.label:SetShown(not locked)
+	anchor.outline:SetShown(not locked)
 end
 
 local function Build()
 	if anchor then
 		return anchor
 	end
+	local Style = ns.Style
+	local C = Style.C
 	anchor = CreateFrame("Frame", "CraftWiseLootToastAnchor", UIParent)
-	anchor:SetSize(T.WIDTH, T.ROW_HEIGHT)
+	anchor:SetSize(T.WIDTH, T.HANDLE)
 	anchor:SetFrameStrata("HIGH")
 	anchor:SetClampedToScreen(true)
 	anchor:SetMovable(true)
@@ -257,14 +364,16 @@ local function Build()
 		self:StopMovingOrSizing()
 		SavePosition()
 	end)
-	anchor.bg = anchor:CreateTexture(nil, "BACKGROUND")
-	anchor.bg:SetAllPoints()
-	if ns.Style then
-		ns.Style.Fill(anchor.bg, ns.Style.colors.accent)
-	end
-	anchor.label = anchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	anchor.label:SetPoint("CENTER")
-	anchor.label:SetText("CraftWise loot - drag, then /craftwise loottoast lock")
+	anchor.handle = anchor:CreateTexture(nil, "BACKGROUND")
+	anchor.handle:SetAllPoints(anchor)
+	Style.Fill(anchor.handle, C.text)
+	anchor.label = Style.Text(anchor, "Label", Style.INK)
+	anchor.label:SetPoint("LEFT", anchor, "LEFT", T.PAD_LEFT, 0)
+	anchor.label:SetText("Loot toast · drag to move")
+	anchor.outline = CreateFrame("Frame", nil, anchor)
+	anchor.outline:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, 0)
+	anchor.outline:SetSize(T.WIDTH, T.MOVE_LINES * T.ROW_HEIGHT + (T.MOVE_LINES - 1) * T.GAP)
+	anchor.outline.border = Style.Border(anchor.outline, C.text)
 	PlaceAnchor()
 	ApplyLock()
 	anchor:Show()
@@ -319,8 +428,10 @@ Feed.Subscribe(T.OnFeed)
 -- Test lines and slash command
 ----------------------------------------------------------------------------------------------------
 
--- Up to three different items from the bags (with their real values) and a coin line, marked as test
--- lines so a real loot never adds to them.
+-- Three sample lines (spec: "Test pushes three sample lines labelled as a test"): two different items
+-- from the bags with their real values and a coin line, each labelled "test" and marked so a real loot
+-- never adds to them. With fewer items in the bags, fewer lines.
+T.TEST_ITEMS = 2
 function T.Test()
 	Build()
 	if not T.Enabled() then
@@ -330,7 +441,7 @@ function T.Test()
 	for bag = 0, ns.LAST_BAG or 5 do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
 			local info = C_Container.GetContainerItemInfo(bag, slot)
-			if info and info.itemID and not seen[info.itemID] and n < 3 then
+			if info and info.itemID and not seen[info.itemID] and n < T.TEST_ITEMS then
 				seen[info.itemID] = true
 				n = n + 1
 				T.Add({ key = "item:" .. info.itemID, itemID = info.itemID, link = info.hyperlink,
@@ -368,7 +479,7 @@ function T.Slash(arg)
 		s.locked = arg == "lock"
 		Build()
 		ApplyLock()
-		ns.Print(arg == "unlock" and "Loot toast unlocked: drag the blue bar, then Lock in the Settings (or /craftwise loottoast lock)."
+		ns.Print(arg == "unlock" and "Loot toast unlocked: drag the white handle, then Lock in the Settings (or /craftwise loottoast lock)."
 			or "Loot toast locked.")
 	elseif arg == "test" then
 		T.Test()

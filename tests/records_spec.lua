@@ -346,16 +346,16 @@ it("window: search box, buttons, rows, tooltips, item clicks open the item menu,
 	eq(ns.RW.Query("where"), "salt")
 end)
 
-it("item menu: Where to buy and Market prices open the Records window for the item", function()
+it("item menu: Where to buy and Price history open the Records window for the item (until Look up › Items, #157)", function()
 	local ns, stub = Load()
 	ns.ShowItemMenu(SALT)
 	local where = CraftWiseItemMenu.buttons.where
 	where.scripts.OnClick(where)
 	eq(ns.RW.CurrentTab(), "where"); eq(ns.RW.Query("where"), tostring(SALT))
 	ns.ShowItemMenu(LINEN)
-	local market = CraftWiseItemMenu.buttons.market
-	market.scripts.OnEnter(market); market.scripts.OnLeave(market)
-	market.scripts.OnClick(market)
+	local history = CraftWiseItemMenu.buttons.history
+	history.scripts.OnEnter(history); history.scripts.OnLeave(history)
+	history.scripts.OnClick(history)
 	eq(ns.RW.CurrentTab(), "market"); eq(ns.RW.Query("market"), tostring(LINEN))
 	eq(CraftWiseRecordsFrame:IsShown(), true)
 end)

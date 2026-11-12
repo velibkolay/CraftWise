@@ -42,18 +42,21 @@ it("tooltips render for known, trainer, vendor and bundled-only rows", function(
 	end
 end)
 
-it("minimap button toggles the window, hides on right-click, /craftwise minimap restores", function()
+it("minimap button: click opens the window, right-click the farm tracker, drag moves it, /craftwise minimap hides it", function()
 	local ns, stub = LoadAddon()
-	local btn
-	for _, f in ipairs(stub.frames) do if f.scripts.OnDragStart and f.scripts.OnClick and f.scripts.OnEnter then btn = f end end
+	local btn = CraftWiseMinimapButton
 	assert(btn, "minimap button not created at login")
 	btn.scripts.OnClick(btn, "LeftButton") -- opens window
+	assert(ns.PF.frame and ns.PF.frame:IsShown(), "profit window open")
 	btn.scripts.OnEnter(btn); btn.scripts.OnLeave(btn)
 	btn.scripts.OnDragStart(btn)
 	btn.scripts.OnUpdate(btn)
 	eq(math.floor(ns.db.minimap.angle + 0.5), 0) -- cursor to the right of the minimap centre
 	btn.scripts.OnDragStop(btn)
 	btn.scripts.OnClick(btn, "RightButton")
+	eq(ns.FarmFrame.IsShown(), true, "right-click opens the farm tracker")
+	eq(ns.db.minimap.hide, false, "and no longer hides the button")
+	SlashCmdList.CRAFTWISE("minimap")
 	eq(ns.db.minimap.hide, true); eq(btn:IsShown(), false)
 	SlashCmdList.CRAFTWISE("minimap")
 	eq(ns.db.minimap.hide, false); eq(btn:IsShown(), true)

@@ -29,3 +29,35 @@ function ns.FormatMoney(copper, plain)
 	end
 	return sign .. table.concat(parts, " ")
 end
+
+-- Money in the Origami look (#150 Rules): digits in the coin colours, at most two units, starting at the
+-- largest one present ("12g 40s", "66s 20c", "7c"); a zero second unit is left out ("3g"). Smaller units
+-- are cut, not rounded. Negative values get a "−". For mono FontStrings (CraftWiseFontFigure*).
+function ns.FormatCoins(copper)
+	if copper == nil then
+		return nil
+	end
+	local Style = ns.Style
+	local sign = copper < 0 and "−" or ""
+	copper = math.floor(math.abs(copper) + 0.5)
+	local units = {
+		{ math.floor(copper / GOLD), "g", "coinGold" },
+		{ math.floor((copper % GOLD) / SILVER), "s", "coinSilver" },
+		{ copper % SILVER, "c", "coinCopper" },
+	}
+	local first = 3
+	for i = 1, 3 do
+		if units[i][1] > 0 then
+			first = i
+			break
+		end
+	end
+	local parts = {}
+	for i = first, math.min(first + 1, 3) do
+		local u = units[i]
+		if i == first or u[1] > 0 then
+			parts[#parts + 1] = Style.Hex(u[3]) .. u[1] .. u[2] .. "|r"
+		end
+	end
+	return sign .. table.concat(parts, " ")
+end

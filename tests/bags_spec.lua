@@ -87,7 +87,7 @@ it("kept items leave the advice and totals, sort last, and can be hidden", funct
 		if f.data and f.data.itemID == 100 and f.shown ~= false then target = f end
 	end
 	target.scripts.OnClick(target, "LeftButton")
-	eq(CraftWiseItemMenu.buttons.keep.selected, true)
+	eq(CraftWiseItemMenu.buttons.keep.current, true)
 	CraftWiseItemMenu.buttons.normal.scripts.OnClick(CraftWiseItemMenu.buttons.normal)
 	eq(ns.db.keep[100], nil)
 	eq(CraftWiseItemMenu.shown, false)

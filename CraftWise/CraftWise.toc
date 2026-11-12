@@ -4,7 +4,7 @@
 ## Author: velibkolay
 ## X-License: GPL-3.0
 ## Version: 0.1.0
-## IconTexture: Interface\Icons\INV_Misc_Coin_02
+## IconTexture: Interface\AddOns\CraftWise\Media\cw-key-w
 ## OptionalDeps: Auctionator
 ## AddonCompartmentFunc: CraftWise_OnAddonCompartmentClick
 ## SavedVariables: CraftWiseDB, CraftWiseMarketDB
