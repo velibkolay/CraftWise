@@ -187,6 +187,34 @@ it("tables per zone, subzone and water type: shares, value per catch, value per 
 	eq(row(ns.Fishing.Tables(), "pool", SCHOOL).timed, 3)
 end)
 
+it("long-run catch rate (#136): timed catches per hour, overall and per water type, enough from ownMin on", function()
+	local ns, stub = setup()
+	eq(ns.Fishing.CatchRate().timed, 0)
+	-- The same sessions as the tables: open water 2 timed in 60 s, the pool 2 timed in 40 s.
+	catch(stub, 0, guid(BOBBER, "A1"), guid(BOBBER, "A1"))
+	catch(stub, 30, guid(BOBBER, "A2"), guid(BOBBER, "A2"))
+	catch(stub, 30, guid(BOBBER, "A3"), guid(BOBBER, "A3"))
+	catch(stub, 20, guid(SCHOOL, "B1"), guid(BOBBER, "A4"))
+	catch(stub, 20, guid(SCHOOL, "B1"), guid(BOBBER, "A5"))
+	catch(stub, 360, guid(SCHOOL, "B1"), guid(BOBBER, "A6")) -- a new session: untimed
+	local r = ns.Fishing.CatchRate()
+	eq(r.timed, 4); eq(r.seconds, 100); eq(r.perHour, 4 * 3600 / 100); eq(r.min, 50)
+	eq(r.waters.open.timed, 2); eq(r.waters.open.seconds, 60); eq(r.waters.open.perHour, 2 * 3600 / 60)
+	eq(r.waters.pool.timed, 2); eq(r.waters.pool.perHour, 2 * 3600 / 40)
+	eq(r.enough, false, "4 timed catches are too few")
+	eq(ns.FarmFrame.RateText(r), ns.Style.colors.muted .. "4 timed catches, too few (50)|r")
+	-- From ownMin timed catches on it counts; the farm window's line shows it with the water types that have enough.
+	ns.db.settings.fishingOwnMin = 3
+	r = ns.Fishing.CatchRate()
+	eq(r.enough, true); eq(r.waters.open.enough, false)
+	eq(ns.FarmFrame.RateText(r), "144/h")
+	ns.db.settings.fishingOwnMin = 2
+	eq(ns.FarmFrame.RateText(ns.Fishing.CatchRate()), "144/h" .. ns.Style.colors.muted .. "  ·  open 120  ·  pools 180|r")
+	-- Catches older than the log keeps don't count, even before the log was pruned.
+	stub.clock = stub.clock + ns.Fishing.KEEP_DAYS * 86400 + 3600
+	eq(ns.Fishing.CatchRate().timed, 0)
+end)
+
 it("pool visits: catches per pool spawn until it vanished or the player left; a visit going on is apart", function()
 	local ns, stub = setup()
 	catch(stub, 0, guid(BOBBER, "A1"), guid(BOBBER, "A1"))

@@ -17,7 +17,7 @@ FF.HEIGHT = 300
 FF.ROW_HEIGHT = 18
 FF.VISIBLE_ROWS = 13
 FF.ZONE_LINES = 3
-FF.FISH_HEIGHT = 120
+FF.FISH_HEIGHT = 136
 FF.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = -300, y = 150 }
 
 local frame
@@ -171,16 +171,59 @@ local function StatLine(parent, i, key)
 	return value
 end
 
-local FISH_KEYS = { "catches", "perCatch", "gph", "best", "opened" }
-local FISH_LABELS = { catches = "Catches", perCatch = "Per catch", gph = "Gold / hour", best = "Best catch",
-	opened = "Containers" }
+local FISH_KEYS = { "catches", "rate", "perCatch", "gph", "best", "opened" }
+local FISH_LABELS = { catches = "Catches", rate = "Your rate", perCatch = "Per catch", gph = "Gold / hour",
+	best = "Best catch", opened = "Containers" }
 local FISH_HELP = {
 	catches = "Fishing loot windows this session (the fishing log's catches), and catches per hour of fishing time: the time between two catches at most two minutes apart.",
 	perCatch = "Coin + items per catch, items at the same values as the loot list. Caught containers you opened count as their contents. Unpriced items are counted apart, not in it.",
+	rate = "Your long-run catch rate from the fishing log (#136): timed catches per hour over the last 90 days, overall and in open water and pools. Catches less than the fishing session gap apart are one session (/craftwise fishing gap); a session's first catch is untimed. Shown from as many timed catches as /craftwise fishing ownmin asks.",
 	gph = "Fishing coin + items per hour of fishing time.",
 	best = "The caught item with the highest value per unit.",
 	opened = "Containers caught this session and opened: their contents count as fishing loot.",
 }
+
+-- The long-run catch rate (#136, ns.Fishing.CatchRate): "167/h · open 170 · pools 120", only from enough
+-- timed catches (a water type below that is left out of the line, the tooltip says why).
+local RATE_WATERS = { { "open", "open", "Open water" }, { "pool", "pools", "Pools" }, { "?", "not known", "Water not known yet" } }
+local function PerHour(x)
+	return ("%d/h"):format(math.floor(x + 0.5))
+end
+
+function FF.RateText(r)
+	if not r or r.timed == 0 then
+		return Muted(L["no timed catches yet"])
+	end
+	if not r.enough then
+		return Muted((L["%d timed catches, too few (%d)"]):format(r.timed, r.min))
+	end
+	local parts = {}
+	for _, w in ipairs(RATE_WATERS) do
+		local x = r.waters[w[1]]
+		if x and x.enough then
+			parts[#parts + 1] = L[w[2]] .. " " .. math.floor(x.perHour + 0.5)
+		end
+	end
+	return PerHour(r.perHour) .. (#parts > 0 and Muted("  ·  " .. table.concat(parts, "  ·  ")) or "")
+end
+
+function FF.RateTooltip()
+	local r = ns.Fishing.CatchRate and ns.Fishing.CatchRate()
+	if not r then
+		return
+	end
+	local function line(label, x)
+		local text = x.perHour and x.enough and PerHour(x.perHour) or L["too few"]
+		GameTooltip:AddDoubleLine(label, ("%s  (%d timed, %d min)"):format(text, x.timed, math.floor(x.seconds / 60 + 0.5)),
+			0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	line(L["All water"], r)
+	for _, w in ipairs(RATE_WATERS) do
+		if r.waters[w[1]] then
+			line(L[w[3]], r.waters[w[1]])
+		end
+	end
+end
 
 local function FishLine(parent, i, key)
 	local y = -32 - (i - 1) * 16
@@ -203,6 +246,9 @@ local function FishLine(parent, i, key)
 		local f = last and last.fish
 		if key == "perCatch" and f and f.unknownUnits > 0 then
 			GameTooltip:AddLine((L["%d caught items without a price."]):format(f.unknownUnits), 1, 0.6, 0.3, true)
+		end
+		if key == "rate" then
+			FF.RateTooltip()
 		end
 		if key == "perCatch" and f and f.coin > 0 then
 			GameTooltip:AddDoubleLine(L["Coin from fishing"], Money(f.coin), 0.8, 0.8, 0.8, 1, 1, 1)
@@ -258,6 +304,7 @@ local function RefreshFish(f)
 	fish:Show()
 	local V = fish.values
 	V.catches:SetText(f.catches .. (f.cph and Muted(("  ·  %s/h"):format(f.cph)) or ""))
+	V.rate:SetText(FF.RateText(ns.Fishing.CatchRate and ns.Fishing.CatchRate()))
 	V.perCatch:SetText(Money(f.perCatch) .. (f.unknownUnits > 0 and ("  " .. C.warn .. "+" .. f.unknownUnits .. " ?|r") or ""))
 	V.gph:SetText(Money(f.gph))
 	local b = f.best

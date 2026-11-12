@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type AhQuote,
 	ahQuote,
+	catchRates,
 	compareOf,
 	fishingItems,
 	fishingPage,
@@ -11,6 +12,9 @@ import {
 	parseRef,
 	parseShares,
 	quotesOf,
+	rateForMix,
+	rateForWater,
+	rateText,
 	sortPools,
 	sortRows,
 	unitNow,
@@ -249,5 +253,90 @@ describe("the page", () => {
 		expect(unitsText({ id: 1, units: 0.3, unitsHigh: 0.3, value: 1, valueHigh: 1, contents: false, vendor: null }, { perCountUnits: false, n: 1 })).toBe("30% of catches");
 		expect(unitsText({ id: 1, units: 0.3, unitsHigh: 0.9, value: 1, valueHigh: 1, contents: false, vendor: null }, { perCountUnits: false, n: 1 })).toBe("0.3–0.9 per catch");
 		expect(unitsText({ id: 1, units: 150, unitsHigh: 150, value: 1, valueHigh: 1, contents: false, vendor: null }, { perCountUnits: true, n: 200 })).toBe("150 of 200 catches");
+	});
+});
+
+describe("catch rate and expected per hour (#136)", () => {
+	const eel = (copper: number): [number, AhQuote] => [EEL, { copper, basis: "typical" }];
+	// Invented: open water 300 timed catches in 100 min (180/h), pools 60 in 60 min (60/h), unknown water 10 in 5 min.
+	const waters = [
+		{ water: "open", n: 320, timed: 300, minutes: 100 },
+		{ water: "pool", n: 70, timed: 60, minutes: 60 },
+		{ water: "?", n: 12, timed: 10, minutes: 5 },
+	];
+
+	it("sums the waters' timed catches, overall and per water type, enough from ownMin on", () => {
+		const r = catchRates({ waters }, 50)!;
+		expect(r.from).toBe("waters");
+		expect(r.overall).toEqual({ timed: 370, minutes: 165, perHour: (370 * 60) / 165, enough: true });
+		expect(r.waters.get("open")!.perHour).toBe(180);
+		expect(r.waters.get("pool")!.perHour).toBe(60);
+		expect(r.waters.get("?")!.enough).toBe(false);
+		expect(catchRates({ waters: [{ water: "open", n: 5, timed: 4, minutes: 2 }] }, 50)!.overall!.enough).toBe(false);
+	});
+
+	it("takes an older upload's spots when none was left out, nothing otherwise", () => {
+		const spots = [
+			{ zone: "A", water: "open", n: 100, timed: 90, minutes: 30 },
+			{ zone: "B", water: "open", n: 3, timed: 1, minutes: 0.5 },
+		];
+		const r = catchRates({ spots }, 50)!;
+		expect(r.from).toBe("spots");
+		expect(r.overall!.timed).toBe(91);
+		expect(r.waters.get("open")!.minutes).toBe(30.5);
+		expect(catchRates({ spots, moreSpots: 2 }, 50)).toBeNull();
+		expect(catchRates({}, 50)).toBeNull();
+	});
+
+	it("uses a water's own rate from ownMin timed catches on, else the overall rate", () => {
+		const r = catchRates({ waters }, 50)!;
+		expect(rateForWater("pool", r)).toMatchObject({ perHour: 60, basis: "water" });
+		const unknown = rateForWater("?", r)!;
+		expect(unknown).toMatchObject({ perHour: r.overall!.perHour, basis: "overall", why: "too few" });
+		expect(rateText(unknown, 50)).toBe("your overall rate (water not known yet: fewer than 50 timed catches)");
+		expect(rateForWater(null, r)).toMatchObject({ basis: "overall", why: "mix unknown" });
+		expect(rateForWater("open", catchRates({ waters: [waters[0]!] }, 500))).toBeNull();
+	});
+
+	it("mixes a zone's water types by time per catch; catches the breakdown leaves out take the overall rate", () => {
+		const r = catchRates({ waters }, 50)!;
+		// 100 open at 180/h and 50 pool at 60/h: 100/180 + 50/60 hours for 150 catches.
+		const mix = rateForMix([{ water: "open", n: 100 }, { water: "pool", n: 50 }], 150, r)!;
+		expect(mix.basis).toBe("mix");
+		expect(mix.perHour).toBeCloseTo(150 / (100 / 180 + 50 / 60), 9);
+		expect(rateText(mix, 50)).toBe("your rates mixed like your catches here: 100 open water at 180/h, 50 pool at 60/h");
+		const rest = rateForMix([{ water: "open", n: 100 }, { water: "pool", n: 50 }], 170, r)!;
+		expect(rest.perHour).toBeCloseTo(170 / (100 / 180 + 50 / 60 + 20 / r.overall!.perHour), 9);
+		expect(rest.why).toBe("too few");
+		expect(rateForMix([{ water: "open", n: 40 }], 40, r)).toMatchObject({ perHour: 180, basis: "water" });
+		expect(rateForMix([], null, r)).toMatchObject({ basis: "overall", why: "mix unknown" });
+	});
+
+	it("gives every row its expected per hour and ranks by it by default", () => {
+		const page = fishingPage(fishingDoc(), snapshot, q([eel(200)]))!;
+		expect(page.expectedOk).toBe(true);
+		const rate = 190; // the fixture's only water: open, 190 timed in 60 min
+		const by = new Map(page.zones.map((z) => [z.zone, z]));
+		// Own catches in open water only (the log has no unknown water): the open-water rate.
+		expect(by.get("Testwater Bay")!.rate).toMatchObject({ perHour: rate, basis: "water" });
+		expect(by.get("Testwater Bay")!.expected).toBe(Math.round(rate * by.get("Testwater Bay")!.perCatch!));
+		// Own catches only at a pool, which has no timed catches: the overall rate.
+		expect(by.get("Dull Pond")!.rate).toMatchObject({ basis: "overall", why: "too few" });
+		// Not fished: the overall rate; the reference's stack range gives a range.
+		expect(by.get("Far Lagoon")!.rate).toMatchObject({ basis: "overall", why: "mix unknown" });
+		expect(by.get("Far Lagoon")!.expected).toBe(Math.round(rate * by.get("Far Lagoon")!.perCatch!));
+		expect(sortRows(page.zones, "expected").map((z) => z.zone)).toEqual(["Far Lagoon", "Testwater Bay", "Dull Pond"]);
+		expect(page.spots[1]!.rate).toMatchObject({ basis: "overall", why: "too few" }); // the pool spot
+		expect(page.waters[0]!.expected).toBe(Math.round(rate * page.waters[0]!.perCatch!));
+	});
+
+	it("doesn't extrapolate: below ownMin timed catches in all there is no expected per hour", () => {
+		const d = fishingDoc({ ownMin: 500 });
+		const page = fishingPage(d, snapshot, q([eel(200)]))!;
+		expect(page.expectedOk).toBe(false);
+		expect(page.zones.every((z) => z.expected === null)).toBe(true);
+		expect(page.spots.every((z) => z.expected === null)).toBe(true);
+		// Sorting by it then keeps the per-catch order.
+		expect(sortRows(page.zones, "expected").map((z) => z.zone)).toEqual(sortRows(page.zones, "catch").map((z) => z.zone));
 	});
 });

@@ -560,3 +560,8 @@ No new files in the TOC; `Bindings.xml` changed (it is not in the TOC, the clien
 - [ ] Loot a mob right after opening a container that gave the same item (e.g. a fish): both count.
 - [ ] Fast auto-loot on and off (Settings, "Fast auto-loot"), and opening by hand clicking each item: the same counts.
 - [ ] If the contents of a container never count: `/dump C_Container.GetContainerItemInfo(<bag>, <slot>)` on an unopened container shows `hasLoot = true`, and report whether the Farm window's container row went down (then only the contents were missed) on #135.
+
+## Farm tracker: your catch rate (#136)
+`/reload` is enough (no new file).
+- [ ] Fish with a farm session running: the Fishing panel has a "Your rate" line under Catches. With fewer timed catches in the fishing log than `/craftwise fishing zones` uses as its own-data minimum (50): grey "N timed catches, too few (50)". From 50 on: "141/h", then in grey the water types with 50 timed catches each ("open 163 · pools 88"). The line fits the panel (no overlap with the Zones column, nothing below the panel's edge).
+- [ ] Hover it: the explanation, then "All water", "Open water", "Pools" (and "Water not known yet" when there is such a catch) with the rate or "too few", the timed catches and minutes. `/craftwise fishing ownmin 10` lowers the minimum and the line shows a rate at once; set it back with `ownmin 50`.

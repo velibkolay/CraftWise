@@ -234,6 +234,9 @@ export interface Row {
 	timed: number | null;
 	minutes: number | null;
 	timedTooFew: boolean; // timed catches below ownMin: no value per hour shown
+	expected: number | null; // value per catch now x the own catch rate for its water (#136)
+	expectedHigh: number | null;
+	rate: RateUse | null; // the catch rate behind `expected`
 	unpriced: number | null;
 	revalued: boolean; // valued with today's prices (the document had the item list)
 	lines: ValuedLine[] | null;
@@ -294,6 +297,9 @@ function rowOf(r: RowIn, quotes: Map<number, AhQuote>, ownMin: number): Row {
 		timed,
 		minutes,
 		timedTooFew,
+		expected: null,
+		expectedHigh: null,
+		rate: null,
 		unpriced: v ? v.unpriced : num(o.unpriced),
 		revalued: v !== null,
 		lines: v ? v.lines : null,
@@ -458,15 +464,19 @@ function zoneRow(key: string, z: Record<string, J> | null, c: Record<string, J> 
 	};
 }
 
-export type SortBy = "hour" | "catch";
+// "expected": expected per hour (#136, the default); "hour": the value per hour measured in the row itself.
+export type SortBy = "expected" | "hour" | "catch";
 
-// Best first. "hour": rows with a value per hour first (by it), the rest by value per catch; small samples
-// after the large ones either way, so a handful of lucky catches never tops the list.
-export function sortRows<T extends { perHour: number | null; perCatch: number | null; small: boolean; n: number | null }>(rows: T[], by: SortBy): T[] {
+// Best first. "expected"/"hour": rows with that value per hour first (by it), the rest by value per catch; small
+// samples after the large ones either way, so a handful of lucky catches never tops the list.
+export function sortRows<T extends { perHour: number | null; expected: number | null; perCatch: number | null; small: boolean; n: number | null }>(rows: T[], by: SortBy): T[] {
+	const key = (r: T) => (by === "hour" ? r.perHour : by === "expected" ? r.expected : null);
 	return [...rows].sort((a, b) => {
 		if (a.small !== b.small) return a.small ? 1 : -1;
-		if (by === "hour" && (a.perHour !== null) !== (b.perHour !== null)) return a.perHour !== null ? -1 : 1;
-		if (by === "hour" && a.perHour !== null && b.perHour !== null && a.perHour !== b.perHour) return b.perHour - a.perHour;
+		const x = key(a);
+		const y = key(b);
+		if ((x !== null) !== (y !== null)) return x !== null ? -1 : 1;
+		if (x !== null && y !== null && x !== y) return y - x;
 		const pc = (b.perCatch ?? -1) - (a.perCatch ?? -1);
 		return pc || (b.n ?? 0) - (a.n ?? 0);
 	});
@@ -528,6 +538,134 @@ function poolOf(o: Record<string, J>, i: number, quotes: Map<number, AhQuote>, o
 	};
 }
 
+// ---- Catch rate (#136) -------------------------------------------------------------------------------
+// The character's own catches per hour over the whole fishing log, overall and per water type: timed catches
+// over their time (docs/snapshot.md `fishing.waters`, or, from an older upload, the spots when they are all
+// there). It makes zones comparable however well they were fished: expected per hour = value per catch now x
+// this rate for the zone's water. Below ownMin timed catches a rate isn't used (no extrapolation).
+
+export interface Rate {
+	timed: number;
+	minutes: number;
+	perHour: number; // catches per hour
+	enough: boolean; // timed >= ownMin
+}
+
+export interface CatchRates {
+	overall: Rate | null; // null: no timed catch at all
+	waters: Map<string, Rate>; // "open" | "pool" | "?"
+	min: number;
+	from: "waters" | "spots";
+	seen: Set<string>; // every water type of the log, timed or not
+}
+
+function rateOf(timed: number, minutes: number, min: number): Rate | null {
+	return timed > 0 && minutes > 0 ? { timed, minutes, perHour: (timed * 60) / minutes, enough: timed >= min } : null;
+}
+
+// From the waters (every catch of the log per water type), else from the spots when none was left out.
+export function catchRates(f: Record<string, J>, min: number): CatchRates | null {
+	const waters = arr(f.waters).map(obj);
+	const spots = arr(f.spots).map(obj);
+	const from = waters.length ? "waters" : spots.length && !num(f.moreSpots) ? "spots" : null;
+	if (!from) return null;
+	const sum = new Map<string, { timed: number; minutes: number }>();
+	for (const o of from === "waters" ? waters : spots) {
+		const w = str(o?.water) ?? "?";
+		const s = sum.get(w) ?? { timed: 0, minutes: 0 };
+		s.timed += num(o?.timed) ?? 0;
+		s.minutes += num(o?.minutes) ?? 0;
+		sum.set(w, s);
+	}
+	const out = new Map<string, Rate>();
+	let timed = 0;
+	let minutes = 0;
+	for (const [w, s] of sum) {
+		const r = rateOf(s.timed, s.minutes, min);
+		if (r) out.set(w, r);
+		timed += s.timed;
+		minutes += s.minutes;
+	}
+	return { overall: rateOf(timed, minutes, min), waters: out, min, from, seen: new Set(sum.keys()) };
+}
+
+export interface RateUse {
+	perHour: number; // catches per hour used
+	basis: "water" | "mix" | "overall";
+	parts: { water: string; n: number; perHour: number; own: boolean }[]; // a zone's water mix (own: the water's own rate)
+	why: "" | "too few" | "mix unknown"; // why the overall rate stands in (for a water, or all of the row)
+}
+
+function waterRate(water: string, rates: CatchRates): { perHour: number; own: boolean } | null {
+	const w = rates.waters.get(water);
+	if (w?.enough) return { perHour: w.perHour, own: true };
+	return rates.overall?.enough ? { perHour: rates.overall.perHour, own: false } : null;
+}
+
+// The rate for one water type: its own from ownMin timed catches on, else the overall rate.
+export function rateForWater(water: string | null, rates: CatchRates | null): RateUse | null {
+	if (!rates?.overall?.enough) return null;
+	if (water === null) return { perHour: rates.overall.perHour, basis: "overall", parts: [], why: "mix unknown" };
+	const r = waterRate(water, rates)!;
+	return { perHour: r.perHour, basis: r.own ? "water" : "overall", parts: [{ water, n: 0, perHour: r.perHour, own: r.own }], why: r.own ? "" : "too few" };
+}
+
+// A zone: its own catches' water mix, each water at its rate, as time per catch (catches x hours per catch,
+// summed), so fishing the zone the same way takes that long. Catches the breakdown leaves out (watersMore)
+// take the overall rate. Without own catches there: the overall rate.
+export function rateForMix(mix: { water: string; n: number }[], total: number | null, rates: CatchRates | null): RateUse | null {
+	if (!rates?.overall?.enough) return null;
+	const overall = rates.overall.perHour;
+	const known = mix.filter((m) => m.n > 0);
+	const rest = Math.max(0, (total ?? 0) - known.reduce((a, m) => a + m.n, 0));
+	if (!known.length) return rateForWater(null, rates);
+	const parts = known.map((m) => ({ ...m, ...waterRate(m.water, rates)! }));
+	if (rest > 0) parts.push({ water: "?", n: rest, perHour: overall, own: false });
+	const n = parts.reduce((a, p) => a + p.n, 0);
+	const hours = parts.reduce((a, p) => a + p.n / p.perHour, 0);
+	const one = parts.length === 1 ? parts[0]! : null;
+	if (one) return { perHour: one.perHour, basis: one.own ? "water" : "overall", parts, why: one.own ? "" : "too few" };
+	return { perHour: n / hours, basis: "mix", parts, why: parts.some((p) => !p.own) ? "too few" : "" };
+}
+
+// The own water mix of a zone: compare.waters where the zone has more than one water type or a pool, else
+// one type that isn't a pool: open water when the log has no catch of unknown water (else unknown).
+function zoneMix(r: ZoneRow, rates: CatchRates | null): { mix: { water: string; n: number }[]; total: number | null } {
+	const own = r.compare?.own?.n ?? (r.source === "own" ? r.n : r.other?.source === "own" ? r.other.n : null);
+	if (!own) return { mix: [], total: null };
+	if (r.waters.length) {
+		const by = new Map<string, number>();
+		for (const w of r.waters) by.set(w.water ?? "?", (by.get(w.water ?? "?") ?? 0) + (w.n ?? 0));
+		return { mix: [...by].map(([water, n]) => ({ water, n })), total: own };
+	}
+	const single = rates && !rates.seen.has("?") ? "open" : "?";
+	return { mix: [{ water: single, n: own }], total: own };
+}
+
+function withExpected<T extends Row>(row: T, rate: RateUse | null): T {
+	if (!rate || row.perCatch === null) return { ...row, rate };
+	const hi = row.perCatchHigh !== null ? Math.round(rate.perHour * row.perCatchHigh) : null;
+	return { ...row, rate, expected: Math.round(rate.perHour * row.perCatch), expectedHigh: hi };
+}
+
+export function rateWaterText(water: string): string {
+	return water === "open" ? "open water" : water === "pool" ? "pools" : "water not known yet";
+}
+
+// How the rate of a row came about, in words: "your rate in open water", "your rates mixed like your
+// catches here: ...", "your overall rate (pools: too few timed catches)".
+export function rateText(r: RateUse, min: number): string {
+	const ph = (x: number) => `${Math.round(x)}/h`;
+	if (r.basis === "water") return `your rate in ${rateWaterText(r.parts[0]!.water)}`;
+	if (r.basis === "mix") {
+		const parts = r.parts.map((p) => `${p.n} ${p.water === "?" ? "other" : p.water === "open" ? "open water" : "pool"} at ${ph(p.perHour)}${p.own ? "" : " (overall)"}`);
+		return `your rates mixed like your catches here: ${parts.join(", ")}`;
+	}
+	if (r.why === "mix unknown") return "your overall rate (no own catches here, so the water is not known)";
+	const w = r.parts[0]?.water;
+	return `your overall rate (${w ? rateWaterText(w) : "this water"}: fewer than ${min} timed catches)`;
+}
+
 // ---- The page --------------------------------------------------------------------------------------
 
 export interface FishingPage {
@@ -549,6 +687,8 @@ export interface FishingPage {
 	morePools: number | null;
 	revalued: boolean; // at least one row valued with today's prices
 	itemLists: boolean; // the document has the item lists at all
+	rates: CatchRates | null; // own catch rate (#136)
+	expectedOk: boolean; // enough timed catches for expected per hour; else rank by value per catch
 }
 
 function fishingDoc(fishing: Doc | null, snapshot: Doc | null): { f: Record<string, J>; z: Record<string, J> | null } | null {
@@ -623,16 +763,23 @@ export function fishingPage(fishing: Doc | null, snapshot: Doc | null, quotes: M
 		if (e) e.c = o;
 		else entries.set(name.toLowerCase(), { z: null, c: o });
 	}
-	const zones = [...entries.values()].map((e, i) => zoneRow(`zone:${i}`, e.z, e.c, quotes, ownMin));
+	const rates = catchRates(f, ownMin);
+	const zones = [...entries.values()].map((e, i) => {
+		const row = zoneRow(`zone:${i}`, e.z, e.c, quotes, ownMin);
+		const m = zoneMix(row, rates);
+		return withExpected(row, rateForMix(m.mix, m.total, rates));
+	});
 	const spots = arr(f.spots).flatMap((x, i) => {
 		const o = obj(x);
 		if (!o) return [];
-		return [rowOf({ key: `spot:${i}`, kind: "spot", o, zone: str(o.zone) ?? "", sub: str(o.sub) ?? "", water: str(o.water), pool: str(o.pool), source: "own", counts: true }, quotes, ownMin)];
+		const row = rowOf({ key: `spot:${i}`, kind: "spot", o, zone: str(o.zone) ?? "", sub: str(o.sub) ?? "", water: str(o.water), pool: str(o.pool), source: "own", counts: true }, quotes, ownMin);
+		return [withExpected(row, rateForWater(row.water ?? "?", rates))];
 	});
 	const waters = arr(f.waters).flatMap((x, i) => {
 		const o = obj(x);
 		if (!o) return [];
-		return [rowOf({ key: `water:${i}`, kind: "water", o, zone: "", sub: "", water: str(o.water), pool: null, source: "own", counts: true }, quotes, ownMin)];
+		const row = rowOf({ key: `water:${i}`, kind: "water", o, zone: "", sub: "", water: str(o.water), pool: null, source: "own", counts: true }, quotes, ownMin);
+		return [withExpected(row, rateForWater(row.water ?? "?", rates))];
 	});
 	const pools = arr(f.pools).flatMap((x, i) => {
 		const o = obj(x);
@@ -658,6 +805,8 @@ export function fishingPage(fishing: Doc | null, snapshot: Doc | null, quotes: M
 		morePools: num(f.morePools),
 		revalued: all.some((r) => r.revalued) || pools.some((p) => p.revalued),
 		itemLists: all.some((r) => r.lines !== null) || pools.some((p) => p.lines !== null),
+		rates,
+		expectedOk: rates?.overall?.enough === true,
 	};
 }
 

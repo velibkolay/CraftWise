@@ -222,8 +222,14 @@ character's fishing document and the Horde AH's prices; the Worker only serves b
   more (as `ns.GetSellValue`); containers by the contents value in the list; an item without a Horde AH price
   today at the value the snapshot used. Without item lists (older addon or companion) it shows the snapshot's
   figures.
-- Value per hour = own timed catches per hour (`timed`, `minutes`) x the value per catch now, only from
-  `fishingZones.ownMin` timed catches on (default 50); below that "too few timed".
+- Measured per hour = own timed catches per hour in that row (`timed`, `minutes`) x the value per catch now,
+  only from `fishingZones.ownMin` timed catches on (default 50); below that "too few timed".
+- Expected per hour (#136, the default ranking) = the value per catch now x the character's catch rate: timed
+  catches per hour over the whole log from `fishing.waters` (an older upload without it: the spots, when
+  `moreSpots` is missing), per water type from `ownMin` timed catches on, else the overall rate. A zone takes
+  the water mix of its own catches (`compare[].waters`, else open water when the log has no catch of unknown
+  water), mixed by time per catch (n / Σ nᵢ / rateᵢ); a zone without own catches takes the overall rate. Below
+  `ownMin` timed catches overall there is no rate and the ranking falls back to value per catch.
 - Own catches against the reference (`fishingZones.compare`): each item's share of own catches (hits / n) with
   its 95% Wilson interval, the reference's share (count / loots), the difference, marked when the reference's
   share lies outside the interval; value per catch from both, priced the same way. Own data is the primary
