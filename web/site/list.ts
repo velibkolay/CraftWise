@@ -287,6 +287,7 @@ function filtered(): Row[] {
 }
 
 async function load(): Promise<void> {
+	if (st.view === "crates") return location.replace("/me/crates"); // the crates page moved there (#129)
 	const seq = ++loadSeq;
 	searchInput.value = st.q;
 	minInput.value = st.minListed ? String(st.minListed) : "";
@@ -307,7 +308,6 @@ async function load(): Promise<void> {
 			writeState(st, false);
 		}
 		renderTree();
-		if (st.view === "crates") return renderMessage("Waylaid Crates", "Prices of Waylaid Crates and what they hold get their own list here soon.");
 		let query: string | null = null;
 		if (st.view === "favourites") {
 			const ids = favourites();
