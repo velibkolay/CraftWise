@@ -520,6 +520,19 @@ it("a full character stays small and holds nothing about other players", functio
 		end
 	end
 	ns.db.fishing["Forever-EU-Veli"] = { catches = catches, opened = {}, seen = {} }
+	-- A large local fishing reference (#88): 20 zones with 30 items each and stack ranges; the snapshot keeps
+	-- the top zones with every item's units per catch and unit value (#128).
+	local refZones = {}
+	for z = 1, 20 do
+		local items = {}
+		for i = 1, 30 do
+			items[i] = { id = 30000 + z * 100 + i, name = "Some Long Reference Item " .. i, count = 1000 - i * 30 + z, stack = i % 3 == 0 and { 1, 3 } or { 1, 1 } }
+			stub.items[30000 + z * 100 + i] = { name = "Some Long Reference Item " .. i, sellPrice = 1234 + i }
+		end
+		-- the first 12 are the zones of the fishing log above, so every own zone has its reference to compare with
+		refZones[z] = { id = 9000 + z, name = z <= 12 and ("Some Long Zone Name " .. z) or ("Some Long Reference Zone " .. z), total = 123456, items = items }
+	end
+	CraftWise_FishingRef = { version = 1, zones = refZones, containers = {}, pools = {} }
 	-- Flight paths on both continents, 30 each.
 	for m, mapID in ipairs({ 1414, 1415 }) do
 		stub.taxi.mapID, stub.taxi.nodes, stub.taxi.mapNodes = mapID, {}, {}
@@ -624,7 +637,14 @@ it("a full character stays small and holds nothing about other players", functio
 	print(("       full character snapshot: %d bytes as SavedVariables"):format(#text))
 	local fishText = table.concat(Serialize(snap.fishing, "\t\t\t"))
 	print(("       of which fishing (#86, heavy log): %d bytes"):format(#fishText))
-	assert(#fishText < 5 * 1024, "fishing section too large: " .. #fishText)
+	-- 5 KB until #128; the item lists of the spots, waters and pools take about 2.5 KB of it.
+	assert(#fishText < 8 * 1024, "fishing section too large: " .. #fishText)
+	eq(#snap.fishingZones.zones, 5)
+	local zoneText = table.concat(Serialize(snap.fishingZones, "\t\t\t"))
+	eq(#snap.fishingZones.compare, ns.FishingZones.SNAP_COMPARE); eq(snap.fishingZones.compareMore, 12 - ns.FishingZones.SNAP_COMPARE)
+	eq(#snap.fishingZones.compare[1].waters, ns.FishingZones.SNAP_WATERS)
+	print(("       of which fishing zones (#128, 5 zones of 30 items, 6 own zones with their reference): %d bytes"):format(#zoneText))
+	assert(#zoneText < 20 * 1024, "fishing zones section too large: " .. #zoneText)
 	local crateText = table.concat(Serialize({ crates = snap.crates, favor = snap.favor }, "\t\t\t"))
 	print(("       of which crates and favor (#91): %d bytes"):format(#crateText))
 	local farmText = table.concat(Serialize(snap.farm, "\t\t\t"))
@@ -640,6 +660,7 @@ it("a full character stays small and holds nothing about other players", functio
 	-- 128 KB until #126; the farm history needs room (the web takes 450,000 bytes per snapshot).
 	assert(#text < 160 * 1024, "snapshot too large: " .. #text)
 	eq(text:find("Someone Else", 1, true), nil)
+	CraftWise_FishingRef = nil
 end)
 
 -- #123: during PLAYER_LOGOUT the Forever client returns 0 for GetMoney, UnitXP and UnitXPMax. The

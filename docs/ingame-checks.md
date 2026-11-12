@@ -433,6 +433,12 @@ New files `FishingZones.lua` and `UI\ProfitFrame\Fishing.lua` in the TOC: **full
 - [ ] Without the reference addon (disable it, restart): the tab shows own zones only and "reference: not loaded", no Lua error.
 - [ ] `/craftwise snapshot`, `/reload`: `snapshots[...].fishingZones` has up to 5 zones (`docs/snapshot.md`).
 
+## Fishing page on the site (#128)
+`/reload` is enough (no new file, no TOC change). Then rebuild and restart the companion (its snapshot structs carry the new fields; an old companion drops them and the page shows the snapshot's figures).
+- [ ] `/craftwise snapshot`, `/reload`, open `CraftWise.lua`: `snapshots[...].fishing.spots[1].items`, `.waters` and `.pools[1].items` look like `"<itemID> <count> <value> v<vendor>; ..."`; `fishingZones.zones[1].items` holds units per catch; `fishingZones.compare` has your fished zones with `own` (`"<itemID> <hits> <units> <value> ..."`) and, where the reference has the zone, `ref`/`refN`.
+- [ ] A container you caught (trunk, crate) ends in ` c` in the lists; an item vendors don't buy ends in ` v0`.
+- [ ] After the next upload, `/me/fishing`: values say "with today's Horde AH prices"; a zone with 50+ own catches ranks by your catches with the reference under Compared; the Catch pane lists your share of each item with its interval next to the reference's.
+
 ## Every item of a full scan, Auctionator export (#90)
 `/reload` is enough (no new file, no TOC change).
 - [ ] Auctionator Full Scan at the Horde AH, wait until it says it finished, then wait about 10 seconds more: no stutter while CraftWise stores it. `/dump CraftWiseMarketDB.scans["<realm>|H"][#CraftWiseMarketDB.scans["<realm>|H"]]` shows `kind = "full"` with `items` (scope items) and `lastOnly` (all other items) roughly adding up to the number of items Auctionator reports.

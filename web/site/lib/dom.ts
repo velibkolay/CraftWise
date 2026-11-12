@@ -149,6 +149,7 @@ function keyBar(sub: Node | string, view: View | null): HTMLElement {
 			h("span", { class: "grow" }),
 			skinSwitch(),
 			tab("me", "/me", "Me", "ntab me"),
+			privateView(view) ? tab("fishing", "/me/fishing", "Fishing", "ntab me") : null,
 		),
 		h("p", { class: "hint crumbs" }, sub),
 	);
@@ -167,7 +168,12 @@ export function statusBar(house: House | null): HTMLElement {
 	return bar;
 }
 
-export type View = "browse" | "favourites" | "crates" | "me";
+export type View = "browse" | "favourites" | "crates" | "me" | "fishing";
+
+// The private pages behind Access (/me, /me/crates, /me/fishing): only they show the fishing page in the nav.
+function privateView(view: View | null): boolean {
+	return view === "me" || view === "crates" || view === "fishing";
+}
 
 export function bottomTabs(active: View | null): HTMLElement {
 	const tab = (view: View, href: string, label: string) =>
@@ -179,6 +185,7 @@ export function bottomTabs(active: View | null): HTMLElement {
 		tab("favourites", "/?view=favourites", "Favourites"),
 		tab("crates", "/me/crates", "Waylaid Crates"),
 		tab("me", "/me", "My Characters"),
+		privateView(active) ? tab("fishing", "/me/fishing", "Fishing") : null,
 	);
 }
 

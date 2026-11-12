@@ -377,16 +377,147 @@ end
 function Z.SnapshotRanking()
 	local rank = Z.Rank()
 	local out = { reference = rank.ref, ownMin = rank.ownMin, zones = {} }
+	out.compare, out.compareMore = Z.SnapshotCompare()
+	local compared = {}
+	for _, c in ipairs(out.compare or {}) do
+		compared[Lower(c.zone)] = c
+	end
 	for i = 1, math.min(#rank.zones, Z.SNAP_ZONES) do
 		local z = rank.zones[i]
+		-- Units per catch and unit value of every item (#128): the site values them again with today's prices.
+		-- Left out when `compare` already lists the shown source for this zone (own catches, or the reference).
+		local c = compared[z.key]
+		local lines
+		if not (c and (z.source == "own" or c.ref)) then
+			lines = {}
+			for k, item in ipairs(z.items) do
+				local u = item.unit
+				lines[k] = { itemID = item.itemID, low = item.low, high = item.high,
+					unit = u and { copper = u.copper, high = u.high, contents = u.container ~= nil } or nil }
+			end
+		end
+		local seconds = z.own and z.own.seconds or 0
 		out.zones[i] = { zone = z.name, source = z.source, n = z.n, perCatch = z.perCatch,
 			perCatchHigh = z.perCatchHigh ~= z.perCatch and z.perCatchHigh or nil, perHour = z.perHour,
-			unpriced = z.unpriced > 0 and z.unpriced or nil }
+			timed = z.perHour and z.timed or nil, minutes = z.perHour and seconds > 0 and math.floor(seconds / 6 + 0.5) / 10 or nil,
+			unpriced = z.unpriced > 0 and z.unpriced or nil, items = lines and ns.Fishing.SnapItems(lines) or nil }
 	end
 	if #rank.zones > Z.SNAP_ZONES then
 		out.more = #rank.zones - Z.SNAP_ZONES
 	end
 	return out
+end
+
+Z.SNAP_COMPARE = 6 -- own zones with their catch composition, most catches first
+Z.SNAP_WATERS = 3 -- water types per zone (open water, each pool object, unknown), most catches first
+
+-- Reference loot of a zone (by name, any case; the record with the most loots) or of a pool object.
+local function RefZone(ref, name)
+	local key, best = Lower(name), nil
+	for _, rz in ipairs(ref and ref.zones or {}) do
+		if type(rz) == "table" and Lower(rz.name) == key and type(rz.items) == "table" and (not best or (tonumber(rz.total) or 0) > (tonumber(best.total) or 0)) then
+			best = rz
+		end
+	end
+	return best
+end
+
+-- "<itemID> <count>[/<outof>] <stack>[-<stackHigh>] <value> [c|v<vendor>]; ...": how often the reference recorded
+-- the item out of its loots (outof only where it differs from the record's total), the stack range (1 when not
+-- given), the unit value. Returns the list and the record's total.
+local function RefList(ctx, rec)
+	local total = tonumber(rec.total)
+	local parts = {}
+	for _, item in ipairs(rec.items) do
+		local id, count = tonumber(item.id), tonumber(item.count)
+		local outof = tonumber(item.outof)
+		if id and count and (outof or total) then
+			local a, b = Stack(item)
+			local u = UnitValue(ctx, id, 0)
+			local share = outof and outof ~= total and ("%d/%d"):format(count, outof) or ("%d"):format(count)
+			parts[#parts + 1] = ("%d %s %s%s"):format(id, share, ns.Fishing.SnapRange(a, b),
+				ns.Fishing.SnapValueTail(id, u and { copper = u.copper, high = u.high, contents = u.container ~= nil } or nil))
+		end
+	end
+	return table.concat(parts, "; "), total
+end
+
+local function OwnList(ctx, items)
+	local lines = {}
+	for i, item in ipairs(items) do
+		local u = UnitValue(ctx, item.itemID, 0)
+		lines[i] = { itemID = item.itemID, hits = item.hits, count = item.count,
+			unit = u and { copper = u.copper, high = u.high, contents = u.container ~= nil } or nil }
+	end
+	return ns.Fishing.SnapShares(lines)
+end
+
+local function Minutes(seconds)
+	return seconds > 0 and math.floor(seconds / 6 + 0.5) / 10 or nil
+end
+
+-- Own catch composition per zone and water type next to the reference's (#128), for the site to compare:
+-- { { zone, n, timed, minutes, own, refN, ref, waters = { { water, obj, name, n, own, refN, ref } }, watersMore } }
+-- and the number of own zones left out. own = F.SnapShares list, ref = RefList (pools: the reference's pool
+-- object of the same ID, where it has one). Units are this character's own catches of the last 90 days.
+function Z.SnapshotCompare()
+	local F = ns.Fishing
+	local t = F and F.Tables and F.Tables() or nil
+	if not t then
+		return nil
+	end
+	local ctx = NewContext(F.Log and F.Log() or nil)
+	local out = {}
+	for i = 1, math.min(#t.zones, Z.SNAP_COMPARE) do
+		local z = t.zones[i]
+		local rows, groups, byKey = {}, {}, {}
+		for _, sub in ipairs(z.subs) do
+			for _, r in ipairs(sub.rows) do
+				rows[#rows + 1] = r
+				local key = r.water .. ":" .. tostring(r.obj)
+				local g = byKey[key]
+				if not g then
+					g = { water = r.water, obj = r.obj, name = r.name, rows = {} }
+					byKey[key] = g
+					groups[#groups + 1] = g
+				end
+				g.rows[#g.rows + 1] = r
+			end
+		end
+		local s = F.SumRows(rows)
+		local entry = { zone = z.zone, n = s.catches, timed = s.timed > 0 and s.timed or nil, minutes = Minutes(s.seconds),
+			own = OwnList(ctx, s.items), waters = {} }
+		local rz = RefZone(ctx.ref, z.zone)
+		if rz then
+			entry.ref, entry.refN = RefList(ctx, rz)
+		end
+		for _, g in ipairs(groups) do
+			g.sum = F.SumRows(g.rows)
+		end
+		table.sort(groups, function(a, b)
+			if a.sum.catches ~= b.sum.catches then
+				return a.sum.catches > b.sum.catches
+			end
+			return a.water .. tostring(a.obj) < b.water .. tostring(b.obj)
+		end)
+		-- One water type covering the whole zone says nothing new: listed only when there are several.
+		if #groups > 1 or (groups[1] and groups[1].water == "pool") then
+			for k = 1, math.min(#groups, Z.SNAP_WATERS) do
+				local g = groups[k]
+				local w = { water = g.water, obj = g.obj, name = g.name, n = g.sum.catches, own = OwnList(ctx, g.sum.items) }
+				local rp = g.obj and g.water == "pool" and ctx.ref and type(ctx.ref.pools) == "table" and ctx.ref.pools[g.obj] or nil
+				if type(rp) == "table" and type(rp.items) == "table" then
+					w.ref, w.refN = RefList(ctx, rp)
+				end
+				entry.waters[k] = w
+			end
+			if #groups > Z.SNAP_WATERS then
+				entry.watersMore = #groups - Z.SNAP_WATERS
+			end
+		end
+		out[i] = entry
+	end
+	return out, #t.zones > Z.SNAP_COMPARE and (#t.zones - Z.SNAP_COMPARE) or nil
 end
 
 local function Money(copper)

@@ -119,7 +119,8 @@ end
 -- { days, gap (minutes), catches, opened, findFish, zones = { { zone, catches, value, unpriced, perCatch,
 --   subs = { { sub, catches, value, unpriced, perCatch, rows } } } }, rows (all, flat), pools = { ... } }
 -- row = { zone, sub, water = "open"|"pool"|"?", obj, name, catches, units, value, unpriced, perCatch,
---   timed, seconds, timedValue, perHour, items = { { itemID, count, share, unit = { copper, label } | nil } } }
+--   timed, seconds, timedValue, perHour, items = { { itemID, count, hits (catches with it), share,
+--   unit = { copper, label } | nil } } }
 function F.Tables(opts)
 	opts = opts or {}
 	local log = F.Log(opts.key)
@@ -154,13 +155,16 @@ function F.Tables(opts)
 			local r = byKey[key]
 			if not r then
 				r = { zone = zone, sub = sub, water = water, obj = obj, name = F.ObjectName(obj), catches = 0, units = 0,
-					value = 0, unpriced = 0, timed = 0, seconds = 0, timedValue = 0, counts = {} }
+					value = 0, unpriced = 0, timed = 0, seconds = 0, timedValue = 0, counts = {}, hits = {} }
 				byKey[key] = r
 				rows[#rows + 1] = r
 			end
 			local value = 0
 			for itemID, count in pairs(c.items or {}) do
 				r.counts[itemID] = (r.counts[itemID] or 0) + count
+				if count > 0 then
+					r.hits[itemID] = (r.hits[itemID] or 0) + 1
+				end
 				r.units = r.units + count
 				local u = unit(itemID)
 				if u then
@@ -180,7 +184,8 @@ function F.Tables(opts)
 	for _, r in ipairs(rows) do
 		r.items = {}
 		for itemID, count in pairs(r.counts) do
-			r.items[#r.items + 1] = { itemID = itemID, count = count, share = count / r.units, unit = unit(itemID) }
+			r.items[#r.items + 1] = { itemID = itemID, count = count, hits = r.hits[itemID], share = count / r.units,
+				unit = unit(itemID) }
 		end
 		table.sort(r.items, function(a, b)
 			if a.count ~= b.count then
@@ -188,7 +193,7 @@ function F.Tables(opts)
 			end
 			return a.itemID < b.itemID
 		end)
-		r.counts = nil
+		r.counts, r.hits = nil, nil
 		r.perCatch = math.floor(r.value / r.catches)
 		r.perHour = r.seconds > 0 and math.floor(r.timedValue * 3600 / r.seconds) or nil
 		local z = zoneIndex[r.zone]
@@ -301,6 +306,106 @@ local function TopText(r)
 	return table.concat(parts, "; ")
 end
 
+-- A number for the snapshot's item lists: whole numbers as they are, else 4 significant digits.
+local function Num(x)
+	if x == math.floor(x) then
+		return ("%d"):format(x)
+	end
+	return ("%.4g"):format(x)
+end
+
+-- " <value>[-<valueHigh>] [c|v<vendor>]" of one item for the snapshot's lists: value = the unit value used here
+-- (copper, "?" without one), "c" = valued by its contents (the site keeps that value), "v<copper>" = the vendor
+-- sell price when the client knows it (0: vendors don't buy it). unit = { copper, high, contents } or nil.
+local function ValueTail(itemID, u)
+	local value = "?"
+	if u then
+		value = Num(math.floor(u.copper))
+		if u.high and math.floor(u.high) ~= math.floor(u.copper) then
+			value = value .. "-" .. Num(math.floor(u.high))
+		end
+	end
+	if u and u.contents then
+		return " " .. value .. " c"
+	end
+	local vendor = ns.GetVendorSellPrice and ns.GetVendorSellPrice(itemID)
+	if type(vendor) == "number" then
+		return " " .. value .. " v" .. Num(math.floor(vendor))
+	end
+	return " " .. value
+end
+F.SnapValueTail = ValueTail
+
+local function Range(low, high)
+	local text = Num(low)
+	if high and high ~= low then
+		text = text .. "-" .. Num(high)
+	end
+	return text
+end
+F.SnapRange = Range
+
+-- What a catch brought, item by item, so the site can value it again with today's prices (#128):
+-- "<itemID> <units>[-<unitsHigh>] <value>[-<valueHigh>] [c|v<vendor>]; ...". lines = { { itemID, low, high, unit } }.
+function F.SnapItems(lines)
+	local parts = {}
+	for i, line in ipairs(lines) do
+		parts[i] = ("%d %s%s"):format(line.itemID, Range(line.low, line.high), ValueTail(line.itemID, line.unit))
+	end
+	return table.concat(parts, "; ")
+end
+
+-- Own catch composition (#128): "<itemID> <hits> <units> <value> [c|v<vendor>]; ..." with hits = catches that
+-- brought the item and units = how many of it. lines = { { itemID, hits, count, unit } }.
+function F.SnapShares(lines)
+	local parts = {}
+	for i, line in ipairs(lines) do
+		parts[i] = ("%d %d %d%s"):format(line.itemID, line.hits or 0, line.count or 0, ValueTail(line.itemID, line.unit))
+	end
+	return table.concat(parts, "; ")
+end
+
+-- Item lines of a table row's counts: units = count caught (the site divides by the catches).
+local function CountLines(items)
+	local lines = {}
+	for i, item in ipairs(items) do
+		lines[i] = { itemID = item.itemID, low = item.count, unit = item.unit }
+	end
+	return lines
+end
+
+-- Rows summed: catches, timed, seconds, value, unpriced and units and hits per item, sorted most caught first.
+function F.SumRows(rows)
+	local s = { catches = 0, timed = 0, seconds = 0, value = 0, unpriced = 0, items = {} }
+	local byID = {}
+	for _, r in ipairs(rows) do
+		s.catches, s.timed, s.seconds = s.catches + r.catches, s.timed + r.timed, s.seconds + r.seconds
+		s.value, s.unpriced, s.timedValue = s.value + r.value, s.unpriced + r.unpriced, (s.timedValue or 0) + r.timedValue
+		for _, item in ipairs(r.items) do
+			local e = byID[item.itemID]
+			if not e then
+				e = { itemID = item.itemID, count = 0, hits = 0, unit = item.unit }
+				byID[item.itemID] = e
+				s.items[#s.items + 1] = e
+			end
+			e.count, e.hits = e.count + item.count, e.hits + (item.hits or 0)
+		end
+	end
+	table.sort(s.items, function(a, b)
+		if a.count ~= b.count then
+			return a.count > b.count
+		end
+		return a.itemID < b.itemID
+	end)
+	return s
+end
+
+local function Minutes(seconds)
+	return seconds > 0 and math.floor(seconds / 6 + 0.5) / 10 or nil
+end
+
+F.WATER_ORDER = { "open", "pool", "?" }
+
 function F.SnapshotSummary()
 	local t = F.Tables()
 	if not t then
@@ -309,23 +414,48 @@ function F.SnapshotSummary()
 	local ff = t.findFish or {}
 	local out = { days = t.days, catches = t.catches, containersOpened = t.opened, sessionGapMinutes = t.gap,
 		findFish = { spellID = F.FIND_FISH, known = ff.known, tracking = ff.tracking },
-		spots = {}, pools = {} }
+		spots = {}, pools = {}, waters = {} }
 	local ranked = F.Ranked(t.rows)
 	for i = 1, math.min(#ranked, F.SNAP_SPOTS) do
 		local r = ranked[i]
 		out.spots[i] = { zone = r.zone, sub = r.sub, water = r.water, obj = r.obj, pool = r.name, n = r.catches,
 			perCatch = r.perCatch, perHour = r.perHour, timed = r.timed > 0 and r.timed or nil,
-			minutes = r.seconds > 0 and math.floor(r.seconds / 6 + 0.5) / 10 or nil,
-			unpriced = r.unpriced > 0 and r.unpriced or nil, top = TopText(r) }
+			minutes = Minutes(r.seconds), unpriced = r.unpriced > 0 and r.unpriced or nil, top = TopText(r),
+			items = F.SnapItems(CountLines(r.items)) }
 	end
 	if #ranked > F.SNAP_SPOTS then
 		out.moreSpots = #ranked - F.SNAP_SPOTS
 	end
+	-- Open water against pools (#128): every row of the log, summed per water type.
+	for _, water in ipairs(F.WATER_ORDER) do
+		local rows = {}
+		for _, r in ipairs(t.rows) do
+			if r.water == water then
+				rows[#rows + 1] = r
+			end
+		end
+		if #rows > 0 then
+			local s = F.SumRows(rows)
+			out.waters[#out.waters + 1] = { water = water, n = s.catches, perCatch = math.floor(s.value / s.catches),
+				perHour = s.seconds > 0 and math.floor(s.timedValue * 3600 / s.seconds) or nil,
+				timed = s.timed > 0 and s.timed or nil, minutes = Minutes(s.seconds),
+				unpriced = s.unpriced > 0 and s.unpriced or nil, items = F.SnapItems(CountLines(s.items)) }
+		end
+	end
 	for i = 1, math.min(#t.pools, F.SNAP_POOLS) do
 		local p = t.pools[i]
+		local rows = {}
+		for _, r in ipairs(t.rows) do
+			if r.water == "pool" and r.obj == p.obj then
+				rows[#rows + 1] = r
+			end
+		end
+		local s = F.SumRows(rows)
 		out.pools[i] = { obj = p.obj, name = p.name, visits = p.visits, perVisit = p.visits > 0
 			and ("%d-%d, avg %s"):format(p.min, p.max, p.avg) or nil, going = p.going > 0 and p.going or nil,
-			seen = p.seen, notFished = p.notFished }
+			seen = p.seen, notFished = p.notFished, catches = s.catches > 0 and s.catches or nil,
+			perCatch = s.catches > 0 and math.floor(s.value / s.catches) or nil,
+			items = s.catches > 0 and F.SnapItems(CountLines(s.items)) or nil }
 	end
 	if #t.pools > F.SNAP_POOLS then
 		out.morePools = #t.pools - F.SNAP_POOLS

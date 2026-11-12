@@ -195,6 +195,58 @@ it("snapshot keeps a small zone ranking", function()
 	eq(fz.reference, true); eq(#fz.zones, 2)
 	eq(fz.zones[1].zone, "Testwater Bay"); eq(fz.zones[1].source, "ref"); eq(fz.zones[1].perCatch, 50); eq(fz.zones[1].perCatchHigh, 114)
 	eq(fz.zones[2].perCatchHigh, nil); eq(fz.zones[2].unpriced, 1)
+	-- #128: every item's units per catch (low-high) and unit value; the trunk keeps its contents value.
+	eq(fz.zones[1].items, EEL .. " 0.3-0.9 100; " .. TRUNK .. " 0.1 140-180 c; " .. SNAPPER .. " 0.6 10")
+	eq(fz.zones[2].items, SNAPPER .. " 0.99 10; " .. PEARL .. " 0.02 ?")
+	eq(fz.zones[1].timed, nil); eq(fz.zones[1].minutes, nil)
+end)
+
+it("snapshot compares own catch composition with the reference per zone and pool object (#128)", function()
+	local ns, stub = setup()
+	reference()
+	CraftWise_FishingRef.pools = { [7001] = { id = 7001, name = "Test School", total = 40, items = {
+		{ id = EEL, count = 30, stack = { 1, 2 } }, { id = SNAPPER, count = 4, outof = 20 } } } }
+	ns.db.fishing[key(ns)] = { catches = {}, opened = {}, seen = {} }
+	local log = ns.db.fishing[key(ns)]
+	local function add(n, items, water)
+		for _ = 1, n do
+			local i = #log.catches + 1
+			log.catches[i] = { t = NOW - 3600 + i * 20, zone = "Testwater Bay", sub = "", items = items, obj = water == "pool" and 7001 or 50,
+				spawn = water == "pool" and "P1" or ("B" .. i), same = water ~= "pool" or nil }
+		end
+	end
+	add(10, { [SNAPPER] = 1 }, "open")
+	add(3, { [EEL] = 2, [SNAPPER] = 1 }, "open")
+	add(4, { [EEL] = 1 }, "pool")
+	stub.Fire("PLAYER_LOGOUT")
+	local fz = CraftWiseDB.snapshots[ns.CharKey()].fishingZones
+	eq(#fz.compare, 1); eq(fz.compareMore, nil)
+	local c = fz.compare[1]
+	eq(c.zone, "Testwater Bay"); eq(c.n, 17); eq(c.timed, 16)
+	-- own: catches with the item, units, unit value; reference: count (out of refN), stack, unit value
+	eq(c.own, SNAPPER .. " 13 13 10; " .. EEL .. " 7 10 100")
+	eq(c.refN, 200); eq(c.ref, SNAPPER .. " 120 1 10; " .. EEL .. " 60 1-3 100; " .. TRUNK .. " 20 1 140-180 c")
+	eq(#c.waters, 2)
+	eq(c.waters[1].water, "open"); eq(c.waters[1].n, 13); eq(c.waters[1].ref, nil)
+	eq(c.waters[2].water, "pool"); eq(c.waters[2].obj, 7001); eq(c.waters[2].own, EEL .. " 4 4 100")
+	eq(c.waters[2].refN, 40); eq(c.waters[2].ref, EEL .. " 30 1-2 100; " .. SNAPPER .. " 4/20 1 10")
+	-- the ranking shows the reference for this zone (17 own catches < 50) and `compare` has it: no second list
+	local bay = fz.zones[1]
+	eq(bay.zone, "Testwater Bay"); eq(bay.source, "ref"); eq(bay.items, nil)
+	eq(fz.zones[2].zone, "Dull Pond"); eq(fz.zones[2].items, SNAPPER .. " 0.99 10; " .. PEARL .. " 0.02 ?")
+	CraftWise_FishingRef = nil
+end)
+
+it("snapshot zones carry the own timing behind value per hour (#128)", function()
+	local ns, stub = setup()
+	addCatches(ns, "Own Lake", 60, { [EEL] = 1 }, 30)
+	stub.Fire("PLAYER_LOGOUT")
+	local z = CraftWiseDB.snapshots[ns.CharKey()].fishingZones.zones[1]
+	eq(z.zone, "Own Lake"); eq(z.source, "own"); eq(z.n, 60); eq(z.perCatch, 100)
+	eq(z.timed, 59); eq(z.minutes, 29.5); eq(z.perHour, 100 * 120)
+	-- the zone's items are in `compare` (own catches), so the ranking leaves them out
+	local fz = CraftWiseDB.snapshots[ns.CharKey()].fishingZones
+	eq(z.items, nil); eq(fz.compare[1].zone, "Own Lake"); eq(fz.compare[1].own, EEL .. " 60 60 100")
 end)
 
 it("Fishing tab: zone list, tooltips, loot table, source switch, back, sorting", function()

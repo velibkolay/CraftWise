@@ -676,7 +676,7 @@ local function ContentsValue(log, containerID, depth)
 	return math.floor(total / n), n
 end
 
--- Value of one unit: { copper, label } or nil (no price data).
+-- Value of one unit: { copper, label, contents = true when valued by its logged contents } or nil (no price data).
 function F.UnitValue(log, itemID, depth)
 	local value = ns.GetSellValue and ns.GetSellValue(itemID)
 	if value and value.copper and value.copper > 0 then
@@ -688,7 +688,7 @@ function F.UnitValue(log, itemID, depth)
 	end
 	local copper, n = ContentsValue(log, itemID, depth or 0)
 	if copper then
-		return { copper = copper, label = ("contents of %d opened"):format(n) }
+		return { copper = copper, label = ("contents of %d opened"):format(n), contents = true }
 	end
 	return nil
 end

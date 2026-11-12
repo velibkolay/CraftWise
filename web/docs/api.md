@@ -211,9 +211,24 @@ expiry), so the private data stays closed if the Access app is missing or miscon
 `GET /me` (also `/me/` and `/me/index.html`) serves the private page (#98, `public/me/index.html` with
 `site/me.ts`) after the same check, with the pages' security headers and `Cache-Control: private, no-store`;
 `/me/<page>` (also with `/` or `/index.html`) serves `public/me/<page>/index.html` the same way when that
-page exists, e.g. `/me/crates` (#129, Waylaid crates and Merchant's Favor, `site/crates.ts`); other paths
-under `/me/` answer 404. The page itself holds no data: it reads everything above from
-`/api/me/*` and item names and qualities from `/api/browse?ids=`.
+page exists, e.g. `/me/crates` (#129, Waylaid crates and Merchant's Favor, `site/crates.ts`) and `/me/fishing`
+(#128, where to fish, `site/fishing.ts`); other paths under `/me/` answer 404. The pages hold no data: they
+read everything above from `/api/me/*` and item names, qualities and prices from `/api/browse?ids=`.
+
+The fishing page works in the browser (`site/lib/fishing.ts`, tested in `test/fishing.test.ts`) from the
+character's fishing document and the Horde AH's prices; the Worker only serves both:
+- Values a catch again from the snapshot's item lists (docs/snapshot.md "Item lists"): per item the Horde AH's
+  typical price, else its lowest listing while listed, after the 5% cut, unless the vendor price in the list is
+  more (as `ns.GetSellValue`); containers by the contents value in the list; an item without a Horde AH price
+  today at the value the snapshot used. Without item lists (older addon or companion) it shows the snapshot's
+  figures.
+- Value per hour = own timed catches per hour (`timed`, `minutes`) x the value per catch now, only from
+  `fishingZones.ownMin` timed catches on (default 50); below that "too few timed".
+- Own catches against the reference (`fishingZones.compare`): each item's share of own catches (hits / n) with
+  its 95% Wilson interval, the reference's share (count / loots), the difference, marked when the reference's
+  share lies outside the interval; value per catch from both, priced the same way. Own data is the primary
+  number from `ownMin` catches on (or without a reference), the reference otherwise; the other is shown as
+  comparison. Fewer than `ownMin` catches is a small sample: marked, and ranked after the others.
 
 ## Budget (free plans) and retention
 

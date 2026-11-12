@@ -332,6 +332,24 @@ it("snapshot: compact ranking by value per hour, then per catch; pools with visi
 	eq(f.spots[2].water, "open"); eq(f.spots[2].zone, "Stranglethorn Vale"); eq(f.spots[2].perHour, 6 * 60)
 	eq(f.spots[3].zone, "Tanaris"); eq(f.spots[3].perHour, nil); eq(f.spots[3].perCatch, 100); eq(f.spots[3].timed, nil)
 	eq(f.pools[1].name, "Test School"); eq(f.pools[1].visits, 1); eq(f.pools[1].perVisit, "2-2, avg 2")
+	-- #128: what each row brought, item by item, with the unit value and the vendor price for the site.
+	eq(f.spots[1].items, OIL .. " 3 20 v20; " .. BOOT .. " 1 ?")
+	eq(f.spots[3].items, OIL .. " 5 20 v20")
+	eq(f.pools[1].catches, 2); eq(f.pools[1].perCatch, 30); eq(f.pools[1].items, OIL .. " 3 20 v20; " .. BOOT .. " 1 ?")
+	-- Open water against pools over the whole log.
+	eq(#f.waters, 2)
+	eq(f.waters[1].water, "open"); eq(f.waters[1].n, 3); eq(f.waters[1].perCatch, math.floor((6 + 6 + 100) / 3))
+	eq(f.waters[1].timed, 1); eq(f.waters[1].minutes, 1); eq(f.waters[1].perHour, 6 * 60)
+	eq(f.waters[1].items, OIL .. " 5 20 v20; " .. FISH .. " 2 6 v6")
+	eq(f.waters[2].water, "pool"); eq(f.waters[2].n, 2); eq(f.waters[2].unpriced, 1); eq(f.waters[2].items, f.pools[1].items)
+end)
+
+it("snapshot item lists: containers by contents are marked, ranges and fractions kept short (#128)", function()
+	local ns = setup()
+	eq(ns.Fishing.SnapItems({ { itemID = FISH, low = 0.123456, high = 0.37037, unit = { copper = 10.7 } } }), FISH .. " 0.1235-0.3704 10 v6")
+	eq(ns.Fishing.SnapItems({ { itemID = CRATE, low = 1, unit = { copper = 140, high = 180, contents = true } } }), CRATE .. " 1 140-180 c")
+	eq(ns.Fishing.SnapItems({ { itemID = BOOT, low = 0.00001, high = 0.00001 } }), BOOT .. " 1e-05 ?")
+	eq(ns.Fishing.SnapItems({}), "")
 end)
 
 it("FishingTables.lua is in the TOC right after Fishing.lua", function()
