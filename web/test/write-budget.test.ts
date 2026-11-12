@@ -70,6 +70,15 @@ function privateBody(t: number) {
 	};
 }
 
+// Retry-After is the seconds left until 00:00 UTC at the moment the Worker handled the request, which lies
+// somewhere between `before` and `after`; every second in that window is a valid answer (#148). Walking the
+// window also covers a midnight wrap in between.
+function expectRetryAfter(res: Response, before: number, after: number): void {
+	const accepted: string[] = [];
+	for (let s = before; s <= after; s++) accepted.push(String(DAY - (s % DAY)));
+	expect(accepted).toContain(res.headers.get("retry-after"));
+}
+
 let token: string;
 beforeEach(async () => {
 	await clearData();
@@ -80,10 +89,11 @@ describe("write budget from the Worker var", () => {
 	it("stops every upload at the configured budget", async () => {
 		await setWritten(1000);
 		const t = now();
+		const before = now();
 		for (const res of [await post("/api/upload", token, body(prices(t))), await post("/api/private/upload", token, privateBody(t))]) {
 			expect(res.status).toBe(429);
 			expect(await res.json()).toMatchObject({ error: "write_budget" });
-			expect(res.headers.get("retry-after")).toBe(String(DAY - (now() % DAY)));
+			expectRetryAfter(res, before, now());
 		}
 		// the same day's count is far below 30,000 (the Free plan setting)
 		expect((await post("/api/upload", token, body(prices(t)), "30000")).status).toBe(200);
@@ -109,9 +119,11 @@ describe("soft limit: low-priority writes wait above 80%", () => {
 	it("above it new item info, names and sell prices are refused until 00:00 UTC", async () => {
 		await setWritten(800); // soft limit of 1,000
 		const t = now();
+		const before = now();
 		let res = await post("/api/upload", token, body(names()));
+		const after = now();
 		expect(res.status).toBe(429);
-		expect(res.headers.get("retry-after")).toBe(String(DAY - (now() % DAY)));
+		expectRetryAfter(res, before, after);
 		expect(await res.json()).toMatchObject({ error: "write_budget" });
 		// a request mixing item info with prices is refused as a whole: nothing is written
 		res = await post("/api/upload", token, body({ ...names(), ...prices(t) }));
