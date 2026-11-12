@@ -423,3 +423,90 @@ it("every slash command still works next to the UI", function()
 	eq(ns.db.farm.idleMinutes, 3); eq(ns.db.settings.ahMinPercent, 25)
 	assert(#stub.printed > 10)
 end)
+
+------------------------------------------------------------------------------------------- farm history
+
+local function farmLoot(stub, id, count)
+	LOOT_ITEM_SELF = "You receive loot: %s."
+	LOOT_ITEM_SELF_MULTIPLE = "You receive loot: %sx%d."
+	local l = ("|cffffffff|Hitem:%d::::::::20:::::|h[%s]|h|r"):format(id, stub.items[id].name)
+	local text = count and count > 1 and LOOT_ITEM_SELF_MULTIPLE:format(l, count) or LOOT_ITEM_SELF:format(l)
+	stub.Fire("CHAT_MSG_LOOT", text, "", "", "", "", "", 0, 0, "", 0, 1, "Player-1-SELF")
+end
+
+it("farm history: list rows per finished session, details with stats and the kept loot log", function()
+	local ns, stub = Load({ auctionator = true })
+	local FH = ns.FarmHistory
+	eq(#FH.ListRows(ns.Farm.History()), 0)
+	stub.zone = "Elwynn Forest"
+	SlashCmdList.CRAFTWISE("farm idle 0")
+	farmLoot(stub, LINEN, 3)
+	stub.clock = stub.clock + 1800
+	farmLoot(stub, SALT, 1)
+	SlashCmdList.CRAFTWISE("farm reset")
+	local rows = FH.ListRows(ns.Farm.History())
+	eq(#rows, 1)
+	eq(rows[1].index, 1); eq(rows[1].zone, "Elwynn Forest"); eq(rows[1].time, "00:30:00")
+	eq(rows[1].items, ns.FormatMoney(3 * 13 + 12)); has(rows[1].fish, "-")
+	local d = FH.Detail(ns.Farm.History()[1])
+	local labels = {}
+	for _, s in ipairs(d.stats) do labels[#labels + 1] = s[1] end
+	has(table.concat(labels, ","), "Gold / hour")
+	has(table.concat(labels, ","), "Top items")
+	assert(#d.stats <= FH.STAT_LINES, "fits the detail lines")
+	eq(#d.log, 2, "both drops in the log"); eq(d.log[1].itemID, SALT, "newest first")
+	has(d.logNote, "2 lines")
+	-- an older session without its log says why
+	local h = ns.Farm.History()[1]
+	local logLines = #h.log
+	h.log, h.logZones, h.logLines = nil, nil, logLines
+	d = FH.Detail(h)
+	eq(d.log, nil); has(d.logNote, "Loot log not kept")
+end)
+
+it("farm history: the farm window's History button lays it over the window; a click opens a session, Back returns", function()
+	local ns, stub = Load({ auctionator = true })
+	SlashCmdList.CRAFTWISE("farm idle 0")
+	farmLoot(stub, LINEN, 2)
+	stub.clock = stub.clock + 600
+	SlashCmdList.CRAFTWISE("farm reset")
+	SlashCmdList.CRAFTWISE("farm show")
+	local btn
+	for _, f in ipairs(stub.frames) do
+		if f.label and f.label.text == "History" and f.scripts.OnClick then btn = f end
+	end
+	assert(btn, "History button in the farm window")
+	btn.scripts.OnEnter(btn); btn.scripts.OnLeave(btn)
+	btn.scripts.OnClick(btn)
+	eq(ns.FarmHistory.IsShown(), true)
+	local row
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.data.index and f.shown ~= false then row = f end
+	end
+	assert(row, "a session row")
+	row.scripts.OnEnter(row); row.scripts.OnLeave(row)
+	row.scripts.OnClick(row)
+	eq(ns.FarmHistory.State().index, 1)
+	for _, f in ipairs(stub.frames) do
+		if f.data and f.data.itemID and f.time and f.shown ~= false then f.scripts.OnEnter(f); f.scripts.OnLeave(f) end
+	end
+	CraftWiseFarmHistory.scripts.OnMouseWheel(CraftWiseFarmHistory, -1)
+	local back
+	for _, f in ipairs(stub.frames) do
+		if f.label and f.label.text == "Back" and f.scripts.OnClick then back = f end
+	end
+	back.scripts.OnClick(back)
+	eq(ns.FarmHistory.State().index, nil)
+	eq(ns.FarmHistory.IsShown(), true, "back to the list first")
+	back.scripts.OnClick(back) -- now labelled Session: back to the live session
+	eq(ns.FarmHistory.IsShown(), false)
+	-- the Settings button opens it too, opening the farm window when hidden
+	SlashCmdList.CRAFTWISE("farm hide")
+	ns.ToggleSettings()
+	CraftWiseSettings.farmHistory.scripts.OnClick(CraftWiseSettings.farmHistory)
+	eq(ns.FarmHistory.IsShown(), true); eq(ns.FarmFrame.IsShown(), true)
+	-- /craftwise farm history still prints
+	stub.printed = {}
+	SlashCmdList.CRAFTWISE("farm history")
+	has(table.concat(stub.printed, "\n"), "Farm sessions")
+end)

@@ -17,7 +17,6 @@ local function T()
 end
 
 -- A setting with - / +: label, value text (set in render), change(dir) with dir -1 or 1, then a re-render.
-local steppers = {}
 local function Stepper(x, y, label, change)
 	local text = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	text:SetPoint("TOPLEFT", x, y - 5)
@@ -40,7 +39,6 @@ local function Stepper(x, y, label, change)
 	end
 	down:SetScript("OnClick", click(-1))
 	up:SetScript("OnClick", click(1))
-	steppers[#steppers + 1] = s
 	return s
 end
 
@@ -259,7 +257,8 @@ local function Build(parent)
 	end)
 	panel.farmLock:SetPoint("TOPLEFT", RX, farmY - 40)
 	panel.farmIdle = Stepper(RX, farmY - 66, L["Pause when idle"], function(dir)
-		local v = ns.Farm.IdleMinutes() + dir * (ns.Farm.IdleMinutes() + dir >= 10 and 5 or 1)
+		local cur = ns.Farm.IdleMinutes()
+		local v = cur + dir * (((dir > 0 and cur >= 10) or (dir < 0 and cur > 10)) and 5 or 1)
 		ns.db.farm.idleMinutes = math.max(0, math.min(ns.Farm.MAX_IDLE, v))
 	end)
 	panel.farmScale = Stepper(RX, farmY - 94, L["Window scale"], function(dir)
@@ -290,7 +289,7 @@ local function Build(parent)
 	end)
 	panel.fishOwnMin = Stepper(RX, fishY - 50, L["Own catches count from"], function(dir)
 		local cur = ns.FishingZones.OwnMin()
-		local step = cur + dir * 10 >= 10 and 10 or 1
+		local step = ((dir > 0 and cur >= 10) or (dir < 0 and cur > 10)) and 10 or 1
 		ns.db.settings.fishingOwnMin = math.max(1, math.min(1000, cur + dir * step))
 		if ns.RefreshProfitFrame then
 			ns.RefreshProfitFrame()

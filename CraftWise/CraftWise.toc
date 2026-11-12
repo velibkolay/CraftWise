@@ -57,6 +57,7 @@ UI\RecipeChance.lua
 UI\AHRule.lua
 UI\Settings.lua
 UI\FarmFrame.lua
+UI\FarmHistory.lua
 UI\ProfitFrame\State.lua
 UI\ProfitFrame\Fishing.lua
 UI\ProfitFrame\Data.lua

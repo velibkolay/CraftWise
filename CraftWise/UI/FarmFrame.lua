@@ -177,7 +177,7 @@ local FISH_LABELS = { catches = "Catches", rate = "Your rate", perCatch = "Per c
 local FISH_HELP = {
 	catches = "Fishing loot windows this session (the fishing log's catches), and catches per hour of fishing time: the time between two catches at most two minutes apart.",
 	perCatch = "Coin + items per catch, items at the same values as the loot list. Caught containers you opened count as their contents. Unpriced items are counted apart, not in it.",
-	rate = "Your long-run catch rate from the fishing log (#136): timed catches per hour over the last 90 days, overall and in open water and pools. Catches less than the fishing session gap apart are one session (/craftwise fishing gap); a session's first catch is untimed. Shown from as many timed catches as /craftwise fishing ownmin asks.",
+	rate = "Your long-run catch rate from the fishing log (#136): timed catches per hour over the last 90 days, overall and in open water and pools. Catches less than the fishing session gap apart are one session (Settings > Fishing); a session's first catch is untimed. Shown from as many timed catches as \"Own catches count from\" asks (Settings > Fishing).",
 	gph = "Fishing coin + items per hour of fishing time.",
 	best = "The caught item with the highest value per unit.",
 	opened = "Containers caught this session and opened: their contents count as fishing loot.",
@@ -534,7 +534,7 @@ local function Build()
 		self:SetSelected(false)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:AddLine(L["Reset"])
-		GameTooltip:AddLine(L["Ends the session and keeps it in the history (/craftwise farm history)."], 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(L["Ends the session and keeps it in the history (History button)."], 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	frame.reset:SetScript("OnLeave", function(self)
@@ -553,7 +553,7 @@ local function Build()
 	gear:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:AddLine(L["Settings"])
-		GameTooltip:AddLine("/craftwise farm lock | unlock | scale <n> | idle <min> | history", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(L["Farm tracker on/off, start on first loot, lock, idle pause, scale. Also: /craftwise farm lock | unlock | scale <n> | idle <min>"], 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	gear:SetScript("OnLeave", function()
@@ -571,6 +571,9 @@ local function Build()
 	close:SetPoint("TOPRIGHT", -6, -6)
 	frame.listHead = list:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	frame.listHead:SetPoint("TOPLEFT", 12, -12)
+	frame.listHead:SetWidth(152) -- the History, List/Log and close buttons sit right of it
+	frame.listHead:SetJustifyH("LEFT")
+	frame.listHead:SetWordWrap(false)
 	frame.empty = list:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 	frame.empty:SetPoint("CENTER")
 	frame.empty:SetWidth(FF.LIST_WIDTH - 40)
@@ -578,6 +581,23 @@ local function Build()
 	BuildLogRows(list)
 	frame.viewButton = Style.Button(list, 56, 20, "")
 	frame.viewButton:SetPoint("RIGHT", close, "LEFT", -6, 0)
+	-- History (#137): finished sessions and their loot logs, drawn by UI/FarmHistory.lua over this window.
+	frame.historyButton = Style.Button(list, 62, 20, L["History"])
+	frame.historyButton:SetPoint("RIGHT", frame.viewButton, "LEFT", -6, 0)
+	frame.historyButton:SetScript("OnClick", function()
+		ns.FarmHistory.Toggle()
+	end)
+	frame.historyButton:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine(L["Farm history"])
+		GameTooltip:AddLine(L["Finished sessions: time, zone, coin, items, gold per hour, fishing. Click one for its details and loot log."],
+			0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	frame.historyButton:SetScript("OnLeave", function(self)
+		self:SetSelected(false)
+		GameTooltip:Hide()
+	end)
 	frame.viewButton:SetScript("OnClick", function()
 		FF.SetView(FF.View() == "log" and "list" or "log")
 	end)
@@ -770,6 +790,11 @@ end
 
 function FF.FishPanel()
 	return frame and frame.fish
+end
+
+-- The window frame, for views drawn over it (UI/FarmHistory.lua).
+function FF.Window()
+	return frame
 end
 
 function FF.Show()
