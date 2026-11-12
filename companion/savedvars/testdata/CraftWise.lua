@@ -225,7 +225,10 @@ CraftWiseDB = {
 },
 ["pools"] = {
 {
+["catches"] = 3,
+["items"] = "9007 3 6 v6; 9008 1 20 v20",
 ["obj"] = 6001,
+["perCatch"] = 12,
 ["perVisit"] = "3-3, avg 3",
 ["visits"] = 1,
 },
@@ -233,6 +236,7 @@ CraftWiseDB = {
 ["sessionGapMinutes"] = 5,
 ["spots"] = {
 {
+["items"] = "9007 3 6 v6; 9008 2 20 v20",
 ["minutes"] = 1.3,
 ["n"] = 3,
 ["perCatch"] = 19,
@@ -244,6 +248,7 @@ CraftWiseDB = {
 ["zone"] = "Test Zone",
 },
 {
+["items"] = "9007 3 6 v6; 9008 1 20 v20",
 ["minutes"] = 2,
 ["n"] = 3,
 ["obj"] = 6001,
@@ -256,16 +261,60 @@ CraftWiseDB = {
 ["zone"] = "Test Zone",
 },
 },
+["waters"] = {
+{
+["items"] = "9007 3 6 v6; 9008 2 20 v20",
+["minutes"] = 1.3,
+["n"] = 3,
+["perCatch"] = 19,
+["perHour"] = 1440,
+["timed"] = 2,
+["water"] = "open",
+},
+{
+["items"] = "9007 3 6 v6; 9008 1 20 v20",
+["minutes"] = 2,
+["n"] = 3,
+["perCatch"] = 12,
+["perHour"] = 1140,
+["timed"] = 3,
+["water"] = "pool",
+},
+},
 },
 ["fishingZones"] = {
+["compare"] = {
+{
+["minutes"] = 3.3,
+["n"] = 6,
+["own"] = "9007 6 6 6 v6; 9008 3 3 20 v20",
+["timed"] = 5,
+["waters"] = {
+{
+["n"] = 3,
+["own"] = "9007 3 3 6 v6; 9008 2 2 20 v20",
+["water"] = "open",
+},
+{
+["n"] = 3,
+["obj"] = 6001,
+["own"] = "9007 3 3 6 v6; 9008 1 1 20 v20",
+["water"] = "pool",
+},
+},
+["zone"] = "Test Zone",
+},
+},
 ["ownMin"] = 50,
 ["reference"] = false,
 ["zones"] = {
 {
+["minutes"] = 3.3,
 ["n"] = 6,
 ["perCatch"] = 16,
 ["perHour"] = 1440,
 ["source"] = "own",
+["timed"] = 5,
 ["zone"] = "Test Zone",
 },
 },

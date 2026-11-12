@@ -4,6 +4,7 @@ import { type Browse, get, type House, pickHouse } from "./lib/api";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, s, slot, topBar } from "./lib/dom";
 import { age, qualityClass } from "./lib/format";
 import * as M from "./lib/me";
+import { bar, barHead, kv, n, pane, sideTabs, well } from "./lib/mepage";
 
 type Section = "overview" | "ledger" | "auctions" | "fishing" | "tokens";
 const SECTIONS: [Section, string][] = [
@@ -100,34 +101,6 @@ function signed(copper: number | null, sign: 1 | -1 | 0): HTMLElement {
 		sign ? h("span", { class: "sr" }, sign > 0 ? "plus" : "minus") : null,
 		moneyEl(Math.abs(copper)),
 	);
-}
-
-function kv(label: string, value: Node | string, hint?: string | null): HTMLElement[] {
-	const out = [h("p", { class: "kv" }, h("span", {}, label), typeof value === "string" ? h("span", {}, value) : value)];
-	if (hint) out.push(h("p", { class: "hint kv-hint" }, hint));
-	return out;
-}
-
-function barHead(text: string): HTMLElement {
-	return h("h2", { class: "bar-head" }, text);
-}
-
-function pane(cls: string, sec: string, ...children: (Node | null)[]): HTMLElement {
-	return h("section", { class: `pane me-pane ${cls}`, "data-sec": sec }, ...children);
-}
-
-function well(...children: Node[]): HTMLElement {
-	return h("div", { class: "inset tscroll" }, ...children);
-}
-
-function bar(cls: string, part: number, whole: number, text: string, label: string): HTMLElement {
-	const el = h("div", { class: `sbar ${cls}`, role: "img", "aria-label": label }, h("i", {}), h("b", {}, text));
-	(el.firstChild as HTMLElement).style.width = `${(M.share(part, whole) * 100).toFixed(1)}%`;
-	return el;
-}
-
-function n(v: number | null): string {
-	return v === null ? "–" : v.toLocaleString("en-US");
 }
 
 function itemName(id: number | null, fallback: string | null): string {
@@ -412,7 +385,7 @@ function renderAuctions(): void {
 // ---- Fishing ------------------------------------------------------------------------------------
 
 function fishingPane(f: M.FishingView | null): HTMLElement {
-	if (!f) return pane("p-fish", "fishing", barHead("Fishing"), h("p", { class: "hint pad" }, "No fishing log uploaded for this character."));
+	if (!f) return pane("p-fish", "fishing", barHead("Fishing"), h("p", { class: "hint pad" }, "No fishing log uploaded for this character."), st.key ? h("a", { class: "wbtn dark wide", href: fishingHref(st.key) }, "Where to Fish") : null);
 	const stat = (label: string, value: string | null) => (value === null ? null : h("p", {}, h("span", { class: "lbl" }, label), ` ${value}`));
 	const perCatch = (z: { perCatch: number | null; perCatchHigh?: number | null }) =>
 		z.perCatchHigh != null && z.perCatch !== null ? h("span", { class: "range" }, moneyEl(z.perCatch), h("span", { "aria-hidden": "true" }, " – "), h("span", { class: "sr" }, " to "), moneyEl(z.perCatchHigh)) : moneyEl(z.perCatch);
@@ -487,6 +460,7 @@ function fishingPane(f: M.FishingView | null): HTMLElement {
 					),
 				)
 			: null,
+		st.key ? h("a", { class: "wbtn dark wide", href: fishingHref(st.key) }, "Where to Fish Now") : null,
 		h(
 			"p",
 			{ class: "hint note" },
@@ -710,6 +684,10 @@ function latestChar(): string | null {
 	return best?.key ?? null;
 }
 
+function fishingHref(key: string): string {
+	return `/me/fishing?${new URLSearchParams({ c: key })}`;
+}
+
 function charHref(key: string): string {
 	return `/me?${new URLSearchParams({ c: key })}`;
 }
@@ -761,25 +739,7 @@ function header(c: M.Character, v: M.CharView, now: number): HTMLElement[] {
 	const xp = v.xp;
 	const xpText = xp ? `XP ${n(xp.xp)} / ${n(xp.max)}${xp.rested ? `, rested ${n(xp.rested)}` : ""}` : "";
 	return [
-		h(
-			"nav",
-			{ class: "sidetabs", "aria-label": "Characters" },
-			st.chars.map((ch) =>
-				h(
-					"a",
-					{
-						href: charHref(ch.key),
-						class: `stab cls-${M.classKey(ch.class)}`,
-						"aria-current": ch.key === st.key ? "page" : null,
-						"aria-label": `${M.fullName(ch)}, ${[ch.level !== null ? `level ${ch.level}` : null, ch.class].filter(Boolean).join(" ")}`,
-						title: M.fullName(ch),
-						onclick: (e: Event) => pickChar(e, ch.key),
-					},
-					(ch.name ?? ch.key).charAt(0),
-					ch.level !== null ? h("span", { class: "lv", "aria-hidden": "true" }, String(ch.level)) : null,
-				),
-			),
-		),
+		sideTabs(st.chars, st.key, charHref, pickChar),
 		h(
 			"div",
 			{ class: "mehead" },

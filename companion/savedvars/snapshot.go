@@ -206,15 +206,16 @@ type TaxiNode struct {
 
 // FishingSummary is the snapshot's fishing ranking (#69, #86): this character, last 90 days.
 type FishingSummary struct {
-	Days              *int64        `json:"days,omitempty"`
-	Catches           *int64        `json:"catches,omitempty"`
-	ContainersOpened  *int64        `json:"containersOpened,omitempty"`
-	SessionGapMinutes *float64      `json:"sessionGapMinutes,omitempty"`
-	FindFish          *FindFish     `json:"findFish,omitempty"`
-	Spots             []FishingSpot `json:"spots"`
-	MoreSpots         *int64        `json:"moreSpots,omitempty"`
-	Pools             []FishingPool `json:"pools"`
-	MorePools         *int64        `json:"morePools,omitempty"`
+	Days              *int64         `json:"days,omitempty"`
+	Catches           *int64         `json:"catches,omitempty"`
+	ContainersOpened  *int64         `json:"containersOpened,omitempty"`
+	SessionGapMinutes *float64       `json:"sessionGapMinutes,omitempty"`
+	FindFish          *FindFish      `json:"findFish,omitempty"`
+	Spots             []FishingSpot  `json:"spots"`
+	MoreSpots         *int64         `json:"moreSpots,omitempty"`
+	Waters            []FishingWater `json:"waters,omitempty"`
+	Pools             []FishingPool  `json:"pools"`
+	MorePools         *int64         `json:"morePools,omitempty"`
 }
 
 type FindFish struct {
@@ -236,6 +237,20 @@ type FishingSpot struct {
 	Minutes  *float64 `json:"minutes,omitempty"`
 	Unpriced *int64   `json:"unpriced,omitempty"`
 	Top      string   `json:"top,omitempty"`
+	// Items is the snapshot's item list (#128, docs/snapshot.md "Item lists"), kept as the string it is.
+	Items string `json:"items,omitempty"`
+}
+
+// FishingWater is open water, pools or unknown water summed over the whole log (#128).
+type FishingWater struct {
+	Water    string   `json:"water,omitempty"` // "open", "pool", "?"
+	N        *int64   `json:"n,omitempty"`
+	PerCatch *float64 `json:"perCatch,omitempty"`
+	PerHour  *float64 `json:"perHour,omitempty"`
+	Timed    *int64   `json:"timed,omitempty"`
+	Minutes  *float64 `json:"minutes,omitempty"`
+	Unpriced *int64   `json:"unpriced,omitempty"`
+	Items    string   `json:"items,omitempty"`
 }
 
 type FishingPool struct {
@@ -246,6 +261,10 @@ type FishingPool struct {
 	Going     *int64 `json:"going,omitempty"`
 	Seen      *int64 `json:"seen,omitempty"`
 	NotFished *int64 `json:"notFished,omitempty"`
+	// Every catch from this pool object, its value per catch and item list (#128).
+	Catches  *int64   `json:"catches,omitempty"`
+	PerCatch *float64 `json:"perCatch,omitempty"`
+	Items    string   `json:"items,omitempty"`
 }
 
 // FishingZones is the zone ranking by value per catch (#88).
@@ -254,6 +273,33 @@ type FishingZones struct {
 	OwnMin    *int64        `json:"ownMin,omitempty"`
 	Zones     []FishingZone `json:"zones"`
 	More      *int64        `json:"more,omitempty"`
+	// Compare is the own catch composition per zone next to the reference's (#128).
+	Compare     []FishingCompare `json:"compare,omitempty"`
+	CompareMore *int64           `json:"compareMore,omitempty"`
+}
+
+// FishingCompare is one zone of fishingZones.compare (#128); Own and Ref are the snapshot's share and
+// reference lists, kept as the strings they are (docs/snapshot.md).
+type FishingCompare struct {
+	Zone       string                `json:"zone,omitempty"`
+	N          *int64                `json:"n,omitempty"`
+	Timed      *int64                `json:"timed,omitempty"`
+	Minutes    *float64              `json:"minutes,omitempty"`
+	Own        string                `json:"own,omitempty"`
+	RefN       *int64                `json:"refN,omitempty"`
+	Ref        string                `json:"ref,omitempty"`
+	Waters     []FishingCompareWater `json:"waters,omitempty"`
+	WatersMore *int64                `json:"watersMore,omitempty"`
+}
+
+type FishingCompareWater struct {
+	Water string `json:"water,omitempty"`
+	Obj   *int64 `json:"obj,omitempty"`
+	Name  string `json:"name,omitempty"`
+	N     *int64 `json:"n,omitempty"`
+	Own   string `json:"own,omitempty"`
+	RefN  *int64 `json:"refN,omitempty"`
+	Ref   string `json:"ref,omitempty"`
 }
 
 type FishingZone struct {
@@ -263,7 +309,10 @@ type FishingZone struct {
 	PerCatch     *float64 `json:"perCatch,omitempty"`
 	PerCatchHigh *float64 `json:"perCatchHigh,omitempty"`
 	PerHour      *float64 `json:"perHour,omitempty"`
+	Timed        *int64   `json:"timed,omitempty"`
+	Minutes      *float64 `json:"minutes,omitempty"`
 	Unpriced     *int64   `json:"unpriced,omitempty"`
+	Items        string   `json:"items,omitempty"`
 }
 
 // AuctionSummary is the snapshot's auction tracker section (#81).

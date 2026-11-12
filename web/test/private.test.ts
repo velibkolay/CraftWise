@@ -86,6 +86,16 @@ describe("Cloudflare Access check", () => {
 			for (const [k, v] of Object.entries(PAGE_HEADERS)) expect(res.headers.get(k)).toBe(v);
 			expect(await res.text()).toContain('<script type="module" src="/assets/me.js"></script>');
 		}
+		// The fishing page (#128), behind the same check.
+		for (const path of ["/me/fishing", "/me/fishing/"]) {
+			const fishing = await call("GET", path, { headers: access(jwt) });
+			expect(fishing.status).toBe(200);
+			expect(fishing.headers.get("cache-control")).toBe("private, no-store");
+			for (const [k, v] of Object.entries(PAGE_HEADERS)) expect(fishing.headers.get(k)).toBe(v);
+			expect(await fishing.text()).toContain('<script type="module" src="/assets/fishing.js"></script>');
+		}
+		expect((await call("GET", "/me/fishing")).status).toBe(403);
+		expect((await call("GET", "/me/fishing.html", { headers: access(jwt) })).status).toBe(404);
 		const missing = await call("GET", "/me/other", { headers: access(jwt) });
 		expect(missing.status).toBe(404);
 		expect(missing.headers.get("cache-control")).toBe("private, no-store");

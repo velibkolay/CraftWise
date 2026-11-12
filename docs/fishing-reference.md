@@ -28,3 +28,6 @@ CraftWise's **Fishing** tab ranks zones by value per catch. It uses two sources 
 - **Per hour**: your own catches per hour in that zone (timed catches, sessions as in `/craftwise fishing`) x the value per catch shown. Empty until you have fished there.
 
 The reference describes what other players recorded on that site; it is not client data and can differ from WoW: Forever as it is now. Own catches take over as soon as they are large enough.
+
+## On the site
+The character snapshot (`docs/snapshot.md`, `fishingZones`) carries the top zones' item lists and, for the zones you fished, the reference's counts next to your own catches (#128). The companion uploads them with the fishing document to the private part of wow.velikopter.com (`/me/fishing`, behind Cloudflare Access), never to the public price API. There the page compares your share of each item (with a 95% interval) against the reference's and values both with the current Horde AH prices.

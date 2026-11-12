@@ -229,6 +229,19 @@ func TestSnapshot(t *testing.T) {
 	if z := s.FishingZones; z.Reference || len(z.Zones) != 1 || z.Zones[0].Source != "own" || *z.Zones[0].PerCatch != 16 {
 		t.Fatalf("fishing zones %+v", z)
 	}
+	// #128: item lists, open water against pools, the timing behind a zone's value per hour.
+	if fs.Spots[0].Items != "9007 3 6 v6; 9008 2 20 v20" || len(fs.Waters) != 2 || fs.Waters[1].Water != "pool" ||
+		i64(fs.Waters[1].Timed) != 3 || fs.Pools[0].Items != "9007 3 6 v6; 9008 1 20 v20" || i64(fs.Pools[0].Catches) != 3 {
+		t.Fatalf("fishing item lists %+v", fs)
+	}
+	// the zone's items are in compare (own catches), so the ranking leaves them out
+	if z := s.FishingZones.Zones[0]; z.Items != "" || i64(z.Timed) != 5 || *z.Minutes != 3.3 {
+		t.Fatalf("fishing zone items %+v", z)
+	}
+	if c := s.FishingZones.Compare; len(c) != 1 || i64(c[0].N) != 6 || c[0].Own != "9007 6 6 6 v6; 9008 3 3 20 v20" || len(c[0].Waters) != 2 ||
+		i64(c[0].Waters[1].Obj) != 6001 || c[0].Ref != "" {
+		t.Fatalf("fishing compare %+v", c)
+	}
 	a := s.Auctions
 	if len(a.Active) != 1 || !a.Active[0].Overdue || len(a.Sold) != 1 || i64(a.Sold[0].Expected) != 5225 || i64(a.ExpectedTotal) != 5225 ||
 		i64(a.ListedTotal) != 1567 || i64(a.ListedCounted) != 1 || a.ListedNote != "5% cut (confirmed)" {
