@@ -189,7 +189,10 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 		}
 	}
 
-	units = append(units, d.classNames(m)...)
+	// Class names, item info and names are low priority (#145): above 80% of the day's write budget
+	// the server refuses them until 00:00 UTC, so they go after the prices, in requests of their own
+	// (packPublic), and a refusal never holds back price data.
+	low := d.classNames(m)
 
 	// Item info and names: new or changed items (a new sell price, #120, is a change).
 	ids := map[int64]bool{}
@@ -240,7 +243,7 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 		if hasInfo {
 			bytes += size(id) + 2 + size(info)
 		}
-		units = append(units, unit[PublicPayload]{
+		low = append(low, unit[PublicPayload]{
 			add: func(p *PublicPayload) {
 				if name != "" {
 					if p.Names == nil {
@@ -292,8 +295,11 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 	for _, r := range refs {
 		units = append(units, d.price(r.house, r.key.String(), r.e)...)
 	}
-	return units
+	return append(units, low...)
 }
+
+// lowPriority reports the kinds the server holds back above its soft write limit (#145).
+func lowPriority(kind string) bool { return kind == "items" || kind == "classes" }
 
 // classNames sends the client's class and subclass names (#120) that are new or changed since the last
 // upload: they change almost never (another client language, a patch), so after the first upload this

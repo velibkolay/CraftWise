@@ -40,11 +40,13 @@ func (b *Batch[T]) Summary() string {
 const envelopeBytes = 96 // {"v":1,"houses":{},"items":{}...} keys and brackets
 
 // packPublic fills requests in order. Every request carries all houses (the contract asks for it;
-// there are at most 20).
+// there are at most 20). Low-priority units (item info, class names) never share a request with
+// scans or prices, so a soft-limit refusal of theirs holds back nothing else (#145).
 func packPublic(units []unit[PublicPayload], houses map[string]House, opt Options, skip func(string)) []*Batch[PublicPayload] {
 	var out []*Batch[PublicPayload]
 	var cur *Batch[PublicPayload]
 	var keys map[string]bool
+	low := false // the current request carries low-priority units
 	base := envelopeBytes + size(houses)
 	full := func(u unit[PublicPayload]) bool {
 		c := cur.Counts
@@ -53,7 +55,8 @@ func packPublic(units []unit[PublicPayload], houses map[string]House, opt Option
 			(u.kind == "items" && c["items"] >= MaxItems) ||
 			(u.kind == "scans" && c["scans"] >= MaxScans) ||
 			(u.kind == "classes" && c["classes"] >= MaxClassNames) ||
-			(u.key != "" && keys[u.key])
+			(u.key != "" && keys[u.key]) ||
+			lowPriority(u.kind) != low
 	}
 	for _, u := range units {
 		if u.add == nil {
@@ -70,6 +73,7 @@ func packPublic(units []unit[PublicPayload], houses map[string]House, opt Option
 				Counts: map[string]int{},
 			}
 			keys = map[string]bool{}
+			low = lowPriority(u.kind)
 			out = append(out, cur)
 		}
 		u.add(&cur.Body)

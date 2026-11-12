@@ -56,6 +56,7 @@ export interface Usage {
 	rowsWritten: number;
 	uploads: number;
 	budget: number;
+	softBudget: number; // item info and names stop here (#145)
 	dbBytes: number | null;
 }
 

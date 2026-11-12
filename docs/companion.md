@@ -91,6 +91,10 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   item IDs and an estimated 8,000 rows written each. A large first upload is split into many
   requests; each one is recorded as soon as the server accepted it, so an interrupted upload goes on
   where it stopped.
+- Order: scans and prices first, then item info, names and class names in requests of their own
+  (#145). Above 80% of the server's daily write budget those are refused until 00:00 UTC while prices
+  are still taken, so a refusal holds back only them. A refused request stops the rest of its
+  endpoint (public or private); the other endpoint is still sent.
 - Retries: network errors and 5xx up to 5 tries (2 s, 4 s, 8 s ... at most 60 s apart); `429` waits
   `Retry-After` (up to 2 minutes in place; longer, e.g. the daily write budget, until that time); a
   `413` builds smaller requests. `400`, `401` and `403` are not retried: the log says why.

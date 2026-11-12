@@ -225,6 +225,57 @@ func TestSendCommitsPerRequestAndStopsOnFailure(t *testing.T) {
 	}
 }
 
+// #145: above the server's soft write limit item info and class names are refused (429 write_budget,
+// Retry-After 00:00 UTC) while price data is still taken. They travel in requests of their own after
+// the prices, so every price request is accepted first and only the item info waits.
+func TestSendSoftBudgetHoldsBackOnlyItemInfo(t *testing.T) {
+	refuseInfo := func(w http.ResponseWriter, path, body string) {
+		low := strings.Contains(body, `"names"`) || strings.Contains(body, `"itemInfo"`) || strings.Contains(body, `"classNames"`) ||
+			strings.Contains(body, `"subclassNames"`)
+		if path == PublicPath && low {
+			fail(429, "write_budget", "36000")(w)
+			return
+		}
+		ok(w)
+	}
+	var mu sync.Mutex
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		refuseInfo(w, r.URL.Path, string(b))
+	}))
+	t.Cleanup(ts.Close)
+	var slept []time.Duration
+	c := testClient(ts.URL, &slept)
+
+	f := readFixture(t)
+	st := NewState("s", "f")
+	plan := Build(f, st, Options{Now: fixtureNow, Private: true, MaxBytes: 2000})
+	res := Send(context.Background(), c, plan, st, func(*State) error { return nil }, func(string, ...any) {})
+	if res.Counts["prices"] == 0 || res.Counts["scans"] == 0 || res.Counts["items"] != 0 || res.Counts["classes"] != 0 {
+		t.Errorf("accepted %v", res.Counts)
+	}
+	if d := time.Until(res.RetryAt); d < 9*time.Hour || d > 10*time.Hour {
+		t.Errorf("retry at %v", res.RetryAt)
+	}
+	if len(slept) != 0 {
+		t.Errorf("slept %v", slept)
+	}
+	// every price was sent and recorded; the next plan holds only item info and class names
+	next := Build(f, st, Options{Now: fixtureNow, Private: true, MaxBytes: 2000})
+	if len(next.Public) == 0 || len(next.Private) != 0 {
+		t.Fatalf("next plan: %d public, %d private", len(next.Public), len(next.Private))
+	}
+	for _, b := range next.Public {
+		if b.Counts["prices"] != 0 || b.Counts["scans"] != 0 {
+			t.Errorf("price data left over: %v", b.Counts)
+		}
+	}
+}
+
 func TestStateFile(t *testing.T) {
 	path := t.TempDir() + "/state.json"
 	st := NewState("https://a", "/x/CraftWise.lua")

@@ -3,7 +3,7 @@
 import { hashToken, newToken, SCOPES, type AccessUser, type Scope } from "./auth";
 import type { Env } from "./env";
 import { HttpError, intParam, json, parseJson, readBody } from "./http";
-import { DAY, MAX_ACTIVE_TOKENS, WRITE_BUDGET } from "./limits";
+import { DAY, MAX_ACTIVE_TOKENS, parseWriteBudget, softBudget } from "./limits";
 
 const PRIVATE = { "cache-control": "private, no-store" };
 
@@ -61,9 +61,11 @@ export async function ledger(env: Env, url: URL): Promise<Response> {
 	return json({ entries: results }, 200, PRIVATE);
 }
 
-// Today's rows written (uploads and the cron job) against the budget, and the database size
-// (free plan: 500 MB per database).
+// Today's rows written (uploads and the cron job) against the budget (the Worker var WRITE_BUDGET)
+// and its soft limit (item info and names stop there, #145), and the database size (free plan:
+// 500 MB per database).
 export async function usage(env: Env, now: number): Promise<Response> {
+	const budget = parseWriteBudget(env.WRITE_BUDGET);
 	const res = await env.DB.prepare("SELECT rows_written, uploads FROM usage WHERE day = ?1")
 		.bind(Math.floor(now / DAY))
 		.all<{ rows_written: number; uploads: number }>();
@@ -73,7 +75,8 @@ export async function usage(env: Env, now: number): Promise<Response> {
 			day: Math.floor(now / DAY),
 			rowsWritten: row?.rows_written ?? 0,
 			uploads: row?.uploads ?? 0,
-			budget: WRITE_BUDGET,
+			budget,
+			softBudget: softBudget(budget),
 			dbBytes: (res.meta as { size_after?: number }).size_after ?? null,
 		},
 		200,

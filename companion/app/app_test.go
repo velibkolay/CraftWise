@@ -108,7 +108,9 @@ func TestRunOnceUploadsDeltaAndNeverWritesToWoW(t *testing.T) {
 	if err != nil || !res.OK() {
 		t.Fatalf("run: %v %v", err, res.Errors)
 	}
-	if len(rec.paths) != 2 || rec.paths[0] != upload.PublicPath || rec.paths[1] != upload.PrivatePath || rec.auth[0] != "Bearer cw_secret" {
+	// prices, then item info (#145), then private data
+	if len(rec.paths) != 3 || rec.paths[0] != upload.PublicPath || rec.paths[1] != upload.PublicPath || rec.paths[2] != upload.PrivatePath ||
+		rec.auth[0] != "Bearer cw_secret" {
 		t.Fatalf("requests %v %v", rec.paths, rec.auth)
 	}
 	s := a.Status()
@@ -117,7 +119,7 @@ func TestRunOnceUploadsDeltaAndNeverWritesToWoW(t *testing.T) {
 	}
 
 	res, err = a.RunOnce(context.Background(), RunOptions{Now: fixtureNow})
-	if err != nil || res.Sent != 0 || len(rec.paths) != 2 {
+	if err != nil || res.Sent != 0 || len(rec.paths) != 3 {
 		t.Errorf("second run sent again: %v, %d requests", err, len(rec.paths))
 	}
 	if a.Status().Text != "nothing new" {
@@ -287,7 +289,7 @@ func TestLoopUploadsAtStartAndAfterAChange(t *testing.T) {
 		log, _ := os.ReadFile(a.LogPath())
 		t.Fatalf("waited for %d requests; log:\n%s", n, log)
 	}
-	waitFor(1) // at start
+	waitFor(2) // at start: prices, then item info (#145)
 
 	// The game writes the file again with a newer price for one item.
 	data, _ := os.ReadFile(files[0])
@@ -298,14 +300,14 @@ func TestLoopUploadsAtStartAndAfterAChange(t *testing.T) {
 	if err := os.WriteFile(files[0], []byte(more), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(2)
+	waitFor(3)
 	a.Trigger() // nothing new: no request
 	time.Sleep(300 * time.Millisecond)
 	rec.mu.Lock()
 	n := len(rec.paths)
 	rec.mu.Unlock()
-	if n != 2 {
-		t.Errorf("%d requests, want 2", n)
+	if n != 3 {
+		t.Errorf("%d requests, want 3", n)
 	}
 	cancel()
 	<-done

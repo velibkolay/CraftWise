@@ -33,7 +33,12 @@ Rules for the companion:
   `CraftWiseMarketDB.items` change whenever the addon records something) and send only entries whose
   string changed since the last successful upload. Unchanged entries cost upload time and CPU.
 - **429:** wait `Retry-After` seconds. `rate_limited`: at most 30 requests a minute per token.
-  `write_budget`: today's D1 write budget is used up (see "Budget"); resume after 00:00 UTC.
+  `write_budget`: today's D1 write budget is used up, or above 80% of it a request carries item
+  info, names, sell prices or class names (see "Budget"); resume after 00:00 UTC.
+- **Prices before item info.** Above 80% of the budget a request with item info or class names is
+  refused as a whole, prices in it too. Send scans and prices first and `names`, `itemInfo`,
+  `classNames` and `subclassNames` in requests of their own after them, so a refusal holds back
+  only those.
 - **413:** split the body and retry.
 - Never upload `CraftWiseMarketDB.auctionator` (#90: Auctionator mixes houses; the site shows no
   prices of unknown houses).
@@ -246,7 +251,7 @@ expiry), so the private data stays closed if the Access app is missing or miscon
 | `GET /api/me/characters` | `{ characters: [{ key, realm, name, surname, faction, race, class, level, snapshotT, auctionsT, fishingT }] }` |
 | `GET /api/me/characters/<char key>` | `{ key, snapshot, auctions, fishing }`, each `{ t, data }` or `null` |
 | `GET /api/me/ledger?char=<key>&since=<t>&limit=500` | `{ entries: [{ char, t, kind, item, qty, money, place, name }] }`, newest first (limit 1..5000) |
-| `GET /api/me/usage` | `{ day, rowsWritten, uploads, budget, dbBytes }`: today's D1 writes and the database size |
+| `GET /api/me/usage` | `{ day, rowsWritten, uploads, budget, softBudget, dbBytes }`: today's D1 writes against the budget (`WRITE_BUDGET`) and its soft limit (80%), and the database size |
 | `GET /api/me/tokens` | `{ tokens: [{ id, prefix, name, scopes, created, createdBy, lastUsed, revoked }] }` |
 | `POST /api/me/tokens` | body `{ "name": "Companion PC", "scopes": ["public", "private"] }` (scopes default to both) → `201 { id, token, prefix, name, scopes, created }`. The token is shown only here. At most 20 active tokens. |
 | `DELETE /api/me/tokens/<id>` | revokes it at once |
@@ -283,7 +288,28 @@ character's fishing document and the Horde AH's prices; the Worker only serves b
 
 Limits that shape the design: Workers Free 10 ms CPU per request; D1 Free 100,000 rows written and
 5 million rows read per day (every index entry counts as a row), 500 MB per database, 50 queries
-per request (a batch counts as one), 100 bound parameters per statement.
+per request (a batch counts as one), 100 bound parameters per statement. The design still fits
+Free, although the account is on Workers Paid since 2026-11-12 (#145).
+
+**Write budget (#145).** The Worker var `WRITE_BUDGET` (`wrangler.jsonc` `vars`) caps the rows
+CraftWise writes a day; a missing or invalid value (not a whole number from 1 to 1,000,000) means
+1,000,000. `GET /api/me/usage` reports it.
+
+| Plan | D1 writes | `WRITE_BUDGET` |
+|---|---|---|
+| Workers Paid (current) | no daily limit; 50 million rows a month included, then $1 per million | `1000000` (default): effectively no limit, at most 30 million a month, so it never costs extra |
+| Workers Free | 100,000 rows a day for the whole Cloudflare **account**, shared by every D1 database on it: Hivemind uses D1 on the same account | `30000`, leaving 70,000 for the others |
+
+On Free, when the account reaches 100,000, every D1 database on it (Hivemind's too) refuses writes
+until 00:00 UTC; on 2026-11-12 CraftWise's old fixed cap of 90,000 did exactly that.
+
+Two levels, both `429 write_budget` with `Retry-After` until 00:00 UTC:
+- **Soft limit, 80% of the budget:** a public upload that would write item info, names, sell prices
+  or search words (only items whose stored values change count; unchanged ones write nothing and pass)
+  or that carries class names is refused when today's rows plus its estimate would pass 80%. Price
+  data (scans, prices, points, daily rows) and all private data (snapshots, auctions, fishing,
+  ledger) still go through. This spreads big one-time uploads (#120's ~18,000 sell prices) over days.
+- **Hard limit, the budget:** every upload is refused when the request could take the day over it.
 
 - Bulk writes bind the rows as one JSON text and expand them in SQLite (`json_each`), so an upload
   is a few statements in one batch whatever its size, and the Worker's CPU time is parsing,
@@ -334,10 +360,10 @@ per request (a batch counts as one), 100 bound parameters per statement.
   words per item on average); a ledger entry 2 (the row and `ledger_by_char`); a house 2 (`key` is
   unique); a class or subclass name 1. The two indexes stay: without them the top movers and the ledger page would read every
   row of a house's history or of the ledger. Uploads stop with `429 write_budget` when the next
-  request could take the day over 90,000 rows (an upper bound per request: every upserted row is
-  counted twice, a packed row too, so a variant never counts more than the companion's estimate of 4
-  rows per `last`-only entry); the remaining 10,000 cover the cron job, token checks and the movers
-  cache.
+  request could take the day over the budget (`WRITE_BUDGET`, see above; an upper bound per request:
+  every upserted row is counted twice, a packed row too, so a variant never counts more than the
+  companion's estimate of 4 rows per `last`-only entry). The cron job, token checks and the movers
+  cache write outside the check, so on Free leave room below the account's 100,000.
 - **Retention (decision):** raw points 30 days (as the issue proposed; they cost a write each to add
   and to delete), scan log 90 days, daily rows, prices, items and private data forever. Measured
   growth: about 0.43 MB per 10,000 items per house and day, so about 155 MB a year for one house

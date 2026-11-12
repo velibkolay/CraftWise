@@ -1,5 +1,6 @@
 // Limits and retention (#95). Sized for the free plans: Workers 10 ms CPU per request, D1 100,000
-// rows written and 5 million rows read per day, 500 MB per database. Measured numbers are in
+// rows written and 5 million rows read per day, 500 MB per database (the account is on Workers Paid
+// since 2026-11-12, #145; the design still fits Free). Measured numbers are in
 // web/docs/api.md ("Budget").
 
 export const DAY = 86400;
@@ -23,8 +24,27 @@ export const MAX_CHARACTERS = 50;
 
 // Upload requests per token per minute.
 export const UPLOADS_PER_MINUTE = 30;
-// Uploads are refused (429) once D1 reported this many rows written today (free plan: 100,000).
-export const WRITE_BUDGET = 90_000;
+// Daily D1 write budget (#145): rows written a day CraftWise may use, the Worker var WRITE_BUDGET
+// (wrangler.jsonc "vars"); DEFAULT_WRITE_BUDGET when it is missing or not a whole number from 1 to
+// MAX_WRITE_BUDGET. Workers Paid (the account's plan since 2026-11-12): D1 has no daily limit, 50
+// million rows written a month are included, then $1 per million; the default, 1,000,000 a day, is
+// effectively no limit and at most 30 million a month, so it never costs extra. Workers Free:
+// 100,000 rows a day per Cloudflare ACCOUNT, shared by every D1 database on it (Hivemind's too), so
+// set the var to 30000 there.
+export const DEFAULT_WRITE_BUDGET = 1_000_000;
+export const MAX_WRITE_BUDGET = 1_000_000; // a larger value counts as a typo: the default applies
+// Above this share of the budget only price data and private data are written; item info, names,
+// sell prices, search words and class names wait for the next day (429 write_budget).
+export const SOFT_BUDGET_SHARE = 0.8;
+
+export function parseWriteBudget(value: unknown): number {
+	const n = typeof value === "number" ? value : typeof value === "string" && /^\s*\d+\s*$/.test(value) ? Number(value) : NaN;
+	return Number.isSafeInteger(n) && n >= 1 && n <= MAX_WRITE_BUDGET ? n : DEFAULT_WRITE_BUDGET;
+}
+
+export function softBudget(budget: number): number {
+	return Math.floor(budget * SOFT_BUDGET_SHARE);
+}
 export const MAX_ACTIVE_TOKENS = 20;
 
 // Earliest accepted timestamp (2020-09-13) and allowed clock skew into the future.

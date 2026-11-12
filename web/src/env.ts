@@ -3,4 +3,6 @@ export interface Env {
 	ASSETS: Fetcher;
 	ACCESS_TEAM_DOMAIN: string;
 	ACCESS_AUD?: string;
+	// Daily rows written CraftWise may use (#145); parsed by parseWriteBudget (src/limits.ts).
+	WRITE_BUDGET?: string;
 }

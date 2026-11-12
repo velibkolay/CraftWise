@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { MAX_PUBLIC_BYTES, UPLOADS_PER_MINUTE, WRITE_BUDGET } from "../src/limits";
+import { MAX_PUBLIC_BYTES, parseWriteBudget, UPLOADS_PER_MINUTE } from "../src/limits";
 import { body as shape, BOOTY, bearer, call, clearData, HORDE, houses, makeToken, now, upload } from "./helpers";
 
 const DAY = 86400;
@@ -101,7 +101,7 @@ describe("POST /api/upload: auth and limits", () => {
 	});
 
 	it("stops uploads when the daily write budget is used up", async () => {
-		await env.DB.prepare("INSERT INTO usage (day, rows_written) VALUES (?1, ?2)").bind(Math.floor(now() / DAY), WRITE_BUDGET).run();
+		await env.DB.prepare("INSERT INTO usage (day, rows_written) VALUES (?1, ?2)").bind(Math.floor(now() / DAY), parseWriteBudget(env.WRITE_BUDGET)).run();
 		const res = await upload(token, payload(now()));
 		expect(res.status).toBe(429);
 		expect(await res.json()).toMatchObject({ error: "write_budget" });
