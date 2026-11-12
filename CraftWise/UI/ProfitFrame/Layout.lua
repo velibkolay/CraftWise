@@ -91,16 +91,4 @@ local function UpdateControls()
 	end
 end
 
--- Fishing (#88): back to all zones, and the other source of the open zone. After the rows are built (they set
--- state.fishOpen).
-local function UpdateFishingControls()
-	local zone = View() == "fishing" and state.fishOpen
-	PF.frame.fishBack:SetShown(zone and true or false)
-	local both = zone and zone.own and zone.ref
-	PF.frame.fishSource:SetShown(both and true or false)
-	if both then
-		PF.frame.fishSource:SetLabel(zone.source == "own" and L["Show reference"] or L["Show own catches"])
-	end
-end
-
-PF.Layout, PF.UpdateControls, PF.UpdateFishingControls = Layout, UpdateControls, UpdateFishingControls
+PF.Layout, PF.UpdateControls = Layout, UpdateControls

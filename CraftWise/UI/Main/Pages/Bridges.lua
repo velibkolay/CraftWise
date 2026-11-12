@@ -41,23 +41,6 @@ local BRIDGES = {
 	{ "craft", "make", L["Craft"], 1, { { Open(PROFIT), ProfitView("profit") } } },
 	{ "learn", "make", L["Learn"], 2, { { Open(PROFIT), ProfitView("learn") } } },
 	{ "level", "make", L["Level up"], 3, { { Open(PROFIT), ProfitView("level") } } },
-	{ "farm", "gather", L["Farm"], 1, {
-		{ L["History in the farm window"], function()
-			if ns.FarmHistory and ns.FarmHistory.Open then
-				ns.FarmHistory.Open()
-			end
-		end },
-		{ L["Farm tracker"], function()
-			if CraftWise_FarmToggle then
-				CraftWise_FarmToggle()
-			end
-		end },
-	} },
-	{ "fishing", "gather", L["Fishing"], 2, {
-		{ L["Spots in the profit window"], ProfitView("fishing") },
-		{ L["Log in the Records window"], RecordsTab("FishingLog") },
-	} },
-	{ "crates", "gather", L["Crates"], 3, { { Open(RECORDS), RecordsTab("Crates") } } },
 	{ "items", "lookup", L["Items"], 1, {
 		{ L["Market in the Records window"], RecordsTab("Market") },
 		{ L["Where to buy in the Records window"], RecordsTab("Where") },

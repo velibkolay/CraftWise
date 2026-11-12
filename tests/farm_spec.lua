@@ -341,7 +341,7 @@ it("snapshot: current session and the latest finished ones, capped, with what is
 	eq(snap.skipped and snap.skipped.farm, nil); eq(snap.errors, nil)
 end)
 
-it("tracker (#158): top line, gold per hour, split bar, top loot; × in the loot panel removes; lock, scale, hide and show", function()
+it("tracker (#158): top line, gold per hour, split bar, top loot; × on Gather › Farm removes; lock, scale, hide and show", function()
 	local ns, stub = setup()
 	local FF = ns.FarmFrame
 	local S = ns.Style
@@ -370,17 +370,19 @@ it("tracker (#158): top line, gold per hour, split bar, top loot; × in the loot
 	eq(rows[3].data.itemID, HIDE); eq(rows[3].value.text, S.Hex("text3") .. "no price|r")
 	eq(rows[4].shown, false)
 	eq(f.loot.more.text.text, "1 unpriced"); eq(f.loot.more.shown, true)
-	-- × removes from the session in the loot panel's list (+ N more / Log link).
+	-- × removes from the session on the open session's row of Gather › Farm (+ N more / Log link, #156).
 	FF.OpenList()
-	eq(FF.LootShown(), true)
-	local list = FF.Rows()
-	eq(list[1].data.itemID, ORE)
-	assert(list[1].value.text:find("AH", 1, true), list[1].value.text)
-	eq(list[1].count.text, "×3")
-	assert(list[1].name.text:find("|hCopper Ore|h", 1, true), "name without brackets")
-	list[1].remove:GetScript("OnClick")(list[1].remove)
+	eq(ns.Main.shown.page, "farm")
+	local list = ns.Main.ListOf("farm")
+	local detail = list.box.frames[2]
+	eq(detail.elementData.open, true); eq(detail.elementData.row.key, ns.FarmHistory.CURRENT)
+	local x
+	for _, b in ipairs(detail.content.cwPool.kinds.button) do
+		if not x and b.shown ~= false and b.label.text == "×" then x = b end
+	end
+	assert(x, "× on the first item's line (best value first)")
+	x:GetScript("OnClick")(x)
 	eq(ns.Farm.Counts(ns.Farm.Current())[ORE], nil)
-	eq(list[1].data.itemID, CLOTH, "list redrawn")
 	eq(FF.LootRows()[1].data.itemID, CLOTH, "tracker redrawn")
 	local b = f.buttons.b
 	b.pause:GetScript("OnClick")(b.pause)
@@ -400,7 +402,6 @@ it("tracker (#158): top line, gold per hour, split bar, top loot; × in the loot
 	b.endLine:GetScript("OnClick")(b.endLine)
 	eq(ns.Farm.Current(), nil); eq(#ns.Farm.History(), 1, "End session keeps it in the history")
 	eq(b.start.shown, true)
-	eq(list[1].shown, false)
 	f.GetPoint = function() return "TOPLEFT", UIParent, "TOPLEFT", 40, -80 end
 	f:GetScript("OnDragStop")(f)
 	eq(ns.db.farm.pos.x, 40)
@@ -664,7 +665,9 @@ it("log: capped at LOG_MAX lines per session, the oldest dropped and counted", f
 	eq(e[1].n, F.LOG_MAX + 25, "newest first"); eq(e[#e].n, 26, "the oldest kept")
 	eq(F.Counts(s)[ORE] + F.Counts(s)[CLOTH], (F.LOG_MAX + 25) * (F.LOG_MAX + 26) / 2, "the totals keep everything")
 	ns.FarmFrame.OpenLog()
-	assert(CraftWiseFarmFrame.listHead.text:find("25 older dropped", 1, true), CraftWiseFarmFrame.listHead.text)
+	local detail = ns.Main.ListOf("farm").box.frames[2]
+	local head = detail.content.cwPool.kinds.text[1].text
+	assert(head:find("25 older dropped", 1, true), head)
 end)
 
 it("log: kept across /reload, in the history, and the snapshot carries only the open session's newest lines", function()
@@ -707,39 +710,39 @@ it("log: kept across /reload, in the history, and the snapshot carries only the 
 	eq(hist[ns2.Farm.HISTORY_LOGS + 1].log, nil); eq(hist[ns2.Farm.HISTORY_LOGS + 1].logLines, 31)
 end)
 
-it("loot panel (Log link): a button switches list and log, remembered in CraftWiseDB.farm.view; rows newest first", function()
+it("Log link: the open session's loot log on Gather › Farm, newest first, catches marked, coin lines (#156)", function()
 	local ns, stub = fishSetup()
 	local FF = ns.FarmFrame
-	eq(ns.db.farm.view, "list")
 	loot(stub, ORE, 2)
 	advance(stub, 3)
 	coin(stub, 50)
 	advance(stub, 3)
 	catch(stub, { { id = GEM } })
-	local f = CraftWiseFarmFrame
-	FF.OpenList()
-	eq(f.viewButton.label.text, "Log")
-	eq(FF.Rows()[1].shown, true); eq(FF.LogRows()[1].shown, false)
-	f.viewButton:GetScript("OnClick")(f.viewButton)
-	eq(ns.db.farm.view, "log")
-	eq(f.viewButton.label.text, "List")
-	local rows = FF.LogRows()
-	eq(FF.Rows()[1].shown, false)
-	eq(rows[1].data.itemID, GEM)
-	assert(rows[1].name.text:find(FF.FISH_MARK, 1, true), "catch marked")
-	eq(rows[1].time.text, date("%H:%M:%S", T0 + 6))
-	eq(rows[2].data.copper, 50); eq(rows[2].icon.texture, FF.COIN_ICON); eq(rows[2].value.text, FF.Coins(50))
-	assert(not rows[2].name.text:find(FF.FISH_MARK, 1, true))
-	eq(rows[3].data.itemID, ORE)
-	assert(rows[3].name.text:find("×2", 1, true)); assert(rows[3].zone.text:find("Elwynn Forest", 1, true))
-	eq(rows[4].shown, false)
-	rows[1]:GetScript("OnEnter")(rows[1])
-	-- Remembered: a new load of the addon opens in the log view.
-	local saved = CraftWiseDB
-	local ns2 = LoadAddon({ savedDB = saved })
-	eq(ns2.db.farm.view, "log"); eq(ns2.FarmFrame.View(), "log")
-	f.viewButton:GetScript("OnClick")(f.viewButton)
-	eq(ns.db.farm.view, "list")
+	FF.OpenLog()
+	local detail = ns.Main.ListOf("farm").box.frames[2]
+	eq(detail.elementData.row.key, ns.FarmHistory.CURRENT)
+	local pool = detail.content.cwPool
+	local lines = {}
+	for _, fs in ipairs(pool.kinds.text) do
+		if fs.shown ~= false then lines[#lines + 1] = fs.text end
+	end
+	local text = table.concat(lines, "\n")
+	assert(text:find("Loot log · 3", 1, true), text)
+	local gem = text:find(FF.FISH_MARK, 1, true)
+	local coinAt = text:find(FF.Coins(50), 1, true)
+	local ore = text:find("×2", 1, true)
+	assert(gem and coinAt and ore and gem < coinAt and coinAt < ore, "newest first: catch, coin, ore")
+	assert(text:find(date("%H:%M:%S", T0 + 6), 1, true), "time of the catch")
+	assert(text:find("Elwynn Forest", 1, true), "zone")
+	eq(pool.kinds.icon[2].texture, FF.COIN_ICON, "coin lines carry the coin icon")
+	-- Items goes back to the session's items.
+	local back
+	for _, b in ipairs(pool.kinds.button) do
+		if b.shown ~= false and b.label.text == "Items" then back = b end
+	end
+	back:GetScript("OnClick")(back)
+	detail = ns.Main.ListOf("farm").box.frames[2]
+	assert(detail.content.cwPool.kinds.text[1].text ~= "Loot log · 3")
 end)
 
 
@@ -819,7 +822,7 @@ it("tracker states: no session, running, paused by hand, paused when idle; dog-e
 	eq(FF.Last().state, "none"); eq(flapOf(f), S.C.flap.hex); eq(#ns.Farm.History(), 1)
 end)
 
-it("tracker: top 5 loot by value, footer '+ N more · M unpriced', the links open the loot panel and the history beside it", function()
+it("tracker: top 5 loot by value, footer '+ N more · M unpriced', the links open Gather › Farm", function()
 	local ns, stub = setup()
 	local FF = ns.FarmFrame
 	local ids = {}
@@ -840,28 +843,21 @@ it("tracker: top 5 loot by value, footer '+ N more · M unpriced', the links ope
 	eq(FF.Last().more, 4); eq(FF.Last().unpriced, 2)
 	eq(f.loot.more.text.text, "+ 4 more · 2 unpriced")
 	eq(FF.FooterText({ more = 0, unpriced = 0 }), "")
-	-- Log: the loot panel in its log view, beside the tracker.
+	-- Log: the open session's row with its log; History: the page; + N more: the row with every item.
+	local M = ns.Main
 	f.loot.log:GetScript("OnClick")(f.loot.log)
-	eq(FF.LootShown(), true); eq(FF.View(), "log"); eq(f.panel.side, "right")
-	eq(FF.LogRows()[1].data.itemID, 5101, "newest first")
-	assert(f.listHead.text:find("Loot log · 9", 1, true), f.listHead.text)
-	-- History: the farm history beside it; the loot panel makes room.
+	eq(M.shown.page, "farm")
+	local detail = M.ListOf("farm").box.frames[2]
+	eq(detail.content.cwPool.kinds.text[1].text, "Loot log · 9")
 	f.loot.history:GetScript("OnClick")(f.loot.history)
-	eq(ns.FarmHistory.IsShown(), true); eq(FF.LootShown(), false)
-	-- + N more: the whole list; the history closes.
+	eq(M.shown.page, "farm")
 	f.loot.more:GetScript("OnClick")(f.loot.more)
-	eq(FF.LootShown(), true); eq(FF.View(), "list"); eq(ns.FarmHistory.IsShown(), false)
-	eq(FF.Rows()[9].data.itemID ~= nil, true, "every item in the list")
-	f.panel.close:GetScript("OnClick")(f.panel.close)
-	eq(FF.LootShown(), false)
-	-- Near the right screen edge the panels open on the left.
-	f.GetRight = function() return 1800 end
-	f.GetEffectiveScale = function() return 1 end
-	UIParent.GetRight = function() return 1920 end
-	UIParent.GetEffectiveScale = function() return 1 end
-	FF.OpenLog()
-	eq(f.panel.side, "left")
-	eq(f.panel.points[1][1], "TOPRIGHT"); eq(f.panel.points[1][3], "TOPLEFT")
+	detail = M.ListOf("farm").box.frames[2]
+	local text = {}
+	for _, fs in ipairs(detail.content.cwPool.kinds.text) do
+		if fs.shown ~= false then text[#text + 1] = fs.text end
+	end
+	assert(table.concat(text, "\n"):find("Items · 9", 1, true), "every item on the row")
 end)
 
 it("tracker fishing card: only with catches; catches, per catch, catches per hour, best catch and your usual rate", function()
@@ -920,7 +916,12 @@ it("tracker pieces: money in coin colours, the timer, split geometry, hover tips
 	assert(CraftWiseInverseTip.body.text:find("Elwynn Forest", 1, true), "zones in the hero tip")
 	f.hero.hover:GetScript("OnLeave")(f.hero.hover)
 	FF.OpenList()
-	assert(FF.Rows()[1].value.text:find(S.Hex("danger") .. "3 d|r", 1, true), "stale AH value carries its age in red")
+	local detail = ns.Main.ListOf("farm").box.frames[2]
+	local found = false
+	for _, fs in ipairs(detail.content.cwPool.kinds.text) do
+		if fs.shown ~= false and fs.text:find(S.Hex("danger") .. "3 d|r", 1, true) then found = true end
+	end
+	assert(found, "stale AH value carries its age in red")
 end)
 
 ----------------------------------------------------------------------------------------------------
@@ -1047,7 +1048,7 @@ it("mini mode: drag moves the strip (not a click), lock stops it; mode and posit
 	eq(p2[1], "TOPLEFT"); eq(p2[4], 120); eq(p2[5], 640)
 end)
 
-it("mini mode: Settings switch, the loot panel and history close on the strip, the Log link opens the full tracker", function()
+it("mini mode: the Settings switch, Settings shows the mode, hover tips", function()
 	local ns, stub = setup()
 	local FF = ns.FarmFrame
 	loot(stub, CLOTH, 1)
@@ -1055,18 +1056,12 @@ it("mini mode: Settings switch, the loot panel and history close on the strip, t
 	ns.ToggleSettings()
 	local p = CraftWiseSettings
 	eq(p.farmMini:GetChecked(), false)
-	FF.OpenLog()
-	eq(FF.LootShown(), true)
 	click(p.farmMini)
 	eq(FF.IsMini(), true); eq(CraftWiseFarmFrame.mini.shown, true)
-	eq(FF.LootShown(), false, "the loot panel closes with the strip")
-	FF.OpenLog()
-	eq(FF.IsMini(), false, "opening the loot panel brings the full tracker back")
-	eq(FF.LootShown(), true)
-	ns.FarmHistory.Open()
-	eq(ns.FarmHistory.IsShown(), true)
+	click(p.farmMini)
+	eq(FF.IsMini(), false)
 	click(CraftWiseFarmFrame.minus)
-	eq(ns.FarmHistory.IsShown(), false, "the history closes with the strip")
+	eq(FF.IsMini(), true, "the – button")
 	ns.ToggleSettings(); ns.ToggleSettings()
 	eq(p.farmMini:GetChecked(), true, "Settings shows the mode")
 	click(p.farmMini)
@@ -1116,16 +1111,6 @@ it("fade (#163): off by default; on, the tracker sits at 40 % away from the mous
 	eq(f.alpha, 1, "still over the tracker")
 	-- Leaving through a child doesn't fire the frame's OnLeave: the per-frame check sees it.
 	f.mouseOver = false
-	f:GetScript("OnUpdate")(f, 0.016)
-	tick(ns, 0.14)
-	eq(f.alpha, 0.4)
-	-- A panel beside the tracker (the loot panel) counts as the tracker.
-	FF.OpenLog()
-	CraftWiseFarmLoot.mouseOver = true
-	f:GetScript("OnUpdate")(f, 0.016)
-	tick(ns, 0.14)
-	eq(f.alpha, 1, "hovering the loot panel")
-	CraftWiseFarmLoot.mouseOver = false
 	f:GetScript("OnUpdate")(f, 0.016)
 	tick(ns, 0.14)
 	eq(f.alpha, 0.4)

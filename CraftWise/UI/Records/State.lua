@@ -1,6 +1,6 @@
--- Records window (#137): what CraftWise recorded, in tabs (Crates, Fishing log, Market, Where to buy, Snapshot;
--- Ledger and Auctions moved to the main window's Sell section, #155). Everything that was only printed to chat
--- by a slash command gets a view here; the slash commands stay as another way in.
+-- Records window (#137): what CraftWise recorded, in tabs (Market, Where to buy, Snapshot; Ledger and Auctions
+-- moved to the main window's Sell section, #155, Crates and Fishing log to Gather, #156). Everything that was
+-- only printed to chat by a slash command gets a view here; the slash commands stay as another way in.
 -- The window is split like the profit window: State (constants, tab registry, helpers), one file per tab
 -- (its columns, controls and Model), Frame (widgets, refresh, opening). The files share internals through
 -- ns.RW and load in the order CraftWise.toc lists them: a file only uses what the files before it export.

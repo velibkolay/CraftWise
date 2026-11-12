@@ -5,10 +5,9 @@
 -- state. The numbers come from ns.Farm (Farm.lua, unchanged); FF.Model turns them into plain data that the
 -- specs read and this file draws. Refreshed once a second while shown and on FARM_CHANGED.
 --
--- Until Gather › Farm exists (#156), the links open today's views beside the tracker: Log the loot panel
--- (per-item list with remove, or the loot log; the view is kept in CraftWiseDB.farm.view) and History the
--- farm history (UI/FarmHistory.lua). FF.OpenLog, FF.OpenList and FF.OpenHistory are the only places to
--- point at the new page.
+-- The links open Gather › Farm in the main window (#156, UI/Main/Pages/Farm.lua): Log the open session's
+-- row with its loot log, "+ N more" the same row with every item (× removes one from the session), History
+-- and the no-session History button the page itself (FF.OpenLog, FF.OpenList, FF.OpenHistory).
 --
 -- Mini mode (#164): the – button at the top right (or Settings) swaps frame.full for frame.mini, a strip
 -- 30 tall with a cut 12 corner in the state colour: timer, gold per hour, "/ h"; paused "Paused" and the
@@ -16,10 +15,9 @@
 -- CraftWiseDB.farm.mini; both modes share the tracker's position (CraftWiseDB.farm.pos), and switching
 -- keeps the top left corner where it is.
 --
--- Fade (#163): with CraftWiseDB.farm.fade on, the whole tracker (full or mini, with the panels beside it)
--- sits at 40 % alpha while the mouse is away and returns to 100 % on hover, in 140 ms. The frame's
+-- Fade (#163): with CraftWiseDB.farm.fade on, the whole tracker (full or mini) sits at 40 % alpha while the mouse is away and returns to 100 % on hover, in 140 ms. The frame's
 -- OnEnter/OnLeave drive it; the per-frame OnUpdate also checks, because moving onto a child (a row, a
--- button) or a panel beside the tracker doesn't fire the tracker's own OnEnter/OnLeave.
+-- button) doesn't fire the tracker's own OnEnter/OnLeave.
 --
 -- Background alpha (#162) is frame.cwSheet:SetAlpha.
 local _, ns = ...
@@ -49,22 +47,13 @@ FF.MINI_GAP = 12
 -- Fade (#163): alpha away from the mouse, and how long a change takes.
 FF.FADE_ALPHA = 0.4
 FF.FADE_TIME = 0.14
--- The loot panel (Log link) until #156.
-FF.PANEL_WIDTH = 330
-FF.PANEL_HEIGHT = 300
-FF.ROW_HEIGHT = 18
-FF.VISIBLE_ROWS = 13
 
 FF.FISH_MARK = "|TInterface\\Icons\\Trade_Fishing:12:12|t"
 FF.COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 local QUESTION_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local frame
-local panel -- the loot panel
 local last -- model of the last refresh
-local offset, logOffset = 0, 0
-local logEntries -- loot panel log of the last refresh, newest first
-local besides = {} -- panels placed beside the tracker (FF.PlaceBeside): hovering them counts as the tracker
 
 local function Settings()
 	return ns.db and ns.db.farm
@@ -116,7 +105,7 @@ function FF.ItemColor(itemID)
 	return Style.QualityColor(quality) or C.text
 end
 
--- Item text for the loot panel and the history: name in its link's colour, brackets dropped.
+-- Item text: name in its link's colour, brackets dropped.
 local function ItemText(row)
 	local link = row.link
 	if type(link) == "string" and link:find("|h[", 1, true) then
@@ -260,7 +249,7 @@ function FF.SplitGeometry(values, width, gap)
 end
 
 ----------------------------------------------------------------------------------------------------
--- Position, lock, scale, side panels
+-- Position, lock, scale
 ----------------------------------------------------------------------------------------------------
 
 local function SavePosition()
@@ -317,24 +306,6 @@ function FF.ApplyScale()
 	local scale = s and tonumber(s.scale) or 1
 	frame:SetScale(math.max(Farm.MIN_SCALE, math.min(Farm.MAX_SCALE, scale)))
 	Style.SnapRules()
-end
-
--- A panel next to the tracker (the loot panel, the history): right of it, or left when the screen ends.
-function FF.PlaceBeside(region, width)
-	region:ClearAllPoints()
-	local left = false
-	local right, scale = frame:GetRight(), frame:GetEffectiveScale()
-	local screen, screenScale = UIParent:GetRight(), UIParent:GetEffectiveScale()
-	if type(right) == "number" and type(scale) == "number" and type(screen) == "number" and type(screenScale) == "number" then
-		left = (right + 8 + width) * scale > screen * screenScale
-	end
-	if left then
-		region:SetPoint("TOPRIGHT", frame, "TOPLEFT", -8, 0)
-	else
-		region:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, 0)
-	end
-	region.side = left and "left" or "right"
-	besides[region] = true
 end
 
 -- Re-anchors the tracker by its top left corner (kept in CraftWiseDB.farm.pos), so a change of size
@@ -673,7 +644,7 @@ local function BuildLoot(full)
 	local footer = CreateFrame("Frame", nil, loot)
 	footer:SetHeight(FF.LOOT_ROW)
 	loot.footer = footer
-	-- "+ 9 more": opens the whole list (with remove) in the loot panel.
+	-- "+ 9 more": the open session's row on Gather › Farm, every item with × to remove it.
 	loot.more = Link(footer, "", function()
 		FF.OpenList()
 	end)
@@ -762,165 +733,6 @@ local function ApplyButtons(names, equal)
 end
 
 ----------------------------------------------------------------------------------------------------
--- Build: the loot panel (Log link, #126/#130 views until Gather › Farm, #156)
-----------------------------------------------------------------------------------------------------
-
-local function PanelRow(parent, i)
-	local row = CreateFrame("Button", nil, parent)
-	row:SetSize(FF.PANEL_WIDTH - 2 * FF.PAD, FF.ROW_HEIGHT)
-	row:SetPoint("TOPLEFT", parent, "TOPLEFT", FF.PAD, -46 - (i - 1) * FF.ROW_HEIGHT)
-	local hair = Style.Rule(row, "H", C.rule)
-	hair:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-	hair:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
-	row.icon = row:CreateTexture(nil, "ARTWORK")
-	row.icon:SetSize(FF.ROW_HEIGHT - 4, FF.ROW_HEIGHT - 4)
-	row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	row.name = Style.Text(row, "Small", "text")
-	row.name:SetJustifyH("LEFT")
-	row.name:SetWordWrap(false)
-	row.value = Style.Text(row, "Figure", "text")
-	row.value:SetJustifyH("RIGHT")
-	return row
-end
-
-local function ListTooltip(self)
-	LootTooltip(self)
-	if self.data then
-		GameTooltip:AddLine(L["×: remove it from this session and ignore it until the session ends."], C.text2[1], C.text2[2], C.text2[3], true)
-		GameTooltip:Show()
-	end
-end
-
-local function LogTooltip(self)
-	local e = self.data
-	if not e then
-		return
-	end
-	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-	if e.itemID and GameTooltip.SetItemByID then
-		GameTooltip:SetItemByID(e.itemID)
-	else
-		GameTooltip:AddLine(e.itemID and FF.ItemName(e) or L["Coin"])
-	end
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine(L["Looted at"], date("%H:%M:%S", e.t), 0.75, 0.75, 0.75, 1, 1, 1)
-	GameTooltip:AddDoubleLine(L["Zone"], e.zone, 0.75, 0.75, 0.75, 1, 1, 1)
-	if e.itemID then
-		GameTooltip:AddDoubleLine(L["Count"], tostring(e.n), 0.75, 0.75, 0.75, 1, 1, 1)
-		if e.value then
-			GameTooltip:AddDoubleLine(L["Value"], ns.FormatMoney(e.value) .. "  " .. (e.label or e.source or ""), 0.75, 0.75, 0.75, 1, 1, 1)
-		else
-			GameTooltip:AddLine(L["No AH or vendor price known: not valued."], C.text2[1], C.text2[2], C.text2[3], true)
-		end
-	else
-		GameTooltip:AddDoubleLine(L["Coin"], ns.FormatMoney(e.copper), 0.75, 0.75, 0.75, 1, 1, 1)
-	end
-	if e.fish then
-		GameTooltip:AddLine(L["From a fishing catch."], C.text2[1], C.text2[2], C.text2[3], true)
-	end
-	GameTooltip:Show()
-end
-
-local function BuildPanel()
-	panel = CreateFrame("Frame", "CraftWiseFarmLoot", frame)
-	panel:SetSize(FF.PANEL_WIDTH, FF.PANEL_HEIGHT)
-	panel:SetFrameLevel((frame:GetFrameLevel() or 1) + 10)
-	panel:EnableMouse(true)
-	Style.Sheet(panel, C.sheet, C.flap, FF.CUT, true)
-	frame.panel = panel
-	frame.listHead = Style.Text(panel, "Section", "text")
-	frame.listHead:SetPoint("TOPLEFT", panel, "TOPLEFT", FF.PAD, -14)
-	frame.listHead:SetWidth(170)
-	frame.listHead:SetJustifyH("LEFT")
-	frame.listHead:SetWordWrap(false)
-	local close = Style.LineButton(panel, "×", 24, 24)
-	close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -10)
-	close:SetScript("OnClick", function()
-		FF.HideLoot()
-	end)
-	panel.close = close
-	frame.viewButton = Style.LineButton(panel, "", nil, 24)
-	frame.viewButton:SetPoint("RIGHT", close, "LEFT", -6, 0)
-	frame.viewButton:SetScript("OnClick", function()
-		FF.SetView(FF.View() == "log" and "list" or "log")
-	end)
-	frame.viewButton:HookScript("OnEnter", function(self)
-		if FF.View() == "log" then
-			Style.ShowTip(self, L["Loot list"], L["Per item: count and value; × removes an item from the session."])
-		else
-			Style.ShowTip(self, L["Loot log"], L["One line per drop, newest first: time, item, value, zone; fishing catches marked."])
-		end
-	end)
-	frame.viewButton:HookScript("OnLeave", function(self)
-		Style.HideTip(self)
-	end)
-	frame.panelEmpty = Style.Text(panel, "Small", "text3")
-	frame.panelEmpty:SetPoint("CENTER", panel, "CENTER", 0, 0)
-	frame.panelEmpty:SetWidth(FF.PANEL_WIDTH - 40)
-
-	frame.rows = {}
-	for i = 1, FF.VISIBLE_ROWS do
-		local row = PanelRow(panel, i)
-		row.count = Style.Text(row, "Figure", "text3")
-		row.count:SetPoint("LEFT", row, "LEFT", 0, 0)
-		row.count:SetWidth(36)
-		row.count:SetJustifyH("RIGHT")
-		row.icon:SetPoint("LEFT", row.count, "RIGHT", 6, 0)
-		row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-		row.name:SetWidth(132)
-		row.remove = Style.LineButton(row, "×", 16, 16)
-		row.remove:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-		row.remove:SetScript("OnClick", function()
-			if row.data then
-				Farm.RemoveItem(row.data.itemID)
-			end
-		end)
-		row.value:SetPoint("RIGHT", row.remove, "LEFT", -6, 0)
-		row:SetScript("OnEnter", ListTooltip)
-		row:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		row:Hide()
-		frame.rows[i] = row
-	end
-	frame.logRows = {}
-	for i = 1, FF.VISIBLE_ROWS do
-		local row = PanelRow(panel, i)
-		row.time = Style.Text(row, "Figure", "text3")
-		row.time:SetPoint("LEFT", row, "LEFT", 0, 0)
-		row.time:SetWidth(62)
-		row.time:SetJustifyH("LEFT")
-		row.icon:SetPoint("LEFT", row.time, "RIGHT", 2, 0)
-		row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-		row.name:SetWidth(96)
-		row.zone = Style.Text(row, "Caption", "text3")
-		row.zone:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-		row.zone:SetWidth(50)
-		row.zone:SetJustifyH("RIGHT")
-		row.zone:SetWordWrap(false)
-		row.value:SetPoint("RIGHT", row.zone, "LEFT", -4, 0)
-		row:SetScript("OnEnter", LogTooltip)
-		row:SetScript("OnLeave", function()
-			GameTooltip:Hide()
-		end)
-		row:Hide()
-		frame.logRows[i] = row
-	end
-	panel:EnableMouseWheel(true)
-	panel:SetScript("OnMouseWheel", function(_, delta)
-		if FF.View() == "log" then
-			local n = logEntries and #logEntries or 0
-			logOffset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), logOffset - delta * 3))
-		else
-			local n = last and last.totals and #last.totals.rows or 0
-			offset = math.max(0, math.min(math.max(0, n - FF.VISIBLE_ROWS), offset - delta * 3))
-		end
-		FF.Refresh()
-	end)
-	panel:Hide()
-end
-
-----------------------------------------------------------------------------------------------------
 -- Build: the mini strip (#164)
 ----------------------------------------------------------------------------------------------------
 
@@ -983,20 +795,12 @@ function FF.FadeEnabled()
 	return s ~= nil and s.fade == true
 end
 
--- The mouse is over the tracker or a panel beside it (they are its children and fade with it).
+-- The mouse is over the tracker (or one of its children).
 function FF.Hovered()
 	if not frame then
 		return false
 	end
-	if frame:IsMouseOver() then
-		return true
-	end
-	for region in pairs(besides) do
-		if region:IsShown() and region:IsMouseOver() then
-			return true
-		end
-	end
-	return false
+	return frame:IsMouseOver() and true or false
 end
 
 local function SetFadeAlpha(a)
@@ -1058,10 +862,6 @@ local function ApplyMode()
 	frame.cwSheet:SetCut(mini and FF.MINI_CUT or FF.CUT)
 	if mini then
 		frame:SetHeight(FF.MINI_HEIGHT)
-		FF.HideLoot()
-		if ns.FarmHistory and ns.FarmHistory.Close then
-			ns.FarmHistory.Close()
-		end
 	else
 		frame:SetWidth(FF.WIDTH)
 	end
@@ -1107,10 +907,9 @@ local function Build()
 	BuildFish(full)
 	BuildLoot(full)
 	BuildButtons(full)
-	BuildPanel()
 	BuildMini()
 
-	-- Fade (#163): the frame's own enter and leave, and a check every frame for children and side panels.
+	-- Fade (#163): the frame's own enter and leave, and a check every frame for its children.
 	frame:SetScript("OnEnter", function()
 		FF.ApplyFade()
 	end)
@@ -1322,164 +1121,31 @@ function FF.Refresh()
 	end
 	ApplyButtons(m.buttons, not none)
 	FF.Layout()
-	FF.RefreshPanel(s, m)
 end
 
 ----------------------------------------------------------------------------------------------------
--- The loot panel: list (per item, × removes) or log (one line per drop, newest first)
+-- Opening and the links (to Gather › Farm, #156)
 ----------------------------------------------------------------------------------------------------
 
--- "list" or "log".
-function FF.View()
-	local st = Settings()
-	return st and st.view == "log" and "log" or "list"
-end
-
-function FF.SetView(view)
-	local st = Settings()
-	if st then
-		st.view = view == "log" and "log" or "list"
-	end
-	FF.Refresh()
-end
-
-local function HideRows(rows)
-	for _, row in ipairs(rows) do
-		row.data = nil
-		row:Hide()
-	end
-end
-
-local function RefreshLog(s)
-	logEntries = Farm.LogEntries(s)
-	local n = #logEntries
-	logOffset = math.max(0, math.min(logOffset, math.max(0, n - FF.VISIBLE_ROWS)))
-	local head = ("%s · %d"):format(L["Loot log"], n)
-	if (s.logDropped or 0) > 0 then
-		head = head .. " " .. Paint(("(%d %s)"):format(s.logDropped, L["older dropped"]), "text3")
-	end
-	frame.listHead:SetText(head)
-	frame.panelEmpty:SetText(L["Nothing looted yet."])
-	frame.panelEmpty:SetShown(n == 0)
-	for i, row in ipairs(frame.logRows) do
-		local e = logEntries[logOffset + i]
-		row.data = e
-		if e then
-			row.time:SetText(date("%H:%M:%S", e.t))
-			local mark = e.fish and (FF.FISH_MARK .. " ") or ""
-			if e.itemID then
-				local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.itemID)
-				row.icon:SetTexture(icon or QUESTION_ICON)
-				row.name:SetText(mark .. (e.n > 1 and Paint("×" .. e.n, "text3") .. " " or "") .. ItemText(e))
-			else
-				row.icon:SetTexture(FF.COIN_ICON)
-				row.name:SetText(mark .. L["Coin"])
-			end
-			row.value:SetText(FF.LogValueText(e))
-			row.zone:SetText(e.zone)
-			row:Show()
-		else
-			row:Hide()
-		end
-	end
-end
-
-function FF.RefreshPanel(s, m)
-	if not (panel and panel:IsShown()) then
-		return
-	end
-	frame.viewButton:SetLabel(FF.View() == "log" and L["List"] or L["Log"])
-	if not s then
-		HideRows(frame.rows)
-		HideRows(frame.logRows)
-		offset, logOffset, logEntries = 0, 0, nil
-		frame.listHead:SetText(FF.View() == "log" and L["Loot log"] or L["Loot"])
-		frame.panelEmpty:SetText(Farm.AutoStart() and L["A session starts with your next loot."] or L["Press Start, then loot."])
-		frame.panelEmpty:Show()
-		return
-	end
-	if FF.View() == "log" then
-		HideRows(frame.rows)
-		RefreshLog(s)
-		return
-	end
-	HideRows(frame.logRows)
-	local rows = m.totals.rows
-	local n = #rows
-	offset = math.max(0, math.min(offset, math.max(0, n - FF.VISIBLE_ROWS)))
-	frame.listHead:SetText(("%s · %d"):format(L["Loot"], n))
-	frame.panelEmpty:SetText(L["Nothing looted yet."])
-	frame.panelEmpty:SetShown(n == 0)
-	for i, row in ipairs(frame.rows) do
-		local r = rows[offset + i]
-		row.data = r
-		if r then
-			row.count:SetText("×" .. r.n)
-			local icon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(r.itemID)
-			row.icon:SetTexture(icon or QUESTION_ICON)
-			row.name:SetText(ItemText(r))
-			row.value:SetText(FF.ValueText(r))
-			row:Show()
-		else
-			row:Hide()
-		end
-	end
-end
-
-----------------------------------------------------------------------------------------------------
--- Opening and the links (Gather › Farm takes these over in #156)
-----------------------------------------------------------------------------------------------------
-
-local function ShowPanel(view)
-	FF.Show()
-	if FF.IsMini() then
-		FF.SetMini(false)
-	end
-	if ns.FarmHistory then
-		ns.FarmHistory.Close()
-	end
-	local st = Settings()
-	if st then
-		st.view = view
-	end
-	FF.PlaceBeside(panel, FF.PANEL_WIDTH)
-	panel:Show()
-	FF.Refresh()
-end
-
--- Log link: the session's loot log, newest first.
+-- Log link: the open session's row on Gather › Farm with its loot log, newest first.
 function FF.OpenLog()
-	ShowPanel("log")
+	if ns.OpenFarmPage then
+		return ns.OpenFarmPage(ns.FarmHistory.CURRENT, true)
+	end
 end
 
--- "+ N more": every looted item of the session, with remove.
+-- "+ N more": the open session's row with every looted item; × removes one from the session.
 function FF.OpenList()
-	ShowPanel("list")
+	if ns.OpenFarmPage then
+		return ns.OpenFarmPage(ns.FarmHistory.CURRENT)
+	end
 end
 
--- History link and button: the finished sessions.
+-- History link and the no-session History button: Gather › Farm, the finished sessions.
 function FF.OpenHistory()
-	if ns.FarmHistory then
-		ns.FarmHistory.Open()
+	if ns.OpenFarmPage then
+		return ns.OpenFarmPage()
 	end
-end
-
-function FF.HideLoot()
-	if panel then
-		panel:Hide()
-	end
-end
-
-function FF.LootShown()
-	return panel ~= nil and panel:IsShown()
-end
-
-function FF.Rows()
-	return frame and frame.rows
-end
-
-function FF.LogRows()
-	return frame and frame.logRows
 end
 
 function FF.LootRows()
@@ -1494,7 +1160,7 @@ function FF.Last()
 	return last
 end
 
--- The tracker frame, for panels drawn beside it (UI/FarmHistory.lua).
+-- The tracker frame.
 function FF.Window()
 	return frame
 end

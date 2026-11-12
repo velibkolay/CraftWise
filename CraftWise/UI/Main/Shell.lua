@@ -21,9 +21,14 @@
 --                                  filled by the shell from model.hero. slot = the page's own frame
 --                                  over the middle (hidden while other pages show). hero.full = true:
 --                                  the middle is the whole card inside its padding; hero.bare = true:
---                                  no card, the slot is the whole hero area (the page draws its cards)
+--                                  no card, the slot is the whole hero area (the page draws its cards).
+--                                  Also on model.hero: labelColor, nameFont (a Style.Fonts key), flap (the
+--                                  dog-ear colour); the shell resets them on every draw
 --   noHeader = true               no header row (group rows carry the rule, board "Bags")
 --   OnClick(row, ctx)             a left click on a row of a page without Open
+--   rail columns: a column with rail = function(row, ctx) -> { value, max, selected, zeroAt, low, high,
+--                                  point } draws a rail in its cell (List.lua); point = a tick with its
+--                                  range (low .. high) as a thin line instead of a bar
 --   Tools(slot, ctx), ListTools(slot, ctx), FooterTools(slot, ctx)   build once; Update*(slot, ctx)
 --   Build(body, ctx), Refresh(body, ctx)   custom pages
 -- }

@@ -95,7 +95,8 @@ local function BuildRow(list, b)
 	b.hair:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
 	b.nokta = Style.Nokta(b)
 	b.nokta:Hide()
-	b.cells, b.icons, b.hits = {}, {}, {}
+	b.cells, b.icons, b.hits, b.rails = {}, {}, {}, {}
+	b.cwList = list
 	b:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
 	b:SetScript("OnClick", function(self, mouse)
 		list:Click(self, mouse)
@@ -166,7 +167,22 @@ function List:InitRow(b, element)
 	end
 	for i, col in ipairs(self.columns) do
 		local pos = self.positions[i]
-		if col.icon then
+		if b.rails[i] and not col.rail then
+			b.rails[i]:Hide()
+		end
+		if col.rail then
+			local spec = col.rail(data, self.ctx) or {}
+			if spec.selected == nil then
+				spec.selected = open
+			end
+			M.DrawRail(b, i, pos, spec)
+			if b.cells[i] then
+				b.cells[i]:Hide()
+			end
+			if b.icons[i] then
+				b.icons[i]:Hide()
+			end
+		elseif col.icon then
 			local icon = b.icons[i]
 			if not icon then
 				icon = b:CreateTexture(nil, "ARTWORK")
@@ -213,8 +229,8 @@ function List:InitRow(b, element)
 			b.hits[i]:Hide()
 		end
 	end
-	for i = #self.columns + 1, math.max(#b.cells, #b.icons, #b.hits) do
-		for _, set in ipairs({ b.cells, b.icons, b.hits }) do
+	for i = #self.columns + 1, math.max(#b.cells, #b.icons, #b.hits, #b.rails) do
+		for _, set in ipairs({ b.cells, b.icons, b.hits, b.rails }) do
 			if set[i] then
 				set[i]:Hide()
 			end
@@ -381,4 +397,235 @@ function M.List(parent, page)
 	list.empty:SetJustifyH("LEFT")
 	list.empty:Hide()
 	return list
+end
+
+----------------------------------------------------------------------------------------------------
+-- Rail columns (spec "Shapes and textures", Rails): a 4 unit bar on the list's shared axis; or, with
+-- spec.point, a tick at the value and its likely range as a thin line (board "Fishing").
+----------------------------------------------------------------------------------------------------
+
+local RAIL_HEIGHT = 16
+
+-- x of a value on a rail of `width` (0 .. width), zero at the left.
+local function RailX(value, maxAbs, width)
+	if not value or value <= 0 then
+		return 0
+	end
+	local zero, w = Style.RailGeometry(value, maxAbs, width, 0)
+	return zero + w
+end
+
+function M.DrawRail(b, i, pos, spec)
+	local r = b.rails[i]
+	if not r then
+		r = Style.Rail(b, spec.zeroAt or 0)
+		r.range = r:CreateTexture(nil, "ARTWORK", nil, 1)
+		r.range:SetTexture(Style.WHITE)
+		r.tick = r:CreateTexture(nil, "ARTWORK", nil, 3)
+		r.tick:SetTexture(Style.WHITE)
+		b.rails[i] = r
+	end
+	r.zeroAt = spec.zeroAt or 0
+	r:ClearAllPoints()
+	r:SetPoint("LEFT", b, "LEFT", pos.x, 0)
+	r:SetSize(pos.width, RAIL_HEIGHT)
+	r:Show()
+	r.spec = spec
+	if not spec.point then
+		r.range:Hide()
+		r.tick:Hide()
+		r:SetValue(spec.value, spec.max, spec.selected)
+		return r
+	end
+	r:SetValue(nil, spec.max, spec.selected)
+	local w, max = pos.width, spec.max or 0
+	if not spec.value or max <= 0 then
+		r.range:Hide()
+		r.tick:Hide()
+		return r
+	end
+	local lo, hi = RailX(spec.low or spec.value, max, w), RailX(spec.high or spec.value, max, w)
+	if hi - lo >= 1 then
+		Style.Fill(r.range, C.ruleStrong)
+		r.range:ClearAllPoints()
+		r.range:SetPoint("LEFT", r, "LEFT", lo, 0)
+		r.range:SetSize(hi - lo, 2)
+		r.range:Show()
+	else
+		r.range:Hide()
+	end
+	local x = RailX(spec.value, max, w)
+	Style.Fill(r.tick, spec.selected and C.text or C.text2)
+	r.tick:ClearAllPoints()
+	r.tick:SetPoint("LEFT", r, "LEFT", math.max(0, x - 1), 0)
+	r.tick:SetSize(3, 6)
+	r.tick:Show()
+	return r
+end
+
+-- Opens a row of a page's list from outside (the farm tracker's links); false while the list isn't built.
+function M.OpenRow(pageKey, rowKey)
+	local list = M.ListOf and M.ListOf(pageKey)
+	if not list then
+		return false
+	end
+	if list.openKey ~= rowKey then
+		list.openKey, list.justOpened = rowKey, rowKey
+	end
+	list:Render()
+	return true
+end
+
+----------------------------------------------------------------------------------------------------
+-- Pool: widgets an opened row draws into its card. The ScrollBox reuses the opened part between rows,
+-- so a page's Open starts with pool:Reset() and takes what it needs again.
+----------------------------------------------------------------------------------------------------
+
+local Pool = {}
+Pool.__index = Pool
+
+function M.Pool(owner)
+	local p = owner.cwPool
+	if not p then
+		p = setmetatable({ owner = owner, kinds = {}, used = {} }, Pool)
+		owner.cwPool = p
+	end
+	return p
+end
+
+function Pool:Reset()
+	for kind, list in pairs(self.kinds) do
+		for _, w in ipairs(list) do
+			w:Hide()
+			if w.ClearAllPoints then
+				w:ClearAllPoints()
+			end
+		end
+		self.used[kind] = 0
+	end
+end
+
+function Pool:Take(kind, make)
+	local list = self.kinds[kind]
+	if not list then
+		list = {}
+		self.kinds[kind] = list
+	end
+	local n = (self.used[kind] or 0) + 1
+	self.used[kind] = n
+	local w = list[n]
+	if not w then
+		w = make(self.owner)
+		list[n] = w
+	end
+	w:Show()
+	return w
+end
+
+-- A FontString in `font` and `color` (a Style colour name or table).
+function Pool:Text(font, color, text)
+	local fs = self:Take("text", function(owner)
+		local t = Style.Text(owner, font or "Small", "text")
+		t:SetJustifyH("LEFT")
+		t:SetWordWrap(false)
+		return t
+	end)
+	fs:SetFontObject(Style.Fonts[font or "Small"])
+	local c = Style.Color(color or "text")
+	fs:SetTextColor(c[1], c[2], c[3], 1)
+	fs:SetJustifyH("LEFT")
+	fs:SetWidth(0)
+	fs:SetText(text or "")
+	return fs
+end
+
+-- A WHITE8x8 texture in a colour (bars, rules).
+function Pool:Bar(color)
+	local t = self:Take("bar", function(owner)
+		local tex = owner:CreateTexture(nil, "ARTWORK")
+		tex:SetTexture(Style.WHITE)
+		return tex
+	end)
+	Style.Fill(t, Style.Color(color or "text"))
+	return t
+end
+
+-- An item icon (tex coords 0.08-0.92).
+function Pool:Icon(size, texture)
+	local t = self:Take("icon", function(owner)
+		local tex = owner:CreateTexture(nil, "ARTWORK")
+		tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		return tex
+	end)
+	t:SetSize(size or 16, size or 16)
+	t:SetTexture(texture)
+	return t
+end
+
+-- A line button; onClick() on a click, tip = { title, lines... } for the inverse tooltip.
+function Pool:Button(label, onClick, tip, height)
+	local b = self:Take("button", function(owner)
+		local btn = Style.LineButton(owner, "", nil, height or 22)
+		local enter, leave = btn:GetScript("OnEnter"), btn:GetScript("OnLeave")
+		btn:SetScript("OnEnter", function(this)
+			enter(this)
+			if this.cwTip then
+				Style.ShowTip(this, unpack(this.cwTip))
+			end
+		end)
+		btn:SetScript("OnLeave", function(this)
+			leave(this)
+			Style.HideTip(this)
+		end)
+		btn:SetScript("OnClick", function(this)
+			if this.cwClick then
+				this.cwClick(this)
+			end
+		end)
+		return btn
+	end)
+	b:SetHeight(height or 22)
+	b:SetLabel(label)
+	b.cwClick, b.cwTip = onClick, tip
+	return b
+end
+
+-- A mouse area over a line: hover shows an item's tooltip (itemID) or the inverse tip; right-click opens
+-- the item menu, Shift-click links the item, like a list row.
+function Pool:Hit(data)
+	local h = self:Take("hit", function(owner)
+		local hit = CreateFrame("Button", nil, owner)
+		hit:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+		hit:SetScript("OnEnter", function(this)
+			local d = this.cwData or {}
+			if d.itemID and GameTooltip and GameTooltip.SetItemByID then
+				GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+				GameTooltip:SetItemByID(d.itemID)
+				for _, line in ipairs(d.lines or {}) do
+					GameTooltip:AddDoubleLine(line[1], line[2], 0.75, 0.75, 0.75, 1, 1, 1)
+				end
+				GameTooltip:Show()
+			elseif d.tip then
+				Style.ShowTip(this, unpack(d.tip))
+			end
+		end)
+		hit:SetScript("OnLeave", function(this)
+			HideTips(this)
+		end)
+		hit:SetScript("OnClick", function(this, mouse)
+			local d = this.cwData or {}
+			if not d.itemID then
+				return
+			end
+			if mouse == "LeftButton" and IsShiftKeyDown() then
+				M.LinkToChat(d.itemID)
+			elseif (mouse == "RightButton" or mouse == "MiddleButton") and ns.ShowItemMenu then
+				HideTips(this)
+				ns.ShowItemMenu(d.itemID, this)
+			end
+		end)
+		return hit
+	end)
+	h.cwData = data
+	return h
 end

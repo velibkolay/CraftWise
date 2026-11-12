@@ -349,9 +349,7 @@ local function ShowTooltip(row)
 	if not r then
 		return
 	end
-	if View() == "fishing" then
-		return PF.ShowFishingTooltip(row, r)
-	elseif View() == "upgrades" then
+	if View() == "upgrades" then
 		return ShowUpgradeTooltip(row, r)
 	elseif View() == "level" then
 		return ShowLevelTooltip(row, r)

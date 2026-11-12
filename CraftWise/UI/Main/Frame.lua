@@ -371,12 +371,16 @@ local function PlaceHero(model, m)
 		return 0
 	end
 	local px, py = m.heroPadX, m.heroPadY
+	hero.sheet:SetFlap(Style.Color(h.flap or "cardFlap")) -- the dog-ear carries a state (Farm: orange running)
 	hero.label:ClearAllPoints()
 	hero.label:SetPoint("TOPLEFT", hero, "TOPLEFT", px, -py)
 	hero.label:SetText(h.label or "")
+	local lc = Style.Color(h.labelColor or "text3")
+	hero.label:SetTextColor(lc[1], lc[2], lc[3], 1)
 	hero.name:ClearAllPoints()
 	hero.name:SetPoint("TOPLEFT", hero.label, "BOTTOMLEFT", 0, -1)
 	hero.name:SetWidth(m.heroLeft)
+	hero.name:SetFontObject(Style.Fonts[h.nameFont or "Hero"])
 	hero.name:SetText(h.name or "")
 	local nc = Style.Color(h.nameColor or "text")
 	hero.name:SetTextColor(nc[1], nc[2], nc[3], 1)

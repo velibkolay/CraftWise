@@ -1,6 +1,7 @@
--- Issue #137: every feature reachable from the UI. The Records window (crates, fishing log, market, where to
--- buy, snapshot; ledger and auctions moved to Sell, #155: tests/sell_pages_spec.lua), its view models, the main window's Records button, the item menu entries,
--- the Settings toggles, and the slash commands still working.
+-- Issue #137: every feature reachable from the UI. The Records window (market, where to buy, snapshot; ledger
+-- and auctions moved to Sell, #155: tests/sell_pages_spec.lua; crates and the fishing log to Gather, #156:
+-- tests/gather_spec.lua), its view models, the main window's Records button, the item menu entries, the
+-- Settings toggles, and the slash commands still working.
 local NOW = os.time({ year = 2026, month = 11, day = 12, hour = 15 })
 local DAY = 86400
 local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
@@ -87,12 +88,12 @@ it("the main window's Records button opens the Records window; every tab builds 
 	-- the order of the tabs
 	local keys = {}
 	for _, tab in ipairs(ns.RW.tabs) do keys[#keys + 1] = tab.key end
-	eq(table.concat(keys, ","), "crates,fishing,market,where,snapshot")
+	eq(table.concat(keys, ","), "market,where,snapshot")
 	-- toggling: same tab closes, another tab switches
 	ns.ToggleRecords("snapshot")
 	eq(CraftWiseRecordsFrame:IsShown(), false)
-	ns.ToggleRecords("crates")
-	eq(CraftWiseRecordsFrame:IsShown(), true); eq(ns.RW.CurrentTab(), "crates")
+	ns.ToggleRecords("market")
+	eq(CraftWiseRecordsFrame:IsShown(), true); eq(ns.RW.CurrentTab(), "market")
 end)
 
 it("every tab's columns fit the window, at most six, the first is the name", function()
@@ -110,51 +111,6 @@ it("every tab's columns fit the window, at most six, the first is the name", fun
 			assert(w <= room, ("%s: columns %d px wide, room %d"):format(tab.key, w, room))
 		end
 	end
-end)
-
-------------------------------------------------------------------------------------------- crates
-
-it("crates: ranked rows with cost per Favor, fill and reward; no crate yields the hint", function()
-	local ns = Load()
-	local m = ns.RW.Crates.Model()
-	eq(#m.rows, 0); has(m.empty, "No Waylaid crate")
-	ns.db.crates[CRATE] = { name = "Waylaid Crate: Copper Bars", label = "Copper Bars", tier = "Apprentice",
-		fill = { { n = 10, name = "Copper Bar", id = COPPER } }, reward = 30, seen = { bags = true } }
-	ns.db.vendor[COPPER] = 50
-	m = ns.RW.Crates.Model()
-	eq(#m.rows, 1)
-	eq(m.rows[1].itemID, CRATE)
-	has(m.rows[1].cells.fill, "10 Copper Bar")
-	eq(m.rows[1].cells.reward, "30")
-end)
-
-------------------------------------------------------------------------------------------- fishing log
-
-it("fishing log: rows per zone, subzone and water; water buttons and zone search filter; pool visits mode", function()
-	local ns, stub = Load()
-	stub.realm = "PvP"
-	ns.db.fishing[ns.CharKey()] = { catches = {
-		{ t = NOW - 300, zone = "Stranglethorn Vale", sub = "Nek'mani Wellspring", items = { [FISH] = 1 } },
-		{ t = NOW - 200, zone = "Stranglethorn Vale", sub = "Nek'mani Wellspring", items = { [FISH] = 2 } },
-		{ t = NOW - 100, zone = "Durotar", sub = "", items = { [FISH] = 1 } },
-	}, opened = {}, seen = {} }
-	local st = { }
-	local m = ns.RW.FishingLog.Model(st)
-	eq(#m.rows, 2)
-	has(m.rows[1].name, "Stranglethorn Vale"); eq(m.rows[1].cells.catches, "2")
-	has(m.rows[1].cells.top, "Test Fish")
-	has(m.summary, "3 catches")
-	ns.RW.SetQuery("fishing", "durotar")
-	m = ns.RW.FishingLog.Model(st)
-	eq(#m.rows, 1); has(m.rows[1].name, "Durotar")
-	ns.RW.SetQuery("fishing", "")
-	ns.RW.FishingLog.buttons(st)[4].onClick()
-	eq(ns.RW.FishingLog.Mode(st), "visits")
-	eq(ns.RW.FishingLog.columns(st)[2].key, "visits")
-	m = ns.RW.FishingLog.Model(st)
-	has(m.empty, "No pool")
-	ns.RW.FishingLog.buttons(st)[3].onClick()
-	eq(ns.RW.FishingLog.Mode(st), "open")
 end)
 
 ------------------------------------------------------------------------------------------- market
@@ -345,6 +301,7 @@ it("settings: loot toast, farm, fishing and minimap switches change what the sla
 	p.records.scripts.OnClick(p.records)
 	eq(CraftWiseRecordsFrame:IsShown(), true)
 	p.farmHistory.scripts.OnClick(p.farmHistory)
+	eq(ns.Main.shown.page, "farm", "Farm history: Gather › Farm (#156)")
 end)
 
 ------------------------------------------------------------------------------------------- slash
@@ -373,7 +330,7 @@ local function farmLoot(stub, id, count)
 	stub.Fire("CHAT_MSG_LOOT", text, "", "", "", "", "", 0, 0, "", 0, 1, "Player-1-SELF")
 end
 
-it("farm history: list rows per finished session, details with stats and the kept loot log", function()
+it("farm history: list rows per finished session, details with top items, zones, split and the kept loot log", function()
 	local ns, stub = Load({ auctionator = true })
 	local FH = ns.FarmHistory
 	eq(#FH.ListRows(ns.Farm.History()), 0)
@@ -385,16 +342,12 @@ it("farm history: list rows per finished session, details with stats and the kep
 	SlashCmdList.CRAFTWISE("farm reset")
 	local rows = FH.ListRows(ns.Farm.History())
 	eq(#rows, 1)
-	eq(rows[1].index, 1); eq(rows[1].zone, "Elwynn Forest"); eq(rows[1].time, "00:30:00")
-	eq(rows[1].items, ns.FormatMoney(3 * 13 + 12)); has(rows[1].fish, "-")
+	eq(rows[1].index, 1); eq(rows[1].zone, "Elwynn Forest"); eq(rows[1].time, "0:30")
+	eq(rows[1].items, 3 * 13 + 12); eq(rows[1].fishing, false)
 	local d = FH.Detail(ns.Farm.History()[1])
-	local labels = {}
-	for _, s in ipairs(d.stats) do labels[#labels + 1] = s[1] end
-	has(table.concat(labels, ","), "Gold / hour")
-	has(table.concat(labels, ","), "Top items")
-	assert(#d.stats <= FH.STAT_LINES, "fits the detail lines")
+	eq(d.top[1].itemID, LINEN); eq(d.zones[1].zone, "Elwynn Forest"); eq(d.split.vendor, 3 * 13 + 12)
 	eq(#d.log, 2, "both drops in the log"); eq(d.log[1].itemID, SALT, "newest first")
-	has(d.logNote, "2 lines")
+	has(d.logNote, "2 loot lines kept")
 	-- an older session without its log says why
 	local h = ns.Farm.History()[1]
 	local logLines = #h.log
@@ -403,7 +356,7 @@ it("farm history: list rows per finished session, details with stats and the kep
 	eq(d.log, nil); has(d.logNote, "Loot log not kept")
 end)
 
-it("farm history: the farm window's History button lays it over the window; a click opens a session, Back returns", function()
+it("farm history: the tracker's History button and the Settings button open Gather › Farm; a session opens in place", function()
 	local ns, stub = Load({ auctionator = true })
 	SlashCmdList.CRAFTWISE("farm idle 0")
 	farmLoot(stub, LINEN, 2)
@@ -412,38 +365,22 @@ it("farm history: the farm window's History button lays it over the window; a cl
 	SlashCmdList.CRAFTWISE("farm show")
 	local btn
 	for _, f in ipairs(stub.frames) do
-		if f.label and f.label.text == "History" and f.scripts.OnClick then btn = f end
+		if f.label and f.label.text == "History" and f.scripts.OnClick and f.shown ~= false then btn = f end
 	end
-	assert(btn, "History button in the farm window")
-	btn.scripts.OnEnter(btn); btn.scripts.OnLeave(btn)
+	assert(btn, "History button in the farm tracker")
 	btn.scripts.OnClick(btn)
-	eq(ns.FarmHistory.IsShown(), true)
-	local row
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.index and f.shown ~= false then row = f end
-	end
-	assert(row, "a session row")
-	row.scripts.OnEnter(row); row.scripts.OnLeave(row)
-	row.scripts.OnClick(row)
-	eq(ns.FarmHistory.State().index, 1)
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.itemID and f.time and f.shown ~= false then f.scripts.OnEnter(f); f.scripts.OnLeave(f) end
-	end
-	CraftWiseFarmHistory.scripts.OnMouseWheel(CraftWiseFarmHistory, -1)
-	local back
-	for _, f in ipairs(stub.frames) do
-		if f.label and f.label.text == "Back" and f.scripts.OnClick then back = f end
-	end
-	back.scripts.OnClick(back)
-	eq(ns.FarmHistory.State().index, nil)
-	eq(ns.FarmHistory.IsShown(), true, "back to the list first")
-	back.scripts.OnClick(back) -- now labelled Session: back to the live session
-	eq(ns.FarmHistory.IsShown(), false)
-	-- the Settings button opens it too, opening the farm window when hidden
-	SlashCmdList.CRAFTWISE("farm hide")
+	local M = ns.Main
+	eq(M.Frame():IsShown(), true); eq(M.shown.page, "farm")
+	local list = M.ListOf("farm")
+	eq(#list.rows, 1)
+	local row = list.box.frames[1]
+	row.scripts.OnClick(row, "LeftButton")
+	eq(list.box.frames[2].elementData.open, true)
+	-- the Settings button opens it too
+	M.Frame():Hide()
 	ns.ToggleSettings()
 	CraftWiseSettings.farmHistory.scripts.OnClick(CraftWiseSettings.farmHistory)
-	eq(ns.FarmHistory.IsShown(), true); eq(ns.FarmFrame.IsShown(), true)
+	eq(M.Frame():IsShown(), true); eq(M.shown.page, "farm")
 	-- /craftwise farm history still prints
 	stub.printed = {}
 	SlashCmdList.CRAFTWISE("farm history")
