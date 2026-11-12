@@ -367,11 +367,23 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="classic"] .chart, [data-skin="classic"] .tip.chart-tip { will-change: transform; }
 [data-skin="classic"] .chart:focus-visible { outline-color: var(--ink); }
 
-/* ===== 3. Velikopter chrome: the brand kit (design V1c) =====
-   Only keys are round: radius 0 here. No soft shadows, no gradients. The active marker is the nokta, an 8 px square
-   in --accent (the kit's nokta-ink): current tab, selected row, current category. Page and table headers carry a
-   2 px --text rule, rows a 1 px --line. Words in Atkinson Hyperlegible Next, figures in its Mono. */
+/* ===== 3. Velikopter chrome: the brand kit v3, Origami (design V1c) =====
+   Nothing is round: radius 0. No soft shadows, no gradients other than the fold. The active marker is the nokta, an
+   8 px square turned 45° (a diamond) in --accent (the kit's nokta-ink): current tab, selected row, current category.
+   Filled shapes are paper and lose their top-right corner to a 45° dog-ear (.vk-paper in the kit's css/components.css):
+   two background layers, the flap over the sheet with its corner cut away, so outlines and focus rings stay square.
+   Primary buttons fold 10 px (14 px on hover, small ones 6/10), tags, tooltips and the pressed skin switch 6 px,
+   panes and dialogs 18 px.
+   Lines stay square: inputs, tables, tabs, rules, outlined buttons. Page and table headers carry a 2 px --text rule,
+   rows a 1 px --line. Words in Atkinson Hyperlegible Next, figures in its Mono. */
 @keyframes v-hop { from { transform: scale(0); } to { transform: scale(1); } }
+@property --cut { syntax: "<length>"; inherits: false; initial-value: 0px; }
+/* :root raises the rule over the skin's plain `background: none` resets (.pane, .pane .tip) */
+:root[data-skin="velikopter"] :is(.wbtn:not(.dark), .skinswitch .wtab[aria-pressed="true"], .me-pane, .popup, .tip.chart-tip, .cr-tag, .flag, .thin) {
+	background:
+		linear-gradient(45deg, var(--flap) 50%, transparent 50%) top right / var(--cut) var(--cut) no-repeat,
+		linear-gradient(225deg, transparent calc(var(--cut) * 0.7071), var(--fill) 0);
+}
 [data-skin="velikopter"] body { -webkit-font-smoothing: antialiased; line-height: 22px; }
 [data-skin="velikopter"] p { font-weight: 400; } /* weight comes from the role (labels, titles), not from the element */
 [data-skin="velikopter"] .app { padding: 0 clamp(16px, 3.4vw, 48px) 48px; }
@@ -388,10 +400,10 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .brand img { display: block; flex: none; }
 .vnav { display: flex; align-items: center; gap: 24px; min-width: 0; }
 .ntab { display: inline-flex; align-items: center; gap: 8px; height: 40px; color: var(--text-2); font-size: 15px; white-space: nowrap; }
-.ntab::before { content: ""; flex: none; width: 8px; height: 8px; background: var(--accent); transform: scale(0); }
+.ntab::before { content: ""; flex: none; width: var(--nokta-ui); height: var(--nokta-ui); background: var(--accent); rotate: 45deg; transform: scale(0); }
 .ntab:hover { color: var(--text); }
 .ntab[aria-current="page"] { color: var(--text); font-weight: 700; }
-.ntab[aria-current="page"]::before { transform: scale(1); animation: v-hop 160ms cubic-bezier(0.3, 0, 0, 1); }
+.ntab[aria-current="page"]::before { transform: scale(1); animation: v-hop var(--dur-hop) var(--ease-hop); }
 .ntab.me { color: var(--text); font-weight: 700; }
 [data-skin="velikopter"] .crumbs { display: block; padding: 24px 0 0; font-size: 14px; line-height: 20px; color: var(--text-2); }
 [data-skin="velikopter"] .crumbs a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
@@ -399,7 +411,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .skinswitch { flex: none; align-items: stretch; gap: 0; border: 1px solid var(--line-strong); }
 [data-skin="velikopter"] .skinswitch .wtab { height: 32px; min-width: 0; padding: 0 12px; gap: 0; border: 0; background: none; color: var(--text); font-size: 13px; font-weight: 700; }
 [data-skin="velikopter"] .skinswitch .wtab::before { content: none; }
-[data-skin="velikopter"] .skinswitch .wtab[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+[data-skin="velikopter"] .skinswitch .wtab[aria-pressed="true"] { --fill: var(--inverse); --flap: var(--flap-ink); --cut: var(--cut-s); color: var(--on-inverse); } /* the pressed half is a small ink label: paper */
 [data-skin="velikopter"] main .btabs { display: none; } /* the views live in the header */
 
 /* window: a plain page with a 40 px title */
@@ -415,7 +427,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .sbar { flex: 0 1 auto; max-width: none; height: auto; overflow: visible; }
 [data-skin="velikopter"] .sbar i { display: none; }
 [data-skin="velikopter"] .sbar b { justify-content: flex-start; gap: 8px; padding: 0; font-family: var(--font-ui); font-size: 14px; font-weight: 400; color: var(--text-2); }
-[data-skin="velikopter"] .sbar b::before { content: ""; flex: none; width: 8px; height: 8px; background: var(--accent); }
+[data-skin="velikopter"] .sbar b::before { content: ""; flex: none; width: var(--nokta-ui); height: var(--nokta-ui); margin: 0 2px; background: var(--accent); rotate: 45deg; }
 [data-skin="velikopter"] .sbar.stale b { color: var(--danger); }
 [data-skin="velikopter"] .sbar.stale b::before { background: var(--danger); }
 
@@ -426,12 +438,16 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .m.none { color: var(--text-3); }
 
 /* controls */
-[data-skin="velikopter"] .wbtn { height: 40px; padding: 0 16px; gap: 8px; border: 1px solid var(--line-strong); border-radius: 0; background: none; color: var(--text); font-family: var(--font-ui); font-size: 15px; transition: transform 80ms cubic-bezier(0.5, 0, 0.5, 1); }
+[data-skin="velikopter"] .wbtn { height: 40px; padding: 0 16px; gap: 8px; border: 1px solid var(--line-strong); border-radius: 0; background: none; color: var(--text); font-family: var(--font-ui); font-size: 15px; transition: transform var(--dur-press) var(--ease-press); }
 [data-skin="velikopter"] .wbtn:hover { border-color: var(--text); }
 [data-skin="velikopter"] .wbtn:active { transform: translateY(2px); }
-[data-skin="velikopter"] .wbtn:not(.dark) { background: var(--inverse); border-color: var(--inverse); color: var(--on-inverse); font-weight: 700; }
-[data-skin="velikopter"] .wbtn:not(.dark):hover { background: var(--text-2); border-color: var(--text-2); }
-[data-skin="velikopter"] .wbtn[disabled], [data-skin="velikopter"] .wbtn[aria-disabled="true"], [data-skin="velikopter"] .wbtn[disabled]:hover, [data-skin="velikopter"] .wbtn[aria-disabled="true"]:hover { background: var(--surface-2); border-color: transparent; color: var(--text-3); cursor: not-allowed; transform: none; }
+/* primary (ink) buttons are paper; .dark ones are the outlined (secondary) buttons and stay square */
+[data-skin="velikopter"] .wbtn:not(.dark) { --fill: var(--inverse); --flap: var(--flap-ink); --cut: var(--cut-m); border: 0; color: var(--on-inverse); font-weight: 700;
+	transition: --cut var(--dur-fold) var(--ease-fold), transform var(--dur-press) var(--ease-press); }
+[data-skin="velikopter"] .wbtn:not(.dark):hover { --cut: var(--cut-m-hover); }
+[data-skin="velikopter"] .wbtn[disabled], [data-skin="velikopter"] .wbtn[aria-disabled="true"], [data-skin="velikopter"] .wbtn[disabled]:hover, [data-skin="velikopter"] .wbtn[aria-disabled="true"]:hover { border-color: transparent; color: var(--text-3); cursor: not-allowed; transform: none; }
+[data-skin="velikopter"] .wbtn.dark[disabled], [data-skin="velikopter"] .wbtn.dark[aria-disabled="true"] { background: var(--surface-2); }
+[data-skin="velikopter"] .wbtn:not(.dark)[disabled], [data-skin="velikopter"] .wbtn:not(.dark)[aria-disabled="true"] { --fill: var(--surface-2); --flap: var(--rule); --cut: var(--cut-m); }
 [data-skin="velikopter"] .wbtn.sq { width: 40px; height: 40px; padding: 0; }
 [data-skin="velikopter"] .arrow { fill: currentColor; stroke: none; }
 [data-skin="velikopter"] .tri { border-left-color: currentColor; filter: none; }
@@ -452,10 +468,10 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 
 /* tabs and range switches: the nokta sits left of the current label */
 [data-skin="velikopter"] .wtab { gap: 8px; height: 40px; padding: 0; border: 0; background: none; color: var(--text-2); font-family: var(--font-ui); font-size: 15px; }
-[data-skin="velikopter"] .wtab::before { content: ""; flex: none; width: 8px; height: 8px; background: var(--accent); transform: scale(0); }
+[data-skin="velikopter"] .wtab::before { content: ""; flex: none; width: var(--nokta-ui); height: var(--nokta-ui); background: var(--accent); rotate: 45deg; transform: scale(0); }
 [data-skin="velikopter"] .wtab:hover { color: var(--text); }
 [data-skin="velikopter"] .wtab[aria-current="page"], [data-skin="velikopter"] .wtab[aria-pressed="true"] { color: var(--text); font-weight: 700; }
-[data-skin="velikopter"] .wtab[aria-current="page"]::before, [data-skin="velikopter"] .wtab[aria-pressed="true"]::before { transform: scale(1); animation: v-hop 160ms cubic-bezier(0.3, 0, 0, 1); }
+[data-skin="velikopter"] .wtab[aria-current="page"]::before, [data-skin="velikopter"] .wtab[aria-pressed="true"]::before { transform: scale(1); animation: v-hop var(--dur-hop) var(--ease-hop); }
 
 /* list: category column and results */
 [data-skin="velikopter"] .cols { gap: 32px; }
@@ -471,7 +487,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .entry { position: relative; min-height: 32px; padding: 0 4px 0 20px; color: var(--text-2); font-size: 15px; }
 [data-skin="velikopter"] .entry:hover { color: var(--text); background: var(--surface-2); }
 [data-skin="velikopter"] .entry[aria-current="page"] { color: var(--text); font-weight: 700; }
-[data-skin="velikopter"] .entry[aria-current="page"]::before { content: ""; position: absolute; left: 4px; top: 50%; width: 8px; height: 8px; margin-top: -4px; background: var(--accent); animation: v-hop 160ms cubic-bezier(0.3, 0, 0, 1); }
+[data-skin="velikopter"] .entry[aria-current="page"]::before { content: ""; position: absolute; left: 4px; top: 50%; width: var(--nokta-ui); height: var(--nokta-ui); margin-top: -4px; background: var(--accent); rotate: 45deg; animation: v-hop var(--dur-hop) var(--ease-hop); }
 [data-skin="velikopter"] .entry .n { font-family: var(--font-num); font-size: 13px; font-weight: 400; color: var(--text-3); }
 [data-skin="velikopter"] .results { gap: 16px; }
 [data-skin="velikopter"] .filters { gap: 12px 16px; align-items: flex-end; min-height: 44px; }
@@ -487,7 +503,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .tbl th:first-child, [data-skin="velikopter"] .tbl td:first-child { padding-left: 24px; }
 [data-skin="velikopter"] .tbl td:first-child { position: relative; }
 [data-skin="velikopter"] .tbl tbody tr:hover td { background: var(--surface-2); }
-[data-skin="velikopter"] .tbl tr.sel td:first-child::before { content: ""; position: absolute; left: 8px; top: 50%; width: 8px; height: 8px; margin-top: -4px; background: var(--accent); animation: v-hop 160ms cubic-bezier(0.3, 0, 0, 1); }
+[data-skin="velikopter"] .tbl tr.sel td:first-child::before { content: ""; position: absolute; left: 8px; top: 50%; width: var(--nokta-ui); height: var(--nokta-ui); margin-top: -4px; background: var(--accent); rotate: 45deg; animation: v-hop var(--dur-hop) var(--ease-hop); }
 [data-skin="velikopter"] .tbl .empty { background: none; }
 [data-skin="velikopter"] .tbl tr.sel .spark .over { stroke: var(--spark); }
 [data-skin="velikopter"] .iname { gap: 12px; font-size: 15px; font-weight: 700; }
@@ -536,7 +552,8 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .chart .cross { stroke: var(--text); stroke-opacity: 1; stroke-dasharray: 2 3; }
 [data-skin="velikopter"] .chart .hot { fill: var(--accent); stroke: none; }
 /* chart tooltip: the inverse ground, so its money takes the other theme's coin colours */
-[data-skin="velikopter"] .tip.chart-tip { --coin-g: var(--tip-coin-g); --coin-s: var(--tip-coin-s); --coin-c: var(--tip-coin-c); width: 224px; padding: 12px 14px; border-radius: 0; background: var(--inverse); color: var(--tip-text); font-size: 14px; line-height: 20px; }
+[data-skin="velikopter"] .tip.chart-tip { --coin-g: var(--tip-coin-g); --coin-s: var(--tip-coin-s); --coin-c: var(--tip-coin-c); --fill: var(--inverse); --flap: var(--flap-ink); --cut: var(--cut-s);
+	width: 224px; padding: 12px 14px; border-radius: 0; color: var(--tip-text); font-size: 14px; line-height: 20px; filter: var(--lift); }
 [data-skin="velikopter"] .chart-tip .tip-title { font-size: 14px; }
 [data-skin="velikopter"] .chart-tip .lbl { color: var(--tip-2); font-size: 14px; line-height: 20px; font-weight: 400; }
 @media (prefers-reduced-motion: reduce) { [data-skin="velikopter"] .ntab::before, [data-skin="velikopter"] .wtab::before, [data-skin="velikopter"] .entry::before, [data-skin="velikopter"] .tbl tr.sel td::before { animation: none !important; } }
@@ -717,7 +734,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .stab .lv { position: absolute; right: -8px; bottom: -8px; min-width: 20px; padding: 0 3px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text); font-family: var(--font-num); font-size: 11px; line-height: 14px; font-weight: 400; text-align: center; }
 [data-skin="velikopter"] .merow, [data-skin="velikopter"] .merow + .merow { gap: 24px; }
 [data-skin="velikopter"] .merow + .merow { margin-top: 24px; }
-[data-skin="velikopter"] .me-pane { gap: 12px; padding: 16px 20px 20px; border: 1px solid var(--line); background: var(--surface); }
+[data-skin="velikopter"] .me-pane { --fill: var(--surface); --flap: var(--flap-sheet); --cut: var(--cut-l); gap: 12px; padding: 16px 20px 20px; border: 0; } /* a sheet: on the ground by tone, no outline */
 [data-skin="velikopter"] .me-pane .bar-head { font-weight: 700; }
 [data-skin="velikopter"] .me-pane .bar-head:not(:first-child) { margin-top: 12px; }
 [data-skin="velikopter"] .me-pane .tbl { border-top: 0; }
@@ -736,8 +753,10 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .auchead { margin-top: 8px; padding: 0 0 6px; border-bottom: 2px solid var(--text); font-size: 15px; font-weight: 700; }
 [data-skin="velikopter"] .auclist li { min-height: 44px; padding: 4px 0; }
 [data-skin="velikopter"] .wbtn.small { height: 32px; padding: 0 12px; font-size: 14px; }
+[data-skin="velikopter"] .wbtn.small:not(.dark) { --cut: var(--cut-s); }
+[data-skin="velikopter"] .wbtn.small:not(.dark):hover { --cut: var(--cut-m); }
 [data-skin="velikopter"] .wbtn.wide { height: 40px; }
-[data-skin="velikopter"] .popup { padding: 20px; border: 1px solid var(--text); background: var(--surface); }
+[data-skin="velikopter"] .popup { --fill: var(--surface); --flap: var(--flap-sheet); --cut: var(--cut-l); padding: 20px; border: 0; filter: var(--lift); }
 [data-skin="velikopter"] .note { font-size: 12px; line-height: 16px; color: var(--text-3); }
 /* XP, skill and usage bars: the words, then a 4 px bar on a hairline track */
 [data-skin="velikopter"] .me .sbar { display: block; flex: 1 1 auto; height: auto; padding-bottom: 8px; box-shadow: inset 0 -4px 0 var(--line); }
@@ -839,6 +858,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="velikopter"] .dtitle { font-weight: 700; padding: 0; }
 [data-skin="velikopter"] .rowpick { font-weight: 700; }
 [data-skin="velikopter"] .tbl.fish tr.outside td { background: var(--surface-2); }
+[data-skin="velikopter"] .flag { --fill: var(--tag-fill); --flap: var(--tag-flap); --cut: var(--cut-s); padding: 0 9px 0 6px; border: 0; }
 @media (max-width: 760px) {
 	.fishbody .merow { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 12px; }
 	.mecol { display: contents; }
@@ -888,7 +908,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="classic"] .tbl.bd th { height: 24px; font-size: 13px; }
 [data-skin="velikopter"] .tbl tbody tr.detail > td, [data-skin="velikopter"] .tbl tbody tr.detail:hover > td { background: var(--surface-2); }
 [data-skin="velikopter"] .tbl.bd { border-top: 0; }
-[data-skin="velikopter"] .thin { border-radius: 0; }
+[data-skin="velikopter"] .thin { --fill: var(--tag-fill); --flap: var(--tag-flap); --cut: var(--cut-s); padding: 0 8px 0 5px; border: 0; border-radius: 0; }
 /* the Velikopter rows are wider (padded money, more padding): a little less padding on recipe lists */
 [data-skin="velikopter"] .tbl.list.recipes th, [data-skin="velikopter"] .tbl.list.recipes td { padding-left: 10px; padding-right: 10px; }
 [data-skin="velikopter"] .tbl.list.recipes th:first-child, [data-skin="velikopter"] .tbl.list.recipes td:first-child { padding-left: 24px; }

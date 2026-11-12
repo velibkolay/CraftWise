@@ -1,7 +1,7 @@
-/* Copied unchanged from the Velikopter brand kit: repo velibkolay/velikopter-brand, tokens/velikopter-tokens.css at commit 061f41a.
+/* Copied unchanged from the Velikopter brand kit: repo velibkolay/velikopter-brand, tokens/velikopter-tokens.css at commit 91a7baf (kit v3, Origami).
    Do not edit here: change the kit, then copy the file again. tokens.css imports it and maps the site skin onto these names;
    its font URLs (../fonts/) resolve to web/public/fonts, which holds the kit's fonts/ (OFL, see AtkinsonHyperlegible*-OFL.txt). */
-/* Velikopter tokens as CSS custom properties. Generated from tokens.json (v2). */
+/* Velikopter tokens as CSS custom properties. Generated from tokens.json (v3). */
 /* Light is the default; dark via [data-theme="dark"] or the OS setting unless [data-theme="light"] is set. */
 
 :root, [data-theme="light"] {
@@ -9,13 +9,15 @@
   --brand-paper: #F4F4F1;
   --brand-nokta: #12B5A9;
   --brand-red: #E5432F;
-  --key-velikopter: #E5432F;
-  --key-lyricopter: #12B5A9;
-  --key-clipkopter: #FF8A2A;
-  --key-tokenkopter: #EE6FA3;
+  --key-velikopter: #12B5A9;
+  --key-lyricopter: #FF5E5B;
+  --key-clipkopter: #E3609A;
+  --key-tokenkopter: #2F6FE0;
   --key-todokopter: #3FA34D;
-  --key-gridkopter: #2A5BD7;
+  --key-gridkopter: #7D8A9C;
   --key-wow: #F2C14E;
+  --fold: #E2E3DD;
+  --fold-shadow: #14151724;
   --bg: #F4F4F1;
   --surface: #FFFFFF;
   --surface-2: #EAEAE5;
@@ -47,7 +49,7 @@
   --rise: #B42A18;
   --fall: #0A6F68;
   --shadow-none: none;
-  --shadow-key: 0 3px 0 0 #141517;
+  --shadow-lift: drop-shadow(3px 3px 0 #14151724);
   --shadow-pop: 0 0 0 1px #141517;
   color-scheme: light;
 }
@@ -56,13 +58,15 @@
   --brand-paper: #F4F4F1;
   --brand-nokta: #12B5A9;
   --brand-red: #E5432F;
-  --key-velikopter: #E5432F;
-  --key-lyricopter: #12B5A9;
-  --key-clipkopter: #FF8A2A;
-  --key-tokenkopter: #EE6FA3;
+  --key-velikopter: #12B5A9;
+  --key-lyricopter: #FF5E5B;
+  --key-clipkopter: #E3609A;
+  --key-tokenkopter: #2F6FE0;
   --key-todokopter: #3FA34D;
-  --key-gridkopter: #2A5BD7;
+  --key-gridkopter: #7D8A9C;
   --key-wow: #F2C14E;
+  --fold: #34363B;
+  --fold-shadow: #00000080;
   --bg: #121314;
   --surface: #1B1C1F;
   --surface-2: #25272B;
@@ -94,7 +98,7 @@
   --rise: #FF7A63;
   --fall: #2CC9BC;
   --shadow-none: none;
-  --shadow-key: 0 3px 0 0 #000000;
+  --shadow-lift: drop-shadow(3px 3px 0 #00000080);
   --shadow-pop: 0 0 0 1px #ECEDEA;
   color-scheme: dark;
 }
@@ -104,13 +108,15 @@
     --brand-paper: #F4F4F1;
     --brand-nokta: #12B5A9;
     --brand-red: #E5432F;
-    --key-velikopter: #E5432F;
-    --key-lyricopter: #12B5A9;
-    --key-clipkopter: #FF8A2A;
-    --key-tokenkopter: #EE6FA3;
+    --key-velikopter: #12B5A9;
+    --key-lyricopter: #FF5E5B;
+    --key-clipkopter: #E3609A;
+    --key-tokenkopter: #2F6FE0;
     --key-todokopter: #3FA34D;
-    --key-gridkopter: #2A5BD7;
+    --key-gridkopter: #7D8A9C;
     --key-wow: #F2C14E;
+    --fold: #34363B;
+    --fold-shadow: #00000080;
     --bg: #121314;
     --surface: #1B1C1F;
     --surface-2: #25272B;
@@ -142,7 +148,7 @@
     --rise: #FF7A63;
     --fall: #2CC9BC;
     --shadow-none: none;
-    --shadow-key: 0 3px 0 0 #000000;
+    --shadow-lift: drop-shadow(3px 3px 0 #00000080);
     --shadow-pop: 0 0 0 1px #ECEDEA;
     color-scheme: dark;
   }
@@ -160,9 +166,11 @@
   --space-16: 64px;
   --space-24: 96px;
   --radius-0: 0;
-  --radius-key: 16%;
-  --radius-key-top: 10%;
-  --radius-keybutton: 6px;
+  --cut-s: 6px;
+  --cut-m: 10px;
+  --cut-m-hover: 14px;
+  --cut-l: 18px;
+  --cut-key: 16%;
   --control: 40px;
   --control-sm: 32px;
   --touch: 44px;
@@ -173,11 +181,13 @@
   --rule-heavy-w: 2px;
   --page-max: 1200px;
   --dur-press: 80ms;
+  --dur-fold: 140ms;
   --dur-hop: 160ms;
   --dur-panel: 200ms;
   --dur-blink: 900ms;
   --ease-hop: cubic-bezier(0.3, 0, 0, 1);
   --ease-press: cubic-bezier(0.5, 0, 0.5, 1);
+  --ease-fold: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .vk-type-display { font-family: var(--font-sans); font-size: 56px; line-height: 58px; font-weight: 800; letter-spacing: -0.01em; }

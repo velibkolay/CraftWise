@@ -122,30 +122,40 @@
 	--page-max: 1352px;
 }
 
-/* ===== Velikopter: the brand kit (velikopter-tokens.css), light first, dark with the OS setting =====
+/* ===== Velikopter: the brand kit v3, Origami (velikopter-tokens.css), light first, dark with the OS setting =====
    The kit's own names (--bg, --surface, --surface-2, --text, --text-2, --text-3, --q-*, --rise, --fall, --chart-grid,
-   --inverse, --on-inverse, --action, --danger, --live, --nokta-ink, --coin-gold/silver/copper, --font-sans/mono) are
-   used as they are; this block maps the site's other names onto them, as the kit's skin bridge does. */
+   --inverse, --on-inverse, --action, --danger, --live, --nokta-ink, --coin-gold/silver/copper, --fold, --shadow-lift,
+   --cut-*, --nokta-ui, --dur-*, --ease-*, --font-sans/mono) are used as they are. The first part below is the kit's skin
+   bridge (the `.app[data-skin="velikopter"]` block at the end of velikopter-tokens.css), name for name, written as the kit
+   tokens its values come from, so light and dark follow the kit without a copy of its hex values. */
 :root[data-skin="velikopter"] {
+	/* kit skin bridge */
 	--font-ui: var(--font-sans);
 	--font-display: var(--font-sans);
 	--font-num: var(--font-mono);
-	--font-narrow: var(--font-sans);
-	--track: 0;
-	--weight-head: 700;
-	--shadow: none;
-	--num-shadow: none;
-
 	--inset: var(--surface-2);
 	--line: var(--rule);
 	--line-strong: var(--rule-strong);
 	--label: var(--text-2);
 	--accent: var(--nokta-ink);
-	--blue: var(--nokta-ink);
-
+	--accent-text: var(--nokta-ink);
 	--coin-g: var(--coin-gold);
 	--coin-s: var(--coin-silver);
 	--coin-c: var(--coin-copper);
+	--q-rare-text: var(--q-rare);
+	--q-epic-text: var(--q-epic);
+	--radius: 0px;
+	--row: 40px;
+	--ui-size: 15px;
+	--num-size: 14px;
+
+	/* the site's other names */
+	--font-narrow: var(--font-sans);
+	--track: 0;
+	--weight-head: 700;
+	--shadow: none;
+	--num-shadow: none;
+	--blue: var(--nokta-ink);
 	--money-text: var(--text);
 	--money-in: var(--fall);
 	--money-out: var(--rise);
@@ -176,10 +186,15 @@
 	--tip-coin-s: #c3c9d2;
 	--tip-coin-c: #db8a5c;
 
-	--radius: 0px;
-	--row: 40px;
-	--ui-size: 15px;
-	--num-size: 14px;
+	/* Origami (kit docs/5-layout.md "Corners: the dog-ear", css/components.css .vk-paper): the flap of a white sheet is
+	   --fold; on ink it is the ink mixed toward the ground, on a tag its own colour over the sheet (mixes as in the kit's
+	   components.css). Lifted overlays cast --shadow-lift. */
+	--flap-sheet: var(--fold);
+	--flap-ink: color-mix(in srgb, var(--inverse) 62%, var(--bg));
+	--tag-fill: color-mix(in srgb, currentColor 10%, var(--surface));
+	--tag-flap: color-mix(in srgb, currentColor 32%, var(--surface));
+	--lift: var(--shadow-lift);
+
 	--page-max: 1344px;
 }
 @media (prefers-color-scheme: dark) {
