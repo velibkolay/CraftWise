@@ -1,6 +1,7 @@
 -- Issue #47: reagent cost basis per view (AH or paid cost) and craft-or-buy for intermediate reagents.
 -- Recipes from the client's data: Light Leather Pants (9068) = 10 Light Leather, 1 Fine Thread,
 -- 1 Cured Light Hide; Cured Light Hide (3816) = 1 Light Hide, 1 Salt.
+local Make = dofile("tests/make_helpers.lua")
 local LL, THREAD, CLH, HIDE, SALT, PANTS = 2318, 2321, 4231, 783, 4289, 7282
 
 local function has(text, s) if not text:find(s, 1, true) then error("missing [" .. s .. "] in:\n" .. text, 2) end end
@@ -125,10 +126,9 @@ local function TooltipOf(ns, stub, name)
 	local lines = {}
 	GameTooltip.AddLine = function(_, t) lines[#lines + 1] = t end
 	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. " | " .. r end
-	if not (ns.PF.frame and ns.PF.frame:IsShown()) then ns.ToggleProfitFrame() end
-	ns.RefreshProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.name == name and f.scripts.OnEnter then
+	Make.Open(ns, "craft", 165) -- Make › Craft (#154)
+	for _, f in ipairs(Make.Frames(ns, "craft")) do
+		if f.elementData.row.name == name then
 			f.scripts.OnEnter(f)
 			return plain(table.concat(lines, "\n"))
 		end
@@ -217,18 +217,16 @@ it("a partial paid cost (some held units predate the log) is the logged average,
 	has(t, "average of the 10 units you bought; 2 held have no recorded price")
 end)
 
-it("Settings switch the basis per view and the window header shows it", function()
+it("Settings switch the basis per view and the Make page footer shows it", function()
 	local ns, stub = Leatherworking()
 	ns.ToggleSettings()
 	local buttons = CraftWiseSettings.costBasis
 	buttons.level.paid.scripts.OnClick(buttons.level.paid)
 	eq(ns.db.settings.costBasis.level, "paid")
 	eq(ns.CostBasis("level"), "paid"); eq(ns.CostBasis("profit"), "ah"); eq(ns.CostBasis("bags"), "ah")
-	ns.ToggleProfitFrame()
-	ns.db.settings.view = "level"
-	ns.RefreshProfitFrame()
-	has(plain(ns.PF.frame.summary.text), "reagents: paid cost, else AH")
-	ns.db.settings.view = "profit"
-	ns.RefreshProfitFrame()
-	has(plain(ns.PF.frame.summary.text), "reagents: AH")
+	Make.Open(ns, "level", 165)
+	local foot = ns.Main.Frame().foot
+	has(plain(foot.right.text), "reagents: paid cost, else AH")
+	Make.Open(ns, "craft", 165)
+	has(plain(foot.left.text), "reagents: AH")
 end)

@@ -585,17 +585,16 @@ it("fishing: the first catch starts a session; history, /craftwise farm history 
 	eq(F.History()[1].fish, nil); eq(ns.Snapshot.Build().farm.sessions[1].fish, nil)
 end)
 
-it("open without typing (#130): the profit window's Farm button, the key binding and the Settings button toggle the window", function()
+it("open without typing (#130): the minimap right-click, the key binding and the Settings button toggle the window", function()
 	local ns, stub = setup()
 	local function shown() return CraftWiseFarmFrame ~= nil and CraftWiseFarmFrame:IsShown() end
 	eq(shown(), false)
-	ns.ToggleProfitFrame()
-	local btn = ns.PF.frame.farmButton
-	assert(btn, "Farm button in the profit window header")
-	eq(btn.text or (btn.label and btn.label.text), "Farm")
-	btn:GetScript("OnClick")(btn)
+	-- The profit window and its Farm button are gone (#154); the minimap button's right-click toggles it.
+	local btn = CraftWiseMinimapButton
+	assert(btn, "minimap button")
+	btn.scripts.OnClick(btn, "RightButton")
 	eq(shown(), true); eq(ns.db.farm.shown, true)
-	btn:GetScript("OnClick")(btn)
+	btn.scripts.OnClick(btn, "RightButton")
 	eq(shown(), false); eq(ns.db.farm.shown, false)
 	-- Key binding: Bindings.xml calls the global, its name is set for the Key Bindings list.
 	local xml = assert(io.open("CraftWise/Bindings.xml")):read("*a")

@@ -181,17 +181,13 @@ it("minimap button: hover shows the inverse tooltip with one line per action", f
 	eq(tip.shown, false, "dragging hides it")
 end)
 
-it("addon compartment opens the main window (#153); the profit window only without it", function()
+it("addon compartment opens the main window (#153)", function()
 	local ns = setup()
 	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
 	eq(CraftWiseMainFrame:IsShown(), true, "the main window")
 	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
 	eq(CraftWiseMainFrame:IsShown(), false, "toggles")
-	local which
-	ns.ToggleProfitFrame = function() which = "profit" end
-	ns.ToggleMainWindow = nil
-	CraftWise_OnAddonCompartmentClick("CraftWise", "LeftButton")
-	eq(which, "profit")
+	eq(ns.ToggleProfitFrame, nil, "the profit window is gone (#154)")
 end)
 
 it("the TOC icon is the W key (#166), the compartment function is named there", function()

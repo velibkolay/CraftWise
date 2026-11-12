@@ -69,14 +69,14 @@ end
 
 ------------------------------------------------------------------------------------------- window
 
-it("the main window's Records button opens the Records window; every tab builds and renders", function()
+it("the Records window opens; every tab builds and renders; its Main window button opens the main window", function()
 	local ns, stub = Load()
-	ns.ToggleProfitFrame()
-	local btn = findButton(stub, "Records")
-	assert(btn, "Records button in the profit window header")
-	btn.scripts.OnEnter(btn); btn.scripts.OnLeave(btn)
-	btn.scripts.OnClick(btn)
+	ns.ToggleRecords()
 	assert(CraftWiseRecordsFrame and CraftWiseRecordsFrame:IsShown(), "Records window shown")
+	local main = findButton(stub, "Main window")
+	assert(main, "Main window button in the Records header (the profit window is gone, #154)")
+	main.scripts.OnClick(main)
+	eq(CraftWiseMainFrame:IsShown(), true)
 	for _, tab in ipairs(ns.RW.tabs) do
 		local tb = CraftWiseRecordsFrame.tabButtons[tab.key]
 		tb.scripts.OnClick(tb)

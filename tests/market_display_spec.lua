@@ -1,5 +1,6 @@
 -- Issue #26 phase 2: price basis and house for profit, fallback order and labels, depth figures,
 -- thin market, best house to buy and sell, "cut unverified", tooltip lines.
+local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
 local DAY = 86400
 local HORDE, BOOTY, GADGET, ALLIANCE = "PvP|H", "PvP|N:BootyBay", "PvP|N:Gadgetzan", "PvP|A"
@@ -315,7 +316,7 @@ end)
 
 ----------------------------------------------------------------------------------- window + settings
 
-it("profit window: rows flag a thin market, tooltips show labels and the market section", function()
+it("Make › Craft: rows flag a thin market, tooltips show labels and the market section", function()
 	local ns, stub = Load()
 	stub.items[2318] = { name = "Light Leather", stack = 20 }
 	stub.items[4246] = { name = "Belt", sellPrice = 1 }
@@ -330,16 +331,8 @@ it("profit window: rows flag a thin market, tooltips show labels and the market 
 	local lines = {}
 	GameTooltip.AddLine = function(_, t) lines[#lines + 1] = t end
 	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. " | " .. r end
-	ns.ToggleProfitFrame()
-	local shown
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.scripts.OnEnter then
-			f.scripts.OnEnter(f)
-			shown = true
-			break
-		end
-	end
-	assert(shown, "a row rendered")
+	Make.Open(ns, "craft", 165)
+	assert(Make.Hover(ns, "craft", 3763), "a row rendered")
 	local t = table.concat(lines, "\n")
 	has(t, "current lowest · Horde AH")
 	has(t, "Auction houses")
@@ -348,19 +341,18 @@ it("profit window: rows flag a thin market, tooltips show labels and the market 
 	has(t, "Crafted item")
 	has(t, "Horde AH | no price data")
 	has(t, "Best to sell | Booty Bay")
-	local summary = ns.PF.frame.summary.text
-	assert(summary:find("Auction prices: current lowest · Horde AH, else Auctionator (house unknown)", 1, true), summary)
-	local rowFrame
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.cells then rowFrame = f end
-	end
-	assert(rowFrame.status.text:find("thin market", 1, true), rowFrame.status.text)
+	eq(Make.Rows(ns, "craft")[1].view.sellsText, "1c vendor · thin", "the row is marked thin")
+	local foot = ns.Main.Frame().foot
+	assert(foot.left.text:find("Prices: current lowest · Horde AH", 1, true), foot.left.text)
 	-- Light Leather at Booty Bay too, so only the sale's cut is missing there.
 	Seed(2318, BOOTY, { tiers = { 30, 100 }, total = 100 })
 	ns.db.settings.priceHouse = "BootyBay"
-	ns.RefreshProfitFrame()
-	eq(rowFrame.cells.profit.text, "|cffffc24dcut unverified|r")
-	assert(ns.PF.frame.summary.text:find("sell where the AH cut is unverified", 1, true), ns.PF.frame.summary.text)
+	ns.Main.Refresh()
+	local r = Make.Rows(ns, "craft")[1]
+	eq(r.view.cells.profit, "—", "no profit while the cut is unverified")
+	eq(r.view.tips.profit[1], "AH cut not verified at Booty Bay")
+	assert(r.view.sellsText:find("15s AH gross", 1, true), r.view.sellsText)
+	assert(foot.right.text:find("1 sell where the AH cut is unverified", 1, true), foot.right.text)
 end)
 
 it("settings: basis and house buttons; houses without data can't be picked", function()

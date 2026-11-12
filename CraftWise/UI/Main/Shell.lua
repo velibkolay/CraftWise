@@ -19,9 +19,10 @@
 --                                  sort (true = the header sorts by row[key]), text(row) -> text, color }
 --   rowHeight, InitRow(row, data, ctx), SortRows(rows, key, desc),
 --   Open(content, data, ctx) + OpenHeight(data, ctx)   rows that open in place
---   Hero(card, hero, ctx, slot)   draws into the hero card's middle (rails); label/name/sub/figure are
---                                  filled by the shell from model.hero. slot = the page's own frame
---                                  over the middle (hidden while other pages show). hero.full = true:
+--   Hero(card, hero, ctx, slot)   draws into the hero card's middle (rails); label, name (nameColor),
+--                                  sub, figure (figureColor), figureLabel (above it) and figureUnit (after
+--                                  it) are filled by the shell from model.hero. slot = the page's own
+--                                  frame over the middle (hidden while other pages show). hero.full = true:
 --                                  the middle is the whole card inside its padding; hero.bare = true:
 --                                  no card, the slot is the whole hero area (the page draws its cards).
 --                                  Also on model.hero: labelColor, nameFont (a Style.Fonts key), flap (the
@@ -31,6 +32,8 @@
 --   rail columns: a column with rail = function(row, ctx) -> { value, max, selected, zeroAt, low, high,
 --                                  point } draws a rail in its cell (List.lua); point = a tick with its
 --                                  range (low .. high) as a thin line instead of a bar
+--   RowTooltip(owner, row, ctx)   hover tooltip of a row instead of the item's GameTooltip (the row is
+--                                  marked cwOwnTooltip, so Tooltip.lua adds no second CraftWise section)
 --   Tools(slot, ctx), ListTools(slot, ctx), FooterTools(slot, ctx)   build once; Update*(slot, ctx)
 --   Build(body, ctx), Refresh(body, ctx)   custom pages
 -- }

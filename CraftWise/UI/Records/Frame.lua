@@ -223,11 +223,12 @@ local function BuildHeader()
 	gear:SetScript("OnLeave", function()
 		GameTooltip:Hide()
 	end)
-	local profit = Style.Button(frame, 110, 22, L["Profit window"])
-	profit:SetPoint("RIGHT", gear, "LEFT", -12, 0)
-	profit:SetScript("OnClick", function()
-		if not (CraftWiseFrame and CraftWiseFrame:IsShown()) then
-			ns.ToggleProfitFrame() -- opens it; never closes it from here
+	-- The profit window is gone (#154): this opens the main window; never closes it from here.
+	local main = Style.Button(frame, 110, 22, L["Main window"])
+	main:SetPoint("RIGHT", gear, "LEFT", -12, 0)
+	main:SetScript("OnClick", function()
+		if ns.OpenMainWindow then
+			ns.OpenMainWindow()
 		end
 	end)
 

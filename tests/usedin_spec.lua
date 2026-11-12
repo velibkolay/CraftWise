@@ -1,3 +1,4 @@
+local Make = dofile("tests/make_helpers.lua")
 local function setup()
 	local ns, stub = LoadAddon({ auctionator = true })
 	ns.RecipeData = {
@@ -47,14 +48,17 @@ it("Sell › Bags notes how many of your recipes use an item, filters to my craf
 	for _, f in ipairs(M.ListOf("bags").box.frames) do
 		assert(f.elementData.row.itemID ~= 4306, "rock hidden")
 	end
-	-- menu: Recipes using this -> Profit view, Leatherworking, search by reagent name
+	-- menu: Recipes using this -> Make › Craft, Leatherworking, unlearned shown, filtered by the reagent's name
+	ns.db.settings.includeUnlearned = false
+	ns.Main.state.vendorOnly.craft = true
 	ns.ShowItemMenu(2318)
 	CraftWiseItemMenu.buttons.recipes.scripts.OnClick(CraftWiseItemMenu.buttons.recipes)
-	eq(ns.db.settings.view, "profit")
+	eq(ns.Main.shown.page, "craft"); eq(ns.Main.Profession(), 165)
+	eq(ns.db.settings.includeUnlearned, true)
+	eq(ns.Main.Make.state.query, "Light Leather")
+	eq(Make.Tools(ns, "craft").filter.text, "Light Leather", "the filter box shows it")
 	local names = {}
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false and f.data.recipeID then names[#names + 1] = f.data.name end
-	end
+	for _, r in ipairs(Make.Rows(ns, "craft")) do names[#names + 1] = r.name end
 	table.sort(names)
 	eq(table.concat(names, ","), "Fine Leather Belt,Handstitched Leather Boots")
 	eq(ns.ShowRecipesUsing(4306), false)

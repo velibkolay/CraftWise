@@ -1,4 +1,5 @@
-it("window builds and renders rows without errors", function()
+local Make = dofile("tests/make_helpers.lua")
+it("Make › Craft builds and renders rows without errors", function()
 	local ns, stub = LoadAddon({ auctionator = true })
 	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = {
 		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) },
@@ -7,39 +8,41 @@ it("window builds and renders rows without errors", function()
 	} }
 	stub.Fire("TRADE_SKILL_SHOW")
 	stub.ah[2318], stub.ah[2302] = 10, 100
-	ns.ToggleProfitFrame()
 	local rows = ns.BuildRows(165, true)
 	eq(#rows, 3)
-	ns.ToggleProfitFrame() -- hide
-	ns.ToggleProfitFrame() -- show again
-	ns.RefreshProfitFrame()
+	Make.Open(ns, "craft", 165)
+	ns.Main.Toggle() -- hide
+	ns.Main.Toggle() -- show again
+	ns.Main.Refresh()
+	eq(#Make.Rows(ns, "craft"), 3)
 end)
 
-it("tooltips render for known, trainer, vendor and bundled-only rows", function()
+it("Make pages: tooltips, sorting and opened rows render for known, trainer, vendor and bundled-only rows", function()
 	local ns, stub = LoadAddon({ data = true, auctionator = true })
 	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
 		[2149] = { info = { name = "Handstitched Leather Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) },
 	} }
 	stub.Fire("TRADE_SKILL_SHOW")
 	UnitFactionGroup = function() return "Horde" end
-	ns.ToggleProfitFrame()
-	local rendered = 0
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.scripts.OnEnter then
+	for _, page in ipairs({ "craft", "learn", "level" }) do
+		local list = Make.Open(ns, page, 165)
+		local frames = Make.Frames(ns, page)
+		assert(#frames > 0, "rows on " .. page)
+		for _, f in ipairs(frames) do
 			f.scripts.OnEnter(f)
 			f.scripts.OnLeave(f)
-			rendered = rendered + 1
 		end
+		-- sort by every column without errors
+		for _, h in ipairs(list.headers) do
+			if h.col and h.col.sort then h.scripts.OnClick(h) end
+		end
+		-- open the first row: reagents and Price history
+		local first = Make.Frames(ns, page)[1]
+		first.scripts.OnClick(first, "LeftButton")
+		assert(list.box.frames[2].elementData.open, "opened in place on " .. page)
+		eq(ns.Main.shown.state, "list")
 	end
-	assert(rendered > 5, "expected visible rows, got " .. rendered)
-	-- sort by every column without errors
-	for _, f in ipairs(stub.frames) do
-		if f.scripts.OnClick and not f.data and not f.scripts.OnDragStart then f.scripts.OnClick(f) end
-	end
-	-- scroll
-	for _, f in ipairs(stub.frames) do
-		if f.scripts.OnMouseWheel then f.scripts.OnMouseWheel(f, -1) end
-	end
+	assert(#Make.Rows(ns, "learn") > 5, "bundled unlearned recipes on Learn")
 end)
 
 it("minimap button: click opens the main window, right-click the farm tracker, drag moves it, /craftwise minimap hides it", function()
@@ -73,27 +76,27 @@ it("the slash command is /craftwise, with no /cw alias (#34: /cw hijacks whisper
 	end
 end)
 
-it("search filters rows by name", function()
+it("the filter box filters the Make rows by name, the same query on all three pages", function()
 	local ns, stub = LoadAddon({ data = true })
 	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
 		[2149] = { info = { name = "Handstitched Leather Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
 	stub.Fire("TRADE_SKILL_SHOW")
-	ns.ToggleProfitFrame()
-	local box
-	for _, f in ipairs(stub.frames) do if f.scripts.OnTextChanged then box = f end end
-	box:SetText("boots")
-	box.scripts.OnTextChanged(box)
-	local visible = 0
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.shown ~= false then
-			visible = visible + 1
-			assert(f.data.name:lower():find("boots"), "unfiltered row " .. f.data.name)
-		end
+	Make.Open(ns, "craft", 165)
+	local before = #Make.Rows(ns, "craft")
+	Make.Filter(ns, "craft", "boots")
+	local rows = Make.Rows(ns, "craft")
+	assert(#rows > 0 and #rows < before, ("%d of %d"):format(#rows, before))
+	for _, r in ipairs(rows) do
+		assert(r.name:lower():find("boots"), "unfiltered row " .. r.name)
 	end
-	assert(visible > 0)
+	Make.Open(ns, "learn")
+	eq(Make.Tools(ns, "learn").filter.text, "boots", "one query for the Make pages")
+	for _, r in ipairs(Make.Rows(ns, "learn")) do assert(r.name:lower():find("boots"), r.name) end
+	Make.Filter(ns, "learn", "")
+	eq(ns.Main.Make.state.query, "")
 end)
 
-it("gathering professions get no tab; icons come from the client or fallbacks", function()
+it("gathering professions are not in the profession dropdown; icons come from the client or fallbacks", function()
 	local ns, stub = LoadAddon()
 	GetProfessions = function() return 1, 2 end
 	GetProfessionInfo = function(i) if i == 1 then return "Leatherworking", 136247 end return "Skinning", 134366 end
@@ -106,34 +109,34 @@ it("gathering professions get no tab; icons come from the client or fallbacks", 
 	eq(ns.charDB.professions[165].icon, 136247)
 	eq(ns.IsGathering(393), true); eq(ns.IsGathering(165), false)
 	eq(ns.ProfessionIcon(12345), 134400)
-	ns.ToggleProfitFrame()
-	local tabs = 0
-	for _, f in ipairs(stub.frames) do
-		if f.label and f.icon and f.shown ~= false then tabs = tabs + 1 end
-	end
-	eq(tabs, 1)
+	Make.Open(ns, "craft")
+	local chip = Make.Tools(ns, "craft").profession
+	chip.scripts.OnClick(chip)
+	local menu = CraftWiseProfessionMenu
+	eq(menu.shown, true)
+	local shown = 0
+	for _, b in ipairs(menu.buttons) do if b.shown ~= false then shown = shown + 1 end end
+	eq(shown, 1)
+	assert(menu.buttons[1].label.text:find("Leatherworking", 1, true), menu.buttons[1].label.text)
 end)
 
-it("learn columns hide when unlearned recipes are hidden", function()
+it("Craft: the Unlearned chip adds unlearned recipes to the list", function()
 	local ns, stub = LoadAddon({ savedDB = { settings = { includeUnlearned = false } } })
 	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
-		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) } } }
+		[2149] = { info = { name = "Boots", learned = true }, schematic = stub.Schematic({ { 2318, 2 } }, 2302) },
+		[3760] = { info = { name = "Cloak", learned = false }, schematic = stub.Schematic({ { 2319, 5 } }, 3719) } } }
 	stub.Fire("TRADE_SKILL_SHOW")
-	ns.ToggleProfitFrame()
-	local learnHeader
-	for _, f in ipairs(stub.frames) do if f.label == "TO LEARN" then learnHeader = f end end
-	eq(learnHeader.shown, false)
-	ns.db.settings.includeUnlearned = true
-	ns.RefreshProfitFrame()
-	eq(learnHeader.shown, true)
+	Make.Open(ns, "craft", 165)
+	eq(Make.Names(ns, "craft"), "Boots")
+	local chip = ns.Main.SlotsOf("craft").listTools.chips[1]
+	eq(chip.label.text, "Unlearned"); eq(chip.on, false)
+	chip.scripts.OnClick(chip)
+	eq(ns.db.settings.includeUnlearned, true); eq(chip.on, true)
+	eq(#Make.Rows(ns, "craft"), 2)
+	local cloak = Make.Frame(ns, "craft", 3760).elementData.row
+	eq(cloak.view.nameColor, "text", "white: not learned yet")
 end)
 
-
-local function visibleRows(stub)
-	local out = {}
-	for _, f in ipairs(stub.frames) do if f.data and f.shown ~= false then out[#out + 1] = f.data end end
-	return out
-end
 
 local function lwWithTrainer()
 	local ns, stub = LoadAddon({ auctionator = true })
@@ -148,34 +151,43 @@ local function lwWithTrainer()
 	return ns, stub
 end
 
-it("hide unpriced filter in the profit view", function()
+it("Hide unpriced on Craft leaves out rows without a profit; the footer counts them", function()
 	local ns, stub = lwWithTrainer()
 	stub.ah[2318], stub.ah[2302] = 10, 100
 	ns.db.settings.hideUnpriced = true
-	ns.ToggleProfitFrame()
-	local rows = visibleRows(stub)
+	Make.Open(ns, "craft", 165)
+	local rows = Make.Rows(ns, "craft")
 	assert(#rows >= 1)
 	for _, r in ipairs(rows) do assert(r.profit, "unpriced row shown") end
+	assert(ns.Main.Frame().foot.right.text:find("hidden: no price", 1, true), ns.Main.Frame().foot.right.text)
 end)
 
-it("learn view lists every unlearned recipe, sorted by skill, with where-to-get text", function()
-	local ns, stub = lwWithTrainer()
-	ns.db.settings.view = "learn"
-	ns.ToggleProfitFrame()
-	local rows = visibleRows(stub)
+it("Learn lists every unlearned recipe with where-to-get text; sorted by skill, unknown last", function()
+	local ns = lwWithTrainer()
+	local list = Make.Open(ns, "learn", 165)
+	local rows = Make.Rows(ns, "learn")
 	eq(#rows, 3)
 	for _, r in ipairs(rows) do assert(r.status ~= "known") end
-	eq(rows[1].name, "Cloak"); eq(rows[1].whereText, "Trainer")
-	eq(rows[2].name, "Tunic")
-	eq(rows[3].whereText, nil) -- Pants: source not known yet, sorted last
+	local skill = list.headers[3]
+	eq(skill.col.key, "required")
+	skill.scripts.OnClick(skill) -- highest first
+	skill.scripts.OnClick(skill) -- again: lowest first
+	eq(Make.Names(ns, "learn"), "Cloak,Tunic,Pants")
+	rows = Make.Rows(ns, "learn")
+	eq(rows[1].whereText, "Trainer"); assert(rows[1].view.cells.where:find("^Trainer"), rows[1].view.cells.where)
+	eq(rows[3].whereText, nil); eq(rows[3].view.cells.where, "Not known yet") -- Pants: source not known yet
+	eq(rows[3].view.cells.required, "unknown"); eq(rows[3].view.colors.required, "text3")
+	eq(rows[2].view.colors.required, "skill.orange", "Tunic needs 120, above 100")
+	eq(rows[1].view.cells.learnCost, ns.FormatCoins(500))
+	eq(rows[3].view.cells.learnCost, "unknown"); eq(rows[3].view.cells.breakEven, "—")
 end)
 
-it("learn view 'Fits my skill' keeps only known requirements at or below the skill", function()
-	local ns, stub = lwWithTrainer()
-	ns.db.settings.view, ns.db.settings.learnFitsSkill = "learn", true
-	ns.ToggleProfitFrame()
-	local rows = visibleRows(stub)
-	eq(#rows, 1); eq(rows[1].name, "Cloak")
+it("Learn 'Fits my skill' keeps only known requirements at or below the skill", function()
+	local ns = lwWithTrainer()
+	ns.db.settings.learnFitsSkill = true
+	Make.Open(ns, "learn", 165)
+	eq(Make.Names(ns, "learn"), "Cloak")
+	assert(ns.Main.Frame().foot.right.text:find("2 hidden by the chips", 1, true), ns.Main.Frame().foot.right.text)
 end)
 
 it("learn view uses bundled source data when present: vendors own faction first, AH price, required skill", function()
@@ -193,16 +205,13 @@ it("learn view uses bundled source data when present: vendors own faction first,
 	eq(s, "vendor"); eq(req, 95); eq(tooLow, false)
 	local cost, how = ns.LearnCost(3762)
 	eq(cost, 2000); eq(how, "vendor")
-	ns.db.settings.view = "learn"
-	ns.ToggleProfitFrame()
-	for _, f in ipairs(stub.frames) do if f.data and f.scripts.OnEnter then f.scripts.OnEnter(f) end end
+	Make.Open(ns, "learn", 165)
+	for _, f in ipairs(Make.Frames(ns, "learn")) do f.scripts.OnEnter(f) end
 end)
 
-it("view buttons switch views", function()
-	local ns, stub = lwWithTrainer()
-	ns.ToggleProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.label and f.label.text == "Learn" then f.scripts.OnClick(f) end
-	end
-	eq(ns.db.settings.view, "learn")
+it("the profit window is gone (#154): Profit, Learn and Level were its last views", function()
+	local ns = lwWithTrainer()
+	eq(ns.PF, nil); eq(ns.ToggleProfitFrame, nil); eq(ns.RefreshProfitFrame, nil)
+	SlashCmdList.CRAFTWISE("")
+	eq(CraftWiseMainFrame:IsShown(), true, "/craftwise opens the main window")
 end)

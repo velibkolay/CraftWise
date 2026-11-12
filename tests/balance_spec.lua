@@ -1,5 +1,6 @@
 -- Issue #49: reagent imbalance warning with a buy list. Example from Veli's run: 60 Cured Light
 -- Hide, but Light Leather for only 8 Light Leather Pants.
+local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
 local DAY = 86400
 local HORDE = "PvP|H"
@@ -203,18 +204,11 @@ it("profit and level tooltips and the tracked recipe's item tooltip show the bal
 	local add, add2 = GameTooltip.AddLine, GameTooltip.AddDoubleLine
 	GameTooltip.AddLine = function(self, l, ...) seen[#seen + 1] = Plain(tostring(l)); return add(self, l, ...) end
 	GameTooltip.AddDoubleLine = function(self, l, r, ...) seen[#seen + 1] = Plain(l) .. " | " .. Plain(r); return add2(self, l, r, ...) end
-	for _, view in ipairs({ "profit", "level" }) do
+	for _, page in ipairs({ "craft", "level" }) do
 		seen = {}
-		ns.db.settings.view = view
-		if ns.PF and ns.PF.frame and ns.PF.frame:IsShown() then ns.RefreshProfitFrame() else ns.ToggleProfitFrame() end
-		local hovered = false
-		for _, f in ipairs(stub.frames) do
-			if f.data and f.data.recipeID == 9068 and f.scripts.OnEnter and f:IsShown() then
-				f.scripts.OnEnter(f); hovered = true
-				break
-			end
-		end
-		assert(hovered, "no pants row in the " .. view .. " view")
+		Make.Open(ns, page, 165)
+		local hovered = Make.Hover(ns, page, 9068)
+		assert(hovered, "no pants row on the " .. page .. " page")
 		has(table.concat(seen, "\n"), "Light Leather limits you to 8 crafts; you hold Cured Light Hide for 60.")
 	end
 	GameTooltip.AddLine, GameTooltip.AddDoubleLine = add, add2
@@ -452,22 +446,15 @@ it("buy list decides at market prices whatever the view's cost basis (Scout deci
 	eq(b.total, 150)
 end)
 
-it("profit view tooltip shows the crafted buy list", function()
+it("Make › Craft row tooltip shows the crafted buy list", function()
 	local ns, stub = Load()
 	SetupCure(ns, stub)
 	local seen = {}
 	local add, add2 = GameTooltip.AddLine, GameTooltip.AddDoubleLine
 	GameTooltip.AddLine = function(self, l, ...) seen[#seen + 1] = Plain(tostring(l)); return add(self, l, ...) end
 	GameTooltip.AddDoubleLine = function(self, l, r, ...) seen[#seen + 1] = Plain(l) .. " | " .. Plain(r); return add2(self, l, r, ...) end
-	ns.db.settings.view = "profit"
-	if ns.PF and ns.PF.frame and ns.PF.frame:IsShown() then ns.RefreshProfitFrame() else ns.ToggleProfitFrame() end
-	local hovered = false
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.recipeID == 9068 and f.scripts.OnEnter and f:IsShown() then
-			f.scripts.OnEnter(f); hovered = true
-			break
-		end
-	end
+	Make.Open(ns, "craft", 165)
+	local hovered = Make.Hover(ns, "craft", 9068)
 	GameTooltip.AddLine, GameTooltip.AddDoubleLine = add, add2
 	assert(hovered, "no pants row")
 	local text = table.concat(seen, "\n")

@@ -1,6 +1,7 @@
 -- Issue #40: every AH value uses the profit house and price basis (Bags view, item tooltip advice,
 -- AH rule, AH learn cost, disenchant value) and the cut source is shown ("confirmed" / "measured" /
 -- "unverified").
+local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
 local DAY = 86400
 local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
@@ -236,7 +237,7 @@ end)
 
 ----------------------------------------------------------------------------- profit rows and level
 
-it("profit rows and the level view carry the cut source", function()
+it("Craft rows and the level sale carry the cut source", function()
 	local ns, stub = Load()
 	stub.items[2318] = { name = "Light Leather", stack = 20 }
 	stub.items[4246] = { name = "Belt", sellPrice = 1 }
@@ -258,19 +259,12 @@ it("profit rows and the level view carry the cut source", function()
 	local lines = {}
 	GameTooltip.AddLine = function(_, t) lines[#lines + 1] = t end
 	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = l .. " | " .. r end
-	ns.ToggleProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.scripts.OnEnter then f.scripts.OnEnter(f) break end
-	end
+	Make.Open(ns, "craft", 165) -- Make › Craft (#154)
+	assert(Make.Hover(ns, "craft", 3763), "belt row")
 	has(table.concat(lines, "\n"), "10% cut measured (2 sales), differs from 5% confirmed")
 	CraftWiseMarketDB.houses[HORDE].cut = { samples = 0 }
 	lines = {}
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.scripts.OnEnter then f.scripts.OnEnter(f) break end
-	end
-	ns.RefreshProfitFrame()
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.scripts.OnEnter then f.scripts.OnEnter(f) break end
-	end
+	ns.Main.Refresh()
+	assert(Make.Hover(ns, "craft", 3763), "belt row")
 	has(table.concat(lines, "\n"), "5% cut (confirmed)")
 end)

@@ -55,11 +55,8 @@ end
 -- Registry and navigation
 ----------------------------------------------------------------------------------------------------
 
-it("Main: five sections in the spec's order; every sub-page of #150 has a page (a bridge until it moves)", function()
+it("Main: five sections in the spec's order; every sub-page of #150 is a real page (the last bridges went with #154)", function()
 	local _, _, M = Load()
-	local moved = { bags = true, auctions = true, ledger = true, -- Sell (#155)
-		farm = true, fishing = true, crates = true, -- Gather (#156)
-		items = true, upgrades = true, music = true } -- Look up, Music (#157)
 	local labels = {}
 	for _, s in ipairs(M.SECTIONS) do labels[#labels + 1] = s.label end
 	eq(table.concat(labels, ","), "Make,Sell,Gather,Look up,Music")
@@ -69,7 +66,7 @@ it("Main: five sections in the spec's order; every sub-page of #150 has a page (
 		local got = {}
 		for _, p in ipairs(M.SectionPages(section)) do
 			got[#got + 1] = p.label
-			eq(p.bridge or false, not moved[p.key], p.key .. " is a bridge until it moves")
+			eq(p.bridge, nil, p.key .. " is a real page")
 		end
 		eq(table.concat(got, ","), list, section)
 	end
@@ -79,11 +76,14 @@ end)
 
 it("Main: a real page replaces its bridge (keeping its place); twice or in an unknown section fails", function()
 	local _, _, M = Load()
-	local page = M.RegisterPage({ key = "learn", section = "make", label = "Learn", Model = function() return {} end })
-	eq(M.Page("learn"), page)
-	eq(page.order, 2, "keeps the bridge's order")
-	eq(M.SectionPages("make")[2], page)
-	assert(not pcall(M.RegisterPage, { key = "learn", section = "make" }), "a real page registered twice must fail")
+	local key, section, order = "testbridge", "lookup", 3 -- a page that has not moved yet
+	M.RegisterPage({ key = key, section = section, label = "Test", order = order, bridge = true, kind = "custom" })
+	local page = M.RegisterPage({ key = key, section = section, label = "Test", Model = function() return {} end })
+	eq(M.Page(key), page)
+	eq(page.order, order, "keeps the bridge's order")
+	eq(M.SectionPages(section)[order], page)
+	assert(not pcall(M.RegisterPage, { key = key, section = section }), "a real page registered twice must fail")
+	assert(not pcall(M.RegisterPage, { key = "craft", section = "make" }), "Make › Craft is a real page (#154)")
 	assert(not pcall(M.RegisterPage, { key = "x", section = "nowhere" }), "unknown section must fail")
 end)
 
@@ -271,9 +271,7 @@ end)
 it("States: First run when the chosen profession has no recipes cached", function()
 	local ns, _, M = Load()
 	Prof(ns, {})
-	M.ShowPage("craft")
-	M.RegisterPage({ key = "craft", section = "make", label = "Craft", profession = true, prices = true,
-		Model = function() return { rows = {} } end, columns = {} })
+	M.ShowPage("craft") -- the real Make › Craft page (#154)
 	M.Open()
 	local f = M.Frame()
 	eq(M.shown.state, "firstRun")
@@ -533,25 +531,18 @@ end)
 -- Where everything lands: the bridges
 ----------------------------------------------------------------------------------------------------
 
-it("Bridges: each page not moved yet says so and opens its old home", function()
+it("Bridges: no page is a bridge any more; Bridges.lua and the profit window are gone (#154)", function()
 	local ns, _, M = Load()
-	M.Open("learn")
-	local f = M.Frame()
-	eq(M.shown.state, "custom")
-	local panel = M.SlotsOf("learn").body.panel
-	eq(panel.title.text, "Learn has not moved here yet.")
-	local b = panel.buttons[1]
-	eq(b.label.text, "Open in the profit window")
-	b.scripts.OnClick(b)
-	eq(ns.db.settings.view, "learn")
-	assert(ns.PF.frame and ns.PF.frame:IsShown(), "profit window open on Learn")
-	-- every row of "Where everything lands" that is a page here has a bridge with a working button
-	for _, bridge in ipairs(M.BRIDGES) do
-		for _, def in ipairs(bridge[5]) do
-			eq(type(def[2]), "function", bridge[1])
+	eq(M.BRIDGES, nil)
+	for _, section in ipairs(M.SECTIONS) do
+		for _, p in ipairs(M.SectionPages(section.key)) do
+			eq(p.bridge, nil, p.key)
 		end
 	end
-	eq(f:IsShown(), true)
+	local toc = io.open("CraftWise/CraftWise.toc"):read("*a")
+	eq(toc:find("Bridges.lua", 1, true), nil)
+	eq(toc:find("ProfitFrame", 1, true), nil)
+	eq(ns.PF, nil); eq(ns.ToggleProfitFrame, nil); eq(CraftWiseFrame, nil)
 end)
 
 ----------------------------------------------------------------------------------------------------

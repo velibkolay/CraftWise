@@ -106,7 +106,7 @@ end
 -- Farm
 ----------------------------------------------------------------------------------------------------
 
-it("Farm: the Gather pages are real pages in their order, after the bridges in the TOC", function()
+it("Farm: the Gather pages are real pages in their order, after the shell in the TOC", function()
 	local _, _, M = (function() local ns, stub = setup(); return ns, stub, ns.Main end)()
 	local labels = {}
 	for _, p in ipairs(M.SectionPages("gather")) do
@@ -115,10 +115,10 @@ it("Farm: the Gather pages are real pages in their order, after the bridges in t
 	end
 	eq(table.concat(labels, ","), "Farm,Fishing,Crates")
 	local toc = io.open("CraftWise/CraftWise.toc"):read("*a")
-	local b = toc:find("UI\\Main\\Pages\\Bridges.lua", 1, true)
+	local b = toc:find("UI\\Main\\Frame.lua", 1, true)
 	for _, page in ipairs({ "Farm", "Fishing", "Crates" }) do
 		local at = toc:find("UI\\Main\\Pages\\" .. page .. ".lua", 1, true)
-		assert(at and at > b, page .. " after Bridges.lua")
+		assert(at and at > b, page .. " after the shell")
 	end
 	for _, gone in ipairs({ "UI\\ProfitFrame\\Fishing.lua", "UI\\Records\\Crates.lua", "UI\\Records\\FishingLog.lua" }) do
 		eq(toc:find(gone, 1, true), nil, gone .. " is gone")

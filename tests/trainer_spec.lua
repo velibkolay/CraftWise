@@ -1,3 +1,4 @@
+local Make = dofile("tests/make_helpers.lua")
 local function setup()
 	local ns, stub = LoadAddon()
 	stub.profession = { id = 165, name = "Leatherworking", skill = 100, max = 150, recipes = {
@@ -102,16 +103,8 @@ it("the recipe tooltip says recorded at a trainer and thresholds unknown", funct
 	local lines = {}
 	GameTooltip.AddLine = function(_, t) lines[#lines + 1] = plain(t) end
 	GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = plain(l) .. " | " .. plain(r) end
-	ns.ToggleProfitFrame()
-	ns.RefreshProfitFrame()
-	local shown
-	for _, f in ipairs(stub.frames) do
-		if f.data and f.data.recipeID == BELT_SPELL and f.scripts.OnEnter then
-			f.scripts.OnEnter(f)
-			shown = table.concat(lines, "\n")
-			break
-		end
-	end
+	Make.Open(ns, "learn", 165) -- Make › Learn (#154)
+	local shown = Make.Hover(ns, "learn", BELT_SPELL) and table.concat(lines, "\n")
 	assert(shown, "belt row shown")
 	assert(shown:find("Skill-ups | thresholds unknown", 1, true), shown)
 	assert(shown:find("Recorded in game at a trainer", 1, true), shown)

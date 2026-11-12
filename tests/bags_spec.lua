@@ -140,10 +140,9 @@ it("AH rule panel: percent and minimum copper, both with - / +", function()
 	stub.items[900] = { name = "Darkshore Grouper", sellPrice = 2 }
 	stub.ah[900] = 17
 	stub.bags[0] = { { itemID = 900, stackCount = 1, quality = 1 } }
-	ns.ToggleProfitFrame()
 	local rows = byID(ns.BagRows())
 	eq(rows[900].best, "auction") -- +14c, over 20% and over the 10c minimum
-	ns.ToggleAHRule(CraftWiseFrame)
+	ns.ToggleAHRule(UIParent)
 	local panel = CraftWiseAHRule
 	assert(panel.shown, "panel open")
 	-- buttons: find by their labels in creation order

@@ -241,14 +241,12 @@ it("clean-up runs once the saved data is loaded", function()
 	eq(ns.charDB.professions[7], nil)
 end)
 
-it("the profession tab list ignores nameless entries", function()
+it("the profession dropdown ignores nameless entries", function()
 	local ns, stub = LoadAddon()
 	leatherworking(stub)
 	stub.Fire("TRADE_SKILL_SHOW")
 	ns.charDB.professions[999] = { recipes = { [1] = { learned = true } } }
-	ns.db.settings.view = "profit"
-	ns.ToggleProfitFrame()
-	local ids = ns.PF.ProfessionIDs()
+	local ids = ns.Main.ProfessionIDs() -- the Make pages' profession dropdown (#154)
 	eq(#ids, 1); eq(ids[1], 165)
 end)
 
@@ -310,7 +308,7 @@ it("refreshes skill and max skill of every profession without a window, Fishing 
 	eq(n, 2, "one entry per profession")
 end)
 
-it("tabs show the refreshed cap; Fishing gets no tab; Learn uses the new skill (#65)", function()
+it("the profession dropdown shows the refreshed skill; Fishing is not in it; Learn uses the new skill (#65)", function()
 	local ns, stub = LoadAddon()
 	cooking(stub)
 	stub.Fire("TRADE_SKILL_SHOW")
@@ -321,22 +319,17 @@ it("tabs show the refreshed cap; Fishing gets no tab; Learn uses the new skill (
 	}
 	ClientProfessions(client)
 	stub.Fire("PLAYER_LOGIN")
-	ns.ToggleProfitFrame()
-	local function TabLabels()
-		local out = {}
-		for _, f in ipairs(stub.frames) do
-			if f.label and f.icon and f.shown ~= false and f.label.text then out[#out + 1] = f.label.text end
-		end
-		return out
-	end
-	local labels = TabLabels()
-	eq(#labels, 1, "one tab: Cooking")
-	assert(labels[1]:find("Cooking", 1, true) and labels[1]:find("150/150", 1, true), labels[1])
+	local M = ns.Main
+	M.state.vendorOnly.craft = true
+	M.Open("craft")
+	local ids = M.ProfessionIDs()
+	eq(#ids, 1, "one profession: Cooking"); eq(ids[1], 185)
+	local chip = M.SlotsOf("craft").tools.profession
+	local function Label() return (chip.label.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "")) end
+	assert(Label():find("Cooking 150", 1, true), Label())
 	client[5].max, client[5].skill = 225, 160
 	stub.Fire("SKILL_LINES_CHANGED") -- window open: refreshed without reopening anything
-	labels = TabLabels()
-	eq(#labels, 1)
-	assert(labels[1]:find("160/225", 1, true), labels[1])
+	assert(Label():find("Cooking 160", 1, true), Label())
 	eq(ns.charDB.professions[185].skill, 160) -- RecipeStatus/Learn read prof.skill
 end)
 
@@ -383,8 +376,7 @@ it("login clean-up drops skill line 0 and empty-name entries (#78)", function()
 	ns.Notify("DB_READY")
 	eq(profs[0], nil, "line 0"); eq(profs[777], nil, "empty name")
 	eq(profs[165].name, "Leatherworking", "real professions stay")
-	ns.ToggleProfitFrame()
-	local ids = ns.PF.ProfessionIDs()
+	local ids = ns.Main.ProfessionIDs()
 	eq(#ids, 1); eq(ids[1], 165)
 	local snap = ns.Snapshot.Build()
 	for _, p in ipairs(snap.professions or {}) do
