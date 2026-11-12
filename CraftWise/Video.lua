@@ -55,7 +55,7 @@ local function SavePosition()
 end
 
 local function BuildWindow()
-	window = CreateFrame("Frame", "CraftWiseVideoFrame", UIParent, "BackdropTemplate")
+	window = CreateFrame("Frame", "CraftWiseVideoFrame", UIParent)
 	window:SetFrameStrata("MEDIUM")
 	window:SetClampedToScreen(true)
 	window:SetMovable(true)
@@ -66,8 +66,12 @@ local function BuildWindow()
 		self:StopMovingOrSizing()
 		SavePosition()
 	end)
+	-- A flat sheet with a 1 unit rule round the clip (the old Style.Panel went with the old windows, #157).
 	if ns.Style then
-		ns.Style.Panel(window)
+		local bg = window:CreateTexture(nil, "BACKGROUND")
+		bg:SetAllPoints(window)
+		ns.Style.Fill(bg, ns.Style.C.sheet)
+		ns.Style.Border(window, ns.Style.C.rule)
 	end
 	texture = window:CreateTexture(nil, "ARTWORK")
 	texture:SetPoint("TOPLEFT", 2, -2)

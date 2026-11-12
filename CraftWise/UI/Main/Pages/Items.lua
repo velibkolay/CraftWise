@@ -1208,6 +1208,28 @@ function ns.ShowItemLookup(itemID, focus)
 	return M.Open("items")
 end
 
+-- /craftwise market <item> and /craftwise where <item> (Core.lua): Look up › Items on that item. An item ID
+-- or link shows its card; a name goes into the search box (and shows the card when one item matches);
+-- nothing opens the page as it was. focus = "history" (market) | "where".
+function ns.OpenItemsFromSlash(arg, focus)
+	arg = tostring(arg or ""):match("^%s*(.-)%s*$")
+	local itemID = Items.QueryItemID(arg)
+	if itemID then
+		return ns.ShowItemLookup(itemID, focus)
+	end
+	if arg ~= "" then
+		Items.state.query = arg
+		if Items.searchBox then
+			Items.searchBox:SetText(arg)
+		end
+		local found = Items.Search(arg)
+		if #found == 1 then
+			Items.Select(found[1], focus)
+		end
+	end
+	return M.Open("items")
+end
+
 function ns.ShowWhereToBuy(itemID)
 	return ns.ShowItemLookup(itemID, "where")
 end

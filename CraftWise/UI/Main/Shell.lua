@@ -372,7 +372,44 @@ function M.Thousands(n)
 	return (out:gsub("^ ", ""))
 end
 
--- The AH behind the prices: { house, label, at, age, stale, hasData, scanning = { label, done, total } }.
+-- Auctionator's prices count as prices at the profit house (#157; Prices.lua falls back to them, labelled
+-- "house unknown"). True when Auctionator answers and CraftWise has read a price from it (Market's export)
+-- or one of the first M.AUCTIONATOR_PROBE scope items has one now. A yes is kept for the session (its
+-- prices don't go away); a no is asked again after M.AUCTIONATOR_RECHECK seconds.
+M.AUCTIONATOR_PROBE = 40
+M.AUCTIONATOR_RECHECK = 10
+
+function M.AuctionatorHasPrices(now)
+	if not (ns.HasAuctionator and ns.HasAuctionator()) then
+		return false
+	end
+	local a = M.state.auctionator
+	if a.seen then
+		return true
+	end
+	local market = ns.Market
+	if market and market.HasAuctionatorExports and market.HasAuctionatorExports() then
+		a.seen = true
+		return true
+	end
+	now = now or time()
+	if a.checkedAt and now - a.checkedAt < M.AUCTIONATOR_RECHECK then
+		return false
+	end
+	a.checkedAt = now
+	for _, itemID in ipairs(market and market.ScopeItemIDs and market.ScopeItemIDs(M.AUCTIONATOR_PROBE) or {}) do
+		if ns.GetAuctionPrice(itemID) then
+			a.seen = true
+			return true
+		end
+	end
+	return false
+end
+
+-- The AH behind the prices: { house, label, at, age, stale, hasData, auctionator, hasPrices,
+-- scanning = { label, done, total } }. hasData: CraftWise recorded something at the house; auctionator:
+-- without that, Auctionator has prices; hasPrices: either (the "No prices" rule). Stale only looks at
+-- CraftWise's own records (Auctionator's age is per item, on the tooltips).
 function M.PriceStatus(now)
 	now = now or time()
 	local s = {}
@@ -382,13 +419,16 @@ function M.PriceStatus(now)
 	local market = ns.Market
 	s.at = market and market.LastRecorded and s.house and market.LastRecorded(s.house) or nil
 	s.hasData = s.at ~= nil
+	s.auctionator = not s.hasData and M.AuctionatorHasPrices(now) or false
+	s.hasPrices = s.hasData or s.auctionator
 	s.age = s.at and math.max(0, now - s.at) or nil
 	s.stale = s.age ~= nil and s.age > M.STALE_SECONDS
 	s.scanning = market and market.ScanProgress and market.ScanProgress() or nil
 	return s
 end
 
--- The header's AH status: text and its kind ("scanning" | "stale" | "ok" | "none"), nil without a house.
+-- The header's AH status: text and its kind ("scanning" | "stale" | "ok" | "auctionator" | "none"), nil
+-- without a house.
 function M.StatusText(status)
 	local Style = ns.Style
 	if status.scanning then
@@ -400,12 +440,60 @@ function M.StatusText(status)
 		return nil
 	end
 	if not status.hasData then
+		if status.auctionator then
+			return status.label .. " · " .. L["Auctionator prices"], "auctionator"
+		end
 		return status.label .. " · " .. L["no AH data"], "none"
 	end
 	if status.stale then
 		return status.label .. " · " .. (L["scanned %s ago"]):format(M.AgeText(status.age)), "stale"
 	end
 	return status.label .. " · " .. Style.Hex("text2") .. M.AgeText(status.age) .. "|r " .. L["ago"], "ok"
+end
+
+-- The header's AH status tooltip (#157: Records › Market's per-house scan summary moved here): a title and
+-- one line per house CraftWise recorded at (faction houses first): its last full scan and how many items
+-- have a price there, then Auctionator's prices read so far. Pure apart from reading Market.
+function M.ScanSummary(now)
+	now = now or time()
+	local title = L["Auction houses"]
+	local market = ns.Market
+	local ok, sum = false, nil
+	if market and market.SnapshotSummary then
+		ok, sum = pcall(market.SnapshotSummary)
+	end
+	if not (ok and sum and sum.houses) then
+		return title, { L["Market data not loaded."] }
+	end
+	local houses = {}
+	for key, h in pairs(sum.houses) do
+		h.key = key
+		houses[#houses + 1] = h
+	end
+	table.sort(houses, function(a, b)
+		if (a.kind == "faction") ~= (b.kind == "faction") then
+			return a.kind == "faction"
+		end
+		return (a.label or "") < (b.label or "")
+	end)
+	local profit = ns.ProfitHouse and ns.ProfitHouse()
+	local function Items(n)
+		return M.Thousands(n) .. " " .. (n == 1 and L["item"] or L["items"])
+	end
+	local lines = {}
+	for _, h in ipairs(houses) do
+		local scan = h.lastFullScan and (L["full scan %s ago"]):format(M.AgeText(now - h.lastFullScan)) or L["no full scan"]
+		lines[#lines + 1] = ("%s%s: %s · %s, %s %s"):format(h.label or "?", h.key == profit and (" (" .. L["profit"] .. ")") or "",
+			scan, Items(h.items), M.Thousands(h.withHistory), L["with history"])
+	end
+	if #lines == 0 then
+		lines[1] = L["No auction house visited yet: open one and CraftWise records what you browse and scan."]
+	end
+	local a = sum.auctionator
+	if a and (a.items or 0) > 0 then
+		lines[#lines + 1] = ("%s: %s %s"):format(a.label or "Auctionator", Items(a.items), L["read"])
+	end
+	return title, lines
 end
 
 -- "Horde AH" -> "Horde auction house", "Booty Bay" -> "Booty Bay auction house".
@@ -454,14 +542,16 @@ function M.NoPriceText()
 	return ns.Style.Hex("text3") .. L[M.NO_PRICE] .. "|r"
 end
 
-M.state = { vendorOnly = {}, sort = {} } -- this session: Show vendor-only profits, sort per page
+M.state = { vendorOnly = {}, sort = {}, auctionator = {} } -- this session: Show vendor-only profits, sort per page,
+-- what M.AuctionatorHasPrices found
 
--- The state that replaces a page's body: "firstRun" | "noPrices" | nil.
+-- The state that replaces a page's body: "firstRun" | "noPrices" | nil. No prices: neither CraftWise's
+-- records nor Auctionator have prices at the profit house (M.PriceStatus().hasPrices).
 function M.BlockingState(page, ctx)
 	if page.profession and not (ctx.prof and next(ctx.prof.recipes or {})) then
 		return "firstRun"
 	end
-	if page.prices and not page.pricesOptional and not (ctx.prices and ctx.prices.hasData) and not M.state.vendorOnly[page.key] then
+	if page.prices and not page.pricesOptional and not (ctx.prices and ctx.prices.hasPrices) and not M.state.vendorOnly[page.key] then
 		return "noPrices"
 	end
 	return nil

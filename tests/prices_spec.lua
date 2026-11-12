@@ -54,7 +54,7 @@ end)
 
 it("saved settings survive and defaults fill in", function()
 	local ns = LoadAddon({ savedDB = { vendor = { [5] = 3 }, settings = { includeUnlearned = false } } })
-	eq(ns.db.vendor[5], 3); eq(ns.db.settings.includeUnlearned, false); eq(ns.db.settings.sortKey, "profit")
+	eq(ns.db.vendor[5], 3); eq(ns.db.settings.includeUnlearned, false); eq(ns.db.settings.hideUnpriced, false)
 end)
 
 -- #83: the vendor floor survives an item the client hasn't cached this session.

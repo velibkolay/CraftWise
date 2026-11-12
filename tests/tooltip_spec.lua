@@ -45,16 +45,19 @@ it("each line can be turned off, the section can be off, or shown only with Shif
 	eq(ns.AddTooltipLines(tip, 2318), false)
 end)
 
-it("settings panel toggles the section, mode and lines", function()
+it("Settings › Tooltips toggles the section, mode and lines", function()
 	local ns, stub = setup()
-	ns.ToggleSettings() -- the old panel, until #157 part 2 (the Settings page: tests/settings_page_spec.lua)
-	local p = CraftWiseSettings
-	assert(p.shown, "panel open")
-	p.shift.scripts.OnClick(p.shift)
+	local M = ns.Main
+	M.Open("settings")
+	M.Settings.SelectGroup("tooltips")
+	local function row(key) return M.Settings.RowOf("tooltips", key).holder end
+	local seg = row("tooltip").control
+	seg.buttons[2].scripts.OnClick(seg.buttons[2])
 	eq(ns.db.tooltip.mode, "shift")
-	p.lines.usedIn.scripts.OnClick(p.lines.usedIn)
+	local box = row("line_usedIn").control
+	box.scripts.OnClick(box)
 	eq(ns.db.tooltip.lines.usedIn, false)
-	p.enabled.scripts.OnClick(p.enabled)
+	seg.buttons[3].scripts.OnClick(seg.buttons[3])
 	eq(ns.db.tooltip.enabled, false)
 end)
 

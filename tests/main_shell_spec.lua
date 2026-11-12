@@ -301,6 +301,90 @@ it("States: No prices without an AH observation; Show vendor-only profits shows 
 	eq(M.Context(M.Page("testlist")).vendorOnly, true)
 end)
 
+it("States: Auctionator prices count as prices at the profit house; No prices only without either (#157)", function()
+	local ns, stub, M = Load({ auctionator = true })
+	TestPage(M, { prices = true })
+	CraftWiseMarketDB.scope.items[990001] = true
+	M.Open("testlist")
+	local f = M.Frame()
+	-- Auctionator loaded, but no price for anything of the scope: No prices
+	eq(M.shown.state, "noPrices")
+	eq(f.head.status.text, "Horde AH · no AH data")
+	-- it gets a price: asked again after AUCTIONATOR_RECHECK seconds, then the page shows
+	stub.ah[990001] = 250
+	M.Refresh()
+	eq(M.shown.state, "noPrices", "a no is kept for a few seconds")
+	stub.clock = NOW + M.AUCTIONATOR_RECHECK
+	M.Refresh()
+	eq(M.shown.state, "list")
+	eq(f.head.status.text, "Horde AH · Auctionator prices")
+	local s = M.PriceStatus()
+	eq(s.hasData, false); eq(s.auctionator, true); eq(s.hasPrices, true); eq(s.stale, false)
+	-- a yes stays for the session
+	stub.ah[990001] = nil
+	M.Refresh()
+	eq(M.shown.state, "list")
+	-- CraftWise's own records win the header; Auctionator isn't asked then
+	CraftWiseMarketDB.scans[HORDE] = { { t = NOW - 3600, kind = "full" } }
+	M.Refresh()
+	eq(f.head.status.text, "Horde AH · " .. ns.Style.Hex("text2") .. "1 h|r ago")
+	eq(M.PriceStatus().auctionator, false)
+end)
+
+it("States: an Auctionator price CraftWise read before counts; without Auctionator loaded it doesn't", function()
+	local ns, stub, M = Load({ auctionator = true })
+	TestPage(M, { prices = true })
+	ns.Market.ExportAuctionator(990002, 300, 1)
+	M.Open("testlist")
+	eq(M.shown.state, "list", "Auctionator answered before")
+	ns, stub, M = Load()
+	TestPage(M, { prices = true })
+	ns.Market.ExportAuctionator(990002, 300, 1)
+	M.Open("testlist")
+	eq(M.shown.state, "noPrices", "the export alone is no price: Auctionator isn't loaded")
+	eq(M.AuctionatorHasPrices(), false)
+end)
+
+it("Header AH status: hover shows the scan summary per house (was Records › Market's summary line, #157)", function()
+	local ns, stub, M = Load()
+	TestPage(M, { prices = true })
+	local db = CraftWiseMarketDB
+	local BOOTY = "PvP|N:BootyBay"
+	db.houses[HORDE] = { realm = "PvP", kind = "faction", faction = "Horde", label = "Horde AH" }
+	db.houses[BOOTY] = { realm = "PvP", kind = "neutral", label = "Booty Bay" }
+	db.scans[HORDE] = { { t = NOW - 2 * 3600, kind = "full", items = 3 }, { t = NOW - 600, kind = "search" } }
+	db.scans[BOOTY] = { { t = NOW - 3 * DAY, kind = "browse" } }
+	local today = math.floor(NOW / DAY)
+	db.items[990001] = { [HORDE] = { raw = {}, days = { [today] = { lo = 10, typ = 10, hi = 10, n = 1 } }, last = { t = NOW - 600, min = 10, qty = 5 } },
+		[BOOTY] = { raw = {}, days = {}, last = { t = NOW - 3 * DAY, min = 12, qty = 1 } } }
+	db.items[990002] = { [HORDE] = { raw = {}, days = {}, last = { t = NOW - 600, min = 40, qty = 2 } } }
+	db.auctionator.items[990003] = "1,1,1"
+	M.Open("testlist")
+	local f = M.Frame()
+	local hit = f.head.statusHit
+	eq(hit.shown, true, "the hover area shows with the status")
+	hit.scripts.OnEnter(hit)
+	local tip = CraftWiseInverseTip
+	eq(tip.shown, true); eq(tip.owner, hit)
+	eq(tip.title.text, "Auction houses")
+	local lines = {}
+	for line in (tip.body.text .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
+	eq(lines[1], "Horde AH (profit): full scan 2 h ago · 2 items, 1 with history", "faction house first")
+	eq(lines[2], "Booty Bay: no full scan · 1 item, 0 with history")
+	eq(lines[3], "Auctionator (house unknown): 1 item read")
+	hit.scripts.OnLeave(hit)
+	eq(tip.shown, false)
+	-- nothing recorded yet: the line says what to do
+	local title, empty = M.ScanSummary()
+	eq(title, "Auction houses")
+	db.houses, db.scans, db.items, db.auctionator.items = {}, {}, {}, {}
+	title, empty = M.ScanSummary()
+	eq(empty[1], "No auction house visited yet: open one and CraftWise records what you browse and scan.")
+	-- a page without prices: no status, no hover area
+	M.ShowPage("settings")
+	eq(f.head.status.shown, false); eq(hit.shown, false)
+end)
+
 it("States: header status, Stale card and age, Scanning with its progress", function()
 	local ns, stub, M = Load()
 	TestPage(M, { prices = true })

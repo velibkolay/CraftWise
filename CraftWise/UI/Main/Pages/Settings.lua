@@ -1,7 +1,8 @@
 -- Settings page (#157; spec in #150 "Look up, Music, Settings", board "Settings"): the gear in the header.
 -- A left list of groups, rows of label left and control right. It holds every option of the old settings
--- panel (UI/Settings.lua) and the AH rule panel (UI/AHRule.lua), plus the new Look group and the Snapshot
--- group (Records › Snapshot today). The Background sliders (Look, Loot toast) write db.settings.alpha (#162).
+-- panel and the AH rule panel (both removed in #157 part 2), plus the new Look group and the Snapshot
+-- group (was Records › Snapshot). The Background sliders (Look, Loot toast) write db.settings.alpha (#162).
+-- Slash commands that change a setting open its group (ns.OpenSettings, Core.lua).
 --
 -- The groups are data (Set.Groups: rows of { kind, label, get, set, ... }); the drawing below turns each
 -- kind into a control, so the docked layout (#161) can draw the same rows its own way. Kinds:
@@ -34,9 +35,6 @@ end
 local function Changed(...)
 	for _, name in ipairs({ ... }) do
 		ns.Notify(name)
-	end
-	if ns.RefreshProfitFrame then
-		ns.RefreshProfitFrame()
 	end
 	M.Refresh()
 end
@@ -106,7 +104,30 @@ function Set.SetToastMode(v)
 	end
 end
 
-local DEFAULT_PERCENT, DEFAULT_COPPER, PERCENT_STEP = 20, 10, 5 -- as the AH rule panel
+-- AH rule (issue #12): Defaults and the - / + steps of the old AH rule panel.
+local DEFAULT_PERCENT, DEFAULT_COPPER, PERCENT_STEP = 20, 10, 5
+Set.AH_RULE_DEFAULTS = { percent = DEFAULT_PERCENT, copper = DEFAULT_COPPER }
+Set.COPPER_STEPS = { 0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000 }
+
+-- The next copper step up (dir 1) or down (dir -1) from current.
+function Set.StepCopper(current, dir)
+	current = current or 0
+	local steps = Set.COPPER_STEPS
+	if dir > 0 then
+		for _, v in ipairs(steps) do
+			if v > current then
+				return v
+			end
+		end
+		return steps[#steps]
+	end
+	for i = #steps, 1, -1 do
+		if steps[i] < current then
+			return steps[i]
+		end
+	end
+	return 0
+end
 
 -- "Vendor pays 1s; the AH must pay at least 1s 20c after the 5% cut."
 function Set.AHRuleExample()
@@ -417,11 +438,11 @@ local function Groups()
 		{ key = "copper", kind = "stepper", label = L["And at least this much more"],
 			get = function() return S().ahMinCopper or 0 end,
 			down = function()
-				S().ahMinCopper = ns.StepCopper(S().ahMinCopper, -1)
+				S().ahMinCopper = Set.StepCopper(S().ahMinCopper, -1)
 				Changed("BAGS_CHANGED")
 			end,
 			up = function()
-				S().ahMinCopper = ns.StepCopper(S().ahMinCopper, 1)
+				S().ahMinCopper = Set.StepCopper(S().ahMinCopper, 1)
 				Changed("BAGS_CHANGED")
 			end,
 			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
@@ -887,6 +908,14 @@ end
 function Set.RowOf(groupKey, rowKey)
 	local g = Set.body and Set.body.groups[groupKey]
 	return g and g.rows[rowKey]
+end
+
+-- Opens the Settings page on a group (slash commands: /craftwise ahmin, loottoast, farm lock, ...).
+function ns.OpenSettings(group)
+	if group and Set.Group(group) then
+		M.UI().settingsGroup = group
+	end
+	return M.Open and M.Open(M.SETTINGS) or false
 end
 
 M.RegisterPage({

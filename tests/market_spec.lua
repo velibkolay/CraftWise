@@ -1078,15 +1078,16 @@ it("#59: /craftwise market names the item with its link, waiting for the client 
 	assert(not text:find("item 5", 1, true), text)
 end)
 
-it("/craftwise market: no data, unknown item, usage, disappeared label", function()
-	local _, stub = Market()
+it("/craftwise market: no data, unknown item, no item opens Look up › Items, disappeared label", function()
+	local _, stub, ns = Market()
 	InScope({ 5 })
 	local text = Printed(function() SlashCmdList.CRAFTWISE("market 5"); stub.RunTimers() end)
 	assert(text:find("no price data", 1, true), text)
 	text = Printed(function() SlashCmdList.CRAFTWISE("market 77"); stub.RunTimers() end)
 	assert(text:find("not a recorded item", 1, true), text)
+	-- Without an item: Look up › Items, nothing printed (#157).
 	text = Printed(function() SlashCmdList.CRAFTWISE("market"); stub.RunTimers() end)
-	assert(text:find("usage", 1, true), text)
+	eq(text, ""); eq(ns.Main.shown.page, "items")
 
 	OpenAH(stub)
 	CommoditySearch(stub, 5, { { unitPrice = 100, quantity = 10 }, { unitPrice = 200, quantity = 90 } }, 100)

@@ -106,25 +106,17 @@ it("item menu opens at the cursor, also when a row asked for it, and closes on a
 	eq(CraftWiseItemMenu.shown, false)
 end)
 
-it("item menu: Where to buy and Price history open Look up › Items when it exists, else the Records views", function()
+it("item menu: Where to buy and Price history open Look up › Items on the item", function()
 	local ns = setup()
 	local calls = {}
-	ns.ShowItemLookup = nil -- before Look up › Items: the Records views
-	ns.ShowWhereToBuy = function(id) calls[#calls + 1] = "where " .. id end
-	ns.ShowMarketPrices = function(id) calls[#calls + 1] = "market " .. id end
+	ns.ShowItemLookup = function(id, focus) calls[#calls + 1] = "lookup " .. id .. " " .. focus end
 	local menu
 	for _, key in ipairs({ "where", "history" }) do
 		ns.ShowItemMenu(CLOTH)
 		menu = CraftWiseItemMenu
 		menu.buttons[key].scripts.OnClick(menu.buttons[key])
 	end
-	eq(table.concat(calls, ","), "where " .. CLOTH .. ",market " .. CLOTH)
-	ns.ShowItemLookup = function(id, focus) calls[#calls + 1] = "lookup " .. id .. " " .. focus end
-	for _, key in ipairs({ "where", "history" }) do
-		ns.ShowItemMenu(CLOTH)
-		menu.buttons[key].scripts.OnClick(menu.buttons[key])
-	end
-	eq(calls[3], "lookup " .. CLOTH .. " where"); eq(calls[4], "lookup " .. CLOTH .. " history")
+	eq(calls[1], "lookup " .. CLOTH .. " where"); eq(calls[2], "lookup " .. CLOTH .. " history")
 	eq(menu.shown, false)
 end)
 

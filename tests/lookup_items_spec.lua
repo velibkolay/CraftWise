@@ -315,5 +315,5 @@ it("Items page: the item menu's Where to buy and Price history open it on the it
 	eq(M.Items.Selected(), LEATHER)
 	ns.ShowMarketPrices(SALT)
 	eq(M.Items.Selected(), SALT)
-	eq(ns.RW.Market, nil, "Records › Market is gone"); eq(ns.RW.Where, nil, "Records › Where to buy is gone")
+	eq(ns.RW, nil, "the Records window is gone (#157)")
 end)

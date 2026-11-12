@@ -56,13 +56,8 @@ ItemWatch.lua
 UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua
-UI\AHRule.lua
-UI\Settings.lua
 UI\FarmFrame.lua
 UI\FarmHistory.lua
-UI\Records\State.lua
-UI\Records\Snapshot.lua
-UI\Records\Frame.lua
 UI\Main\Shell.lua
 UI\Main\States.lua
 UI\Main\List.lua
