@@ -100,8 +100,10 @@ local DB_DEFAULTS = {
 	lootToast = { enabled = true, duration = 4, fade = 1, value = true, locked = true },
 	-- Farm tracker (Farm.lua, #126): enabled = count loot, shown = window shown, autoStart = a session starts
 	-- with the first loot, idleMinutes = pause after that long without loot (0 = never), scale, locked, pos,
-	-- view = the loot panel's view: "list" (per item) or "log" (one line per drop, #130).
-	farm = { enabled = true, shown = true, autoStart = true, idleMinutes = 5, scale = 1, locked = false, view = "list" },
+	-- view = the loot panel's view: "list" (per item) or "log" (one line per drop, #130); mini = the tracker
+	-- as a strip (#164, same pos); fade = 40 % alpha while the mouse is away (#163).
+	farm = { enabled = true, shown = true, autoStart = true, idleMinutes = 5, scale = 1, locked = false, view = "list",
+		mini = false, fade = false },
 	farmLog = {}, -- [ns.CharKey()] = { current = session, history = finished sessions, newest first } (#126)
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
 	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true } },

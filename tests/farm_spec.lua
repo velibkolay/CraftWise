@@ -922,3 +922,254 @@ it("tracker pieces: money in coin colours, the timer, split geometry, hover tips
 	FF.OpenList()
 	assert(FF.Rows()[1].value.text:find(S.Hex("danger") .. "3 d|r", 1, true), "stale AH value carries its age in red")
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Mini mode (#164) and fade (#163)
+----------------------------------------------------------------------------------------------------
+
+local function tick(ns, seconds)
+	local d = ns.Style.TweenDriver
+	local step = d:GetScript("OnUpdate")
+	if step then step(d, seconds) end
+end
+
+local function click(b, button)
+	b:GetScript("OnClick")(b, button or "LeftButton")
+end
+
+it("mini mode (#164): the – button makes a 30 tall strip, cut 12; running timer, gold per hour, / h", function()
+	local ns, stub = setup()
+	local FF, S = ns.FarmFrame, ns.Style
+	loot(stub, CLOTH, 2)
+	advance(stub, 240)
+	FF.Refresh()
+	local f = CraftWiseFarmFrame
+	eq(FF.IsMini(), false); eq(ns.db.farm.mini, false, "full tracker by default")
+	eq(f.full.shown, true); eq(f.mini.shown, false); eq(f.cwSheet.cut, 22)
+	click(f.minus)
+	eq(FF.IsMini(), true); eq(ns.db.farm.mini, true, "remembered")
+	eq(f.full.shown, false); eq(f.mini.shown, true)
+	eq(f.height, 30); eq(f.cwSheet.cut, 12)
+	eq(flapOf(f), S.C.live.hex, "the corner in the state colour")
+	local m = f.mini
+	eq(m.timer.shown, true); eq(m.timer.text, "0:04:00"); eq(m.timer.textColor[1], S.C.text2[1])
+	eq(m.second.text, FF.Coins(26 * 15)); eq(m.second.fontObject, S.Fonts.FigureBold)
+	eq(m.unit.shown, true); eq(m.unit.text, "/ h"); eq(m.unit.textColor[1], S.C.text3[1])
+	eq(m.word.shown, false)
+	-- stub string width 80: 12 + 80 + 12 + 80 + 12 + 80 + 26
+	eq(f.width, 12 + 80 + 12 + 80 + 12 + 80 + 26, "width from content")
+	eq(m.timer.points[1][4], 12, "padding left 12")
+	advance(stub, 30)
+	f:GetScript("OnUpdate")(f, 1)
+	eq(m.timer.text, "0:04:30", "the strip ticks like the full tracker")
+	-- Click opens the full tracker again; its width and height come back.
+	click(m)
+	eq(FF.IsMini(), false); eq(ns.db.farm.mini, false)
+	eq(f.full.shown, true); eq(f.mini.shown, false); eq(f.width, FF.WIDTH); eq(f.cwSheet.cut, 22)
+	assert(f.height > 30, "height from content")
+end)
+
+it("mini mode: paused shows Paused and the session total; no session the state word; right-click pauses and resumes", function()
+	local ns, stub = setup()
+	local FF, S = ns.FarmFrame, ns.Style
+	loot(stub, CLOTH, 2)
+	advance(stub, 240)
+	coin(stub, 100)
+	FF.SetMini(true)
+	local f = CraftWiseFarmFrame
+	local m = f.mini
+	click(m, "RightButton")
+	eq(ns.Farm.Running(ns.Farm.Current()), false, "right-click pauses")
+	eq(FF.IsMini(), true, "right-click keeps the strip")
+	eq(flapOf(f), S.C.ruleStrong.hex)
+	eq(m.timer.shown, false); eq(m.word.shown, true)
+	eq(m.word.text, "Paused"); eq(m.word.textColor[1], S.C.text2[1])
+	eq(m.second.shown, true); eq(m.second.text, FF.Coins(126), "the session total")
+	eq(m.unit.shown, false)
+	eq(f.width, 12 + 80 + 12 + 80 + 26)
+	click(m, "RightButton")
+	eq(ns.Farm.Running(ns.Farm.Current()), true, "right-click resumes")
+	eq(m.timer.shown, true)
+	-- Paused when idle reads the same.
+	advance(stub, 5 * 60 + 1)
+	ns.Farm.Tick()
+	eq(FF.Last().state, "idle"); eq(m.word.text, "Paused")
+	-- No session: the word alone, flap colour; right-click does nothing.
+	SlashCmdList.CRAFTWISE("farm reset")
+	eq(FF.Last().state, "none")
+	eq(flapOf(f), S.C.flap.hex)
+	eq(m.word.text, "no session"); eq(m.word.textColor[1], S.C.text3[1])
+	eq(m.second.shown, false); eq(m.unit.shown, false)
+	eq(f.width, 12 + 80 + 26)
+	click(m, "RightButton")
+	eq(ns.Farm.Current(), nil, "nothing to pause without a session")
+end)
+
+it("mini mode: drag moves the strip (not a click), lock stops it; mode and position kept across a reload", function()
+	local ns, stub = setup()
+	local FF = ns.FarmFrame
+	loot(stub, CLOTH, 1)
+	FF.SetMini(true)
+	local f = CraftWiseFarmFrame
+	local m = f.mini
+	local moved = 0
+	f.StartMoving = function() moved = moved + 1 end
+	f.GetPoint = function() return "TOPLEFT", UIParent, "BOTTOMLEFT", 300, 700 end
+	m:GetScript("OnMouseDown")(m, "LeftButton")
+	m:GetScript("OnDragStart")(m)
+	m:GetScript("OnDragStop")(m)
+	click(m)
+	eq(moved, 1); eq(FF.IsMini(), true, "the mouse up after a drag is not a click")
+	eq(ns.db.farm.pos.x, 300); eq(ns.db.farm.pos.y, 700)
+	m:GetScript("OnMouseDown")(m, "LeftButton")
+	click(m)
+	eq(FF.IsMini(), false, "a plain click opens the full tracker")
+	FF.SetMini(true)
+	SlashCmdList.CRAFTWISE("farm lock")
+	m:GetScript("OnDragStart")(m)
+	eq(moved, 1, "locked: no drag")
+	-- Switching keeps the top left corner: the tracker is re-anchored there.
+	f.GetLeft = function() return 120 end
+	f.GetTop = function() return 640 end
+	f.GetPoint = function() return "TOPLEFT", UIParent, "BOTTOMLEFT", 120, 640 end
+	FF.SetMini(false)
+	local p = f.points[1]
+	eq(p[1], "TOPLEFT"); eq(p[3], "BOTTOMLEFT"); eq(p[4], 120); eq(p[5], 640)
+	eq(ns.db.farm.pos.point, "TOPLEFT"); eq(ns.db.farm.pos.x, 120)
+	-- Saved mode and position come back with the next load.
+	local saved = CraftWiseDB
+	saved.farm.mini = true
+	local ns2 = LoadAddon({ savedDB = saved })
+	ns2.FarmFrame.Show()
+	local f2 = CraftWiseFarmFrame
+	eq(ns2.FarmFrame.IsMini(), true); eq(f2.mini.shown, true); eq(f2.full.shown, false); eq(f2.height, 30)
+	local p2 = f2.points[1]
+	eq(p2[1], "TOPLEFT"); eq(p2[4], 120); eq(p2[5], 640)
+end)
+
+it("mini mode: Settings switch, the loot panel and history close on the strip, the Log link opens the full tracker", function()
+	local ns, stub = setup()
+	local FF = ns.FarmFrame
+	loot(stub, CLOTH, 1)
+	FF.Refresh()
+	ns.ToggleSettings()
+	local p = CraftWiseSettings
+	eq(p.farmMini:GetChecked(), false)
+	FF.OpenLog()
+	eq(FF.LootShown(), true)
+	click(p.farmMini)
+	eq(FF.IsMini(), true); eq(CraftWiseFarmFrame.mini.shown, true)
+	eq(FF.LootShown(), false, "the loot panel closes with the strip")
+	FF.OpenLog()
+	eq(FF.IsMini(), false, "opening the loot panel brings the full tracker back")
+	eq(FF.LootShown(), true)
+	ns.FarmHistory.Open()
+	eq(ns.FarmHistory.IsShown(), true)
+	click(CraftWiseFarmFrame.minus)
+	eq(ns.FarmHistory.IsShown(), false, "the history closes with the strip")
+	ns.ToggleSettings(); ns.ToggleSettings()
+	eq(p.farmMini:GetChecked(), true, "Settings shows the mode")
+	click(p.farmMini)
+	eq(FF.IsMini(), false)
+	-- Hover tips: the – button and the strip.
+	local f = CraftWiseFarmFrame
+	f.minus:GetScript("OnEnter")(f.minus)
+	eq(CraftWiseInverseTip.title.text, "Mini mode")
+	f.minus:GetScript("OnLeave")(f.minus)
+	FF.SetMini(true)
+	f.mini:GetScript("OnEnter")(f.mini)
+	eq(CraftWiseInverseTip.title.text, "Farm")
+	assert(CraftWiseInverseTip.body.text:find("Right-click: pause / resume", 1, true), CraftWiseInverseTip.body.text)
+	f.mini:GetScript("OnLeave")(f.mini)
+	eq(CraftWiseInverseTip.shown, false)
+end)
+
+it("fade (#163): off by default; on, the tracker sits at 40 % away from the mouse and returns on hover in 140 ms", function()
+	local ns, stub = setup()
+	local FF = ns.FarmFrame
+	loot(stub, CLOTH, 1)
+	local f = CraftWiseFarmFrame
+	eq(ns.db.farm.fade, false, "off by default")
+	f.mouseOver = false
+	f:GetScript("OnLeave")(f)
+	tick(ns, 1)
+	eq(FF.Alpha(), 1, "no fade while the setting is off")
+	-- On, from the Settings panel.
+	ns.ToggleSettings()
+	local p = CraftWiseSettings
+	eq(p.farmFade:GetChecked(), false)
+	click(p.farmFade)
+	eq(ns.db.farm.fade, true)
+	eq(FF.Alpha(), 1, "starts from 100 %")
+	tick(ns, 0.07)
+	assert(math.abs(FF.Alpha() - 0.7) < 0.01, "half way after 70 ms: " .. FF.Alpha())
+	tick(ns, 0.07)
+	eq(FF.Alpha(), 0.4); eq(f.alpha, 0.4)
+	-- Hover: back to 100 % in 140 ms.
+	f.mouseOver = true
+	f:GetScript("OnEnter")(f)
+	tick(ns, 0.14)
+	eq(f.alpha, 1)
+	-- Leaving the frame into one of its children (a row, a button) is still hovering.
+	f:GetScript("OnLeave")(f)
+	tick(ns, 0.14)
+	eq(f.alpha, 1, "still over the tracker")
+	-- Leaving through a child doesn't fire the frame's OnLeave: the per-frame check sees it.
+	f.mouseOver = false
+	f:GetScript("OnUpdate")(f, 0.016)
+	tick(ns, 0.14)
+	eq(f.alpha, 0.4)
+	-- A panel beside the tracker (the loot panel) counts as the tracker.
+	FF.OpenLog()
+	CraftWiseFarmLoot.mouseOver = true
+	f:GetScript("OnUpdate")(f, 0.016)
+	tick(ns, 0.14)
+	eq(f.alpha, 1, "hovering the loot panel")
+	CraftWiseFarmLoot.mouseOver = false
+	f:GetScript("OnUpdate")(f, 0.016)
+	tick(ns, 0.14)
+	eq(f.alpha, 0.4)
+	-- Off again: 100 %, whatever the mouse does.
+	click(p.farmFade)
+	eq(ns.db.farm.fade, false)
+	tick(ns, 0.14)
+	eq(f.alpha, 1)
+	f:GetScript("OnLeave")(f)
+	f:GetScript("OnUpdate")(f, 0.016)
+	tick(ns, 0.14)
+	eq(f.alpha, 1)
+end)
+
+it("fade: covers the mini strip too, and a tracker shown away from the mouse starts faded", function()
+	local ns, stub = setup()
+	local FF = ns.FarmFrame
+	loot(stub, CLOTH, 1)
+	local f = CraftWiseFarmFrame
+	FF.SetFade(true)
+	FF.SetMini(true)
+	f.mouseOver = false
+	f:GetScript("OnLeave")(f)
+	tick(ns, 0.14)
+	eq(f.alpha, 0.4, "the strip fades")
+	-- Over the strip (the mini button covers the frame, so the frame reports the mouse over it).
+	f.mouseOver = true
+	f:GetScript("OnUpdate")(f, 0.016)
+	tick(ns, 0.14)
+	eq(f.alpha, 1, "hovering the strip")
+	f.mouseOver = false
+	f:GetScript("OnUpdate")(f, 0.016)
+	tick(ns, 0.05)
+	assert(f.alpha < 1 and f.alpha > 0.4, "fading: " .. f.alpha)
+	-- Back to full mid-fade: the fade goes on to 40 %.
+	click(f.mini)
+	tick(ns, 0.14)
+	eq(f.alpha, 0.4); eq(f.full.shown, true)
+	-- Hide and show away from the mouse: faded at once.
+	FF.SetFade(false)
+	tick(ns, 0.14)
+	eq(f.alpha, 1)
+	SlashCmdList.CRAFTWISE("farm hide")
+	ns.db.farm.fade = true
+	SlashCmdList.CRAFTWISE("farm show")
+	eq(f.alpha, 0.4, "shown faded, no flash at 100 %")
+end)

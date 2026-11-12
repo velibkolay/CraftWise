@@ -2,7 +2,8 @@
 -- Item tooltip section: on/off, always or only with Shift, and each line on/off.
 -- Profit prices (#26 phase 2): price basis and the auction house profit uses.
 -- Reagent cost per view (#47): AH or paid cost.
--- Loot toast (#114) and farm tracker (#126) on/off.
+-- Loot toast (#114) and farm tracker (#126) on/off; the tracker's mini mode (#164) and fade (#163) until the
+-- Settings page of #157 (Look › Fade farm tracker) takes them over.
 -- Two columns (#137): the right one holds every switch a slash command has (loot toast move/test/duration/value,
 -- farm lock/idle/scale/history, fishing session gap and own-catch minimum, minimap button).
 local _, ns = ...
@@ -256,6 +257,19 @@ local function Build(parent)
 		panel.render()
 	end)
 	panel.farmLock:SetPoint("TOPLEFT", RX, farmY - 40)
+	-- Mini mode (#164): the same switch as the tracker's – button.
+	panel.farmMini = Style.Check(panel, L["Mini mode"], ns.FarmFrame.IsMini(), function(v)
+		ns.FarmFrame.SetMini(v)
+		panel.render()
+	end)
+	panel.farmMini:SetPoint("TOPLEFT", RX + 150, farmY - 40)
+	-- Fade (#163): off by default.
+	panel.farmFade = Style.Check(panel, L["Fade farm tracker to 40 % away from the mouse"], ns.FarmFrame.FadeEnabled(), function(v)
+		ns.FarmFrame.SetFade(v)
+		panel.render()
+	end)
+	panel.farmFade:SetPoint("TOPLEFT", RX, farmY - 62)
+	farmY = farmY - 22
 	panel.farmIdle = Stepper(RX, farmY - 66, L["Pause when idle"], function(dir)
 		local cur = ns.Farm.IdleMinutes()
 		local v = cur + dir * (((dir > 0 and cur >= 10) or (dir < 0 and cur > 10)) and 5 or 1)
@@ -366,6 +380,8 @@ local function Build(parent)
 		panel.farmAuto:SetChecked(ns.Farm.AutoStart())
 		panel.farmAuto:SetAlpha(ns.Farm.Enabled() and 1 or 0.4)
 		panel.farmLock:SetChecked(ns.db.farm.locked and true or false)
+		panel.farmMini:SetChecked(ns.FarmFrame.IsMini())
+		panel.farmFade:SetChecked(ns.FarmFrame.FadeEnabled())
 		local idle = ns.Farm.IdleMinutes()
 		panel.farmIdle.value:SetText(idle > 0 and (idle .. " min") or L["never"])
 		panel.farmScale.value:SetText(("%.1f"):format(tonumber(ns.db.farm.scale) or 1))
