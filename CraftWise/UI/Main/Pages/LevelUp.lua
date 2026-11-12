@@ -81,6 +81,7 @@ function LevelPage.View(r, ctx)
 	view.rail = r.perSkill and { value = r.perSkill, zeroAt = 0.18 } or nil
 	view.result, view.resultColor = c.perSkill, k.perSkill
 	view.sub = view.chanceText
+	view.missing = r.net == nil
 	return MK.Attach(r, view)
 end
 
@@ -142,6 +143,7 @@ function LevelPage.Hero(rows)
 		label = label, name = h.name, nameColor = "text", sub = table.concat(parts, " · "),
 		figureLabel = L["Per skill-up"], figure = figure, figureColor = color,
 		data = h, chanceNote = LevelPage.ChanceNote(row and row.chanceInfo),
+		middle = 42, -- docked: the chance, its bar and how it was found
 	}
 end
 
@@ -200,7 +202,9 @@ function LevelPage.Model(ctx)
 		rows = rows,
 		hero = LevelPage.Hero(rows),
 		listTitle = L["Known recipes that still give skill"],
-		listNote = MK.SortNote(M.Page("level"), SORT_NOTES),
+		-- docked: the sale note of the list header (no room right of the title) joins the note
+		listNote = MK.SortNote(M.Page("level"), SORT_NOTES)
+			.. (M.IsDocked(ctx) and (" · " .. L["Sale: AH after cut when it passes your AH rule, else vendor"]) or ""),
 		empty = L["No known recipe at your skill gives skill-ups. Learn new ones on the Learn page."],
 		footer = L["Chance: your own crafts at this colour; ~ marks the community formula while you have too few. Grey recipes are left out."],
 		footerRight = MK.BasisNote("level", rows) .. " · " .. (L["%d crafts recorded"]):format(crafts),
@@ -229,15 +233,19 @@ M.RegisterPage({
 		slot.note:SetJustifyH("RIGHT")
 		slot.note:SetText(L["Sale: AH after cut when it passes your AH rule, else vendor"])
 	end,
+	UpdateListTools = function(slot, ctx)
+		slot.note:SetShown(not M.IsDocked(ctx))
+	end,
+	dockedListToolsWidth = 0,
 	InitRow = function(b, r, ctx)
 		DrawChance(b, r, ctx)
 		MK.DrawSkeleton(b, PER_COLUMN, MK.ColumnAt(COLUMNS, PER_COLUMN, ctx), r.net == nil, ctx)
 	end,
-	Open = function(content, r)
-		MK.DrawOpen(content, r)
+	Open = function(content, r, ctx)
+		MK.DrawOpen(content, r, nil, ctx)
 	end,
-	OpenHeight = function(r)
-		return MK.OpenHeight(r)
+	OpenHeight = function(r, ctx)
+		return MK.OpenHeight(r, nil, ctx)
 	end,
 	RowTooltip = function(owner, r, ctx)
 		MK.ShowLevelTooltip(owner, r, ctx and ctx.professionID and ns.ProfessionSkill(ctx.professionID))

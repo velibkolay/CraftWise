@@ -592,8 +592,17 @@ function MK.ReagentLines(r, counter)
 	return out
 end
 
-local function Lines(n)
-	return math.max(1, math.ceil(n / MK.REAGENTS_PER_LINE))
+-- Reagents per line: 4 in the window; docked (#161) as many as the narrow card holds, Price history
+-- then goes under them.
+function MK.PerLine(ctx)
+	if not M.IsDocked(ctx) then
+		return MK.REAGENTS_PER_LINE
+	end
+	return math.max(1, math.floor((M.OpenInnerWidth(ctx) + MK.REAGENT_GAP) / (MK.REAGENT_WIDTH + MK.REAGENT_GAP)))
+end
+
+local function Lines(n, ctx)
+	return math.max(1, math.ceil(n / MK.PerLine(ctx)))
 end
 
 MK.BUTTON_HEIGHT, MK.BUTTON_GAP = 26, 6
@@ -615,10 +624,20 @@ local function ButtonsTop(y)
 	return y + (MK.REAGENT_HEIGHT - 8 - MK.BUTTON_HEIGHT) / 2
 end
 
--- Height of the opened part: where lines (Learn) and the reagent lines, at least the two buttons.
-function MK.OpenHeight(r, whereLines)
+-- Docked (#161): the buttons side by side in a row under the reagents.
+local function DockedButtonsTop(y, n, ctx)
+	return y + Lines(n, ctx) * MK.REAGENT_HEIGHT - 8 + 8
+end
+
+-- Height of the opened part: where lines (Learn) and the reagent lines, at least the two buttons
+-- (docked: plus the row of buttons under the reagents).
+function MK.OpenHeight(r, whereLines, ctx)
 	local where = (whereLines or 0) * MK.WHERE_LINE + ((whereLines or 0) > 0 and 6 or 0)
-	local reagents = where + Lines(#(r.reagents or {})) * MK.REAGENT_HEIGHT - 8
+	local reagents = where + Lines(#(r.reagents or {}), ctx) * MK.REAGENT_HEIGHT - 8
+	if M.IsDocked(ctx) then
+		local any = r.outputItemID ~= nil or MK.CanOpenRecipe(r)
+		return reagents + (any and (8 + MK.BUTTON_HEIGHT) or 0)
+	end
 	local buttons = ButtonsTop(where) + 2 * MK.BUTTON_HEIGHT + MK.BUTTON_GAP
 	return math.max(reagents, MK.CanOpenRecipe(r) and buttons or 0)
 end
@@ -626,8 +645,10 @@ end
 -- Draws the opened part of a recipe row into the list's content frame (reused between rows; the shell's
 -- M.Pool hands the widgets out again). opts.where = { { text, label } } lines above the reagents (Learn).
 -- Each reagent has a hit area: hover shows the item, right-click its menu, Shift-click links it.
-function MK.DrawOpen(content, r, opts)
+-- ctx: the page's (docked: fewer reagents per line, the buttons in a row under them).
+function MK.DrawOpen(content, r, opts, ctx)
 	opts = opts or {}
+	local perLine = MK.PerLine(ctx)
 	local pool = M.Pool(content)
 	pool:Reset()
 	local y = 0
@@ -646,7 +667,7 @@ function MK.DrawOpen(content, r, opts)
 		fs:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
 	end
 	for i, line in ipairs(content.reagentLines) do
-		local col, row = (i - 1) % MK.REAGENTS_PER_LINE, math.floor((i - 1) / MK.REAGENTS_PER_LINE)
+		local col, row = (i - 1) % perLine, math.floor((i - 1) / perLine)
 		local x, top = col * (MK.REAGENT_WIDTH + MK.REAGENT_GAP), -(y + row * MK.REAGENT_HEIGHT)
 		local head = pool:Text("Small", "text", line.head)
 		head:SetPoint("TOPLEFT", content, "TOPLEFT", x, top)
@@ -666,7 +687,13 @@ function MK.DrawOpen(content, r, opts)
 	local h = pool:Button(L["Price history"], function()
 		ns.OpenItemLookup(itemID, "history")
 	end, { L["Price history"], L["Auction house prices recorded for the crafted item."] }, MK.BUTTON_HEIGHT)
-	h:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -top)
+	local docked = M.IsDocked(ctx)
+	if docked then
+		top = DockedButtonsTop(y, #content.reagentLines, ctx)
+		h:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
+	else
+		h:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -top)
+	end
 	h:SetShown(itemID ~= nil)
 	content.history = h
 	-- Open in profession window, under Price history (or in its place without a crafted item).
@@ -674,7 +701,16 @@ function MK.DrawOpen(content, r, opts)
 	local o = pool:Button(L["Open in profession window"], function()
 		MK.OpenRecipe(recipeID)
 	end, { L["Open in profession window"], L["Shows this recipe in your profession window."] }, MK.BUTTON_HEIGHT)
-	o:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(itemID and (top + MK.BUTTON_HEIGHT + MK.BUTTON_GAP) or top))
+	if docked then
+		-- docked: beside Price history (or in its place)
+		if itemID then
+			o:SetPoint("LEFT", h, "RIGHT", MK.BUTTON_GAP, 0)
+		else
+			o:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
+		end
+	else
+		o:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(itemID and (top + MK.BUTTON_HEIGHT + MK.BUTTON_GAP) or top))
+	end
 	o:SetShown(MK.CanOpenRecipe(r))
 	content.openRecipe = o
 end

@@ -73,6 +73,7 @@ function CraftPage.View(r, ctx)
 		view.tips.cost = view.tips.profit
 	end
 	view.cells.profit, view.colors.profit = view.result, view.resultColor
+	view.missing = r.profit == nil and not r.noItemOutput -- a skeleton while scanning (both layouts)
 	return MK.Attach(r, view)
 end
 
@@ -208,11 +209,11 @@ M.RegisterPage({
 		MK.DrawSkeleton(b, RESULT_COLUMN, MK.ColumnAt(COLUMNS, RESULT_COLUMN, ctx),
 			r.profit == nil and not r.noItemOutput, ctx)
 	end,
-	Open = function(content, r)
-		MK.DrawOpen(content, r)
+	Open = function(content, r, ctx)
+		MK.DrawOpen(content, r, nil, ctx)
 	end,
-	OpenHeight = function(r)
-		return MK.OpenHeight(r)
+	OpenHeight = function(r, ctx)
+		return MK.OpenHeight(r, nil, ctx)
 	end,
 	RowTooltip = function(owner, r)
 		MK.ShowRecipeTooltip(owner, r, "profit")

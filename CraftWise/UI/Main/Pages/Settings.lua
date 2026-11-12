@@ -878,7 +878,196 @@ local function Build(body)
 	Set.body = body
 end
 
-local function Refresh(body)
+----------------------------------------------------------------------------------------------------
+-- Provisional (#161 Q2): the docked Settings page. One scrolling list of every group: the group's title
+-- as a group header (2 unit C.text rule, as on Bags), each row's label over its control, segmented
+-- controls across the row. The same group data and controls as the window (Controls above).
+----------------------------------------------------------------------------------------------------
+
+Set.DOCKED_GROUP = 40 -- a group header row
+Set.DOCKED_LABEL = 16 -- the label line above a control
+Set.DOCKED_CHECK_GAP = 18
+
+local function BuildDockedRow(parent, def)
+	local r = CreateFrame("Frame", nil, parent)
+	r.def = def
+	r.hair = Style.Rule(r, "H", C.rule)
+	r.hair:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
+	r.hair:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 0)
+	r.label = Style.Text(r, "Body", "text")
+	r.label:SetJustifyH("LEFT")
+	r.label:SetText(def.label or "")
+	r.sub = Style.Text(r, "Caption", "text3")
+	r.sub:SetJustifyH("LEFT")
+	r.sub:SetWordWrap(true)
+	r.holder = CreateFrame("Frame", nil, r)
+	r.update = Controls[def.kind](r.holder, def)
+	return r
+end
+
+local function BuildDocked(body)
+	local d = { groups = {} }
+	body.dock = d
+	d.scroll = M.Docked.Scroll(body)
+	for i, group in ipairs(Groups()) do
+		local g = { key = group.key, rows = {} }
+		g.head = CreateFrame("Frame", nil, d.scroll.child)
+		g.head.title = Style.Text(g.head, "Section", "text")
+		g.head.title:SetPoint("BOTTOMLEFT", g.head, "BOTTOMLEFT", 0, 8)
+		g.head.title:SetText(group.label)
+		g.head.rule = g.head:CreateTexture(nil, "ARTWORK")
+		Style.Fill(g.head.rule, C.text)
+		g.head.rule:SetHeight(2)
+		g.head.rule:SetPoint("BOTTOMLEFT", g.head, "BOTTOMLEFT", 0, 0)
+		g.head.rule:SetPoint("BOTTOMRIGHT", g.head, "BOTTOMRIGHT", 0, 0)
+		for j, def in ipairs(group.rows) do
+			g.rows[j] = BuildDockedRow(d.scroll.child, def)
+			g.rows[def.key] = g.rows[j]
+		end
+		d.groups[i] = g
+		d.groups[group.key] = g
+	end
+	return d
+end
+
+-- Height of a docked control (under its label) and its layout across `width`.
+local function DockedControl(r, width)
+	local def, holder = r.def, r.holder
+	local kind = def.kind
+	if kind == "seg" then
+		holder.control:Stretch(width) -- wide controls take the row
+		return 24
+	elseif kind == "check" then
+		return 18
+	elseif kind == "checks" then
+		-- side by side while they fit, else one per line
+		local x, y = 0, 0
+		for _, box in ipairs(holder.boxes or {}) do
+			local w = box:GetWidth() or 100
+			if x > 0 and x + w > width then
+				x, y = 0, y + 22
+			end
+			box:ClearAllPoints()
+			box:SetPoint("TOPLEFT", holder, "TOPLEFT", x, -y)
+			x = x + w + Set.DOCKED_CHECK_GAP
+		end
+		return y + 18
+	elseif kind == "slider" then
+		return 18
+	elseif kind == "stepper" then
+		return 24
+	elseif kind == "buttons" then
+		return 26
+	elseif kind == "text" then
+		local fs = holder.text
+		fs:ClearAllPoints()
+		fs:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+		fs:SetWidth(width)
+		local h = fs:GetStringHeight()
+		if type(h) ~= "number" or h <= 0 then
+			local lines = 1
+			for _ in tostring(fs:GetText() or ""):gmatch("\n") do
+				lines = lines + 1
+			end
+			h = lines * 14
+		end
+		return h
+	elseif kind == "grid" then
+		-- one column across the row
+		local n = 0
+		for _, c in ipairs(holder.cells or {}) do
+			if c:IsShown() then
+				c:ClearAllPoints()
+				c:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -n * Set.GRID_ROW)
+				c:SetWidth(width)
+				n = n + 1
+			end
+		end
+		holder.rows = n
+		return math.max(n, 1) * Set.GRID_ROW
+	end
+	return 24
+end
+
+local function DockedRefresh(body, ctx)
+	local m = ctx.metrics
+	for _, part in ipairs({ body.rule, body.nav, body.nav.rule, body.content }) do
+		part:Hide()
+	end
+	local d = body.dock or BuildDocked(body)
+	local scroll = d.scroll
+	scroll:ClearAllPoints()
+	scroll:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+	scroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+	scroll.child:SetWidth(m.width)
+	scroll:Show()
+	local pad, width = m.pad, m.width - 2 * m.pad
+	local y = 0
+	for _, g in ipairs(d.groups) do
+		g.head:ClearAllPoints()
+		g.head:SetPoint("TOPLEFT", scroll.child, "TOPLEFT", pad, -y)
+		g.head:SetSize(width, Set.DOCKED_GROUP)
+		y = y + Set.DOCKED_GROUP
+		for _, r in ipairs(g.rows) do
+			local def = r.def
+			local visible = not def.visible or def.visible()
+			r:SetShown(visible)
+			if visible then
+				r.update()
+				local disabled = def.disabled and def.disabled() or false
+				r.holder:SetAlpha(disabled and 0.4 or 1)
+				r.disabled = disabled
+				local h = 10
+				local hasLabel = (def.label or "") ~= ""
+				r.label:ClearAllPoints()
+				r.label:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -h)
+				r.label:SetWidth(width)
+				r.label:SetShown(hasLabel)
+				if hasLabel then
+					h = h + Set.DOCKED_LABEL
+				end
+				local sub = Value(def.sub)
+				local hasSub = sub ~= nil and sub ~= ""
+				r.sub:SetText(sub or "")
+				r.sub:SetShown(hasSub)
+				r.sub:SetWidth(width)
+				if hasSub then
+					r.sub:ClearAllPoints()
+					r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -h)
+					h = h + 14
+				end
+				h = h + 4
+				local ch = DockedControl(r, width)
+				r.holder:ClearAllPoints()
+				r.holder:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -h)
+				r.holder:SetSize(width, ch)
+				h = h + ch + 10
+				r:ClearAllPoints()
+				r:SetPoint("TOPLEFT", scroll.child, "TOPLEFT", pad, -y)
+				r:SetSize(width, h)
+				y = y + h
+			end
+		end
+	end
+	scroll:SetContentHeight(y + 16)
+end
+
+-- For the specs: a docked row frame (built on the first docked draw).
+function Set.DockedRowOf(groupKey, rowKey)
+	local g = Set.body and Set.body.dock and Set.body.dock.groups[groupKey]
+	return g and g.rows[rowKey]
+end
+
+local function Refresh(body, ctx)
+	if M.IsDocked(ctx) then
+		return DockedRefresh(body, ctx)
+	end
+	if body.dock then
+		body.dock.scroll:Hide()
+	end
+	for _, part in ipairs({ body.rule, body.nav, body.nav.rule, body.content }) do
+		part:Show()
+	end
 	local current = Set.Current()
 	local nav = body.nav
 	for _, group in ipairs(Groups()) do

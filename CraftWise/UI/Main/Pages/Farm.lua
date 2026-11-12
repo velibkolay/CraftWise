@@ -25,6 +25,7 @@ P.LINE = 17 -- a line in an opened row's columns
 P.LOG_LINE = 18
 P.ITEM_LINE = 20
 P.COLUMN_GAP = 18
+P.NARROW = 500 -- an opened row narrower than this (docked, #161) stacks its columns
 
 -- This session: rows whose loot log is shown in place, and how many of its lines.
 local state = { log = {}, shown = {} }
@@ -41,14 +42,14 @@ end
 -- The hero card: { label, labelColor, name, nameFont, sub, flap, state, split }.
 function P.HeroModel(s, now)
 	if not s then
-		return { full = true, label = L["Farm tracker"], name = L["No session running"], state = "none",
+		return { full = true, label = L["Farm tracker"], name = L["No session running"], state = "none", middle = 48,
 			sub = Farm.AutoStart() and L["Press Start, or just loot: \"Start on first loot\" is on."] or L["Press Start, then loot."] }
 	end
 	local m = FF.Model(s, now)
 	local word = m.state == "running" and L["Running now"] or m.word:gsub("^%l", string.upper)
 	return { full = true, label = word .. " · " .. m.timer, labelColor = m.state == "running" and "live" or "text2",
 		flap = m.state == "running" and "live" or "ruleStrong", name = FF.Coins(m.hero), nameFont = "FigureL",
-		sub = m.caption, state = m.state, split = m.split }
+		sub = m.caption, state = m.state, split = m.split, middle = 3 * 16 + 8 + 26 + 4 }
 end
 
 function P.Model()
@@ -205,6 +206,52 @@ function P.Hero(_, hero, _, slot)
 	h.note:SetText(none and L["or open the tracker: key binding, minimap right-click"] or L["Pause · End in the tracker"])
 end
 
+-- Docked (#161): the hero stacked (Coin, Items at AH, Vendor only one line each, then Open tracker; or
+-- Start), and a row as the start and zone over the gold per hour rail, per hour right with time and
+-- total under it.
+function P.DockedHero(_, hero, _, slot)
+	local none = hero.state == "none"
+	if not slot.open then
+		slot.open = Style.LineButton(slot, L["Open tracker"], nil, 26)
+		slot.open:SetScript("OnClick", function()
+			if FF and FF.Show then
+				FF.Show()
+			end
+		end)
+		slot.start = Style.PrimaryButton(slot, L["Start"], nil, 28)
+		slot.start:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
+		slot.start:SetScript("OnClick", function()
+			Farm.Start()
+		end)
+		slot.note = Style.Text(slot, "Label", "text3")
+		slot.note:SetJustifyH("LEFT")
+	end
+	local lines = {}
+	if not none then
+		for i, key in ipairs({ "coin", "ah", "vendor" }) do
+			lines[i] = { label = ({ L["Coin"], L["Items at AH"], L["Vendor only"] })[i], value = FF.Coins(hero.split[key]),
+				labelColor = key == "ah" and (hero.split.stale or 0) > 0 and "danger" or "text3" }
+		end
+	end
+	local h = M.Docked.StatLines(slot, lines, 0)
+	slot.open:ClearAllPoints()
+	slot.open:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, -(h + 8))
+	slot.open:SetShown(not none)
+	slot.start:SetShown(none)
+	slot.note:ClearAllPoints()
+	slot.note:SetPoint("LEFT", none and slot.start or slot.open, "RIGHT", 10, 0)
+	slot.note:SetText(none and L["or open the tracker: key binding, minimap right-click"] or L["Pause · End in the tracker"])
+end
+
+function P.DockedRow(r)
+	local c = P.COLUMNS
+	return {
+		name = Paint(r.started or "", StateColor(r) or "text") .. Paint(" · ", "text3") .. Paint(ZoneText(r), "text2"),
+		rail = { value = r.gph, max = r.railMax },
+		result = c[6].text(r), sub = (r.time or "") .. "  " .. (c[5].text(r) or ""), tip = c[6].tip(r),
+	}
+end
+
 -- While a session runs the hero's timer and gold per hour follow the clock (the list follows FARM_CHANGED).
 function P.Tick()
 	local f = M.Frame and M.Frame()
@@ -327,8 +374,17 @@ local function Summary(pool, content, row, d, width)
 	local n = #cols + 1
 	local colWidth = math.floor((width - P.COLUMN_GAP * (n - 1)) / n)
 	local h = 0
-	for i, col in ipairs(cols) do
-		h = math.max(h, Column(pool, content, (i - 1) * (colWidth + P.COLUMN_GAP), 0, colWidth, col[1], col[2]))
+	if width < P.NARROW then
+		-- Docked (#161): the columns one under the other, Loot log top right.
+		colWidth = width - 100
+		for _, col in ipairs(cols) do
+			h = h + Column(pool, content, 0, h, colWidth, col[1], col[2]) + 8
+		end
+		h = h - 8
+	else
+		for i, col in ipairs(cols) do
+			h = math.max(h, Column(pool, content, (i - 1) * (colWidth + P.COLUMN_GAP), 0, colWidth, col[1], col[2]))
+		end
 	end
 	-- Right: how many loot lines were kept, and Loot log.
 	if pool then
@@ -370,7 +426,7 @@ local function Items(pool, content, d, y, width)
 			icon:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(top + 2))
 			local name = pool:Text("Small", FF.ItemColor(r.itemID), FF.ItemName(r) .. " " .. Paint("×" .. r.n, "text3"))
 			name:SetPoint("TOPLEFT", content, "TOPLEFT", 22, -(top + 4))
-			name:SetWidth(width - 22 - 200)
+			name:SetWidth(width - 22 - (width < P.NARROW and 120 or 200))
 			local remove = pool:Button("×", function()
 				Farm.RemoveItem(r.itemID)
 			end, { L["Remove from this session"], L["The item leaves the session and is ignored until the session ends."] }, 18)
@@ -380,7 +436,7 @@ local function Items(pool, content, d, y, width)
 			value:SetJustifyH("RIGHT")
 			local hit = pool:Hit({ itemID = r.itemID })
 			hit:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
-			hit:SetSize(width - 200, P.ITEM_LINE)
+			hit:SetSize(width - (width < P.NARROW and 120 or 200), P.ITEM_LINE)
 		end
 		h = h + P.ITEM_LINE
 	end
@@ -418,14 +474,17 @@ local function Log(pool, content, row, d, width)
 			local name = e.itemID and ItemLabel(e.itemID, FF.ItemName(e), e.n > 1 and e.n or nil) or L["Coin"]
 			local fs = pool:Text("Small", "text", mark .. name)
 			fs:SetPoint("TOPLEFT", content, "TOPLEFT", 86, -(top + 1))
-			fs:SetWidth(width - 86 - 260)
+			local narrow = width < P.NARROW -- docked: no zone column (it is in the line's tooltip)
+			fs:SetWidth(width - 86 - (narrow and 90 or 260))
 			local value = pool:Text("Figure", "text", FF.LogValueText(e))
-			value:SetPoint("TOPRIGHT", content, "TOPRIGHT", -130, -top)
+			value:SetPoint("TOPRIGHT", content, "TOPRIGHT", narrow and 0 or -130, -top)
 			value:SetJustifyH("RIGHT")
-			local zone = pool:Text("Caption", "text3", e.zone)
-			zone:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(top + 1))
-			zone:SetWidth(120)
-			zone:SetJustifyH("RIGHT")
+			if not narrow then
+				local zone = pool:Text("Caption", "text3", e.zone)
+				zone:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(top + 1))
+				zone:SetWidth(120)
+				zone:SetJustifyH("RIGHT")
+			end
 			if e.itemID then
 				local hit = pool:Hit({ itemID = e.itemID, lines = { { L["Looted at"], date("%H:%M:%S", e.t) }, { L["Zone"], e.zone } } })
 				hit:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
@@ -476,8 +535,7 @@ end
 
 -- Inner width of the opened card (list width less its margins and padding, List.lua).
 local function InnerWidth(ctx)
-	local m = ctx and ctx.metrics or {}
-	return (m.width or 880) - 56 - 22 - 28
+	return M.OpenInnerWidth(ctx)
 end
 
 function P.Open(content, row, ctx)
@@ -537,6 +595,8 @@ P.page = M.RegisterPage({
 	SortRows = P.SortRows,
 	Model = function(ctx) return P.Model(ctx) end,
 	Hero = function(card, hero, ctx, slot) return P.Hero(card, hero, ctx, slot) end,
+	DockedHero = function(card, hero, ctx, slot) return P.DockedHero(card, hero, ctx, slot) end,
+	DockedRow = function(r) return P.DockedRow(r) end,
 	Open = P.Open,
 	OpenHeight = P.OpenHeight,
 	Tools = P.Tools,

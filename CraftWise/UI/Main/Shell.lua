@@ -36,6 +36,13 @@
 --                                  marked cwOwnTooltip, so Tooltip.lua adds no second CraftWise section)
 --   Tools(slot, ctx), ListTools(slot, ctx), FooterTools(slot, ctx)   build once; Update*(slot, ctx)
 --   Build(body, ctx), Refresh(body, ctx)   custom pages
+--   Docked layout (#161, Docked.lua; ctx.metrics.docked, M.IsDocked(ctx)): list rows draw in two lines
+--   from DockedRow(row, ctx) -> view (List.lua, M.DockedView: name, rail, note, result, sub, group,
+--   line, tag, ...; without it from row.view or the columns), DockedInitRow(b, row, ctx, view) adds what
+--   the view can't say; DockedHero(card, hero, ctx, slot) draws the stacked hero's middle (else Hero
+--   does, reading ctx.metrics); hero.middle = its height there. The page tools move into the list
+--   header (dockedListToolsWidth: room the list tools take right of the title, default 190). Custom
+--   pages draw both layouts in Refresh.
 -- }
 -- A page model that raises shows the Error state; the other pages keep working.
 local _, ns = ...
@@ -68,7 +75,7 @@ M.UI_DEFAULTS = {
 	section = "make", -- a section key or M.SETTINGS
 	pages = {}, -- [section] = the sub-page last shown there
 	profession = nil, -- professionID chosen on the Make pages
-	layout = "window", -- "window"; the docked layouts register their own keys (#161)
+	layout = "window", -- "window", "dockLeft" or "dockRight" (Docked.lua, #161)
 	escape = true, -- Close with Escape (Settings > Look)
 	locked = false, -- Lock position (Settings > Look)
 	scale = 1, -- Scale (Settings > Look)
@@ -327,8 +334,8 @@ function M.CanDock()
 end
 
 -- The dock button and Shift-click on the minimap: window <-> the docked layout used last (else the first
--- one registered).
-function M.ToggleDock()
+-- one registered). A closed window opens, so the Shift-click shows where it went.
+local function Toggle()
 	if M.Layout().docked then
 		return M.SetLayout("window")
 	end
@@ -342,6 +349,14 @@ function M.ToggleDock()
 		end
 	end
 	return false
+end
+
+function M.ToggleDock()
+	local done = Toggle()
+	if done and M.Open and not (M.frame and M.frame:IsShown()) then
+		M.Open()
+	end
+	return done
 end
 
 ----------------------------------------------------------------------------------------------------

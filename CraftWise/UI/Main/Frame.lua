@@ -3,8 +3,9 @@
 -- is on. Header: gold key block (W icon, "CraftWise"), five section tabs, AH status, gear, dock, close;
 -- sub bar with the sub-pages (the nokta before the active one) and the page's tools; then the page:
 -- stale card, hero card, list bar, list, footer - or one of the states. Built on first open.
--- The docked layout (#161) registers its own layout (M.RegisterLayout with docked = true): its metrics
--- feed the same arrangement, and Arrange(frame, metrics) may move what differs.
+-- The docked layouts (#161, Docked.lua) register with docked = true: their metrics feed the same
+-- arrangement (m.docked picks the docked body: tabs on their own row, page tools in the list header, a
+-- stacked hero card, two-line rows), and Arrange(frame, metrics) moves what differs in the header.
 local _, ns = ...
 local M = ns.Main
 local Style, L = ns.Style, ns.L
@@ -20,7 +21,13 @@ M.WINDOW_METRICS = {
 	subBar = 46, pad = 22, subGap = 18, noSubBarTop = 16,
 	heroHeight = 76, heroPadX = 16, heroPadY = 12, heroCut = 14, heroLeft = 240, heroRight = 170, heroGap = 24,
 	noticeGap = 10, listBar = 40, listGap = 12, listHeader = 24, rowHeight = 36, footer = 24,
+	tabRow = 0, heroAfter = 0, openLeft = 56, openRight = 22,
 }
+
+-- Height above the sub bar: the header, plus the docked layout's row of section tabs.
+function M.Chrome(m)
+	return m.header + (m.tabRow or 0)
+end
 
 local f -- the frame
 
@@ -47,7 +54,7 @@ local function IconButton(parent, texture, size, tip)
 		self.icon:SetVertexColor(c[1], c[2], c[3], 1)
 	end
 	b:SetScript("OnEnter", function(self)
-		Style.ShowTip(self, tip)
+		Style.ShowTip(self, self.cwTip or tip)
 	end)
 	b:SetScript("OnLeave", function(self)
 		Style.HideTip(self)
@@ -106,6 +113,9 @@ local function BuildHeader()
 		M.ToggleDock()
 	end)
 	head.gear = IconButton(head, Style.Media.gear, 14, L["Settings"])
+	-- The docked layout's hairline under its row of section tabs.
+	f.tabRule = Style.Rule(f, "H", C.rule)
+	f.tabRule:Hide()
 	head.gear:SetScript("OnClick", function()
 		M.ToggleSettings()
 	end)
@@ -152,14 +162,23 @@ local function ArrangeHeader(m)
 	head.key:SetPoint("LEFT", head, "LEFT", m.keyX, 0)
 	head.brand:ClearAllPoints()
 	head.brand:SetPoint("LEFT", head.key, "RIGHT", 10, 0)
+	head.brand:SetTextColor(Style.INK[1], Style.INK[2], Style.INK[3], 1)
 	local x = m.tabsX
 	for _, tab in ipairs(head.tabs) do
 		local w = math.floor((tab.label:GetStringWidth() or 0) + 0.5)
 		tab:ClearAllPoints()
 		tab:SetPoint("TOPLEFT", head, "TOPLEFT", x, 0)
 		tab:SetSize(w, m.header)
+		tab.label:ClearAllPoints()
+		tab.label:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, -20)
 		x = x + w + m.tabGap
 	end
+	f.tabRule:Hide()
+	for _, b in ipairs({ head.close, head.dock, head.gear }) do
+		b:SetSize(24, 24)
+	end
+	head.dock.icon:SetTexture(Style.Media.dock)
+	head.dock.cwTip = L["Dock to screen edge"]
 	head.close:ClearAllPoints()
 	head.close:SetPoint("RIGHT", head, "RIGHT", -m.rightPad, 0)
 	head.dock:ClearAllPoints()
@@ -170,6 +189,8 @@ local function ArrangeHeader(m)
 	head.gear:SetPoint("RIGHT", dockShown and head.dock or head.close, "LEFT", -m.buttonGap, 0)
 	head.status:ClearAllPoints()
 	head.status:SetPoint("RIGHT", head.gear, "LEFT", -(m.buttonGap + m.statusGap), 0)
+	head.status:SetJustifyH("RIGHT")
+	head.status:SetWidth(0)
 	f.progress:ClearAllPoints()
 	f.progress:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, 0)
 	f.progress:SetPoint("TOPRIGHT", head, "BOTTOMRIGHT", 0, 0)
@@ -257,9 +278,10 @@ local function UpdateSubBar(section, page, m)
 		return false
 	end
 	bar:ClearAllPoints()
-	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -m.header)
-	bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -m.header)
+	bar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -M.Chrome(m))
+	bar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -M.Chrome(m))
 	bar:SetHeight(m.subBar)
+	bar.rule:SetShown(not m.docked) -- docked: the tab row's hairline is right above it
 	local x = m.pad
 	for i, p in ipairs(pages) do
 		local b = SubButton(i)
@@ -295,7 +317,8 @@ end
 -- Page slots: each page builds its tools once into its own frames, shown only while it is current.
 ----------------------------------------------------------------------------------------------------
 
-local slots = {} -- [page key] = { tools, listTools, footerTools, list, body }
+local slots = {} -- [page key] = { tools, listTools, footerTools, list, dlist, hero, dhero, body }
+local listShown = {} -- [page key] = "list" | "dlist": the layout its list was drawn in last
 
 local function Slots(page)
 	local s = slots[page.key]
@@ -325,8 +348,14 @@ function M.SlotsOf(key)
 	return slots[key]
 end
 
+-- The page's list in the layout shown now (each layout has its own list: their rows draw differently).
 function M.ListOf(key)
-	return slots[key] and slots[key].list
+	local s = slots[key]
+	if not s then
+		return nil
+	end
+	local layout = M.Layout()
+	return layout and layout.docked and s.dlist or s.list
 end
 
 local function HideOtherSlots(page)
@@ -364,6 +393,10 @@ local function BuildBody()
 	hero.middle = CreateFrame("Frame", nil, hero) -- the page's rails go here
 	hero:Hide()
 
+	-- Docked: the page's sub bar tools move into the list header, a row of their own (spec).
+	f.toolsRow = CreateFrame("Frame", nil, f.body)
+	f.toolsRow:Hide()
+
 	local lb = CreateFrame("Frame", nil, f.body)
 	f.listBar = lb
 	lb.title = Style.Text(lb, "BodyBold", "text")
@@ -387,12 +420,93 @@ local function BuildBody()
 	f.panel:SetAllPoints(f.body)
 end
 
-local function PlaceHero(model, m)
+-- Docked hero card, stacked (spec: label, name and figure on one line, the rail under; board "Docked
+-- layout"): label (figure label right on its line), name left and figure right, the page's middle (its
+-- rails, h.middle tall), the sub-line under it. hero.bare: the page draws the whole area (h.height).
+local function PlaceDockedHero(h, m, drawn)
+	local hero = f.hero
+	local px, py = m.heroPadX, m.heroPadY
+	local inner = m.width - 2 * m.pad - 2 * px
+	hero.sheet:SetFlap(Style.Color(h.flap or "cardFlap"))
+	hero.sheet:SetShown(not h.bare)
+	local texts = { hero.label, hero.name, hero.sub, hero.figure, hero.figureLabel, hero.figureUnit }
+	for _, t in ipairs(texts) do
+		t:SetShown(not h.bare)
+	end
+	hero.middle:ClearAllPoints()
+	if h.bare then
+		hero.middle:SetPoint("TOPLEFT", hero, "TOPLEFT", 0, 0)
+		hero.middle:SetPoint("BOTTOMRIGHT", hero, "BOTTOMRIGHT", 0, 0)
+		return h.height or m.heroHeight
+	end
+	hero.label:ClearAllPoints()
+	hero.label:SetPoint("TOPLEFT", hero, "TOPLEFT", px, -py)
+	hero.label:SetText(h.label or "")
+	local lc = Style.Color(h.labelColor or "text3")
+	hero.label:SetTextColor(lc[1], lc[2], lc[3], 1)
+	hero.figureLabel:ClearAllPoints()
+	hero.figureLabel:SetPoint("TOPRIGHT", hero, "TOPRIGHT", -px, -py)
+	hero.figureLabel:SetText(h.figureLabel or "")
+	hero.figureLabel:SetShown((h.figureLabel or "") ~= "")
+	local y = py + 14
+	local hasName, hasFigure = (h.name or "") ~= "", (h.figure or "") ~= ""
+	hero.name:SetShown(hasName)
+	hero.figure:SetShown(hasFigure)
+	hero.figureUnit:SetShown(hasFigure and (h.figureUnit or "") ~= "")
+	if hasName or hasFigure then
+		hero.figureUnit:ClearAllPoints()
+		hero.figureUnit:SetText(h.figureUnit or "")
+		hero.figure:ClearAllPoints()
+		if (h.figureUnit or "") ~= "" then
+			hero.figureUnit:SetPoint("TOPRIGHT", hero, "TOPRIGHT", -px, -(y + 9))
+			hero.figure:SetPoint("TOPRIGHT", hero.figureUnit, "TOPLEFT", -4, 9)
+		else
+			hero.figure:SetPoint("TOPRIGHT", hero, "TOPRIGHT", -px, -y)
+		end
+		hero.figure:SetWidth(0)
+		hero.figure:SetText(h.figure or "")
+		local fc = Style.Color(h.figureColor or "text")
+		hero.figure:SetTextColor(fc[1], fc[2], fc[3], 1)
+		hero.name:ClearAllPoints()
+		hero.name:SetPoint("TOPLEFT", hero, "TOPLEFT", px, -(y + 2))
+		hero.name:SetWidth(hasFigure and math.max(inner - (h.figureWidth or 130), 80) or inner)
+		hero.name:SetFontObject(Style.Fonts[h.nameFont or "Hero"])
+		hero.name:SetText(h.name or "")
+		local nc = Style.Color(h.nameColor or "text")
+		hero.name:SetTextColor(nc[1], nc[2], nc[3], 1)
+		y = y + 28
+	end
+	if drawn then
+		local mh = h.middle or m.heroMiddle
+		hero.middle:SetPoint("TOPLEFT", hero, "TOPLEFT", px, -(y + 4))
+		hero.middle:SetPoint("TOPRIGHT", hero, "TOPRIGHT", -px, -(y + 4))
+		hero.middle:SetHeight(mh)
+		y = y + 4 + mh
+	end
+	local hasSub = (h.sub or "") ~= ""
+	hero.sub:SetShown(hasSub)
+	if hasSub then
+		hero.sub:ClearAllPoints()
+		hero.sub:SetPoint("TOPLEFT", hero, "TOPLEFT", px, -(y + 6))
+		hero.sub:SetWidth(inner)
+		hero.sub:SetText(h.sub)
+		y = y + 6 + 12
+	end
+	return y + py
+end
+
+local function PlaceHero(model, m, drawn)
 	local hero = f.hero
 	local h = model.hero
 	hero:SetShown(h ~= nil)
 	if not h then
 		return 0
+	end
+	if m.docked then
+		return PlaceDockedHero(h, m, drawn)
+	end
+	for _, t in ipairs({ hero.label, hero.name, hero.sub, hero.figure }) do
+		t:Show()
 	end
 	local px, py = m.heroPadX, m.heroPadY
 	hero.sheet:SetFlap(Style.Color(h.flap or "cardFlap")) -- the dog-ear carries a state (Farm: orange running)
@@ -451,7 +565,7 @@ local function PlaceHero(model, m)
 end
 
 -- Draws a list page under the sub bar; top = y offset where the page starts.
-local function DrawListPage(page, ctx, m, top, status)
+local function DrawListPage(page, ctx, m, top, status, tools)
 	local ok, model = M.Call(page.Model, ctx)
 	if not ok then
 		error(model, 0)
@@ -468,29 +582,48 @@ local function DrawListPage(page, ctx, m, top, status)
 		f.notice:SetPoint("TOPRIGHT", f.body, "TOPRIGHT", -m.pad, -y)
 		y = y + M.STALE_CARD_HEIGHT + m.noticeGap
 	end
-	local heroHeight = PlaceHero(model, m)
+	-- The page's hero drawing: docked, DockedHero when the page has one (else Hero, which then reads
+	-- ctx.metrics); each layout has its own frame in the middle (s.hero, s.dhero).
+	local drawHero = m.docked and (page.DockedHero or page.Hero) or page.Hero
+	local heroHeight = PlaceHero(model, m, drawHero ~= nil)
+	local s = Slots(page)
+	local heroKey, otherKey = m.docked and "dhero" or "hero", m.docked and "hero" or "dhero"
+	if s[otherKey] then
+		s[otherKey]:Hide()
+	end
 	if heroHeight > 0 then
 		f.hero:ClearAllPoints()
 		f.hero:SetPoint("TOPLEFT", f.body, "TOPLEFT", m.pad, -y)
 		f.hero:SetPoint("TOPRIGHT", f.body, "TOPRIGHT", -m.pad, -y)
 		f.hero:SetHeight(heroHeight)
-		f.hero.middle:SetShown(page.Hero ~= nil)
+		f.hero.middle:SetShown(drawHero ~= nil)
 		-- The page's own frame in the middle, hidden while another page shows (like its tools).
 		local heroSlot
-		if page.Hero then
-			local s = Slots(page)
-			if not s.hero then
-				s.hero = CreateFrame("Frame", nil, f.hero.middle)
-				s.hero:SetAllPoints(f.hero.middle)
+		if drawHero then
+			if not s[heroKey] then
+				s[heroKey] = CreateFrame("Frame", nil, f.hero.middle)
+				s[heroKey]:SetAllPoints(f.hero.middle)
 			end
-			heroSlot = s.hero
+			heroSlot = s[heroKey]
 			heroSlot:Show()
 		end
-		local okHero, err = M.Call(page.Hero, f.hero, model.hero, ctx, heroSlot)
+		local okHero, err = M.Call(drawHero, f.hero, model.hero, ctx, heroSlot)
 		if not okHero then
 			error(err, 0)
 		end
-		y = y + heroHeight
+		y = y + heroHeight + (m.heroAfter or 0)
+	elseif s[heroKey] then
+		s[heroKey]:Hide()
+	end
+	-- Docked: the page's tools (from the sub bar) in a row of their own above the list bar.
+	f.toolsRow:Hide()
+	if m.docked and tools then
+		f.toolsRow:ClearAllPoints()
+		f.toolsRow:SetPoint("TOPLEFT", f.body, "TOPLEFT", m.pad, -y)
+		f.toolsRow:SetPoint("TOPRIGHT", f.body, "TOPRIGHT", -m.pad, -y)
+		f.toolsRow:SetHeight(m.toolsRow)
+		f.toolsRow:Show()
+		y = y + m.toolsRow
 	end
 	-- List bar: "11 recipes" + note, the page's chips on the right (board "Window layout").
 	local lb = f.listBar
@@ -501,14 +634,28 @@ local function DrawListPage(page, ctx, m, top, status)
 		lb:SetPoint("TOPRIGHT", f.body, "TOPRIGHT", 0, -y)
 		lb:SetHeight(m.listBar)
 		lb.title:ClearAllPoints()
-		lb.title:SetPoint("LEFT", lb, "LEFT", m.pad, 0)
-		lb.title:SetText(model.listTitle or "")
 		lb.note:ClearAllPoints()
-		lb.note:SetPoint("LEFT", lb.title, "RIGHT", 8, 0)
+		lb.title:SetText(model.listTitle or "")
 		lb.note:SetText(model.listNote or "")
+		if m.docked then
+			-- Docked list header, two lines like the rows: the title over its note, the chips right.
+			local toolsW = listTools and (page.dockedListToolsWidth or 190) or 0
+			local w = m.width - 2 * m.pad - toolsW - (listTools and 8 or 0)
+			lb.title:SetPoint("TOPLEFT", lb, "TOPLEFT", m.pad, -3)
+			lb.title:SetWidth(w)
+			lb.title:SetWordWrap(false)
+			lb.note:SetPoint("TOPLEFT", lb.title, "BOTTOMLEFT", 0, -2)
+			lb.note:SetWidth(w)
+			lb.note:SetWordWrap(false)
+		else
+			lb.title:SetPoint("LEFT", lb, "LEFT", m.pad, 0)
+			lb.title:SetWidth(0)
+			lb.note:SetPoint("LEFT", lb.title, "RIGHT", 8, 0)
+			lb.note:SetWidth(0)
+		end
 		lb.tools:ClearAllPoints()
 		lb.tools:SetPoint("RIGHT", lb, "RIGHT", -m.pad, 0)
-		lb.tools:SetSize(m.width / 2, m.listBar)
+		lb.tools:SetSize(m.docked and (m.width - 2 * m.pad) or m.width / 2, m.listBar)
 		if listTools then
 			listTools:Show()
 			M.Call(page.UpdateListTools, listTools, ctx)
@@ -519,12 +666,19 @@ local function DrawListPage(page, ctx, m, top, status)
 		lb:Hide()
 		y = y + m.listGap
 	end
-	-- The list itself.
-	local s = Slots(page)
-	if not s.list then
-		s.list = M.List(f.body, page)
+	-- The list itself: one per layout (s.list, s.dlist); the opened row follows a swap.
+	local listKey, otherList = m.docked and "dlist" or "list", m.docked and "list" or "dlist"
+	if not s[listKey] then
+		s[listKey] = M.List(f.body, page, m.docked)
 	end
-	local list = s.list
+	local list = s[listKey]
+	if s[otherList] then
+		s[otherList]:Hide()
+		if listShown[page.key] ~= listKey then
+			list.openKey = s[otherList].openKey
+		end
+	end
+	listShown[page.key] = listKey
 	list.onError = function(err)
 		M.ShowError(page, err)
 	end
@@ -544,6 +698,16 @@ local function DrawListPage(page, ctx, m, top, status)
 	-- Footer.
 	f.foot.left:SetText(model.footer or "")
 	f.foot.right:SetText(model.footerRight or "")
+	if m.docked then
+		-- one line in 344: the right part keeps its words, the left gets what is left
+		local right = math.min((f.foot.right:GetStringWidth() or 0), 160)
+		f.foot.right:SetWidth((model.footerRight or "") ~= "" and right or 0)
+		f.foot.left:SetWidth(m.width - 2 * m.pad - (right > 0 and right + 12 or 0)
+			- (Slots(page).footerTools and 110 or 0))
+	else
+		f.foot.left:SetWidth(0)
+		f.foot.right:SetWidth(0)
+	end
 	return true
 end
 
@@ -551,13 +715,13 @@ local function HideBody()
 	f.notice:Hide()
 	f.hero:Hide()
 	f.listBar:Hide()
+	f.toolsRow:Hide()
 	f.panel:Hide()
 	for _, s in pairs(slots) do
-		if s.list then
-			s.list:Hide()
-		end
-		if s.body then
-			s.body:Hide()
+		for _, key in ipairs({ "list", "dlist", "body" }) do
+			if s[key] then
+				s[key]:Hide()
+			end
 		end
 	end
 end
@@ -592,6 +756,9 @@ local function DrawPage(page, ctx, m, top, status, hasSub)
 	f.lastError = nil
 	local tools = hasSub and Slot(page, "tools", f.sub.tools, "Tools", ctx) or nil
 	if tools then
+		-- Docked list pages: the tools sit in the list header (DrawListPage places the row).
+		tools:ClearAllPoints()
+		tools:SetAllPoints(m.docked and page.kind == "list" and f.toolsRow or f.sub.tools)
 		tools:Show()
 		M.Call(page.UpdateTools, tools, ctx)
 	end
@@ -607,6 +774,7 @@ local function DrawPage(page, ctx, m, top, status, hasSub)
 	f.foot:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
 	f.foot:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
 	f.foot:SetHeight(page.footerHeight or m.footer)
+	f.foot.left:SetWordWrap(false)
 	f.foot.left:ClearAllPoints()
 	f.foot.left:SetPoint("LEFT", f.foot, "LEFT", m.pad, 0)
 	f.foot.right:ClearAllPoints()
@@ -622,9 +790,23 @@ local function DrawPage(page, ctx, m, top, status, hasSub)
 		f.foot.right:SetPoint("RIGHT", f.foot, "RIGHT", -m.pad, 0)
 	end
 	local state = M.BlockingState(page, ctx)
+	f.panel:Fit(m)
+	f.panel:ClearAllPoints()
+	f.panel:SetAllPoints(f.body)
 	if state then
 		f.foot:Hide()
 		f.body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+		if m.docked and tools and page.kind == "list" then
+			-- docked: the page's tools stay reachable over the state (First run: pick another profession)
+			f.toolsRow:ClearAllPoints()
+			f.toolsRow:SetPoint("TOPLEFT", f.body, "TOPLEFT", m.pad, 0)
+			f.toolsRow:SetPoint("TOPRIGHT", f.body, "TOPRIGHT", -m.pad, 0)
+			f.toolsRow:SetHeight(m.toolsRow)
+			f.toolsRow:Show()
+			f.panel:ClearAllPoints()
+			f.panel:SetPoint("TOPLEFT", f.body, "TOPLEFT", 0, -m.toolsRow)
+			f.panel:SetPoint("BOTTOMRIGHT", f.body, "BOTTOMRIGHT", 0, 0)
+		end
 		f.panel:Set(StateSpec(state, page, ctx))
 		return state
 	end
@@ -645,7 +827,7 @@ local function DrawPage(page, ctx, m, top, status, hasSub)
 		end
 		return "custom"
 	end
-	DrawListPage(page, ctx, m, 0, status)
+	DrawListPage(page, ctx, m, 0, status, tools)
 	return "list"
 end
 
@@ -683,7 +865,7 @@ function M.Refresh()
 	local kind, status = UpdateStatus(page)
 	f.statusKind = kind
 	local hasSub = UpdateSubBar(section, page, m)
-	local top = m.header + (hasSub and m.subBar or m.noSubBarTop)
+	local top = M.Chrome(m) + (hasSub and m.subBar or m.noSubBarTop)
 	local ctx = M.Context(page)
 	HideOtherSlots(page)
 	local ok, res = pcall(DrawPage, page, ctx, m, top, status, hasSub)
@@ -716,6 +898,7 @@ local function ApplyWindow(frame, m)
 	end
 	frame.movable = true
 	frame:SetMovable(true)
+	frame.cwDockSide = nil -- docking again slides in (Docked.lua)
 	frame.sheet:SetCut(m.cut)
 	frame.head.art:SetTexture(Style.Media.headerWide)
 end
@@ -775,6 +958,10 @@ local function Build()
 	BuildSubBar()
 	BuildBody()
 	f:SetScript("OnShow", function()
+		local layout = M.Layout()
+		if layout.OnShow then
+			layout.OnShow(f, layout.metrics) -- docked: slides in from its edge
+		end
 		M.Refresh()
 	end)
 	local elapsed = 0

@@ -216,6 +216,9 @@ function P.Model(ctx)
 	local totals = ns.HeroCards.AuctionTotals()
 	if totals then
 		model.hero = { bare = true, height = 80, cards = P.Cards(totals, rows) }
+		if M.IsDocked(ctx) then
+			model.hero.height = M.Docked.StackCardsHeight(#model.hero.cards) -- provisional (#161 Q4)
+		end
 		model.footer = P.FooterText(totals.ifAllSell.note)
 	else
 		model.footer = P.FooterText(nil)
@@ -273,6 +276,36 @@ function P.InitRow(b, data)
 	end
 end
 
+-- Docked (#161): the item over its quantity, status and when (the orange diamond while listed), You get
+-- right with the buyout under it.
+function P.DockedRow(data)
+	local col = P.columns
+	local note = {}
+	if data.qty then
+		note[#note + 1] = "×" .. data.qty
+	end
+	note[#note + 1] = Style.Hex(data.statusColor or "text2") .. (data.statusText or "") .. "|r"
+	if data.when and data.when ~= "" then
+		note[#note + 1] = data.when
+	end
+	return {
+		icon = data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID) or nil,
+		name = data.name, nameColor = S.QualityColor(data.quality), note = table.concat(note, " · "), live = data.live,
+		result = col[7].text(data), sub = col[6].text(data), subColor = data.buyout and "text2" or "text3",
+		tip = col[7].tip(data) or col[4].tip(data),
+	}
+end
+
+-- Provisional (#161 Q4): docked, the three cards stack (M.Docked.StackCards).
+function P.DockedHero(card, hero, ctx, slot)
+	local cards = {}
+	for i, def in ipairs(hero.cards) do
+		cards[i] = { key = def.key, label = def.label, figure = def.count and tostring(def.count) or S.Coins(def.copper),
+			unit = def.count and def.unit or nil, caption = def.caption }
+	end
+	M.Docked.StackCards(slot, cards)
+end
+
 -- Hero: three cards side by side (board), each a folded C.card with label, figure and caption.
 function P.Hero(card, hero, ctx, slot)
 	local inner = S.HeroInner(ctx) + 2 * ((ctx.metrics and ctx.metrics.heroPadX) or 16)
@@ -319,6 +352,7 @@ ns.OpenAuctionsPage = P.OpenFromSlash
 M.RegisterPage({
 	key = "auctions", section = "sell", label = L["Auctions"], order = 2, events = { "AUCTIONS_CHANGED" },
 	columns = P.columns, Model = P.Model, InitRow = P.InitRow, Hero = P.Hero,
+	DockedRow = P.DockedRow, DockedHero = P.DockedHero,
 	Tools = P.Tools, UpdateTools = P.UpdateTools,
 	P = P,
 })

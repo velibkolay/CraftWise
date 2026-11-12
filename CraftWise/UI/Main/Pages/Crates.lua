@@ -60,7 +60,7 @@ local function Row(e, max)
 		perFavor = e.perFavor, fillPerFavor = e.fillPerFavor, held = e.held, railMax = max, entry = e }
 end
 
-function P.Model()
+function P.Model(ctx)
 	local Cr = ns.Crates
 	if not Cr then
 		return { rows = {}, empty = "" }
@@ -78,7 +78,8 @@ function P.Model()
 	end
 	return {
 		rows = rows,
-		hero = { bare = true, height = 66, held = bestHeld, best = best, favor = Cr.FavorName() or L["Merchant's Favor"] },
+		hero = { bare = true, height = M.IsDocked(ctx) and M.Docked.StackCardsHeight(2) or 66, -- provisional (#161 Q4)
+			held = bestHeld, best = best, favor = Cr.FavorName() or L["Merchant's Favor"] },
 		listTitle = L["Waylaid crates by cost per Favor"],
 		listNote = L["crate bought + cheapest bundle, divided by the Favor it gives"],
 		empty = L["No Waylaid crate seen yet: carry one, or let an auction house scan see one."],
@@ -244,6 +245,25 @@ function P.Hero(_, hero, _, slot)
 	end
 end
 
+-- Provisional (#161 Q4): docked, the two cards stack (M.Docked.StackCards).
+function P.DockedHero(_, hero, _, slot)
+	local cards = {}
+	for i, t in ipairs({ P.CardTexts(hero) }) do
+		cards[i] = { label = t.label, name = t.name or "", nameColor = t.nameColor, caption = t.sub }
+	end
+	M.Docked.StackCards(slot, cards)
+end
+
+-- Docked (#161): the crate over its cost per Favor, per Favor right with the Favor note under it.
+function P.DockedRow(row)
+	local c = P.COLUMNS
+	return {
+		icon = row.icon or (row.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(row.itemID)) or nil,
+		name = row.name, rail = c[5].rail(row), result = c[7].text(row), sub = row.note,
+		tip = c[4].tip(row),
+	}
+end
+
 ----------------------------------------------------------------------------------------------------
 -- Opened row: bundles, reward, crate price, what is missing
 ----------------------------------------------------------------------------------------------------
@@ -284,20 +304,31 @@ end
 function P.Layout(pool, content, row, width)
 	local favor = ns.Crates and ns.Crates.FavorName() or L["Merchant's Favor"]
 	local lines = Lines(row, favor)
+	-- Docked (#161): a narrower label column, the cost right aligned.
+	local narrow = width < 500
+	local x, costX = narrow and 76 or 110, 420
 	if pool then
 		for i, l in ipairs(lines) do
 			local y = (i - 1) * P.LINE
 			pool:Text("Label", "text3", l[1]):SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(y + 2))
 			local fs = pool:Text("Small", "text", l[2])
-			fs:SetPoint("TOPLEFT", content, "TOPLEFT", 110, -y)
+			fs:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+			if narrow then
+				fs:SetWidth(width - x - (l[3] and 90 or 0))
+			end
 			if l[3] then
 				local cost = pool:Text("Figure", "text", l[3])
-				cost:SetPoint("TOPLEFT", content, "TOPLEFT", 420, -y)
+				if narrow then
+					cost:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+					cost:SetJustifyH("RIGHT")
+				else
+					cost:SetPoint("TOPLEFT", content, "TOPLEFT", costX, -y)
+				end
 			end
 			if l.item then
 				local hit = pool:Hit({ itemID = l.item })
-				hit:SetPoint("TOPLEFT", content, "TOPLEFT", 110, -y)
-				hit:SetSize(300, P.LINE)
+				hit:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+				hit:SetSize(narrow and (width - x - 90) or 300, P.LINE)
 			end
 		end
 	end
@@ -305,8 +336,7 @@ function P.Layout(pool, content, row, width)
 end
 
 local function InnerWidth(ctx)
-	local m = ctx and ctx.metrics or {}
-	return (m.width or 880) - 56 - 22 - 28
+	return M.OpenInnerWidth(ctx)
 end
 
 function P.Open(content, row, ctx)
@@ -350,6 +380,8 @@ P.page = M.RegisterPage({
 	rowHeight = 36,
 	Model = function(ctx) return P.Model(ctx) end,
 	Hero = function(card, hero, ctx, slot) return P.Hero(card, hero, ctx, slot) end,
+	DockedHero = function(card, hero, ctx, slot) return P.DockedHero(card, hero, ctx, slot) end,
+	DockedRow = function(row) return P.DockedRow(row) end,
 	InitRow = P.InitRow,
 	Open = P.Open,
 	OpenHeight = P.OpenHeight,

@@ -21,6 +21,7 @@ Style.Media = {
 	arrow = MEDIA .. "cw-arrow", -- →
 	gear = MEDIA .. "cw-gear", -- main window header buttons (#153)
 	dock = MEDIA .. "cw-dock",
+	undock = MEDIA .. "cw-undock", -- the docked header's button back to the window (#161)
 	close = MEDIA .. "cw-close",
 }
 local Media = Style.Media
@@ -688,6 +689,23 @@ function Style.Segmented(parent, labels, onSelect, height)
 		seg.buttons[i] = b
 	end
 	seg:SetWidth(x + overlap)
+	-- Spreads the buttons evenly over `width` (the docked Settings rows: wide controls take the row, #161).
+	function seg:Stretch(width)
+		local n = #self.buttons
+		if n == 0 or not width or width <= 0 then
+			return
+		end
+		local each = (width + (n - 1) * overlap) / n
+		for i, b in ipairs(self.buttons) do
+			b.autoWidth = false
+			b.cwWidth = each
+			b:SetWidth(each)
+			b:ClearAllPoints()
+			b:SetPoint("TOPLEFT", self, "TOPLEFT", (i - 1) * (each - overlap), 0)
+		end
+		self:SetWidth(width)
+		self.stretched = width
+	end
 	function seg:SetSelected(index)
 		self.selected = index
 		for i, b in ipairs(self.buttons) do

@@ -26,6 +26,7 @@ P.KEY = "fishing"
 P.FISHING_LINE = 356 -- the Fishing skill line (Recipes.lua, ns.GATHERING)
 P.FISH_LINE = 24 -- a fish in an opened zone
 P.LINE = 18
+P.NARROW = 500 -- an opened row narrower than this (docked, #161) puts the share bars under the fish
 
 local QUALITY_POOR = 0
 local FISHING_ICON = "Interface\\Icons\\Trade_Fishing"
@@ -356,6 +357,36 @@ function P.Columns()
 	return P.Mode() == "log" and P.LOG or P.SPOTS
 end
 
+-- Docked (#161): a zone over its gold per hour (the point and its likely range), per hour right with per
+-- catch and your data under it; a log row over its water and catches, per hour right with per catch.
+local function ColumnByKey(cols, key)
+	for _, c in ipairs(cols) do
+		if c.key == key then
+			return c
+		end
+	end
+end
+
+function P.DockedRow(r, ctx)
+	if P.Mode() == "log" then
+		local cols = P.LOG
+		return {
+			icon = r.icon or (r.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(r.itemID)) or nil,
+			name = r.name, note = (r.waterLabel or "") .. " · " .. (L["%d catches"]):format(r.catches or 0),
+			result = ColumnByKey(cols, "perHour").text(r), sub = ColumnByKey(cols, "perCatch").text(r),
+			tip = ColumnByKey(cols, "perHour").tip(r),
+		}
+	end
+	local cols = P.SPOTS
+	local own = ColumnByKey(cols, "own")
+	return {
+		name = r.name, rail = ColumnByKey(cols, "rail").rail(r, ctx),
+		result = ColumnByKey(cols, "gph").text(r),
+		sub = ColumnByKey(cols, "perCatch").text(r) .. " · " .. Paint(own.text(r), own.color(r)),
+		tip = ColumnByKey(cols, "gph").tip(r) or own.tip(r),
+	}
+end
+
 -- Sorting with nil last; ties by value per catch (so zones without a catch rate keep their ranking), then name.
 function P.SortRows(rows, key, desc)
 	table.sort(rows, function(a, b)
@@ -461,9 +492,24 @@ local function ZoneDetail(pool, content, row, width)
 	local shareW = math.floor((width - 18 - 10 - nameW - eachW - 30) / 2)
 	local xName, xCatch = 28, 28 + nameW + 10
 	local xMoney, xEach = xCatch + shareW + 10, width - eachW
+	-- Docked (#161): the two share bars go on a second line under the fish.
+	local narrow = width < P.NARROW
+	local barY, lineH = 0, P.FISH_LINE
+	if narrow then
+		nameW = width - xName - eachW - 10
+		shareW = math.floor((width - xName - 10) / 2)
+		xCatch, xMoney = xName, xName + shareW + 10
+		barY, lineH = 16, P.FISH_LINE + 16
+	end
 	if pool then
-		for _, hd in ipairs({ { L["Fish"], xName }, { L["Share of catches"], xCatch }, { L["Share of money"], xMoney } }) do
+		local heads = narrow and { { L["Fish"], xName } }
+			or { { L["Fish"], xName }, { L["Share of catches"], xCatch }, { L["Share of money"], xMoney } }
+		for _, hd in ipairs(heads) do
 			pool:Text("Label", "text3", hd[1]):SetPoint("TOPLEFT", content, "TOPLEFT", hd[2], -h)
+		end
+		if narrow then
+			local legend = pool:Text("Label", "text3", L["Share of catches"] .. " · " .. Paint(L["Share of money"], "coinGold"))
+			legend:SetPoint("TOPLEFT", content, "TOPLEFT", xName + 60, -h)
 		end
 		local each = pool:Text("Label", "text3", L["Each"])
 		each:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -h)
@@ -481,8 +527,8 @@ local function ZoneDetail(pool, content, row, width)
 			local name = pool:Text("Small", f.junk and "text3" or (Style.QualityColor(q) or C.text), f.name)
 			name:SetPoint("TOPLEFT", content, "TOPLEFT", xName, -(h + 6))
 			name:SetWidth(nameW)
-			ShareBar(pool, content, xCatch, h, shareW, f.catchShare, C.text2)
-			ShareBar(pool, content, xMoney, h, shareW, f.moneyShare, C.coinGold)
+			ShareBar(pool, content, xCatch, h + barY, shareW, f.catchShare, C.text2)
+			ShareBar(pool, content, xMoney, h + barY, shareW, f.moneyShare, C.coinGold)
 			local each = pool:Text("Figure", "text", f.junk and Paint(L["vendor"], "text3")
 				or (f.each and (Coins(f.each) .. (f.label and Paint(" " .. f.label, "text3") or "")) or M.NoPriceText()))
 			each:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(h + 6))
@@ -490,10 +536,10 @@ local function ZoneDetail(pool, content, row, width)
 			if f.itemID then
 				local hit = pool:Hit({ itemID = f.itemID })
 				hit:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -h)
-				hit:SetSize(xCatch, P.FISH_LINE)
+				hit:SetSize(narrow and (xName + nameW) or xCatch, P.FISH_LINE)
 			end
 		end
-		h = h + P.FISH_LINE
+		h = h + lineH
 	end
 	if #fish == 0 then
 		if pool then
@@ -543,16 +589,17 @@ local function LogDetail(pool, content, row, width)
 			local name = pool:Text("Small", Style.QualityColor(Quality(item.itemID)) or C.text,
 				ItemName(item) .. " " .. Paint("×" .. item.count, "text3"))
 			name:SetPoint("TOPLEFT", content, "TOPLEFT", 22, -(h + 3))
-			name:SetWidth(260)
+			local narrow = width < P.NARROW -- docked (#161): the share sits closer, left of the value
+			name:SetWidth(narrow and (width - 22 - 160) or 260)
 			local share = pool:Text("Figure", "text2", Pct(item.share))
-			share:SetPoint("TOPLEFT", content, "TOPLEFT", 300, -(h + 3))
+			share:SetPoint("TOPLEFT", content, "TOPLEFT", narrow and (width - 150) or 300, -(h + 3))
 			local value = pool:Text("Figure", "text", item.unit and (Coins(item.unit.copper) .. Paint(" " .. (item.unit.label or ""), "text3"))
 				or M.NoPriceText())
 			value:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(h + 3))
 			value:SetJustifyH("RIGHT")
 			local hit = pool:Hit({ itemID = item.itemID })
 			hit:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -h)
-			hit:SetSize(290, P.LINE + 2)
+			hit:SetSize(narrow and (width - 150) or 290, P.LINE + 2)
 		end
 		h = h + P.LINE + 2
 	end
@@ -563,8 +610,7 @@ local function LogDetail(pool, content, row, width)
 end
 
 local function InnerWidth(ctx)
-	local m = ctx and ctx.metrics or {}
-	return (m.width or 880) - 56 - 22 - 28
+	return M.OpenInnerWidth(ctx)
 end
 
 function P.Layout(pool, content, row, width)
@@ -659,6 +705,7 @@ P.page = M.RegisterPage({
 	sort = P.DEFAULT_SORT.spots,
 	SortRows = P.SortRows,
 	Model = function(ctx) return P.Model(ctx) end,
+	DockedRow = function(r, ctx) return P.DockedRow(r, ctx) end,
 	Open = P.Open,
 	OpenHeight = P.OpenHeight,
 	Tools = P.Tools,

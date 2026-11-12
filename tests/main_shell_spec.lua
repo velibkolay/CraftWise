@@ -163,7 +163,7 @@ it("Main: CraftWiseMainFrame, 880 x 600 at CENTER (0, 40), MEDIUM, toplevel, cla
 		eq(tab.points[1][4], 198 + (i - 1) * (80 + 24), "tab " .. i)
 	end
 	eq(f.head.close.points[1][4], -30, "close 30 from the edge")
-	eq(f.head.dock.shown, false, "no dock button until a docked layout exists")
+	eq(f.head.dock.shown, true, "the dock button (#161)")
 	eq(f.sub.height, 46)
 end)
 
@@ -220,16 +220,16 @@ end)
 
 it("Main: layout seam: docked layouts register, the dock button and ns.ToggleDock swap in place", function()
 	local ns, _, M = Load()
-	eq(ns.ToggleDock, nil, "nothing to dock to yet")
-	eq(M.SetLayout("left"), false)
+	eq(M.SetLayout("left"), false, "a layout nobody registered")
 	M.Open()
 	local applied = {}
-	M.RegisterLayout("left", { label = "Docked left", docked = true,
+	M.RegisterLayout("left", { label = "Test left", docked = true,
 		metrics = setmetatable({ width = 380 }, { __index = M.WINDOW_METRICS }),
 		Apply = function(frame, m) applied[#applied + 1] = m.width; frame:SetSize(m.width, 700) end })
-	M.RegisterLayout("right", { label = "Docked right", docked = true,
+	M.RegisterLayout("right", { label = "Test right", docked = true,
 		metrics = setmetatable({ width = 380 }, { __index = M.WINDOW_METRICS }),
 		Apply = function(frame, m) frame:SetSize(m.width, 700) end })
+	M.UI().lastDocked = "left"
 	eq(ns.ToggleDock, M.ToggleDock, "the minimap's Shift-click reaches the seam")
 	eq(M.CanDock(), true)
 	local f = M.Frame()
