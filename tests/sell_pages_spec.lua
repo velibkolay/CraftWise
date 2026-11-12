@@ -212,8 +212,9 @@ it("Bags: empty bags, no prices, stale ages and skeletons while scanning", funct
 	ns.Notify("BAGS_CHANGED")
 	eq(M.Frame().hero.shown, false)
 	eq(M.ListOf("bags").empty.text, "Your bags are empty.")
-	-- no AH observation: the No prices state, vendor values on request
+	-- no AH observation and no Auctionator: the No prices state, vendor values on request
 	CraftWiseMarketDB.scans[HORDE] = nil
+	stub.DisableAuctionator()
 	M.Refresh()
 	eq(M.shown.state, "noPrices")
 end)
@@ -464,5 +465,5 @@ it("Sell pages replace their bridges; the profit window has no Bags view, Record
 	for _, p in ipairs(M.SectionPages("sell")) do order[#order + 1] = p.key end
 	eq(table.concat(order, ","), "bags,auctions,ledger")
 	eq(ns.PF, nil, "the profit window is gone (#154)")
-	eq(ns.RW.byKey.ledger, nil); eq(ns.RW.byKey.auctions, nil)
+	eq(ns.RW, nil, "the Records window is gone (#157)"); eq(CraftWiseRecordsFrame, nil)
 end)

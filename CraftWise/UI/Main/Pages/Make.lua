@@ -5,7 +5,7 @@
 --   - the rows: the existing models (ns.BuildRows, ns.LevelingRows) behind the filter box and the chips;
 --     only their drawing is new
 --   - row data kept apart from row drawing (below), so the docked layout (#161) can draw the same rows
---   - the opened row's reagents and Price history
+--   - the opened row's reagents, Price history and Open in profession window
 --
 -- Row data. A page's Model returns the model's rows as they are, each with `view` added: everything a
 -- layout draws and nothing about frames.
@@ -558,7 +558,8 @@ end
 
 ----------------------------------------------------------------------------------------------------
 -- Opened row: each reagent (quantity, name, total, source and "have N"), Price history (board "Window
--- layout"). Learn adds where to get the recipe above it.
+-- layout") and under it Open in profession window (C_TradeSkillUI.OpenRecipe; the profit window opened a
+-- recipe on a row click, #157 gives it this button). Learn adds where to get the recipe above it.
 ----------------------------------------------------------------------------------------------------
 
 MK.REAGENT_WIDTH, MK.REAGENT_GAP, MK.REAGENT_HEIGHT, MK.REAGENTS_PER_LINE = 130, 20, 44, 4
@@ -595,10 +596,31 @@ local function Lines(n)
 	return math.max(1, math.ceil(n / MK.REAGENTS_PER_LINE))
 end
 
--- Height of the opened part: where lines (Learn) and the reagent lines.
+MK.BUTTON_HEIGHT, MK.BUTTON_GAP = 26, 6
+
+-- Opens the recipe in the profession window; false when the client can't.
+function MK.OpenRecipe(recipeID)
+	if not (recipeID and C_TradeSkillUI and C_TradeSkillUI.OpenRecipe) then
+		return false
+	end
+	return (pcall(C_TradeSkillUI.OpenRecipe, recipeID))
+end
+
+function MK.CanOpenRecipe(r)
+	return r.recipeID ~= nil and C_TradeSkillUI ~= nil and C_TradeSkillUI.OpenRecipe ~= nil
+end
+
+-- Top of the buttons column (Price history, Open in profession window) below the where lines.
+local function ButtonsTop(y)
+	return y + (MK.REAGENT_HEIGHT - 8 - MK.BUTTON_HEIGHT) / 2
+end
+
+-- Height of the opened part: where lines (Learn) and the reagent lines, at least the two buttons.
 function MK.OpenHeight(r, whereLines)
-	return (whereLines or 0) * MK.WHERE_LINE + ((whereLines or 0) > 0 and 6 or 0)
-		+ Lines(#(r.reagents or {})) * MK.REAGENT_HEIGHT - 8
+	local where = (whereLines or 0) * MK.WHERE_LINE + ((whereLines or 0) > 0 and 6 or 0)
+	local reagents = where + Lines(#(r.reagents or {})) * MK.REAGENT_HEIGHT - 8
+	local buttons = ButtonsTop(where) + 2 * MK.BUTTON_HEIGHT + MK.BUTTON_GAP
+	return math.max(reagents, MK.CanOpenRecipe(r) and buttons or 0)
 end
 
 -- Draws the opened part of a recipe row into the list's content frame (reused between rows; the shell's
@@ -638,14 +660,23 @@ function MK.DrawOpen(content, r, opts)
 		hit:SetSize(MK.REAGENT_WIDTH, MK.REAGENT_HEIGHT - 8)
 		content.reagentCells[i] = { head = head, total = total, note = note, hit = hit, x = x, y = top }
 	end
-	-- Price history of the crafted item: Look up › Items once #157 lands, else Records › Market.
+	-- Price history of the crafted item: Look up › Items on it.
 	local itemID = r.outputItemID
+	local top = ButtonsTop(y)
 	local h = pool:Button(L["Price history"], function()
 		ns.OpenItemLookup(itemID, "history")
-	end, { L["Price history"], L["Auction house prices recorded for the crafted item."] }, 26)
-	h:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(y + (MK.REAGENT_HEIGHT - 8 - 26) / 2))
+	end, { L["Price history"], L["Auction house prices recorded for the crafted item."] }, MK.BUTTON_HEIGHT)
+	h:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -top)
 	h:SetShown(itemID ~= nil)
 	content.history = h
+	-- Open in profession window, under Price history (or in its place without a crafted item).
+	local recipeID = r.recipeID
+	local o = pool:Button(L["Open in profession window"], function()
+		MK.OpenRecipe(recipeID)
+	end, { L["Open in profession window"], L["Shows this recipe in your profession window."] }, MK.BUTTON_HEIGHT)
+	o:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -(itemID and (top + MK.BUTTON_HEIGHT + MK.BUTTON_GAP) or top))
+	o:SetShown(MK.CanOpenRecipe(r))
+	content.openRecipe = o
 end
 
 ----------------------------------------------------------------------------------------------------

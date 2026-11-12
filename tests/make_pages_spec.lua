@@ -234,6 +234,45 @@ it("Craft opened row: each reagent with quantity, total, source and have N; Pric
 	eq(looked[1], BELT); eq(looked[2], "history")
 end)
 
+it("Opened row: Open in profession window under Price history on Craft, Learn and Level up (#157)", function()
+	local ns, stub, M = Load()
+	local opened = {}
+	C_TradeSkillUI.OpenRecipe = function(id) opened[#opened + 1] = id end
+	local MK = M.Make
+	for _, page in ipairs({ "craft", "learn", "level" }) do
+		local recipeID = page == "learn" and R_CLOAK or R_BELT
+		local list = Make.Open(ns, page, PROF)
+		local row, fr = Row(ns, page, recipeID)
+		fr.scripts.OnClick(fr, "LeftButton")
+		local content = list.box.frames[2].content
+		local b, h = content.openRecipe, content.history
+		eq(b.label.text, "Open in profession window", page); eq(b.shown, true, page)
+		eq(b.height, MK.BUTTON_HEIGHT)
+		local p, hp = b.points[1], h.points[1]
+		eq(p[1], "TOPRIGHT"); eq(p[4], 0)
+		eq(p[5], hp[5] - MK.BUTTON_HEIGHT - MK.BUTTON_GAP, page .. ": under Price history")
+		assert(MK.OpenHeight(row, page == "learn" and math.min(#(row.where or {}), 6) or nil) >= -p[5] + MK.BUTTON_HEIGHT,
+			page .. ": the opened part fits both buttons")
+		b.scripts.OnClick(b)
+		eq(opened[#opened], recipeID, page)
+		-- hover: what it does
+		b.scripts.OnEnter(b)
+		eq(CraftWiseInverseTip.title.text, "Open in profession window")
+		b.scripts.OnLeave(b)
+	end
+	eq(#opened, 3)
+	-- a client without the function: no button, and the call says it couldn't
+	C_TradeSkillUI.OpenRecipe = nil
+	local list = Make.Open(ns, "craft", PROF)
+	local _, fr = Row(ns, "craft", R_BELT)
+	fr.scripts.OnClick(fr, "LeftButton"); fr.scripts.OnClick(fr, "LeftButton")
+	eq(list.box.frames[2].content.openRecipe.shown, false)
+	eq(MK.OpenRecipe(R_BELT), false)
+	-- an error in the client's call is swallowed
+	C_TradeSkillUI.OpenRecipe = function() error("not now") end
+	eq(MK.OpenRecipe(R_BELT), false)
+end)
+
 it("Craft hover: the crafted item's tooltip with the CraftWise recipe lines, once", function()
 	local ns, _, M = Load()
 	Make.Open(ns, "craft", PROF)

@@ -1,5 +1,5 @@
 -- Item menu (issue #12; Origami look #159): Keep / Junk / Sell on AH / Normal for one item, then Where to
--- buy and Price history. Opened by clicking a row in the Bags view or a Records row (#137), or on an item
+-- buy and Price history. Opened from a row of the main window (right or middle click), or on an item
 -- in the game's bags (Blizzard, Bagnon, Baganator) with the click chosen in the settings: middle click
 -- (default) or Alt + right-click.
 -- Middle click: Blizzard's bag buttons only listen to left and right clicks, and neither Bagnon nor
@@ -67,16 +67,10 @@ local function IsQuestItem(itemID)
 	return C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID)) == 12
 end
 
--- Where to buy and Price history open Look up › Items on the item once it exists (#157 defines
--- ns.ShowItemLookup(itemID, "where" | "history")); until then the Records views.
+-- Where to buy and Price history open Look up › Items on the item (ns.ShowItemLookup, UI/Main/Pages/Items.lua,
+-- which loads later; called on a click, so it exists by then).
 function ns.OpenItemLookup(itemID, focus)
-	if ns.ShowItemLookup then
-		return ns.ShowItemLookup(itemID, focus)
-	end
-	if focus == "where" then
-		return ns.ShowWhereToBuy(itemID)
-	end
-	return ns.ShowMarketPrices(itemID)
+	return ns.ShowItemLookup and ns.ShowItemLookup(itemID, focus) or false
 end
 
 -- Gear an upgrade can be suggested for (Upgrades.lua's slots), or one already dismissed.

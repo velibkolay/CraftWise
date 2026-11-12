@@ -47,14 +47,9 @@ it("Style.Hex gives the |cff escape; unknown names fail loudly", function()
 	assert(not pcall(S.Hex, "skill.purple"), "unknown skill colour must error")
 end)
 
-it("Style.colors keeps the old names for today's windows", function()
+it("the old names and widgets are gone with the old windows (#157)", function()
 	local S = LoadAddon().Style
-	for _, k in ipairs({ "bg", "panel", "border", "accent", "accentHover", "tab", "tabHover", "stripe", "hover" }) do
-		eq(type(S.colors[k]), "table", k)
-	end
-	for _, k in ipairs({ "muted", "good", "bad", "warn", "info", "white" }) do
-		assert(S.colors[k]:match("^|cff%x%x%x%x%x%x$"), k)
-	end
+	eq(S.colors, nil); eq(S.Panel, nil); eq(S.Button, nil); eq(S.Check, nil); eq(S.CloseButton, nil)
 end)
 
 it("Style: twelve font objects with the spec's file, size and no flags", function()

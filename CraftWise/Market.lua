@@ -1382,6 +1382,28 @@ function M.AuctionatorExport(itemID)
 	return { t = Num(f[1]), copper = Num(f[2]), age = Num(f[3]), label = db.auctionator.label, house = M.AUCTIONATOR_HOUSE }
 end
 
+-- Read only (#157): whether CraftWise has read any Auctionator price (an export exists).
+function M.HasAuctionatorExports()
+	return db ~= nil and next(db.auctionator.items) ~= nil
+end
+
+-- Read only (#157): up to `limit` item IDs of the market scope (no order).
+function M.ScopeItemIDs(limit)
+	local out = {}
+	if not db then
+		return out
+	end
+	for itemID in pairs(db.scope.items) do
+		if type(itemID) == "number" then
+			out[#out + 1] = itemID
+			if limit and #out >= limit then
+				break
+			end
+		end
+	end
+	return out
+end
+
 -- Every scope item with no record at the profit house gets Auctionator's price, a few per frame.
 -- Items looked up elsewhere (ns.AuctionQuote) are exported when they fall back to Auctionator.
 local exporting = false

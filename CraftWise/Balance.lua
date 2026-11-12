@@ -390,6 +390,10 @@ function ns.ReagentBalance(reagents, target, outputItemID)
 	return result
 end
 
+-- Colours of these lines in the client's GameTooltip, as they always were (the old Style.colors values,
+-- retired with the old windows in #157; spec "On Blizzard frames": lines as today).
+Balance.TIP_COLORS = { muted = "|cff8a93a6", good = "|cff4fd18b", warn = "|cffffc24d" }
+
 -- Tooltip lines { left, right } for a recipe's reagents; empty when none of them is held (directly
 -- or through what you can make), so recipes you have nothing for stay short.
 function ns.BalanceLines(reagents, target, outputItemID)
@@ -406,7 +410,7 @@ function ns.BalanceLines(reagents, target, outputItemID)
 	if not any then
 		return {}
 	end
-	local C = ns.Style.colors
+	local C = Balance.TIP_COLORS
 	local money = ns.FormatMoney
 	local function name(itemID)
 		return (C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)) or ("item " .. itemID)

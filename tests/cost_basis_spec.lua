@@ -219,9 +219,11 @@ end)
 
 it("Settings switch the basis per view and the Make page footer shows it", function()
 	local ns, stub = Leatherworking()
-	ns.ToggleSettings()
-	local buttons = CraftWiseSettings.costBasis
-	buttons.level.paid.scripts.OnClick(buttons.level.paid)
+	local M = ns.Main -- Settings › Prices (#157)
+	M.Open("settings")
+	M.Settings.SelectGroup("prices")
+	local paid = M.Settings.RowOf("prices", "cost_level").holder.control.buttons[2]
+	paid.scripts.OnClick(paid)
 	eq(ns.db.settings.costBasis.level, "paid")
 	eq(ns.CostBasis("level"), "paid"); eq(ns.CostBasis("profit"), "ah"); eq(ns.CostBasis("bags"), "ah")
 	Make.Open(ns, "level", 165)

@@ -112,6 +112,18 @@ local function BuildHeader()
 	-- AH status: "Horde AH · 2 h ago"; stale in C.danger bold; while scanning orange with its nokta.
 	head.status = Style.Text(head, "Caption", "text3")
 	head.status:SetJustifyH("RIGHT")
+	-- Hover: the scan summary per house (M.ScanSummary; was Records › Market's summary line).
+	head.statusHit = CreateFrame("Frame", nil, head)
+	head.statusHit:EnableMouse(true)
+	head.statusHit:SetPoint("TOPLEFT", head.status, "TOPLEFT", -4, 6)
+	head.statusHit:SetPoint("BOTTOMRIGHT", head.status, "BOTTOMRIGHT", 4, -6)
+	head.statusHit:SetScript("OnEnter", function(self)
+		M.ShowScanSummary(self)
+	end)
+	head.statusHit:SetScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	head.statusHit:Hide()
 	head.live = Style.Nokta(head, C.live)
 	head.live:Hide()
 
@@ -163,11 +175,18 @@ local function ArrangeHeader(m)
 	f.progress:SetPoint("TOPRIGHT", head, "BOTTOMRIGHT", 0, 0)
 end
 
+-- The inverse tooltip of the AH status: the scan summary per house.
+function M.ShowScanSummary(owner)
+	local title, lines = M.ScanSummary()
+	return Style.ShowTip(owner, title, unpack(lines))
+end
+
 -- The AH status in the header; returns its kind ("scanning" | "stale" | "ok" | "none") or nil when hidden.
 local function UpdateStatus(page)
 	local head = f.head
 	if not (page and page.prices) then
 		head.status:Hide()
+		head.statusHit:Hide()
 		head.live:Hide()
 		f.progress:Hide()
 		return nil
@@ -176,6 +195,7 @@ local function UpdateStatus(page)
 	local text, kind = M.StatusText(status)
 	head.status:SetText(text or "")
 	head.status:SetShown(text ~= nil)
+	head.statusHit:SetShown(text ~= nil)
 	local stale = kind == "stale"
 	head.status:SetFontObject(Style.Fonts[(stale or kind == "scanning") and "Label" or "Caption"])
 	local c = stale and C.danger or C.text3
@@ -657,6 +677,7 @@ function M.Refresh()
 		f.sub:Hide()
 		f.foot:Hide()
 		f.head.status:Hide()
+		f.head.statusHit:Hide()
 		return
 	end
 	local kind, status = UpdateStatus(page)

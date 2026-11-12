@@ -641,6 +641,17 @@ function P.UpdateTools(slot)
 	end
 end
 
+-- /craftwise fishing [pools | open] (Log on that water) and /craftwise fishing zones (Spots), Core.lua.
+function ns.OpenFishingPage(mode, water)
+	if mode then
+		P.SetMode(mode)
+	end
+	if water then
+		P.SetWater(water)
+	end
+	return M.Open and M.Open(P.KEY) or false
+end
+
 P.page = M.RegisterPage({
 	key = P.KEY, section = "gather", label = L["Fishing"], order = 2,
 	events = { "PRICES_CHANGED" },

@@ -585,7 +585,7 @@ it("fishing: the first catch starts a session; history, /craftwise farm history 
 	eq(F.History()[1].fish, nil); eq(ns.Snapshot.Build().farm.sessions[1].fish, nil)
 end)
 
-it("open without typing (#130): the minimap right-click, the key binding and the Settings button toggle the window", function()
+it("open without typing (#130): the minimap right-click and the key binding toggle the window", function()
 	local ns, stub = setup()
 	local function shown() return CraftWiseFarmFrame ~= nil and CraftWiseFarmFrame:IsShown() end
 	eq(shown(), false)
@@ -605,11 +605,9 @@ it("open without typing (#130): the minimap right-click, the key binding and the
 	eq(shown(), true)
 	CraftWise_FarmToggle()
 	eq(shown(), false)
-	-- Settings, Farm section.
-	ns.ToggleSettings()
-	local b = CraftWiseSettings.farmWindow
-	b:GetScript("OnClick")(b)
-	eq(shown(), true)
+	-- The old Settings panel's Farm window button went with it (#157): Gather › Farm's Open tracker
+	-- (tests/gather_spec.lua), the minimap and the key binding open it.
+	CraftWise_FarmToggle()
 	eq(ns.Farm.Current(), nil, "opening the window starts no session")
 end)
 
@@ -937,6 +935,14 @@ local function click(b, button)
 	b:GetScript("OnClick")(b, button or "LeftButton")
 end
 
+-- A checkbox on the Settings page (#157), its group shown.
+local function settingsCheck(ns, group, key)
+	local M = ns.Main
+	M.Open("settings")
+	M.Settings.SelectGroup(group)
+	return M.Settings.RowOf(group, key).holder.control
+end
+
 it("mini mode (#164): the – button makes a 30 tall strip, cut 12; running timer, gold per hour, / h", function()
 	local ns, stub = setup()
 	local FF, S = ns.FarmFrame, ns.Style
@@ -1052,18 +1058,17 @@ it("mini mode: the Settings switch, Settings shows the mode, hover tips", functi
 	local FF = ns.FarmFrame
 	loot(stub, CLOTH, 1)
 	FF.Refresh()
-	ns.ToggleSettings()
-	local p = CraftWiseSettings
-	eq(p.farmMini:GetChecked(), false)
-	click(p.farmMini)
+	local mini = settingsCheck(ns, "farm", "mini")
+	eq(mini.checked, false)
+	click(mini)
 	eq(FF.IsMini(), true); eq(CraftWiseFarmFrame.mini.shown, true)
-	click(p.farmMini)
+	click(mini)
 	eq(FF.IsMini(), false)
 	click(CraftWiseFarmFrame.minus)
 	eq(FF.IsMini(), true, "the – button")
-	ns.ToggleSettings(); ns.ToggleSettings()
-	eq(p.farmMini:GetChecked(), true, "Settings shows the mode")
-	click(p.farmMini)
+	mini = settingsCheck(ns, "farm", "mini")
+	eq(mini.checked, true, "Settings shows the mode")
+	click(mini)
 	eq(FF.IsMini(), false)
 	-- Hover tips: the – button and the strip.
 	local f = CraftWiseFarmFrame
@@ -1088,11 +1093,10 @@ it("fade (#163): off by default; on, the tracker sits at 40 % away from the mous
 	f:GetScript("OnLeave")(f)
 	tick(ns, 1)
 	eq(FF.Alpha(), 1, "no fade while the setting is off")
-	-- On, from the Settings panel.
-	ns.ToggleSettings()
-	local p = CraftWiseSettings
-	eq(p.farmFade:GetChecked(), false)
-	click(p.farmFade)
+	-- On, from Settings › Look.
+	local fade = settingsCheck(ns, "look", "fade")
+	eq(fade.checked, false)
+	click(fade)
 	eq(ns.db.farm.fade, true)
 	eq(FF.Alpha(), 1, "starts from 100 %")
 	tick(ns, 0.07)
@@ -1114,7 +1118,7 @@ it("fade (#163): off by default; on, the tracker sits at 40 % away from the mous
 	tick(ns, 0.14)
 	eq(f.alpha, 0.4)
 	-- Off again: 100 %, whatever the mouse does.
-	click(p.farmFade)
+	click(fade)
 	eq(ns.db.farm.fade, false)
 	tick(ns, 0.14)
 	eq(f.alpha, 1)

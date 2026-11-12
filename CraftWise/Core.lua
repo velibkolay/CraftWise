@@ -108,12 +108,11 @@ local DB_DEFAULTS = {
 	farmLog = {}, -- [ns.CharKey()] = { current = session, history = finished sessions, newest first } (#126)
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
 	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true } },
-	settings = { includeUnlearned = true, hideUnpriced = false, sortKey = "profit", sortDesc = true,
-		view = "profit", learnFitsSkill = false, learnSortKey = "required", learnSortDesc = false,
-		bagSortKey = "bestValue", bagSortDesc = true, showKept = true,
-		upgradeSortKey = "gain", upgradeSortDesc = true, showDismissed = false,
-		upgradeSection = "craft", -- Upgrades view: "craft" (Craftable, #16) | "ah" (General / AH, #50)
-		ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
+	-- Make chips (#154): includeUnlearned, hideUnpriced, learnFitsSkill; Sell › Bags chips (#155): showKept,
+	-- bagsMatsOnly; Settings › Bags and loot: showDismissed. The main window keeps its own state (section,
+	-- pages, layout) in settings.ui.
+	settings = { includeUnlearned = true, hideUnpriced = false, learnFitsSkill = false, showKept = true,
+		showDismissed = false, ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
 		alpha = { main = 0.96, farm = 0.86, toast = 0.70 }, -- background alpha per window (#162), Settings > Look
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
 		slotMarks = true, -- marks on bag slots (BagIcons.lua, #160); Settings › Bags and loot (#157)
@@ -122,11 +121,14 @@ local DB_DEFAULTS = {
 		priceBasis = "typical", priceHouse = "faction",
 		fishingSessionGap = 5, -- minutes: fishing catches closer than this are one session (value per hour, #86)
 		fishingOwnMin = 50, -- Fishing zones (#88): own catches count from this n, below it the local reference shows
-		fishSortKey = "perCatch", fishSortDesc = true, -- Fishing view (#88)
 		ledgerView = "reset",
 		-- Reagent cost per view (#47): "ah" | "paid" (paid cost from the ledger, else AH per reagent).
 		costBasis = { profit = "ah", learn = "ah", level = "ah", upgrades = "ah" } }, -- /craftwise ledger: "reset" (since last reset) | "today" | "login" (#46) -- ahMin*: Bags, AH only when it pays this much more than a vendor
 }
+-- Settings only the old windows used (profit window, Records, #157): dropped from the saved file on load.
+ns.RETIRED_SETTINGS = { "sortKey", "sortDesc", "view", "learnSortKey", "learnSortDesc", "bagSortKey", "bagSortDesc",
+	"upgradeSortKey", "upgradeSortDesc", "upgradeSection", "fishSortKey", "fishSortDesc", "recordsTab" }
+
 local CHAR_DEFAULTS = {
 	version = 1,
 	professions = {}, -- [professionID] = { name, skill, maxSkill, recipes = { [recipeID] = recipe } }
@@ -155,6 +157,9 @@ ns.On("ADDON_LOADED", function(_, loaded)
 	CraftWiseCharDB = CraftWiseCharDB or {}
 	ApplyDefaults(CraftWiseDB, DB_DEFAULTS)
 	ApplyDefaults(CraftWiseCharDB, CHAR_DEFAULTS)
+	for _, key in ipairs(ns.RETIRED_SETTINGS) do
+		CraftWiseDB.settings[key] = nil
+	end
 	ns.db, ns.charDB = CraftWiseDB, CraftWiseCharDB
 	ns.db.debug = { unknownEvents = ns.unknownEvents }
 	ns.Notify("DB_READY")
@@ -544,40 +549,81 @@ ns.On("ITEM_DATA_LOAD_RESULT", function(_, itemID)
 end)
 
 SLASH_CRAFTWISE1 = "/craftwise"
-SlashCmdList.CRAFTWISE = function(msg)
-	msg = (msg or ""):lower():match("^%s*(.-)%s*$")
-	local minPercent, minCopper = msg:match("^ahmin%s+(%d+)%s*(%d*)$")
-	if minPercent then
-		ns.db.settings.ahMinPercent = tonumber(minPercent)
-		if minCopper ~= "" then
-			ns.db.settings.ahMinCopper = tonumber(minCopper)
+
+-- Slash commands are a second way in (#150 "Where everything lands"): each one opens its page in the main
+-- window. ns.OpenSettings, ns.OpenItemsFromSlash, ns.OpenFishingPage, ns.OpenLedgerPage, ns.OpenAuctionsPage
+-- and ns.OpenFarmPage come from the page files (UI/Main/Pages/), which load after this one.
+local function Open(page)
+	return ns.OpenMainWindow and ns.OpenMainWindow(page)
+end
+
+local function OpenSettings(group)
+	return ns.OpenSettings and ns.OpenSettings(group)
+end
+
+local function OpenItems(arg, focus)
+	return ns.OpenItemsFromSlash and ns.OpenItemsFromSlash(arg, focus)
+end
+
+-- /craftwise farm <arg>: the tracker's own commands act on the tracker (its home); the switches open
+-- Settings › Farm tracker; history opens Gather › Farm.
+local FARM_SETTINGS = { lock = true, unlock = true, on = true, off = true, scale = true, idle = true, autostart = true }
+
+SlashCmdList.CRAFTWISE = function(input)
+	local raw = (input or ""):match("^%s*(.-)%s*$")
+	local msg = raw:lower()
+	-- The argument as typed (item names and links keep their case); lower() keeps byte positions.
+	local rawArg = raw:match("^%S+%s*(.-)$") or ""
+	if msg:match("^ahmin%f[%A]") then
+		local minPercent, minCopper = msg:match("^ahmin%s+(%d+)%s*(%d*)$")
+		if minPercent then
+			ns.db.settings.ahMinPercent = tonumber(minPercent)
+			if minCopper ~= "" then
+				ns.db.settings.ahMinCopper = tonumber(minCopper)
+			end
+			ns.Print(("AH is advised when it pays %d%% and at least %s more than a vendor."):format(
+				ns.db.settings.ahMinPercent, ns.FormatMoney(ns.db.settings.ahMinCopper or 0)))
+			ns.Notify("BAGS_CHANGED")
 		end
-		ns.Print(("AH is advised when it pays %d%% and at least %s more than a vendor."):format(
-			ns.db.settings.ahMinPercent, ns.FormatMoney(ns.db.settings.ahMinCopper or 0)))
-		ns.Notify("BAGS_CHANGED")
+		OpenSettings("ahrule")
 		return
 	end
-	local marketArg = msg:match("^market%s*(.*)$")
+	local marketArg = msg:match("^market%f[%A]%s*(.*)$")
 	if marketArg and ns.Market then
-		ns.Market.Slash(marketArg)
+		if marketArg ~= "" then
+			ns.Market.Slash(rawArg)
+		end
+		OpenItems(rawArg, "history")
 		return
 	end
-	local whereArg = msg:match("^where%s*(.*)$")
+	local whereArg = msg:match("^where%f[%A]%s*(.*)$")
 	if whereArg and ns.Merchant then
-		ns.Merchant.Slash(whereArg)
+		if whereArg ~= "" then
+			ns.Merchant.Slash(rawArg)
+		end
+		OpenItems(rawArg, "where")
 		return
 	end
-	local toastArg = msg:match("^loottoast%s*(.*)$")
+	local toastArg = msg:match("^loottoast%f[%A]%s*(.*)$")
 	if toastArg and ns.LootToast then
 		ns.LootToast.Slash(toastArg)
+		OpenSettings("toast")
 		return
 	end
-	local farmArg = msg:match("^farm%s*(.*)$")
+	local farmArg = msg:match("^farm%f[%A]%s*(.*)$")
 	if farmArg and ns.Farm then
 		ns.Farm.Slash(farmArg)
+		local word = farmArg:match("^(%a*)")
+		if word == "history" then
+			if ns.OpenFarmPage then
+				ns.OpenFarmPage()
+			end
+		elseif FARM_SETTINGS[word] then
+			OpenSettings("farm")
+		end
 		return
 	end
-	local ledgerArg = msg:match("^ledger%s*(.*)$")
+	local ledgerArg = msg:match("^ledger%f[%A]%s*(.*)$")
 	if ledgerArg and ns.Ledger then
 		ns.Ledger.Slash(ledgerArg)
 		if ns.OpenLedgerPage then
@@ -594,31 +640,44 @@ SlashCmdList.CRAFTWISE = function(msg)
 		end
 		return
 	end
-	local fishingArg = msg:match("^fishing%s*(.*)$")
+	local fishingArg = msg:match("^fishing%f[%A]%s*(.*)$")
 	if fishingArg and ns.Fishing then
 		ns.Fishing.Slash(fishingArg)
+		local word = fishingArg:match("^(%a*)")
+		if word == "gap" or word == "ownmin" then
+			OpenSettings("fishing")
+		else
+			-- zones: Spots; [pools | open] [zone]: the Log on that water.
+			local water = (word == "pools" or word == "pool") and "pool" or word == "open" and "open" or "all"
+			if ns.OpenFishingPage then
+				if word == "zones" then
+					ns.OpenFishingPage("spots")
+				else
+					ns.OpenFishingPage("log", water)
+				end
+			end
+		end
 		return
 	end
 	if msg == "crates" or msg == "crate" then
 		if ns.Crates then
 			ns.Crates.Slash()
 		end
+		Open("crates")
 		return
 	end
 	if msg == "snapshot" then
 		if ns.Snapshot then
 			ns.Snapshot.Slash()
 		end
+		OpenSettings("snapshot")
 		return
 	end
 	if msg == "settings" or msg == "config" then
-		if ns.OpenMainWindow then
-			ns.OpenMainWindow("settings") -- the Settings page (#157)
-		else
-			ns.ToggleSettings()
-		end
+		OpenSettings(nil)
 		return
 	end
+	-- The party key's command (#20, also a macro): stays an action; Music › Party! is its button.
 	if msg == "party" then
 		if ns.Music then
 			ns.Music.ToggleParty()
@@ -627,8 +686,10 @@ SlashCmdList.CRAFTWISE = function(msg)
 	end
 	if msg == "minimap" then
 		ns.ToggleMinimapButton()
+		OpenSettings("look")
 		return
 	end
+	-- `/craftwise debug` and `debug style` stay slash-only.
 	if msg == "debug style" then
 		ns.Style.Preview()
 		return
@@ -663,7 +724,7 @@ SlashCmdList.CRAFTWISE = function(msg)
 		end
 		return
 	end
-	-- The main window (#153); the other commands open their own windows until their page moves there.
+	-- No command: the main window (#153).
 	if ns.ToggleMainWindow then
 		ns.ToggleMainWindow()
 	end

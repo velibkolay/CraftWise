@@ -584,7 +584,7 @@ function Z.SetOwnMin(arg)
 		ns.db.settings.fishingOwnMin = math.floor(n)
 	end
 	ns.Print(("Fishing zones: own catches count from n = %d, below that the reference shows."):format(Z.OwnMin()))
-	if ns.RefreshProfitFrame then
-		ns.RefreshProfitFrame()
+	if ns.Main and ns.Main.Refresh then
+		ns.Main.Refresh() -- Gather › Fishing › Spots follows while it shows
 	end
 end
