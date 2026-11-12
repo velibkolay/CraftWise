@@ -2,7 +2,8 @@
 -- for a few seconds and then faded out on its own timer.
 --
 --   * What was looted comes from the loot feed (LootFeed.lua, #126): the player's own CHAT_MSG_LOOT lines
---     read with the client's format strings, and looted coin (a money gain paired with CHAT_MSG_MONEY).
+--     read with the client's format strings, what containers opened from the bags give (#135, read from
+--     their loot window, with or without a chat line), and looted coin (a money gain paired with CHAT_MSG_MONEY).
 --     The farm tracker (Farm.lua) reads the same feed, so both always agree on what was looted.
 --   * Value: the CraftWise sell value of the stack (ns.GetSellValue: AH at the profit house after the
 --     cut, or vendor, whichever the addon uses), omitted when it has none.

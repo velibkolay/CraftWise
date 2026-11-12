@@ -28,11 +28,13 @@
 --     Minimap.lua, TRACKING_SPELL_OVERRIDE_ATLAS). Known = C_SpellBook.IsSpellKnown; tracking = the entry of
 --     the client's tracking list (C_Minimap.GetTrackingInfo) with that spellID is active. A catch made while
 --     it was active has `ff = true`.
---   * Containers: a caught item that is opened later (LOOT_OPENED with isFromItem, the opened item is the locked
---     bag slot whose item has loot) logs its contents against the container's item ID. Only item IDs this
---     character caught count; another copy of the same item (bought, looted) can't be told apart.
---   * Each recorded catch and logged opening is passed to subscribers (F.Subscribe, #130): the farm tracker
---     counts fishing from these, so fishing is detected in this one place.
+--   * Containers: a caught item that is opened later logs its contents (what its loot window held) against the
+--     container's item ID. Openings come from the loot feed (LootFeed.lua "opened", #135), which finds the
+--     container for every module. Only item IDs this character caught count; another copy of the same item
+--     (bought, looted) can't be told apart.
+--   * Each recorded catch is passed to subscribers (F.Subscribe, #130): the farm tracker counts fishing from
+--     these, so fishing is detected in this one place. Container openings reach the farm tracker from the
+--     loot feed, like its other loot.
 --
 -- CraftWiseDB.fishing["<realm>-<name> <surname>"] (account-wide, per character), kept 90 days (Scout default, #69):
 --   catches  = { { t, zone, sub, map, x, y, obj, spawn, clk, same, ff, items = { [itemID] = count } }, ... }
@@ -315,12 +317,10 @@ end
 ----------------------------------------------------------------------------------------------------
 
 local captured = false -- this loot window was read
-local pending -- items of a window that isn't fishing loot, until LOOT_OPENED says whether it came from an item
-local pendingCoin -- that window had a coin slot
 
 -- Subscribers (#130, the farm tracker): fn("catch", { catch = the stored catch, coin = window had coin }) right
--- after a catch is recorded, fn("opened", { item = container itemID, items, coin }) after an opening is logged.
--- Called inside the loot flow, so a subscriber's error never stops it: it is raised again on the next frame.
+-- after a catch is recorded. Called inside the loot flow, so a subscriber's error never stops it: it is raised
+-- again on the next frame.
 local subscribers = {}
 
 function F.Subscribe(fn)
@@ -346,8 +346,7 @@ local function IsFishing()
 	return ok and Safe(fishing) == true
 end
 
--- Reads the open loot window once. Fishing loot is recorded right away; anything else waits for LOOT_OPENED.
--- Returns the stored catch, if any.
+-- Reads the open loot window once and records it when it is fishing loot. Returns the stored catch, if any.
 function F.Capture()
 	if captured then
 		return nil
@@ -360,7 +359,6 @@ function F.Capture()
 			return nil
 		end
 		if not IsFishing() then
-			pending, pendingCoin = items, coin
 			return nil
 		end
 		hasCoin = coin
@@ -411,54 +409,32 @@ local function CaughtSet(log)
 	return set
 end
 
--- The caught item being opened: the locked bag slot holding a caught item that has loot.
-local function OpenedContainer(log)
-	if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then
-		return nil
-	end
-	local caught = CaughtSet(log)
-	if next(caught) == nil then
-		return nil
-	end
-	for bag = 0, ns.LAST_BAG or 5 do
-		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
-			local info = C_Container.GetContainerItemInfo(bag, slot)
-			if info and Safe(info.isLocked) and Safe(info.hasLoot) and caught[Safe(info.itemID)] then
-				return info.itemID
-			end
-		end
-	end
-end
-
-local function OnOpened(_, _, isFromItem)
-	if not captured then
-		F.Capture()
-	end
-	local items, coin = pending, pendingCoin
-	pending, pendingCoin = nil, nil
-	if not (items and Safe(isFromItem) == true) then
+-- A container opened from the bags (the loot feed's "opened", #135): logged when this character caught it.
+function F.OnFeed(kind, data)
+	if kind ~= "opened" or not data.container then
 		return
 	end
-	local ok, entry = pcall(function()
-		local log = F.Log()
-		local container = log and OpenedContainer(log)
-		if container then
-			local e = { t = time(), item = container, items = items }
-			log.opened[#log.opened + 1] = e
-			return e
-		end
-	end)
-	if ok and entry then
-		Emit("opened", { item = entry.item, items = entry.items, coin = coin or false })
+	local log = F.Log()
+	if not (log and CaughtSet(log)[data.container]) then
+		return
 	end
+	local items = {}
+	for itemID, n in pairs(data.items or {}) do
+		items[itemID] = n
+	end
+	log.opened[#log.opened + 1] = { t = time(), item = data.container, items = items }
 end
 
 ns.On("LOOT_READY", function()
 	F.Capture()
 end)
-ns.On("LOOT_OPENED", OnOpened)
+ns.On("LOOT_OPENED", function()
+	if not captured then
+		F.Capture()
+	end
+end)
 ns.On("LOOT_CLOSED", function()
-	captured, pending, pendingCoin = false, nil, nil
+	captured = false
 end)
 ns.On("PLAYER_LOGIN", function()
 	F.Prune()

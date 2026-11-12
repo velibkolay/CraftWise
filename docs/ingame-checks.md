@@ -548,3 +548,15 @@ No new files in the TOC; `Bindings.xml` changed (it is not in the TOC, the clien
 - [ ] Profit window (`/craftwise`): a "Farm" button left of "Profit" opens and closes the farm window; it doesn't overlap the subtitle.
 - [ ] Esc > Options > Key Bindings > AddOns > CraftWise: "Toggle CraftWise farm tracker" is listed under the CraftWise header next to Party; bind a key, it opens and closes the farm window (also in combat).
 - [ ] Settings (gear) > Farm tracker: the "Farm window" button opens and closes it.
+
+## Containers opened from the bags (#135)
+`/reload` is enough (no new file, no TOC change). Turn on the chat's loot messages (the "Loot" filter of the General tab is on by default).
+- [ ] **Note the exact chat lines** when you open each of these from the bags: a bloated fish (e.g. Bloated Redgill), a crate, a trunk, a junkbox (or lockbox). Write on #135, per container: the line for each item (copy the wording, e.g. "You receive loot: [Star Ruby]." or "You receive item: [Star Ruby]." or no line at all), and the coin line if it had coin ("You loot 1 Silver ..." or none). CraftWise counts the contents without any of these lines, but the wording tells which path counted them.
+- [ ] Open a container that dropped this farm session (a mob's crate or junkbox): in the Farm window the container's row goes down by one and the contents appear (and the toast shows them), each once. Hover the totals: Items went up by the contents' value minus the container's (if it had one). The loot log still has the container's line plus a line per item it gave.
+- [ ] Fish up a bloated fish or a crate, then open it (Veli's case: Bloated Redgill with a Star Ruby): the list and the Fishing panel both lose the container and gain the contents; Containers goes to 1; the contents' log lines have the fishing icon. `/dump CraftWiseDB.fishing["<realm>-<name> <surname>"].opened` has the opening.
+- [ ] Open a container you already had before the session (Reset first): the contents count as loot of the session, nothing else in the list changes, Containers stays 0.
+- [ ] Open a container with full bags: what stays in the window is not counted. Free a slot and open it again: the rest counts, and the container isn't taken off the list a second time.
+- [ ] Hand in a quest that rewards an item ("You receive item: ..."): it is not counted and not toasted, also right after opening a container.
+- [ ] Loot a mob right after opening a container that gave the same item (e.g. a fish): both count.
+- [ ] Fast auto-loot on and off (Settings, "Fast auto-loot"), and opening by hand clicking each item: the same counts.
+- [ ] If the contents of a container never count: `/dump C_Container.GetContainerItemInfo(<bag>, <slot>)` on an unopened container shows `hasLoot = true`, and report whether the Farm window's container row went down (then only the contents were missed) on #135.

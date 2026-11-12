@@ -17,14 +17,20 @@
 --     running; pauses don't count. At logout a running session stops counting and goes on at the next
 --     login (time offline is not counted). With no loot for idleMinutes it pauses on its own as of the
 --     last loot (the idle stretch doesn't count) and goes on with the next loot.
+--   * Containers opened from the bags (#135, the loot feed's "opened"): their contents are loot like any
+--     other. A container counted in this session leaves the list when it is opened (one unit, from the zone
+--     it was looted in, the current zone first), so it is replaced by its contents and nothing counts twice;
+--     a container from before the session was never counted, its contents are new loot of this session.
+--     The loot log keeps the container's line (it did drop) and adds the contents' lines.
 --   * A session starts with the first loot (autoStart) or the Start button. While paused by hand,
 --     loot is not counted. Removing an item from the list drops it from the session and ignores it for
 --     the rest of the session (a quest item, something you keep).
 --   * Fishing (#130): catches come from Fishing.lua's own catch record (Fishing.Subscribe), never detected
 --     again here. Per zone: catches, the catch's items (as the loot window held them), coin from a catch
 --     window that had a coin slot (the next coin loot within FISH_COIN_SECONDS), containers caught this
---     session and opened (the container leaves the fishing items, its contents join them, so nothing counts
---     twice; containers caught before the session are left out). Fishing time: the session time between two
+--     session and opened (from the loot feed, #135: the container leaves the fishing items, its contents and
+--     coin join them as they are looted, so nothing counts twice; containers caught before the session are
+--     left out of fishing). Fishing time: the session time between two
 --     catches when they are at most FISH_GAP apart (casts in a row); rates use only the catches that time
 --     was measured for (`timed`). Valued like the rest of the window, unknown values apart.
 --   * Loot log (#130): one line per counted drop, in order: item and count or coin, zone, from a catch or
@@ -231,6 +237,37 @@ function F.AddCoin(s, copper)
 	s.coin = (s.coin or 0) + copper
 end
 
+-- A container opened (#135): when counted in this session, one unit leaves the list, from the current zone
+-- if it was looted there, else from the first zone (by name) that has it. Returns that zone, or nil.
+function F.OpenContainer(s, containerID)
+	if not containerID then
+		return nil
+	end
+	local name
+	local here = s.zones[s.zone]
+	if here and (here.items[containerID] or 0) > 0 then
+		name = s.zone
+	else
+		local names = {}
+		for zoneName, z in pairs(s.zones) do
+			if (z.items[containerID] or 0) > 0 then
+				names[#names + 1] = zoneName
+			end
+		end
+		table.sort(names)
+		name = names[1]
+	end
+	if not name then
+		return nil
+	end
+	local items = s.zones[name].items
+	items[containerID] = items[containerID] - 1
+	if items[containerID] <= 0 then
+		items[containerID] = nil
+	end
+	return name
+end
+
 -- Drops an item from the session and ignores it from now on.
 function F.Remove(s, itemID)
 	for _, z in pairs(s.zones) do
@@ -362,8 +399,9 @@ function F.AddFishCoin(s, zone, copper)
 end
 
 -- A container opened: when one of this session's catches, it leaves the fishing items of the zone it was
--- caught in (the current zone first) and its contents join them. Returns that zone, or nil (not caught
--- in this session: left out).
+-- caught in (the current zone first) and `items` (if given) join them; the farm tracker passes none and adds
+-- the contents as they are looted (F.AddFishItem). Returns that zone, or nil (not caught in this session:
+-- left out).
 function F.OpenCatch(s, containerID, items)
 	local name
 	local here = s.zones[s.zone]
@@ -394,6 +432,15 @@ function F.OpenCatch(s, containerID, items)
 		end
 	end
 	return name
+end
+
+-- An item from a caught container, into the fishing items of the zone the container was caught in.
+function F.AddFishItem(s, zone, itemID, count)
+	if s.ignored[itemID] then
+		return
+	end
+	local f = Fish(s, zone or s.zone)
+	f.items[itemID] = (f.items[itemID] or 0) + (count or 1)
 end
 
 function F.Catches(s)
@@ -752,9 +799,32 @@ end
 
 local fishCoin -- { zone, at (GetTime) }: a catch or caught container window had coin; the next coin loot is fishing's
 local fishItems -- { items = { [itemID] = units }, at }: the last catch's items, to mark their loot lines in the log
+local opening -- { id, fishZone }: the last container opened (#135); fishZone when it was this session's catch
+
+-- A container opened from the bags (#135): it leaves the session when it was counted in it.
+local function OnOpened(data)
+	fishCoin, fishItems, opening = nil, nil, nil
+	local now = F.Now()
+	local s = Accept(now, true)
+	if not s then
+		return
+	end
+	local zone = F.OpenContainer(s, data.container)
+	local fishZone = data.container and F.OpenCatch(s, data.container) or nil
+	opening = { id = data.opening, fishZone = fishZone }
+	if fishZone and data.coin then
+		fishCoin = { zone = fishZone, at = GetTime() }
+	end
+	if zone or fishZone then
+		Changed()
+	end
+end
 
 -- A loot from the feed.
 function F.OnFeed(kind, data)
+	if kind == "opened" then
+		return OnOpened(data)
+	end
 	local now = F.Now()
 	local s = Accept(now)
 	if not s then
@@ -764,10 +834,13 @@ function F.OnFeed(kind, data)
 		if not F.AddItem(s, data.itemID, data.count, data.link) then
 			return
 		end
-		-- An item of the catch just recorded: marked in the log.
+		-- An item of the catch just recorded, or of a container caught this session: marked in the log.
 		local fish = false
 		if fishItems and GetTime() - fishItems.at <= F.FISH_COIN_SECONDS and (fishItems.items[data.itemID] or 0) > 0 then
 			fishItems.items[data.itemID] = fishItems.items[data.itemID] - (data.count or 1)
+			fish = true
+		elseif data.opening and opening and opening.id == data.opening and opening.fishZone then
+			F.AddFishItem(s, opening.fishZone, data.itemID, data.count)
 			fish = true
 		end
 		F.LogDrop(s, now, "item", data.itemID, data.count or 1, fish)
@@ -789,35 +862,26 @@ function F.OnFeed(kind, data)
 	Changed()
 end
 
--- Fishing.lua's catch record (#130): a catch, or one of this session's caught containers opened.
+-- Fishing.lua's catch record (#130). Caught containers opened come from the loot feed (OnOpened).
 function F.OnFishing(kind, data)
-	local now = F.Now()
-	fishCoin, fishItems = nil, nil
-	local s, zone
-	if kind == "catch" then
-		s = Accept(now)
-		if not s then
-			return
-		end
-		local items = data.catch and data.catch.items or {}
-		F.AddCatch(s, items, now)
-		zone = s.zone
-		local copy = {}
-		for id, n in pairs(items) do
-			copy[id] = n
-		end
-		fishItems = { items = copy, at = GetTime() }
-	elseif kind == "opened" then
-		s = Accept(now, true)
-		zone = s and F.OpenCatch(s, data.item, data.items)
-		if not zone then
-			return
-		end
-	else
+	if kind ~= "catch" then
 		return
 	end
+	local now = F.Now()
+	fishCoin, fishItems, opening = nil, nil, nil
+	local s = Accept(now)
+	if not s then
+		return
+	end
+	local items = data.catch and data.catch.items or {}
+	F.AddCatch(s, items, now)
+	local copy = {}
+	for id, n in pairs(items) do
+		copy[id] = n
+	end
+	fishItems = { items = copy, at = GetTime() }
 	if data.coin then
-		fishCoin = { zone = zone, at = GetTime() }
+		fishCoin = { zone = s.zone, at = GetTime() }
 	end
 	s.lastLoot = now
 	Changed()
