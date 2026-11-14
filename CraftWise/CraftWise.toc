@@ -12,6 +12,7 @@
 
 Core.lua
 Locales\Locale.lua
+Perf.lua
 Data\Recipes.lua
 UsedIn.lua
 Tooltip.lua

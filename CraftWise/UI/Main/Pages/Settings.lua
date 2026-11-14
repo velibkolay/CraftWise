@@ -515,6 +515,19 @@ local function Groups()
 		end },
 		{ key = "holds", kind = "grid", label = L["What it holds"], items = Set.SnapshotItems },
 	} }
+
+	-- Debug (#194): measure what CraftWise costs while you open the bags or a vendor (Perf.lua).
+	groups[#groups + 1] = { key = "debug", label = L["Debug"], rows = {
+		{ key = "buttons", kind = "buttons", label = L["Performance"], buttons = {
+			{ key = "record", text = function() return ns.Perf.IsRecording() and L["Stop"] or L["Record"] end,
+				onClick = function() ns.Perf.Toggle() end, on = function() return ns.Perf.IsRecording() end,
+				tip = L["Times every CraftWise handler and every slow frame while on. Nothing runs while it is off."] },
+			{ key = "copy", text = L["Copy report"], onClick = function() ns.Perf.ShowCopy() end,
+				tip = L["Opens the report in a box with the text selected: Ctrl+C, then paste it."] },
+			{ key = "clear", text = L["Clear"], onClick = function() ns.Perf.Clear() end },
+		} },
+		{ key = "report", kind = "text", label = L["Report"], text = function() return ns.Perf.Status() end },
+	} }
 	return groups
 end
 

@@ -802,3 +802,13 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - With the Arcane Salvager buff (1283701) active the tooltip says so and only salvager samples count; without the buff the normal ones. Without salvager samples the guide answers.
 - Sell › Bags: a disenchantable item with a value shows in the Disenchant group when that pays most; its value matches the Craft tooltip per item. Vendor check and Disenchant check cannot both be on (turning one on turns the other off).
 - Enchanter wands (Lesser Magic Wand etc.) get no value.
+
+## Performance recorder: stutter when opening bags or a vendor (#194)
+
+- **TOC changed (new Perf.lua): restart the game completely.**
+- Settings › Debug. Press **Record**, then do the thing that stutters: open the bags (all of them, or the combined bag), close, open a vendor, close it. Press **Stop**. The report appears under the buttons; **Copy report** opens it in a box with the text selected (Ctrl+C, paste it into the issue).
+- While Record is on the button says Stop and is lit. With Record off CraftWise times nothing (the recorder is a single `nil` check in the event dispatch).
+- Report, top to bottom: frame count and worst frame; the slowest frames with how much of each was CraftWise handlers and which handler was slowest; CraftWise events, handlers (`EVENT File.lua:line`), module callbacks and the BagIcons hooks, each with total ms, count and longest run; the other addons' slow ticks (over 5 / 10 / 50 / 100 ms) during the recording from `C_AddOnProfiler`, and the top addons by recent average and by peak since login.
+- Check that a slow frame (over 30 ms) shows up in the list when you open the bags, and that "CraftWise inside it" tells whether CraftWise or another addon (Auctionator, Bagnon, Disenchantry, ShortestPathForever) holds the time. If every handler shows ~0 ms while the frame is long, the cost is outside CraftWise handlers: read the addon table.
+- If the handler labels read `#12` instead of `Bags.lua:40`, `debugstack` returned an unexpected format: report the line.
+- No Lua error from `C_AddOnProfiler` calls (all wrapped; a missing function only leaves its lines out).

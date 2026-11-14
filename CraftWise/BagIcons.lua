@@ -128,7 +128,7 @@ end
 local function HookBlizzard()
 	ContainerFrames(function(frame)
 		if frame and frame.Update then
-			hooksecurefunc(frame, "Update", UpdateContainer)
+			hooksecurefunc(frame, "Update", ns.Timed("BagIcons: bag frame Update", UpdateContainer))
 		end
 	end)
 end
@@ -139,10 +139,10 @@ local function HookBagnon()
 	if not (Bagnon and Bagnon.Item and Bagnon.Item.UpdateBorder) then
 		return nil
 	end
-	hooksecurefunc(Bagnon.Item, "UpdateBorder", function(item)
+	hooksecurefunc(Bagnon.Item, "UpdateBorder", ns.Timed("BagIcons: Bagnon UpdateBorder", function(item)
 		local cached = item.IsCached and item:IsCached()
 		ns.ApplySlotMark(item, not cached and item.info and item.info.itemID or nil)
-	end)
+	end))
 	return Bagnon
 end
 
