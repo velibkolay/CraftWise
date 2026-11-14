@@ -243,6 +243,23 @@ view). The maths is `site/lib/recipes.ts` (tested in `test/recipes.test.ts`):
   profit, rounded up, only when the profit is positive.
 - Recipe items missing from `Sources.lua` (no usable required skill in the client, see its header) show "no data".
 
+#### Crafts view and vendor check (#185)
+
+`/crafts` (static page `public/crafts/index.html`, script `site/crafts.ts`, logic `site/lib/crafts.ts`) lists every
+spell of `recipes.json` that makes an item, with the product, profession, reagent cost, AH sale, vendor sale, profit
+and vendor profit. Same definitions as the addon (`vendorCheck` in `site/lib/recipes.ts`):
+
+- Vendor sale = the product's vendor sell price (`sellPrice` from the API, else the bundled `sell`) x output
+  quantity, rounded down; no price (vendors don't buy it, or not known) gives no value.
+- Vendor profit = vendor sale - reagent cost (each reagent where it is cheaper, AH or vendor). Needs no AH price for
+  the product; unknown when a reagent has no price.
+- Loop: every reagent has a bundled vendor buy price and vendor sale - cost at vendor prices > 0. Needs no AH price.
+
+Filters: profession, product name, "Profit when sold to a vendor" (vendor profit > 0), "Loops only" and, when
+`/api/me/characters` answers (Access login), "My crafts": the recipe spell IDs in `professions[].known` of the
+characters' snapshots (docs/snapshot.md). Only the prices of the filtered crafts are fetched (`/api/browse?ids=`).
+URL: `?prof=<skill line>&q=&vendor=1&loops=1&mine=1&sort=&dir=&p=`.
+
 A Recipe list of 158 items needs about 300 more item IDs, so 3 to 4 browse requests (about 10 rows read per item).
 
 ## Private API (`/api/me/*`, Cloudflare Access)

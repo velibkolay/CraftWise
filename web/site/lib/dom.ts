@@ -145,7 +145,7 @@ function keyBar(sub: Node | string, view: View | null): HTMLElement {
 			"div",
 			{ class: "keybar" },
 			h("a", { href: "/", class: "brand" }, h("img", { src: "/img/key-wow-32.svg", width: 32, height: 32, alt: "" }), h("span", {}, "wow.velikopter.com")),
-			h("nav", { class: "vnav", "aria-label": "Views" }, tab("browse", "/", "All items"), tab("favourites", "/?view=favourites", "Favourites"), tab("crates", "/me/crates", "Waylaid crates")),
+			h("nav", { class: "vnav", "aria-label": "Views" }, tab("browse", "/", "All items"), tab("favourites", "/?view=favourites", "Favourites"), tab("crafts", "/crafts", "Crafts"), tab("crates", "/me/crates", "Waylaid crates")),
 			h("span", { class: "grow" }),
 			skinSwitch(),
 			tab("me", "/me", "Me", "ntab me"),
@@ -168,7 +168,7 @@ export function statusBar(house: House | null): HTMLElement {
 	return bar;
 }
 
-export type View = "browse" | "favourites" | "crates" | "me" | "fishing";
+export type View = "browse" | "favourites" | "crafts" | "crates" | "me" | "fishing";
 
 // The private pages behind Access (/me, /me/crates, /me/fishing): only they show the fishing page in the nav.
 function privateView(view: View | null): boolean {
@@ -183,6 +183,7 @@ export function bottomTabs(active: View | null): HTMLElement {
 		{ class: "btabs", "aria-label": "Views" },
 		tab("browse", "/", "Browse"),
 		tab("favourites", "/?view=favourites", "Favourites"),
+		tab("crafts", "/crafts", "Crafts"),
 		tab("crates", "/me/crates", "Waylaid Crates"),
 		tab("me", "/me", "My Characters"),
 		privateView(active) ? tab("fishing", "/me/fishing", "Fishing") : null,

@@ -57,11 +57,16 @@ export function professionText(spell: Spell, skill: number | null): string {
 }
 
 // Reagents, one line each: quantity and name, the unit price and where it is cheaper, and the line's cost.
-function reagentTable(c: Craft, names: CraftNames, label: string): HTMLElement {
+// With `vendorBuy` (the crafts view, #185) a column says what a vendor sells each reagent for, so both prices show.
+function reagentTable(c: Craft, names: CraftNames, label: string, vendorBuy?: Record<string, number>): HTMLElement {
 	return h(
 		"table",
 		{ class: "tbl bd", "aria-label": label },
-		h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Reagent"), h("th", { scope: "col", class: "r" }, "Each"), h("th", { scope: "col", class: "r" }, "Cost"))),
+		h(
+			"thead",
+			{},
+			h("tr", {}, h("th", { scope: "col" }, "Reagent"), h("th", { scope: "col", class: "r" }, "Each"), vendorBuy ? h("th", { scope: "col", class: "r" }, "Vendor sells") : null, h("th", { scope: "col", class: "r" }, "Cost")),
+		),
 		h(
 			"tbody",
 			{},
@@ -71,6 +76,7 @@ function reagentTable(c: Craft, names: CraftNames, label: string): HTMLElement {
 					{},
 					h("td", {}, h("span", { class: "qty" }, `${qtyText(r.qty)} ×`), " ", itemLink(r.item, names)),
 					h("td", { class: "r" }, moneyEl(r.price?.unit ?? null), h("span", { class: "hint basis" }, priceNote(r.price))),
+					vendorBuy ? h("td", { class: "r" }, vendorBuy[String(r.item)] ? moneyEl(vendorBuy[String(r.item)]!) : h("span", { class: "hint" }, "not sold")) : null,
 					h("td", { class: "r" }, moneyEl(r.total)),
 				),
 			),
@@ -84,7 +90,7 @@ function line(label: string, value: Node | string, note: string | null = null): 
 }
 
 // The sums under the reagents: reagent cost, the product's value, profit per craft; `extra` lines follow.
-function sums(c: Craft, extra: HTMLElement[]): HTMLElement {
+function sums(c: Craft, extra: HTMLElement[], vendor = false): HTMLElement {
 	const s = c.spell;
 	const rows: (HTMLElement | null)[] = [line("Reagents", moneyEl(c.cost, "unknown"))];
 	if (s.output && c.noAhProduct) {
@@ -107,7 +113,26 @@ function sums(c: Craft, extra: HTMLElement[]): HTMLElement {
 		const profit = c.profit === null ? h("span", { class: "hint" }, "unknown") : h("span", {}, profitEl(c.profit), c.thin ? " " : null, c.thin ? thinTag(c.value) : null);
 		rows.push(line("Profit per craft", profit));
 	}
+	if (vendor && s.output) rows.push(...vendorLines(c));
 	return h("div", { class: "bd-sums" }, rows, extra);
+}
+
+// The vendor check (#185): the product sold to a vendor, the profit that gives, and whether it is a loop.
+function vendorLines(c: Craft): HTMLElement[] {
+	const v = c.vendor;
+	const lines = [
+		line("Sold to a vendor", v.sale === null ? h("span", { class: "hint" }, "no vendor price") : moneyEl(v.sale), v.sale === null ? "vendors don't buy it, or the price isn't known" : c.spell.qty !== 1 ? "vendor price × quantity" : null),
+		line("Vendor profit", v.profit === null ? h("span", { class: "hint" }, "unknown") : profitEl(v.profit), v.profit === null ? null : "vendor sale - reagents"),
+	];
+	if (v.loop) lines.push(line("Loop", h("span", {}, loopTag(), " ", profitEl(v.sale! - v.loopCost!)), `at vendor prices only: reagents ${skinMoney(v.loopCost!).short}`));
+	else if (v.loopCost === null) lines.push(line("Loop", h("span", { class: "hint" }, "no"), "a reagent isn't sold by a vendor"));
+	else lines.push(line("Loop", h("span", { class: "hint" }, "no"), "vendor sale isn't above the cost at vendor prices"));
+	return lines;
+}
+
+// The loop marker (#185): every reagent from a vendor, and the vendor pays more than they cost.
+export function loopTag(): HTMLElement {
+	return h("span", { class: "loop", title: "Loop: every reagent is sold by a vendor and a vendor pays more for the product than they cost" }, h("span", { "aria-hidden": "true" }, "loop"), h("span", { class: "sr" }, ", vendor loop"));
 }
 
 function missingNote(c: Craft, names: CraftNames): HTMLElement | null {
@@ -145,15 +170,15 @@ export function craftBreakdown(rec: RecipeRow, names: CraftNames, title: string 
 }
 
 // "Craft It" on the item page: one craft of the item, with the recipe item that teaches it when there is one.
-export function craftItBreakdown(c: Craft, recipe: { item: number; skill: number | null } | null, names: CraftNames): HTMLElement[] {
+export function craftItBreakdown(c: Craft, recipe: { item: number; skill: number | null } | null, names: CraftNames, vendorBuy?: Record<string, number>): HTMLElement[] {
 	const s = c.spell;
 	const head = recipe
 		? [h("span", { class: "lbl" }, `${professionText(s, recipe.skill)}: `), itemLink(recipe.item, names)]
 		: [h("span", { class: "lbl" }, s.profession ?? `Profession ${s.skillLine}`), h("span", { class: "hint" }, " · no recipe item in the data (trainer or not known)")];
 	return [
 		h("p", { class: "bd-head" }, ...head, s.qty !== 1 ? h("span", { class: "hint" }, ` · makes ${qtyText(s.qty)} per craft`) : null),
-		reagentTable(c, names, `Reagents to craft ${names.get(s.output ?? 0)?.name ?? "it"}`),
-		sums(c, []),
+		reagentTable(c, names, `Reagents to craft ${names.get(s.output ?? 0)?.name ?? "it"}`, vendorBuy),
+		sums(c, [], vendorBuy !== undefined),
 		missingNote(c, names) ?? h("span", { hidden: true }),
 	];
 }

@@ -7,6 +7,7 @@ import itemHtml from "../public/item.html?raw";
 import notFoundHtml from "../public/404.html?raw";
 import meHtml from "../public/me/index.html?raw";
 import fishingHtml from "../public/me/fishing/index.html?raw";
+import craftsHtml from "../public/crafts/index.html?raw";
 import { PAGE_HEADERS } from "../src/pages";
 import { BOOTY, call, clearData, HORDE, houses, makeToken, now, upload } from "./helpers";
 
@@ -153,7 +154,7 @@ describe("pages", () => {
 
 	it("allows exactly the inline skin script, the same in _headers and in the Worker", async () => {
 		const hashes = new Set<string>();
-		for (const html of [indexHtml, itemHtml, notFoundHtml, meHtml, fishingHtml]) {
+		for (const html of [indexHtml, itemHtml, notFoundHtml, meHtml, fishingHtml, craftsHtml]) {
 			const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
 			expect(scripts).toHaveLength(1);
 			const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(scripts[0]!)));
