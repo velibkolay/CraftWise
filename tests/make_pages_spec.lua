@@ -208,6 +208,34 @@ it("Craft chips: Unlearned adds recipes you don't know; Hide unpriced leaves row
 	eq(f.listBar.note.text, "by name")
 end)
 
+it("Craft › Vendor check (#185): vendor sale and profit, only crafts above 0, best first, with and without Unlearned, loop tag, hero", function()
+	local ns, _, M = Load()
+	ns.db.vendor[HIDE] = 1 -- Testhide is a vendor good now; Testthread already is (20)
+	Make.Open(ns, "craft", PROF)
+	local chips = M.SlotsOf("craft").listTools.chips
+	eq(chips[3].label.text, "Vendor check"); eq(chips[3].on, false)
+	eq(Make.Names(ns, "craft"), "Test Belt,Test Gloves,Test Bracers") -- unchanged without the chip
+	chips[3].scripts.OnClick(chips[3])
+	eq(ns.db.settings.vendorCheck, true); eq(chips[3].on, true)
+	-- Gloves 4 Testhide (4) -> vendor 25 = +21, Belt 2 Testhide + 1 Testthread (22) -> 30 = +8; Bracers have no vendor sale
+	eq(Make.Names(ns, "craft"), "Test Gloves,Test Belt")
+	local gloves = Row(ns, "craft", R_GLOVES)
+	eq(gloves.profit, 21); eq(gloves.sellSource, "vendor"); eq(gloves.vendorLoop, true)
+	local sub = Plain(gloves.view.sub)
+	assert(sub:find("vendor · loop", 1, true), sub)
+	local f = M.Frame()
+	eq(f.hero.label.text, "Best vendor craft right now"); eq(f.hero.name.text, "Test Gloves")
+	assert(f.foot.left.text:find("Vendor check", 1, true), f.foot.left.text)
+	-- Unlearned on: Cloak (3 Testhide = 3 -> 5) joins; Cap (1 -> 1) earns nothing and stays out
+	chips[1].scripts.OnClick(chips[1])
+	eq(Make.Names(ns, "craft"), "Test Gloves,Test Belt,Test Cloak")
+	-- no vendor price for the reagents: the chip leaves nothing and the empty text says why
+	ns.db.vendor[HIDE], ns.db.vendor[THREAD] = nil, nil
+	M.Refresh()
+	eq(Make.Names(ns, "craft"), "")
+	assert(M.Page("craft").Model({ professionID = PROF }).empty:find("Vendor check", 1, true))
+end)
+
 it("Craft opened row: each reagent with quantity, total, source and have N; Price history opens Look up › Items", function()
 	local ns, stub, M = Load()
 	stub.bags[0] = { { itemID = HIDE, stackCount = 6, quality = 1 } }

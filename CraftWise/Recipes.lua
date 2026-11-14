@@ -679,6 +679,7 @@ local function MakeRow(prof, recipeID, recipe, prices)
 		learned = recipe.learned,
 		learnCost = learnCost,
 	}, prices)
+	ns.Profit.VendorCheck(result, recipe, ns.VendorCheckPrices)
 	result.recipeID = recipeID
 	result.name = recipe.name
 	result.icon = recipe.icon

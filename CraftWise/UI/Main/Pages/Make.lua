@@ -220,7 +220,18 @@ function MK.CraftRows(professionID, settings, query)
 	local out, hidden = {}, 0
 	for _, r in ipairs(ns.BuildRows(professionID, s.includeUnlearned, "profit")) do
 		if MK.Matches(r, query) then
-			if s.hideUnpriced and not r.profit then
+			if s.vendorCheck then
+				-- Vendor check (#185): the sale is the vendor's and the profit the vendor profit; only crafts
+				-- that earn something that way stay. The AH figures are kept under ah*.
+				if r.vendorProfit and r.vendorProfit > 0 then
+					r.ahProfit, r.ahSellsFor, r.ahSellSource = r.profit, r.sellsFor, r.sellSource
+					r.profit, r.sellsFor, r.sellSource, r.cutUnverified = r.vendorProfit, r.vendorSale, "vendor", nil
+					r.vendorView = true
+					out[#out + 1] = r
+				else
+					hidden = hidden + 1
+				end
+			elseif s.hideUnpriced and not r.profit then
 				hidden = hidden + 1
 			else
 				out[#out + 1] = r

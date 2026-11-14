@@ -768,3 +768,11 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - [ ] Settings docked (provisional Q2): one list with every group under its header and 2 unit rule, each label over its control, segmented controls across the row; the wheel scrolls it; every control still writes its setting. Music docked (provisional Q3): the Playing card stacked (time bar across, Music on and Party! under it), each profession row with Song, Video, Next cast and Volume one under the other; the dropdown menus open next to them.
 - [ ] States docked: First run (the profession chip stays above it), No prices, Stale card, Scanning skeletons in the result spot, Error with Reload UI and Show error text all fit 380 without running over the edge.
 - [ ] Switch layouts on every page, with a row open: the same row stays open; nothing from one layout stays drawn in the other. In combat: dock, undock, switch pages, no error.
+
+### Make › Craft › Vendor check (#185)
+
+- Open Make › Craft on a profession with known recipes, turn on the Vendor check chip: the list holds only crafts with a vendor profit above 0, best first, each sale tagged "vendor"; with Unlearned on/off the list changes accordingly. Hero label reads "Best vendor craft right now".
+- A craft whose reagents are all sold by vendors (thread, vials, flux, dyes; visit the merchants once so prices are recorded) and whose product a vendor buys for more than that shows "· loop" after the sale. Buy the reagents, craft once, sell to a vendor: the gold gained matches the vendor profit shown.
+- Hover a row: the "Vendor check" section lists each reagent with AH price, vendor price and which was used, then the vendor sale and profit. A product no vendor buys never shows up with the chip on; a reagent without a vendor price shows "not sold by a vendor".
+- Chip off: nothing changes except the loop tag on loop rows. After a client patch changing sell prices, the vendor sale follows the client's price.
+- No new file: `/reload` is enough.
