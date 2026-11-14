@@ -159,10 +159,10 @@ local function Schedule()
 		return
 	end
 	pending = true
-	C_Timer.NewTimer(Loops.DEBOUNCE, function()
+	C_Timer.NewTimer(Loops.DEBOUNCE, ns.Timed("Loops.lua check", function()
 		pending = false
 		Loops.Run()
-	end)
+	end))
 end
 Loops.Schedule = Schedule
 

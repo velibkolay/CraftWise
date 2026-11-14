@@ -1035,7 +1035,7 @@ local function CollectRow(scan, index)
 	if CanHaveSuffix(itemID) then
 		local link = C_AuctionHouse.GetReplicateItemLink(index)
 		if not link then
-			C_Item.RequestLoadItemDataByID(itemID)
+			ns.RequestItemData(itemID, "Market.lua scan row")
 			return false
 		end
 		suffix = SuffixFromLink(link)
@@ -1580,9 +1580,7 @@ local function RunInfoQueue()
 		inInfoQueue[itemID] = nil
 		if db and not StoreItemInfo(itemID) then
 			infoWaiting[itemID] = true
-			if C_Item and C_Item.RequestLoadItemDataByID then
-				C_Item.RequestLoadItemDataByID(itemID)
-			end
+			ns.RequestItemData(itemID, "Market.lua info queue")
 			n = n + 1
 		end
 	end

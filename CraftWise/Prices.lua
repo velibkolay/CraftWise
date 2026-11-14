@@ -181,9 +181,7 @@ function ns.GetVendorSellPrice(itemID)
 	end
 	local sell = ClientSellPrice(itemID)
 	if sell == nil then
-		if C_Item and C_Item.RequestLoadItemDataByID then
-			C_Item.RequestLoadItemDataByID(itemID)
-		end
+		ns.RequestItemData(itemID, "Prices.lua GetVendorSellPrice")
 		sell = (ns.db and ns.db.sellPrices[itemID]) or (ns.ItemSellPrices and ns.ItemSellPrices[itemID])
 	end
 	return sell
@@ -204,9 +202,7 @@ local function RunSellQueue()
 		inQueue[itemID] = nil
 		if ns.db and ns.db.sellPrices[itemID] == nil and ClientSellPrice(itemID) == nil then
 			waitingSell[itemID] = true
-			if C_Item and C_Item.RequestLoadItemDataByID then
-				C_Item.RequestLoadItemDataByID(itemID)
-			end
+			ns.RequestItemData(itemID, "Prices.lua sell queue")
 			n = n + 1
 		end
 	end
@@ -442,16 +438,22 @@ function ns.RecordMerchant()
 	if not ns.db or not GetMerchantNumItems then
 		return 0
 	end
-	local recorded = 0
+	local recorded, changed = 0, 0
 	local prices, extended = ns.MerchantUnitPrices()
 	for itemID, unit in pairs(prices) do
 		if not extended[itemID] then
-			ns.db.vendor[itemID] = unit
+			if ns.db.vendor[itemID] ~= unit then
+				ns.db.vendor[itemID] = unit
+				changed = changed + 1
+			end
 			recorded = recorded + 1
 		end
 	end
-	if recorded > 0 then
-		ns.Notify("PRICES_CHANGED")
+	-- Only a price that is new or different is news (#194): a vendor seen again changes nothing, and
+	-- MERCHANT_SHOW / MERCHANT_UPDATE fire on every open and every page of the vendor window. The
+	-- argument says where it came from: listeners that only care about auction prices skip "vendor".
+	if changed > 0 then
+		ns.Notify("PRICES_CHANGED", "vendor")
 	end
 	return recorded
 end

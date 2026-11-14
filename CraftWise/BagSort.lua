@@ -191,7 +191,7 @@ local function Uncached()
 			local item = C_Container.GetContainerItemInfo(bag, slot)
 			if item and item.itemID and not C_Item.IsItemDataCachedByID(item.itemID) then
 				missing = missing + 1
-				C_Item.RequestLoadItemDataByID(item.itemID)
+				ns.RequestItemData(item.itemID, "BagSort.lua")
 			end
 		end
 	end
