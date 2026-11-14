@@ -113,7 +113,7 @@ local DB_DEFAULTS = {
 	-- Make chips (#154): includeUnlearned, hideUnpriced, vendorCheck (#185), learnFitsSkill; Sell › Bags chips (#155): showKept,
 	-- bagsMatsOnly; Settings › Bags and loot: showDismissed. The main window keeps its own state (section,
 	-- pages, layout) in settings.ui.
-	settings = { includeUnlearned = true, hideUnpriced = false, vendorCheck = false, loopAlert = true, loopAlertMin = 0, learnFitsSkill = false, showKept = true,
+	settings = { includeUnlearned = true, hideUnpriced = false, vendorCheck = false, disenchantCheck = false, disenchantMinSamples = 10, loopAlert = true, loopAlertMin = 0, learnFitsSkill = false, showKept = true,
 		showDismissed = false, ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
 		alpha = { main = 0.96, farm = 0.86, toast = 0.70 }, -- background alpha per window (#162), Settings > Look
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"

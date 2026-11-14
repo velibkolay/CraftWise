@@ -1,6 +1,6 @@
 -- Bag advisor (issue #12): for every item in the bags, what vendoring, the AH and disenchanting pay,
--- and which is best. Disenchant values wait for a verified Forever disenchant table (#11); until then
--- ns.DisenchantValue returns nil and disenchantable items are only marked as such.
+-- and which is best. Disenchant values come from Disenchant.lua (#190): measured samples from
+-- Disenchantry's records, pooled, or the labelled Classic guide.
 local _, ns = ...
 
 
@@ -17,49 +17,16 @@ local function NumSlots(bag)
 	return 0
 end
 
--- Equippable armour or weapon of uncommon or rare quality: what an enchanter can disenchant.
+-- Uncommon to epic armour or weapon that an enchanter can disenchant (Disenchant.lua).
 local function CanDisenchant(itemID, quality)
-	if not (quality == 2 or quality == 3) then
-		return false
-	end
 	local classID
 	if C_Item and C_Item.GetItemInfoInstant then
 		classID = select(6, C_Item.GetItemInfoInstant(itemID))
 	end
-	return classID == 2 or classID == 4 -- Weapon, Armor
+	return ns.Disenchant.Can(itemID, quality, classID)
 end
 
--- Expected disenchant value of one item: sum of chance x quantity x material price, each material at
--- the profit house and basis after that house's cut (as it would be sold; #40). Returns value and a
--- details table { labels, cutTexts, cutDiffers }; nil when a material has no price or an unverified cut.
--- Needs ns.DisenchantData (verified Forever table, #11). nil until it exists.
-function ns.DisenchantValue(itemID, quality)
-	local table_ = ns.DisenchantData
-	if not table_ then
-		return nil
-	end
-	local level = C_Item and C_Item.GetDetailedItemLevelInfo and C_Item.GetDetailedItemLevelInfo(itemID)
-	local rows = table_.Lookup and table_.Lookup(quality, level)
-	if not rows then
-		return nil
-	end
-	local total, details, seen = 0, { labels = {}, cutTexts = {} }, {}
-	for _, r in ipairs(rows) do
-		local sale = ns.AuctionSale(r.itemID, 1)
-		if not (sale and sale.cut) then
-			return nil -- a material without a price or a cut would understate the value
-		end
-		total = total + sale.quote.copper * (1 - sale.cut) * r.chance * r.quantity
-		details.cutDiffers = details.cutDiffers or sale.cutDiffers
-		for kind, text in pairs({ labels = sale.label, cutTexts = sale.cutText }) do
-			if not seen[kind .. text] then
-				seen[kind .. text] = true
-				table.insert(details[kind], text)
-			end
-		end
-	end
-	return total, details
-end
+-- ns.DisenchantValue(itemID, quality) is in Disenchant.lua (measured samples, pooled, the Classic guide).
 
 -- Item IDs used as reagents by recipes the character knows.
 local function ReagentSet()

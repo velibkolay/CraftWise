@@ -62,6 +62,8 @@ end
 function MK.SaleTag(source, cutUnverified)
 	if source == "vendor" then
 		return "vendor"
+	elseif source == "disenchant" then
+		return "disenchant" -- Disenchant check (#190)
 	elseif source == "auction" then
 		return cutUnverified and "AH gross" or "AH"
 	end
@@ -220,7 +222,19 @@ function MK.CraftRows(professionID, settings, query)
 	local out, hidden = {}, 0
 	for _, r in ipairs(ns.BuildRows(professionID, s.includeUnlearned, "profit")) do
 		if MK.Matches(r, query) then
-			if s.vendorCheck then
+			if s.disenchantCheck and not s.vendorCheck then
+				-- Disenchant check (#190): the sale is the expected disenchant value, the profit that minus the
+				-- reagents; only crafts whose product can be disenchanted and priced stay. Losses show too.
+				ns.Disenchant.RowValue(r)
+				if r.deValue then
+					r.ahProfit, r.ahSellsFor, r.ahSellSource = r.profit, r.sellsFor, r.sellSource
+					r.profit, r.sellsFor, r.sellSource, r.cutUnverified = r.deProfit, r.deValue, "disenchant", nil
+					r.disenchantView = true
+					out[#out + 1] = r
+				else
+					hidden = hidden + 1
+				end
+			elseif s.vendorCheck then
 				-- Vendor check (#185): the sale is the vendor's and the profit the vendor profit; only crafts
 				-- that earn something that way stay. The AH figures are kept under ah*.
 				if r.vendorProfit and r.vendorProfit > 0 then
@@ -487,13 +501,17 @@ function MK.UpdateTools(slot, ctx)
 	box.hint:SetShown(MK.state.query == "")
 end
 
--- A chip bound to a boolean setting (Unlearned, Hide unpriced, Fits my skill).
-function MK.SettingChip(slot, label, key, tip)
+-- A chip bound to a boolean setting (Unlearned, Hide unpriced, Fits my skill). excludes: a setting turned
+-- off when this one goes on (Vendor check and Disenchant check each change what the list shows).
+function MK.SettingChip(slot, label, key, tip, excludes)
 	local chip = Style.Chip(slot, label)
 	chip.settingKey = key
 	chip:SetScript("OnClick", function(self)
 		local s = ns.db.settings
 		s[key] = not s[key]
+		if s[key] and excludes then
+			s[excludes] = false
+		end
 		self:SetOn(s[key])
 		M.Refresh()
 	end)

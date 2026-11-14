@@ -233,6 +233,35 @@ function MK.AddVendorCheck(r)
 	end
 end
 
+-- Disenchant check (#190): the materials with chance, expected quantity and price, the value and where it
+-- comes from (sample count, or the Classic table (guide)); "few samples" is a warning.
+function MK.AddDisenchantCheck(r)
+	local d = r.deDetails
+	if not d then
+		return
+	end
+	GameTooltip:AddLine(" ")
+	Heading("Disenchant check", Muted(d.sourceLabel or ""))
+	for _, m in ipairs(d.materials or {}) do
+		local qty = m.min and m.max and m.min ~= m.max and ("%d-%d"):format(m.min, m.max) or ("%g"):format(m.perHit or 1)
+		GameTooltip:AddDoubleLine(("%s × %s  %s%d%%|r"):format(qty, ItemName(m.itemID), Muted(""), math.floor(m.chance * 100 + 0.5)),
+			("%s each %s"):format(Money(math.floor(m.unit + 0.5)), Muted(m.from == "vendor" and "vendor" or "AH")), 1, 1, 1, 1, 1, 1)
+	end
+	GameTooltip:AddDoubleLine("Expected value", Money(math.floor(r.deValue + 0.5)), 0.8, 0.8, 0.8, 1, 1, 1)
+	if r.deProfit then
+		GameTooltip:AddDoubleLine("Profit (value - reagents)", (r.deProfit < 0 and BAD .. "-" or GOOD .. "+")
+			.. Money(math.floor(math.abs(r.deProfit) + 0.5)) .. "|r", 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if d.few then
+		Warn(("Few samples (%d, Settings asks for %d): treat this value as rough."):format(d.samples or 0, ns.Disenchant.MinSamples()), true)
+	elseif d.source == "guide" then
+		Note("No measured disenchants of this item or its kind: the Classic baseline, not measured on Forever.", true)
+	end
+	if ns.Disenchant.SalvagerActive() then
+		Note("Arcane Salvager is active: salvager samples are used.", true)
+	end
+end
+
 local function CraftWiseHeader()
 	GameTooltip:AddLine(("|T%s:12|t %sCraftWise|r"):format(Style.Media.keyW, Style.Hex("keyGold")))
 end
@@ -311,6 +340,9 @@ function MK.ShowRecipeTooltip(owner, r, view)
 	AddBalance(r)
 	if r.vendorView or r.vendorLoop then
 		MK.AddVendorCheck(r)
+	end
+	if r.disenchantView then
+		MK.AddDisenchantCheck(r)
 	end
 	if r.outputItemID then
 		GameTooltip:AddLine(" ")
