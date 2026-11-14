@@ -1,6 +1,6 @@
 // The crafts view's logic (web/site/lib/crafts.ts, #185). Data and prices are invented.
 import { describe, expect, it } from "vitest";
-import { type CraftFilter, craftSpells, keep, knownSpells, professionList, scopeOf, sortCrafts, toRow } from "../site/lib/crafts";
+import { type CraftFilter, craftSpells, formatPct, keep, pctOf, knownSpells, professionList, scopeOf, sortCrafts, toRow } from "../site/lib/crafts";
 import type { Quote, RecipeData } from "../site/lib/recipes";
 
 const data: RecipeData = {
@@ -80,5 +80,35 @@ describe("known spells of a snapshot", () => {
 		expect([...knownSpells(d)].sort((a, b) => a - b)).toEqual([7, 10, 12, 99]);
 		expect(knownSpells(null).size).toBe(0);
 		expect(knownSpells({ professions: "no" }).size).toBe(0);
+	});
+});
+
+describe("profit %", () => {
+	it("is profit / cost, null when either is unknown or cost is 0", () => {
+		// Veli's example: 10s cost, 15s profit = +150 %; 1g cost, 10s profit = +10 %.
+		expect(pctOf(1500, 1000)).toBe(1.5);
+		expect(pctOf(1000, 10000)).toBe(0.1);
+		expect(pctOf(-500, 1000)).toBe(-0.5);
+		expect(pctOf(null, 1000)).toBeNull();
+		expect(pctOf(100, null)).toBeNull();
+		expect(pctOf(100, 0)).toBeNull();
+	});
+	it("formats sensibly", () => {
+		expect(formatPct(1.5)).toBe("+150 %");
+		expect(formatPct(0.1)).toBe("+10 %");
+		expect(formatPct(0.0734)).toBe("+7.3 %");
+		expect(formatPct(-0.25)).toBe("−25 %");
+		expect(formatPct(0)).toBe("0 %");
+		expect(formatPct(0.0001)).toBe("0 %");
+		expect(formatPct(123.4)).toBe("+12,340 %");
+	});
+	it("sorts by % with nulls last in both directions, ties by absolute profit then name", () => {
+		const row = (name: string, id: number, cost: number | null, profit: number | null) =>
+			({ spell: { id, profession: null }, name, cost, profit, vprofit: profit, pct: pctOf(profit, cost), vpct: pctOf(profit, cost) }) as never;
+		const list = [row("B", 1, 1000, 1500), row("A", 2, 10000, 1000), row("N", 3, null, 500), row("C", 4, 2000, 3000), row("Z", 5, 100, 150)];
+		const names = (d: boolean, k: "pct" | "vpct" = "pct") => sortCrafts(list, k, d).map((r) => r.name).join("");
+		expect(names(true)).toBe("CBZAN"); // B, C, Z all 150 %; bigger profit first when descending, then A, null last
+		expect(names(false)).toBe("AZBCN");
+		expect(names(true, "vpct")).toBe("CBZAN");
 	});
 });
