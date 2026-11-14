@@ -20,6 +20,10 @@ function frameMeta.SetShown(self, v) if v then self:Show() else self:Hide() end 
 function frameMeta.SetTexture(self, t) self.texture = t end
 function frameMeta.SetText(self, t) self.text = t end
 function frameMeta.GetText(self) return self.text end
+function frameMeta.HookScript(self, name, fn) self.hooks = self.hooks or {}; self.hooks[name] = self.hooks[name] or {}; table.insert(self.hooks[name], fn) end
+function frameMeta.SetID(self, id) self.id = id end
+function frameMeta.GetID(self) return self.id end
+function frameMeta.SetEnabled(self, v) self.enabled = v end
 function frameMeta.GetChecked(self) return self.checked end
 function frameMeta.SetChecked(self, v) self.checked = v end
 local function widget() return setmetatable({ events = {}, scripts = {} }, frameMeta) end
@@ -415,7 +419,9 @@ C_CVar = { GetCVar = function(k) return stub.cvars[k] end, SetCVar = function(k,
 
 -- Bag moves: picking up a slot puts it on the cursor; dropping on a slot swaps (as in the client).
 stub.bagFamily = {}
-C_Container.GetContainerNumFreeSlots = function(bag) return 0, stub.bagFamily[bag] or 0 end
+-- stub.free[bag] = free slots of a bag (default 0)
+stub.free = {}
+C_Container.GetContainerNumFreeSlots = function(bag) return stub.free[bag] or 0, stub.bagFamily[bag] or 0 end
 stub.cursor = nil
 C_Container.PickupContainerItem = function(bag, slot)
 	stub.bags[bag] = stub.bags[bag] or {}

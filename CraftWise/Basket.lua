@@ -8,8 +8,9 @@
 --     the bags drops out of "to buy" and shows as "in bags".
 --   * Auctionator: one button builds the shopping list "CraftWise basket" from the AH lines (its API
 --     v1: ConvertToSearchString, CreateShoppingList). Without Auctionator each AH line has a search string.
---   * Vendor: Basket.Buy(line) buys one line's quantity from the open merchant. It runs only from a click
---     on that line's button; nothing here buys, lists or confirms on its own.
+--   * Vendor: Basket.Buy(line) buys one line's quantity from the open merchant; the merchant window's
+--     control (UI/MerchantBuy.lua, #201) buys a typed quantity through the same Basket.Purchase. Both run
+--     only from a click on a Buy button; nothing here buys, lists or confirms on its own.
 -- Pure parts (Add, Remove, Combine, Split, Expected) take plain data so the specs can feed them.
 local _, ns = ...
 
@@ -344,25 +345,98 @@ function Basket.CanBuy(line)
 	return true, nil, slot, quantity
 end
 
--- Buys one line's quantity from the open merchant. BuyMerchantItem takes at most one stack per call
--- (Blizzard's merchant frame splits larger amounts the same way, MerchantFrame.lua), so a line bigger than
--- a stack is bought in stack-sized calls within this one click: never more than the line's quantity, and
--- only from the click handler of that line's button. Returns the quantity bought or nil, why.
-function Basket.Buy(line)
+-- The quantity a player typed: a whole number from 1 to MAX_COUNT, nil for empty or nonsense.
+function Basket.ParseQuantity(text)
+	local n = tonumber(text)
+	if not n or n < 1 then
+		return nil
+	end
+	return math.min(Basket.MAX_COUNT, math.floor(n))
+end
+
+-- A quantity split into purchase-sized calls: Chunks(50, 20) = { 20, 20, 10 }.
+function Basket.Chunks(quantity, maxStack)
+	maxStack = math.max(1, math.floor(tonumber(maxStack) or 1))
+	local out, left = {}, math.floor(tonumber(quantity) or 0)
+	while left > 0 do
+		local n = math.min(left, maxStack)
+		out[#out + 1] = n
+		left = left - n
+	end
+	return out
+end
+
+-- Room in the bags for an item: free ordinary slots x its stack size, plus what the partial stacks of it
+-- can still take. nil when the client hasn't told the stack size yet (then the check is skipped, nothing
+-- is guessed). Slots of special bags (profession bags etc.) are not counted.
+function Basket.BagSpace(itemID)
+	local size = C_Item and C_Item.GetItemMaxStackSizeByID and C_Item.GetItemMaxStackSizeByID(itemID)
+	if not (size and size > 0 and C_Container) then
+		return nil
+	end
+	local space = 0
+	for bag = 0, ns.LAST_BAG do
+		local free, family = C_Container.GetContainerNumFreeSlots(bag)
+		if (family or 0) == 0 then
+			space = space + (free or 0) * size
+		end
+		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+			local info = C_Container.GetContainerItemInfo(bag, slot)
+			if info and info.itemID == itemID then
+				space = space + math.max(0, size - (info.stackCount or 1))
+			end
+		end
+	end
+	return space
+end
+
+-- Everything that must hold before one click buys: CanBuy, then gold and bag room for the whole quantity.
+-- strict (the merchant window's typed quantity): more than the merchant has left is a refusal, buy nothing.
+-- Not strict (the basket line): the quantity is cut to what is left. Returns true, nil, slot, quantity,
+-- total price, or false, why.
+function Basket.Check(line, strict)
 	local ok, why, slot, quantity = Basket.CanBuy(line)
+	if not ok then
+		return false, why
+	end
+	if strict and quantity < line.quantity then
+		return false, (ns.L["Only %d left at this merchant"]):format(quantity)
+	end
+	local total = (slot.price or 0) * quantity
+	if GetMoney and slot.price and GetMoney() < total then
+		return false, ns.L["Not enough gold"], slot, quantity, total
+	end
+	local space = Basket.BagSpace(line.itemID)
+	if space and space < quantity then
+		return false, (ns.L["Bags have room for %d"]):format(space), slot, quantity, total
+	end
+	return true, nil, slot, quantity, total
+end
+
+-- The one shared purchase: buys `line.quantity` of an item from the open merchant in stack-sized calls
+-- (BuyMerchantItem takes at most GetMerchantItemMaxStack per call, Blizzard's merchant frame splits
+-- larger amounts the same way, MerchantFrame.lua). It runs only from the click handler of a Buy button
+-- (the basket's line or the merchant window's control): never more than the quantity, and it stops when
+-- the merchant closes. Returns the quantity bought or nil, why (a partial purchase returns what went
+-- through).
+function Basket.Purchase(line, strict)
+	local ok, why, slot, quantity = Basket.Check(line, strict)
 	if not ok then
 		return nil, why
 	end
-	if GetMoney and slot.price and GetMoney() < slot.price * quantity then
-		return nil, "Not enough gold"
-	end
 	local maxStack = GetMerchantItemMaxStack and GetMerchantItemMaxStack(slot.index) or 1
-	maxStack = math.max(1, maxStack or 1)
-	local left = quantity
-	while left > 0 do
-		local n = math.min(left, maxStack)
+	local bought = 0
+	for _, n in ipairs(Basket.Chunks(quantity, maxStack)) do
+		if not merchantOpen then
+			return bought > 0 and bought or nil, ns.L["The merchant closed"]
+		end
 		BuyMerchantItem(slot.index, n)
-		left = left - n
+		bought = bought + n
 	end
-	return quantity
+	return bought
+end
+
+-- A basket line: the quantity is cut to the stock.
+function Basket.Buy(line)
+	return Basket.Purchase(line, false)
 end
