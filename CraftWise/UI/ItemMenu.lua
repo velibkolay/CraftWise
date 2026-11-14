@@ -30,7 +30,7 @@ local OPTIONS = {
 	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
 	{ key = "rule" },
 	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it" },
-	{ key = "history", label = "Price history", note = "Auction house prices recorded for it" },
+	{ key = "history", label = "Price history", note = "Shows the link to the item's page on the site, with its price history" },
 	-- Watch list (#165): the label flips once the item is watched; same toggle as the Items card.
 	{ key = "watch", label = "Watch", undo = "Stop watching", watch = true,
 		note = "Adds it to Look up › Items › Watched" },
@@ -68,9 +68,99 @@ local function IsQuestItem(itemID)
 	return C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID)) == 12
 end
 
--- Where to buy and Price history open Look up › Items on the item (ns.ShowItemLookup, UI/Main/Pages/Items.lua,
--- which loads later; called on a click, so it exists by then).
+-- Price history lives on the site (#202): the game froze on the in-game history, and an addon can't open a
+-- browser. Every "Price history" button shows the item's site page address in a small popup, selected in an
+-- edit box to copy with Ctrl+C. The page is the public item page of #119.
+ns.SITE_URL = "https://wow.velikopter.com"
+
+-- The site's page of an item: https://wow.velikopter.com/item/<itemID>; nil for anything but a whole item ID.
+function ns.ItemSiteURL(itemID)
+	itemID = tonumber(itemID)
+	if not itemID or itemID < 1 or itemID ~= math.floor(itemID) then
+		return nil
+	end
+	return ("%s/item/%d"):format(ns.SITE_URL, itemID)
+end
+
+local linkPopup
+local LINK_WIDTH, LINK_PAD = 380, 14
+
+local function BuildLinkPopup()
+	local f = CreateFrame("Frame", "CraftWiseSiteLink", UIParent)
+	f:SetFrameStrata("DIALOG")
+	f:SetSize(LINK_WIDTH, 124)
+	f:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+	f:EnableMouse(true)
+	f:SetClampedToScreen(true)
+	f.sheet = Style.Sheet(f, C.sheet, C.flap, 10, true)
+	table.insert(UISpecialFrames, "CraftWiseSiteLink") -- Escape closes it
+	f.title = Style.Text(f, "BodyBold", "text")
+	f.title:SetPoint("TOPLEFT", f, "TOPLEFT", LINK_PAD, -LINK_PAD)
+	f.title:SetPoint("RIGHT", f, "RIGHT", -LINK_PAD, 0)
+	f.title:SetJustifyH("LEFT")
+	f.title:SetWordWrap(false)
+	f.box = CreateFrame("EditBox", nil, f)
+	f.box:SetHeight(26)
+	f.box:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -10)
+	f.box:SetPoint("TOPRIGHT", f, "TOPRIGHT", -LINK_PAD, -(LINK_PAD + 30))
+	f.box:SetAutoFocus(false)
+	f.box:SetFontObject(Style.Fonts.Small)
+	f.box:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+	f.box:SetTextInsets(8, 8, 0, 0)
+	f.box.border = Style.Border(f.box, C.text)
+	-- Read only: whatever is typed, the address stays.
+	f.box:SetScript("OnTextChanged", function(self)
+		if f.url and self:GetText() ~= f.url then
+			self:SetText(f.url)
+			self:HighlightText()
+		end
+	end)
+	f.box:SetScript("OnEditFocusGained", function(self)
+		self:HighlightText()
+	end)
+	f.box:SetScript("OnEscapePressed", function()
+		f:Hide()
+	end)
+	f.hint = Style.Text(f, "Small", "text2")
+	f.hint:SetPoint("TOPLEFT", f.box, "BOTTOMLEFT", 0, -8)
+	f.hint:SetPoint("RIGHT", f, "RIGHT", -LINK_PAD, 0)
+	f.hint:SetJustifyH("LEFT")
+	f.hint:SetWordWrap(true)
+	f.hint:SetText(L["Ctrl+C to copy the address, then paste it into your browser."])
+	f.close = Style.LineButton(f, L["Close"], nil, 24)
+	f.close:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -LINK_PAD, LINK_PAD)
+	f.close:SetScript("OnClick", function()
+		f:Hide()
+	end)
+	f:Hide()
+	return f
+end
+
+-- The popup with the site address of an item's price history. Returns the address, nil without an item.
+function ns.ShowPriceHistory(itemID)
+	local url = ns.ItemSiteURL(itemID)
+	if not url then
+		return nil
+	end
+	if not linkPopup then
+		linkPopup = BuildLinkPopup()
+	end
+	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
+	linkPopup.url = url
+	linkPopup.title:SetText((L["Price history"]) .. " · " .. (name or ("item " .. itemID)))
+	linkPopup:Show()
+	linkPopup.box:SetText(url)
+	linkPopup.box:SetFocus()
+	linkPopup.box:HighlightText()
+	return url
+end
+
+-- Where to buy opens Look up › Items on the item (ns.ShowItemLookup, UI/Main/Pages/Items.lua, which loads
+-- later; called on a click, so it exists by then). Price history shows the site address instead (#202).
 function ns.OpenItemLookup(itemID, focus)
+	if focus == "history" then
+		return ns.ShowPriceHistory(itemID) ~= nil
+	end
 	return ns.ShowItemLookup and ns.ShowItemLookup(itemID, focus) or false
 end
 

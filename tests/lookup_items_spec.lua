@@ -298,7 +298,7 @@ it("Items page: search box, row clicks (select, item menu, chat link), Shift-cli
 	eq(M.Items.InsertLink("x"), false)
 end)
 
-it("Items page: the item menu's Where to buy and Price history open it on the item", function()
+it("Items page: the item menu's Where to buy opens it on the item; Price history goes to the site (#202)", function()
 	local ns, stub, M = Load()
 	SeedLeather()
 	ns.ShowItemMenu(LEATHER)
@@ -309,6 +309,9 @@ it("Items page: the item menu's Where to buy and Price history open it on the it
 	ns.ShowItemMenu(SALT)
 	local history = CraftWiseItemMenu.buttons.history
 	history.scripts.OnClick(history)
+	eq(M.Items.Selected(), LEATHER, "Price history does not open the page")
+	eq(CraftWiseSiteLink.url, "https://wow.velikopter.com/item/" .. SALT)
+	ns.ShowItemLookup(SALT, "history") -- the slash command's way in stays
 	eq(M.Items.Selected(), SALT); eq(M.Items.state.focus, "history")
 	eq(M.Items.ChipItems("recent")[1], SALT)
 	ns.ShowWhereToBuy(LEATHER)

@@ -106,7 +106,7 @@ it("item menu opens at the cursor, also when a row asked for it, and closes on a
 	eq(CraftWiseItemMenu.shown, false)
 end)
 
-it("item menu: Where to buy and Price history open Look up › Items on the item", function()
+it("item menu: Where to buy opens Look up › Items on the item, Price history shows the site address (#202)", function()
 	local ns = setup()
 	local calls = {}
 	ns.ShowItemLookup = function(id, focus) calls[#calls + 1] = "lookup " .. id .. " " .. focus end
@@ -116,7 +116,8 @@ it("item menu: Where to buy and Price history open Look up › Items on the item
 		menu = CraftWiseItemMenu
 		menu.buttons[key].scripts.OnClick(menu.buttons[key])
 	end
-	eq(calls[1], "lookup " .. CLOTH .. " where"); eq(calls[2], "lookup " .. CLOTH .. " history")
+	eq(calls[1], "lookup " .. CLOTH .. " where"); eq(calls[2], nil)
+	eq(CraftWiseSiteLink.url, "https://wow.velikopter.com/item/" .. CLOTH)
 	eq(menu.shown, false)
 end)
 

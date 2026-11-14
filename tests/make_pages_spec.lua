@@ -237,7 +237,7 @@ it("Craft › Vendor check (#185): vendor sale and profit, only crafts above 0, 
 	assert(M.Page("craft").Model({ professionID = PROF }).empty:find("Vendor check", 1, true))
 end)
 
-it("Craft opened row: each reagent with quantity, total, source and have N; Price history opens Look up › Items", function()
+it("Craft opened row: each reagent with quantity, total, source and have N; Price history shows the site address (#202)", function()
 	local ns, stub, M = Load()
 	stub.bags[0] = { { itemID = HIDE, stackCount = 6, quality = 1 } }
 	local list = Make.Open(ns, "craft", PROF)
@@ -260,7 +260,9 @@ it("Craft opened row: each reagent with quantity, total, source and have N; Pric
 	local looked
 	ns.ShowItemLookup = function(id, focus) looked = { id, focus } end -- Look up › Items (#157)
 	history.scripts.OnClick(history)
-	eq(looked[1], BELT); eq(looked[2], "history")
+	eq(looked, nil, "Look up › Items does not open")
+	eq(CraftWiseSiteLink.shown, true)
+	eq(CraftWiseSiteLink.url, "https://wow.velikopter.com/item/" .. BELT)
 end)
 
 it("Opened row: Open in profession window under Price history on Craft, Learn and Level up (#157)", function()

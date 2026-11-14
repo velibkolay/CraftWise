@@ -829,3 +829,12 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Vendor check and Disenchant check: the % uses that mode's profit over the same cost.
 - Hover a craft: **Return** section with the %, then either "N units disappeared in 7 days at prices up to the typical (sold or expired)", "No units seen disappearing in 7 days", or "No market history for the product at this house". It is a measured count from CraftWiseMarketDB, never a speed.
 - Vendor loop toast and Make › Basket: the best return per gold is first (toast text names the top find; the basket lists crafts by %).
+
+## Look up › Items opens cheap, Price history goes to the site (#202)
+
+- No TOC change; `/reload` is enough.
+- Veli's market DB (the one that froze the game): open Look up › Items (Look up tab, or `/craftwise market`). It opens without a freeze and the list shows at once, whatever the size of `CraftWiseMarketDB`. Turn on Settings › Debug › Record first, open the page, then Copy report: the hook "Look up › Items: Refresh" should be a few ms (before: seconds on a large DB, see the PR).
+- Make › Craft: open Goblin Deviled Clams (or any row) and click **Price history**: no freeze. A small popup shows `https://wow.velikopter.com/item/<itemID>` selected in a box, with a "Ctrl+C to copy" line. Ctrl+C then paste it in a browser: the item's page opens. Escape closes the popup; so does Close. Typing in the box does not change the address.
+- Item menu (middle-click an item in the bags, or a row of the main window) › Price history: the same popup for that item. Where to buy still opens Look up › Items on the item.
+- Hover Price history in the opened Make row and in the item menu: the tooltip says it shows the item's page on the site.
+- Look up › Items: type in the search box (also one letter): the list answers without a hitch. Click the "Your recipes", "Recent" chips and scroll: rows fill in as they scroll into view.

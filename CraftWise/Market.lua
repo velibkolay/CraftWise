@@ -481,6 +481,24 @@ function M.DecodeEntry(s)
 	return entry
 end
 
+-- Index of the recorded keys (#202): { items = db.items it was built from, byItem = { [itemID] = { key, ... } } }.
+-- Built on first use and dropped when a key is added or removed (GetEntry, StoreLast, DropEntry), so reading
+-- the keys of an item or the recorded item IDs never walks CraftWiseMarketDB again. indexVersion, scopeVersion
+-- and namesVersion change with the keys, the scope and the stored names: callers key their caches on them.
+M.indexBuilds = 0 -- how often the index was built, for the specs
+local index
+local indexVersion, scopeVersion, namesVersion = 0, 0, 0
+
+local function DropIndex()
+	index = nil
+	indexVersion = indexVersion + 1
+end
+
+local function SetName(itemID, name)
+	db.names[itemID] = name
+	namesVersion = namesVersion + 1
+end
+
 local function GetEntry(itemKey, houseKey, create)
 	local perItem = db.items[itemKey]
 	if not perItem then
@@ -489,6 +507,7 @@ local function GetEntry(itemKey, houseKey, create)
 		end
 		perItem = {}
 		db.items[itemKey] = perItem
+		DropIndex()
 	end
 	local entry = perItem[houseKey]
 	if type(entry) == "string" then
@@ -526,6 +545,7 @@ local function StoreLast(itemKey, houseKey, last)
 	if not perItem then
 		perItem = {}
 		db.items[itemKey] = perItem
+		DropIndex()
 	end
 	local entry = perItem[houseKey]
 	if entry == nil or (type(entry) == "string" and IsLastOnly(entry)) then
@@ -593,8 +613,9 @@ end
 ----------------------------------------------------------------------------------------------------
 
 local function AddToScope(itemID)
-	if db and itemID then
+	if db and itemID and not db.scope.items[itemID] then
 		db.scope.items[itemID] = true
+		scopeVersion = scopeVersion + 1
 	end
 end
 
@@ -1070,7 +1091,7 @@ local function FinishScan(scan)
 	lastScan = { count = scan.count, t = scan.t }
 	LogScan(scan.house, "full", scan.recorded, scan.source, scan.lastOnly)
 	for itemID, name in pairs(scan.names) do
-		db.names[itemID] = name
+		SetName(itemID, name)
 	end
 	M.FillItemInfo(scan.info)
 	ns.Notify("PRICES_CHANGED")
@@ -1254,6 +1275,7 @@ local function DropEntry(itemKey, houseKey)
 	perItem[houseKey] = nil
 	if next(perItem) == nil then
 		db.items[itemKey] = nil
+		DropIndex()
 	end
 end
 
@@ -1272,6 +1294,7 @@ local function PruneExtras(now)
 	for itemID in pairs(db.names) do
 		if not (used[itemID] or exported[itemID]) then
 			db.names[itemID] = nil
+			namesVersion = namesVersion + 1
 		end
 	end
 	for itemID in pairs(db.itemInfo) do
@@ -1538,7 +1561,7 @@ end
 local function StoreItemInfo(itemID, hint, now)
 	local name, info = ClientItemInfo(itemID, hint)
 	if name and db.names[itemID] == nil then
-		db.names[itemID] = name
+		SetName(itemID, name)
 	end
 	if not info then
 		return false
@@ -1655,7 +1678,7 @@ local function FillNames()
 		if db.names[itemID] == nil and getName then
 			local name = getName(itemID)
 			if type(name) == "string" and name ~= "" then
-				db.names[itemID] = name
+				SetName(itemID, name)
 			end
 		end
 		if not InfoComplete(db.itemInfo[itemID]) then
@@ -1782,33 +1805,59 @@ end
 
 -- Look up › Items (#157). Read only.
 
--- The item keys recorded for an item: the plain itemID first, then its suffix variants by key.
-function M.ItemKeys(itemID)
-	local keys = {}
-	for key in pairs(db and db.items or {}) do
-		if ItemIDOfKey(key) == itemID then
-			keys[#keys + 1] = key
+-- The recorded keys by item, built once per change of the key set (see DropIndex, #202).
+local function Index()
+	if index and index.items == db.items then
+		return index
+	end
+	local byItem = {}
+	for key in pairs(db.items) do
+		local itemID = type(key) == "number" and key or ItemIDOfKey(key)
+		if itemID then
+			local keys = byItem[itemID]
+			if keys then
+				keys[#keys + 1] = key
+			else
+				byItem[itemID] = { key }
+			end
 		end
 	end
-	table.sort(keys, function(a, b)
-		if (a == itemID) ~= (b == itemID) then
-			return a == itemID
+	for itemID, keys in pairs(byItem) do
+		if keys[2] then
+			table.sort(keys, function(a, b)
+				if (a == itemID) ~= (b == itemID) then
+					return a == itemID
+				end
+				return tostring(a) < tostring(b)
+			end)
 		end
-		return tostring(a) < tostring(b)
-	end)
-	return keys
+	end
+	index = { items = db.items, byItem = byItem }
+	M.indexBuilds = M.indexBuilds + 1
+	return index
 end
 
--- Every itemID with a record at any house: { [itemID] = true }.
-function M.RecordedItemIDs()
+-- Changes whenever a key is added or removed, the scope grows or a stored name changes: caches built
+-- from RecordedItemIDs, InScope or StoredName stay valid while this stays equal.
+function M.DataVersion()
+	return indexVersion .. "." .. scopeVersion .. "." .. namesVersion
+end
+
+-- The item keys recorded for an item: the plain itemID first, then its suffix variants by key. A new
+-- table, so a caller may keep or change it.
+function M.ItemKeys(itemID)
+	local keys = db and Index().byItem[itemID]
 	local out = {}
-	for key in pairs(db and db.items or {}) do
-		local itemID = ItemIDOfKey(key)
-		if itemID then
-			out[itemID] = true
-		end
+	for i, key in ipairs(keys or {}) do
+		out[i] = key
 	end
 	return out
+end
+
+-- Every itemID with a record at any house, as the keys of a table (the value is the item's key list). Shared until
+-- the key set changes: iterate it, never change it.
+function M.RecordedItemIDs()
+	return db and Index().byItem or {}
 end
 
 -- The stored name of a recorded item (CraftWiseMarketDB.names), nil when none.
@@ -2257,6 +2306,7 @@ end
 ns.Listen("DB_READY", function()
 	CraftWiseMarketDB = CraftWiseMarketDB or {}
 	db = CraftWiseMarketDB
+	DropIndex()
 	db.v = db.v or 1
 	db.houses = db.houses or {}
 	db.scans = db.scans or {}
