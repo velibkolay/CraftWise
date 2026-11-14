@@ -198,6 +198,11 @@ def generate(ability_rows, skills, selected, names, effects, retired=None):
         if grey < yellow:
             counts["skip:grey<yellow"] += 1
             continue
+        # grey == yellow: the recipe goes from orange straight to grey. Keep it only when it makes something (a
+        # create-item or enchant effect); the rest of these rows are profession ranks, Find Herbs and the like.
+        if grey == yellow and not effects.get(spell, set()) & {CREATE_ITEM, ENCHANT_ITEM}:
+            counts["skip:grey==yellow, makes nothing"] += 1
+            continue
         # Mining's open-lock gathering abilities have thresholds but are not
         # crafting recipes. Do not emit them as smelting recipes.
         if effects.get(spell) == {OPEN_LOCK}:
@@ -253,7 +258,7 @@ def render(emitted):
         f"-- tools/gen_thresholds.py ({UPSTREAM}, GPL-3.0-or-later).",
         "-- Orange and green are left out: upstream reconciles orange against Classic data and green is derived,",
         "-- neither is this client's data.",
-        "-- Rows with grey == yellow are kept as the DB2 gives them (the recipe goes from orange straight to grey). Recipes with grey < yellow are absent (unknown). Recipes the game retired (RETIRED in the generator)",
+        "-- Rows with grey == yellow are kept as the DB2 gives them (the recipe goes from orange straight to grey) when the spell makes an item or an enchant. Recipes with grey < yellow are absent (unknown). Recipes the game retired (RETIRED in the generator)",
         "-- are left out.",
         "local _, ns = ...",
         "-- stylua: ignore",
