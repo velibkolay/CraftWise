@@ -22,11 +22,11 @@ from pathlib import Path
 from forever_tools import wago
 
 USER_AGENT = "CraftWise-data-gen/1.0"
-BUILD = "1.60.1.70790"
+BUILD = "1.60.1.70938"
 # wago.tools lists the live client under this product.
 PRODUCT = "wowf"
 # Date this source snapshot was selected, not the date of each regeneration.
-SOURCE_DATE = "2026-11-07"
+SOURCE_DATE = "2026-11-14"
 UPSTREAM = "https://github.com/cjber/skillup-forever"
 # SpellEffect.Effect codes the generators read.
 DUMMY = 3

@@ -2,8 +2,8 @@
 -- Where item-taught recipes come from (issue #11, part 1): the recipe item that teaches the recipe and the
 -- skill that item requires, per recipe spell ID.
 -- Source: Forever client DB2 ItemSparse (ID, RequiredSkillRank), ItemEffect and ItemXItemEffect (which item
--- teaches which spell), wowf 1.60.1.70790, 2026-11-07, via wago.tools,
--- https://wago.tools/db2/ItemSparse/csv?build=1.60.1.70790. Generator adapted from SkillUp Forever's RecipeScrolls
+-- teaches which spell), wowf 1.60.1.70938, 2026-11-14, via wago.tools,
+-- https://wago.tools/db2/ItemSparse/csv?build=1.60.1.70938. Generator adapted from SkillUp Forever's RecipeScrolls
 -- (https://github.com/cjber/skillup-forever, GPL-3.0-or-later).
 -- Only these two fields, and only where the client has them. Recipes whose item has no usable required skill
 -- (none, or the placeholder 1), deprecated items, and trainer-taught recipes are absent: absent means the
@@ -1388,18 +1388,6 @@ ns.SourceData = {
 	[1259345] = { skill = 280, item = 255731 },
 	[1259348] = { skill = 200, item = 255726 },
 	[1259349] = { skill = 265, item = 255730 },
-	[1262975] = { skill = 140, item = 273097 },
-	[1262978] = { skill = 140, item = 273102 },
-	[1262980] = { skill = 140, item = 273106 },
-	[1262985] = { skill = 140, item = 273098 },
-	[1262990] = { skill = 140, item = 273141 },
-	[1262996] = { skill = 140, item = 273105 },
-	[1263005] = { skill = 140, item = 273085 },
-	[1263031] = { skill = 140, item = 273096 },
-	[1263032] = { skill = 140, item = 273099 },
-	[1263034] = { skill = 140, item = 273092 },
-	[1263041] = { skill = 140, item = 273086 },
-	[1263056] = { skill = 140, item = 273103 },
 	[1266893] = { skill = 25, item = 264201 },
 	[1266905] = { skill = 25, item = 264202 },
 	[1266906] = { skill = 55, item = 264203 },
@@ -1442,10 +1430,8 @@ ns.SourceData = {
 	[1266943] = { skill = 300, item = 264240 },
 	[1270633] = { skill = 25, item = 263511 },
 	[1270635] = { skill = 35, item = 263513 },
-	[1283400] = { skill = 90, item = 273087 },
 	[1286792] = { skill = 190, item = 269901 },
 	[1286796] = { skill = 140, item = 269903 },
-	[1291341] = { skill = 200, item = 273101 },
 	[1292920] = { skill = 300, item = 273952 },
 	[1292921] = { skill = 300, item = 273953 },
 	[1292923] = { skill = 300, item = 273954 },
