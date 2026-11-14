@@ -23,7 +23,7 @@ func (b *Batch[T]) Commit(st *State) {
 // Summary is a short description for the log, e.g. "12 prices, 3 scans".
 func (b *Batch[T]) Summary() string {
 	out := ""
-	for _, k := range []string{"scans", "classes", "items", "prices", "snapshots", "auctions", "fishing", "ledger"} {
+	for _, k := range []string{"scans", "classes", "items", "prices", "snapshots", "auctions", "fishing", "ledger", "watch"} {
 		if n := b.Counts[k]; n > 0 {
 			if out != "" {
 				out += ", "

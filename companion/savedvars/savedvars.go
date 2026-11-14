@@ -27,6 +27,9 @@ type File struct {
 // DB is the part of CraftWiseDB the companion reads.
 type DB struct {
 	Snapshots map[string]*Snapshot `json:"snapshots,omitempty"`
+	// Watch is the item watch list (#165): [itemID] = Unix time it was watched. Nil when the file has
+	// no `watch` (an older addon); an empty non-nil map is a list the player emptied.
+	Watch map[int64]int64 `json:"watch,omitempty"`
 }
 
 // MarketDB is CraftWiseMarketDB (#26, #46, #81, #90, #92, #120).
@@ -270,6 +273,10 @@ func (r *reader) db(v any) *DB {
 		return nil
 	}
 	out := &DB{}
+	if w := r.table(t.Get("watch"), "CraftWiseDB.watch"); w != nil {
+		out.Watch = map[int64]int64{}
+		r.unmarshal(w, &out.Watch, "CraftWiseDB.watch")
+	}
 	snaps := r.table(t.Get("snapshots"), "CraftWiseDB.snapshots")
 	if snaps == nil {
 		return out

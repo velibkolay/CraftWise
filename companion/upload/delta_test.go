@@ -546,3 +546,87 @@ func TestClassNamesSplitOverRequests(t *testing.T) {
 		t.Errorf("%d names over %d requests", total, len(plan.Public))
 	}
 }
+
+// #165: the watch list goes with the private upload, whole, only when it changed, an emptied list too.
+func watchBody(t *testing.T, plan *Plan) (items []WatchItem, found bool) {
+	t.Helper()
+	for _, b := range plan.Private {
+		if b.Body.Watch != nil {
+			if found {
+				t.Fatal("watch list in two requests")
+			}
+			found = true
+			items = *b.Body.Watch
+		}
+	}
+	return
+}
+
+func TestWatchUpload(t *testing.T) {
+	now := int64(fixtureNow)
+	f := &savedvars.File{DB: &savedvars.DB{Watch: map[int64]int64{2589: now - 500, 4306: now - 100, 9: 5, 0: now - 1}}}
+	st := NewState("s", "f")
+	plan := Build(f, st, Options{Now: now, Private: true})
+	items, ok := watchBody(t, plan)
+	if !ok || len(items) != 2 || items[0] != (WatchItem{I: 4306, T: now - 100}) || items[1] != (WatchItem{I: 2589, T: now - 500}) {
+		t.Fatalf("watch %v (%v), want the two valid items newest first", items, ok)
+	}
+	if plan.Skipped["watched item without a valid item ID or time"] != 2 {
+		t.Errorf("skipped %v", plan.Skipped)
+	}
+	if got := plan.Private[0].Summary(); got != "1 watch" {
+		t.Errorf("summary %q", got)
+	}
+	body, _ := json.Marshal(plan.Private[0].Body)
+	if !strings.Contains(string(body), `"watch":[{"i":4306,"t":`) {
+		t.Errorf("body %s", body)
+	}
+	commitAll(plan, st)
+	if _, ok := watchBody(t, Build(f, st, Options{Now: now + 60, Private: true})); ok {
+		t.Error("the same list was sent again")
+	}
+	// a new item goes out as the whole list
+	f.DB.Watch[5000] = now - 5
+	items, ok = watchBody(t, Build(f, st, Options{Now: now + 60, Private: true}))
+	if !ok || len(items) != 3 || items[0].I != 5000 {
+		t.Fatalf("after a change: %v (%v)", items, ok)
+	}
+	// emptied: sent as [], not left out
+	f.DB.Watch = map[int64]int64{}
+	plan = Build(f, st, Options{Now: now + 60, Private: true})
+	items, ok = watchBody(t, plan)
+	if !ok || len(items) != 0 {
+		t.Fatalf("emptied list: %v (%v)", items, ok)
+	}
+	body, _ = json.Marshal(plan.Private[0].Body)
+	if !strings.Contains(string(body), `"watch":[]`) {
+		t.Errorf("body %s", body)
+	}
+	// an older addon (no watch table): nothing
+	f.DB.Watch = nil
+	if _, ok := watchBody(t, Build(f, NewState("s", "f"), Options{Now: now, Private: true})); ok {
+		t.Error("watch sent without a list")
+	}
+	// private uploads off: nothing
+	f.DB.Watch = map[int64]int64{2589: now - 5}
+	if p := Build(f, NewState("s", "f"), Options{Now: now}); len(p.Private) != 0 {
+		t.Error("private requests with Private off")
+	}
+}
+
+func TestWatchFixtureAndLimit(t *testing.T) {
+	f := readFixture(t)
+	items, ok := watchBody(t, Build(f, NewState("s", "f"), Options{Now: fixtureNow, Private: true}))
+	if !ok || len(items) != 2 || items[0].I != 9004 || items[1].I != 9001 {
+		t.Fatalf("fixture watch %v (%v)", items, ok)
+	}
+	big := map[int64]int64{}
+	for i := int64(1); i <= MaxWatch+5; i++ {
+		big[i] = fixtureNow - i
+	}
+	plan := Build(&savedvars.File{DB: &savedvars.DB{Watch: big}}, NewState("s", "f"), Options{Now: fixtureNow, Private: true})
+	items, _ = watchBody(t, plan)
+	if len(items) != MaxWatch || items[0].I != 1 {
+		t.Fatalf("%d items, first %d: want the newest %d", len(items), items[0].I, MaxWatch)
+	}
+}

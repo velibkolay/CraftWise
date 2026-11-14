@@ -47,6 +47,10 @@ async function privateApi(request: Request, env: Env, url: URL, now: number): Pr
 		if (method !== "GET") methodNotAllowed("GET");
 		return me.character(env, decodeURIComponent(char[1]!));
 	}
+	if (path === "/watch") {
+		if (method !== "GET") methodNotAllowed("GET");
+		return me.watch(env);
+	}
 	if (path === "/ledger") {
 		if (method !== "GET") methodNotAllowed("GET");
 		return me.ledger(env, url);

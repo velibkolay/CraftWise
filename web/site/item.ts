@@ -4,7 +4,7 @@ import { ApiError, type Browse, get, type House, type ItemDetail, type ItemInfo,
 import { type CraftNames, craftBreakdown, craftItBreakdown } from "./lib/craftview";
 import { craft, makersOf, type Quote, quoteOf, RECIPES_URL, type RecipeData, recipeItemOf, recipeRow, teachOf } from "./lib/recipes";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, pctText, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
-import { isFavourite, toggleFavourite } from "./lib/favs";
+import { favouriteLabel, isFavourite, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import {
 	age,
 	buyCost,
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
 	let house: House | null = null;
 	let detail: ItemDetail;
 	try {
-		[house, detail] = await Promise.all([mainHouse(), get<ItemDetail>(`/api/items/${id}?days=30&hours=48`)]);
+		[house, detail] = await Promise.all([mainHouse(), get<ItemDetail>(`/api/items/${id}?days=30&hours=48`), syncAddonWatch()]).then(([hs, d]) => [hs, d] as [House | null, ItemDetail]);
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 404) return fail(`No prices recorded for item ${id}.`);
 		return fail("The prices could not be loaded. Check your connection and reload the page.");
@@ -218,7 +218,10 @@ function render(d: ItemDetail, house: House | null): void {
 	const syncFav = () => {
 		const on = isFavourite(d.id);
 		favBtn.setAttribute("aria-pressed", String(on));
-		favFoot.textContent = on ? "Remove from Favourites" : "Add to Favourites";
+		favFoot.textContent = favouriteLabel(d.id);
+		favFoot.disabled = isFromAddon(d.id);
+		favBtn.disabled = isFromAddon(d.id);
+		favBtn.title = isFromAddon(d.id) ? "Watched in the addon" : "";
 	};
 	const flip = () => {
 		toggleFavourite(d.id);

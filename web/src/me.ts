@@ -50,6 +50,12 @@ export async function character(env: Env, key: string): Promise<Response> {
 	return json({ key, snapshot: doc(s!), auctions: doc(a!), fishing: doc(f!) }, 200, PRIVATE);
 }
 
+// The addon's watch list (#165), newest first: [{ item, added }].
+export async function watch(env: Env): Promise<Response> {
+	const { results } = await env.DB.prepare("SELECT item, added FROM watch ORDER BY added DESC, item DESC").all<{ item: number; added: number }>();
+	return json({ watch: results }, 200, PRIVATE);
+}
+
 export async function ledger(env: Env, url: URL): Promise<Response> {
 	const char = url.searchParams.get("char");
 	const since = intParam(url, "since", 0, 0, Number.MAX_SAFE_INTEGER);

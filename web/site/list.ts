@@ -2,7 +2,7 @@
 // items (#143).
 import { type Browse, type BrowseItem, type Categories, get, type House, mainHouse } from "./lib/api";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, skinMoney, slot, statusBar, topBar, type View } from "./lib/dom";
-import { favourites, isFavourite, toggleFavourite } from "./lib/favs";
+import { favouriteLabel, favourites, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sellChoice, sparkPath, sparkValues, subclassName } from "./lib/format";
 import { type CraftNames, craftBreakdown, craftsText, profitEl, thinTag } from "./lib/craftview";
 import { itemsNeeded, type Quote, quoteOf, RECIPES_URL, type RecipeData, type RecipeRow, recipeRow } from "./lib/recipes";
@@ -588,7 +588,7 @@ function rowEl(r: Row, fav: boolean, today: number, recipes: boolean): HTMLEleme
 				{ href: `/item/${it.id}`, class: `iname ${r.quality}` },
 				slot(name, r.quality),
 				h("span", { class: "nm" }, name),
-				fav ? h("span", { class: "star", role: "img", "aria-label": "Favourite" }) : null,
+				fav ? h("span", { class: "star", role: "img", "aria-label": isFromAddon(it.id) ? "Watched in the addon" : "Favourite", title: isFromAddon(it.id) ? "Watched in the addon" : undefined }) : null,
 			),
 		),
 		recipes ? profitCell(r) : null,
@@ -690,7 +690,8 @@ function setSelection(id: number | null): void {
 	}
 	const row = rows.find((r) => r.item.id === id);
 	favBtn.disabled = !row;
-	favBtn.textContent = row && isFavourite(row.item.id) ? "Remove from Favourites" : "Add to Favourites";
+	favBtn.textContent = row ? favouriteLabel(row.item.id) : "Add to Favourites";
+	favBtn.disabled = !row || isFromAddon(row.item.id);
 	if (row) {
 		histBtn.setAttribute("href", `/item/${row.item.id}`);
 		histBtn.removeAttribute("aria-disabled");
@@ -731,3 +732,9 @@ onSkinChange(() => {
 	renderTable();
 });
 void load();
+// The addon's watch list (#165), when the private API answers: redraw once it changes the favourites.
+void syncAddonWatch().then((changed) => {
+	if (!changed) return;
+	if (st.view === "favourites") void load();
+	else renderTable();
+});

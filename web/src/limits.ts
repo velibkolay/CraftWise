@@ -21,6 +21,7 @@ export const MAX_TIERS = 8; // price levels per raw point
 export const MAX_LEDGER_ENTRIES = 5000;
 export const MAX_PRIVATE_DOC_BYTES = 450_000; // one snapshot / auctions / fishing document (a snapshot is ~60 KB)
 export const MAX_CHARACTERS = 50;
+export const MAX_WATCH = 1000; // watched items in one private upload (#165)
 
 // Upload requests per token per minute.
 export const UPLOADS_PER_MINUTE = 30;

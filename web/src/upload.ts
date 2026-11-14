@@ -323,7 +323,7 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 	const { today } = await uploadAuth(request, env, "private", now);
 	const data = validatePrivate(parseJson(await readBody(request, MAX_PRIVATE_BYTES)), now);
 	// private data is never low priority: it goes through up to the full budget
-	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length, false, now);
+	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length + 2 * (data.watch?.length ?? 0), false, now);
 	const db = env.DB;
 	const statements: D1PreparedStatement[] = [];
 
@@ -362,6 +362,18 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 			).bind(JSON.stringify(rows)),
 		);
 	}
+	if (data.watch) {
+		// The list replaces the stored one: what is no longer in it goes, what changed is updated, an
+		// unchanged row is not written (the WHERE; D1 counts an update with equal values).
+		const rows = JSON.stringify(data.watch.map((w) => [w.item, w.added]));
+		statements.push(
+			db.prepare("DELETE FROM watch WHERE item NOT IN (SELECT value->>0 FROM json_each(?1))").bind(rows),
+			db.prepare(
+				`INSERT INTO watch (item, added) SELECT value->>0, value->>1 FROM json_each(?1) WHERE true
+				ON CONFLICT (item) DO UPDATE SET added = excluded.added WHERE watch.added IS NOT excluded.added`,
+			).bind(rows),
+		);
+	}
 	const results = await db.batch(statements);
 	const written = rowsWritten(results) + 1;
 	await usageStatement(env, now, written, 1).run();
@@ -372,6 +384,7 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 			auctions: data.auctions.length,
 			fishing: data.fishing.length,
 			ledger: data.ledger.length,
+			watch: data.watch?.length ?? 0,
 		},
 		rowsWritten: written,
 	});
