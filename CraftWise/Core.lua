@@ -16,6 +16,52 @@ ns.LAST_BAG = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
 -- its entries at PLAYER_LOGOUT once nothing reads prices any more (#105).
 local lastHandlers = {}
 
+-- Measuring (#194): while the Settings > Debug recorder is on (Perf.lua), every handler, module callback
+-- and timed hook reports its run time to `recorder(kind, name, label, ms)`. Off, the cost is one upvalue
+-- test per call. Labels are "File.lua:line" of the registration (debugstack), else a counter.
+local recorder
+local labels = setmetatable({}, { __mode = "k" }) -- [fn] = label
+local labelCount = 0
+
+-- "Bags.lua:40" for the first stack line outside Core.lua (the caller of ns.On / ns.Listen); paths are
+-- relative to the addon folder, without the leading UI/.
+local function LabelFor()
+	labelCount = labelCount + 1
+	local ok, stack = pcall(debugstack, 1)
+	if ok and type(stack) == "string" then
+		local seen = false
+		for path, line in stack:gmatch("CraftWise[\\/]([%w_%-%.\\/]+%.lua)[%]\"]*:(%d+)") do
+			seen = true
+			path = path:gsub("\\", "/"):gsub("^UI/", "")
+			if path ~= "Core.lua" then
+				return path .. ":" .. line
+			end
+		end
+		if seen then
+			return "Core.lua"
+		end
+	end
+	return "#" .. labelCount
+end
+
+function ns.SetRecorder(fn)
+	recorder = fn
+end
+
+-- fn wrapped to report as a "hook" under `label` while recording (its first result is passed on).
+function ns.Timed(label, fn)
+	return function(...)
+		local rec = recorder
+		if not rec then
+			return fn(...)
+		end
+		local t = debugprofilestop()
+		local result = fn(...)
+		rec("hook", label, label, debugprofilestop() - t)
+		return result
+	end
+end
+
 local function Register(event)
 	if not handlers[event] then
 		handlers[event] = {}
@@ -28,16 +74,27 @@ end
 
 function ns.On(event, fn)
 	Register(event)
+	labels[fn] = LabelFor()
 	table.insert(handlers[event], fn)
 end
 
 function ns.OnLast(event, fn)
 	Register(event)
 	lastHandlers[event] = lastHandlers[event] or {}
+	labels[fn] = LabelFor()
 	table.insert(lastHandlers[event], fn)
 end
 
 local function Run(list, event, ...)
+	local rec = recorder
+	if rec then
+		for _, fn in ipairs(list) do
+			local t = debugprofilestop()
+			fn(event, ...)
+			rec("event", event, labels[fn], debugprofilestop() - t)
+		end
+		return
+	end
 	for _, fn in ipairs(list) do
 		fn(event, ...)
 	end
@@ -68,11 +125,19 @@ end)
 local callbacks = {}
 function ns.Listen(name, fn)
 	callbacks[name] = callbacks[name] or {}
+	labels[fn] = LabelFor()
 	table.insert(callbacks[name], fn)
 end
 function ns.Notify(name, ...)
+	local rec = recorder
 	for _, fn in ipairs(callbacks[name] or {}) do
-		fn(...)
+		if rec then
+			local t = debugprofilestop()
+			fn(...)
+			rec("notify", name, labels[fn], debugprofilestop() - t)
+		else
+			fn(...)
+		end
 	end
 end
 

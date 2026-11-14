@@ -21,7 +21,7 @@ local function Register()
 		end)
 	end
 	if api.RegisterCornerWidget then
-		pcall(api.RegisterCornerWidget, "CraftWise: marks", "craftwise_marks", function(corner, details)
+		pcall(api.RegisterCornerWidget, "CraftWise: marks", "craftwise_marks", ns.Timed("Baganator: corner widget", function(corner, details)
 			local mark = details and ns.SlotMark(details.itemID)
 			local parent = corner.GetParent and corner:GetParent()
 			ns.SetSlotDim(parent, mark == "junk")
@@ -31,7 +31,7 @@ local function Register()
 			local c = ns.Style.Color(mark == "junk" and "text3" or "coinGold")
 			corner:SetVertexColor(c[1], c[2], c[3], 1)
 			return true
-		end, function(itemButton)
+		end), function(itemButton)
 			local t = itemButton:CreateTexture(nil, "OVERLAY")
 			t:SetTexture(ns.Style.Media.fold)
 			t:SetSize(ns.SLOT_CORNER, ns.SLOT_CORNER)

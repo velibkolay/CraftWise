@@ -61,6 +61,7 @@ return {
 		GetTaxiMapID = UI .. "Blizzard_FlightMap/Blizzard_FlightMap.lua (FlightMapMixin:OnShow: mapID = GetTaxiMapID(), then C_TaxiMap.GetAllTaxiNodes(mapID) in FM_FlightPathDataProvider.lua)",
 		PlaySoundFile = GAME .. " (Music tab songs, 2026-10-01)",
 		StopSound = UI .. "Blizzard_HousingDashboardInitiatives.lua; " .. GAME .. " (music stops with the cast)",
+		debugstack = UI .. "Blizzard_ScriptErrors/Blizzard_ScriptErrors.lua (local stack = debugstack(debugStackLevel)); Core.lua uses it once per handler at load for the label in the Debug performance report (#194), falls back to a counter if absent",
 	},
 	events = {},
 	-- Lua / FrameXML globals that are not client API calls.

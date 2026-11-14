@@ -340,6 +340,10 @@ C_Item.GetItemMaxStackSizeByID = function(id) return stub.items[id] and stub.ite
 -- Time and the player's profession list (skill per skill line).
 stub.now = 1000
 function GetTime() return stub.now end
+-- Milliseconds clock for the performance recorder (#194): tests set stub.clock; debugstack gives a stack like the client's.
+stub.clock = 0
+function debugprofilestop() return stub.clock end
+function debugstack() return stub.stack or "" end
 function GetProfessions()
 	if stub.profession then return 1 end
 end
