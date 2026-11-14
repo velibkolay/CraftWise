@@ -260,10 +260,13 @@ stub.buyback = 0 -- entries on the merchant's buyback tab
 function GetNumBuybackItems() return stub.buyback end
 function GetMerchantNumItems() return #stub.merchant end
 function GetMerchantItemID(i) return stub.merchant[i].itemID end
-function GetMerchantItemInfo(i)
+-- Forever has C_MerchantFrame.GetItemInfo (a table), not the Vanilla GetMerchantItemInfo global.
+C_MerchantFrame = { GetItemInfo = function(i)
 	local m = stub.merchant[i]
-	return "item", nil, m.price, m.stack or 1, m.available or -1, true, true, m.extended
-end
+	if not m then return nil end
+	return { name = "item", price = m.price, stackCount = m.stack or 1, numAvailable = m.available or -1,
+		isUsable = true, hasExtendedCost = m.extended and true or false }
+end }
 -- m.costs = { { amount, link, currencyName } } for extended costs
 function GetMerchantItemCostInfo(i) return #(stub.merchant[i].costs or {}) end
 function GetMerchantItemCostItem(i, n)

@@ -400,16 +400,9 @@ end
 
 -- Record merchant prices so vendor reagents (thread, vials, dyes, flux) cost what vendors ask.
 local function MerchantItem(index)
-	if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
-		local info = C_MerchantFrame.GetItemInfo(index)
-		if info then
-			return info.price, info.stackCount, info.hasExtendedCost
-		end
-		return nil
-	end
-	if GetMerchantItemInfo then
-		local _, _, price, quantity, _, _, _, extendedCost = GetMerchantItemInfo(index)
-		return price, quantity, extendedCost
+	local info = ns.MerchantItemInfo(index)
+	if info then
+		return info.price, info.stack, info.extended
 	end
 end
 

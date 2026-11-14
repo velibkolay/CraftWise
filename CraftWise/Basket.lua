@@ -152,6 +152,31 @@ function Basket.Expected(rows)
 	return sale, profit
 end
 
+-- How many crafts the reagents already held allow, counting only the reagents that have no vendor
+-- source (the ones with a vendor price are what the player buys at the vendor, so they don't limit it).
+-- reagents: { { itemID, quantity } }; held(itemID) -> count; hasVendor(itemID) -> boolean.
+-- nil when every reagent has a vendor source (nothing to count); 0 when a limiting reagent is missing.
+function Basket.MaxCrafts(reagents, held, hasVendor)
+	local max
+	for _, r in ipairs(reagents or {}) do
+		if not hasVendor(r.itemID) and (r.quantity or 0) > 0 then
+			local n = math.floor((held(r.itemID) or 0) / r.quantity)
+			max = max and math.min(max, n) or n
+		end
+	end
+	return max and math.min(max, Basket.MAX_COUNT) or nil
+end
+
+-- MaxCrafts for the player's bags (and the other holdings Holdings.Counter counts) and the known vendor prices.
+function Basket.Max(reagents)
+	if not (ns.Holdings and ns.GetVendorBuyPrice) then
+		return nil
+	end
+	return Basket.MaxCrafts(reagents, ns.Holdings.Counter(), function(itemID)
+		return ns.GetVendorBuyPrice(itemID) ~= nil
+	end)
+end
+
 ----------------------------------------------------------------------------------------------------
 -- Plan: wiring to recipes, bags and prices
 ----------------------------------------------------------------------------------------------------
@@ -312,8 +337,11 @@ function Basket.MerchantSlot(itemID)
 	end
 	for index = 1, GetMerchantNumItems() do
 		if GetMerchantItemID(index) == itemID then
-			local _, _, price, stack, available, _, _, extended = GetMerchantItemInfo(index)
-			return { index = index, stack = stack or 1, available = available or -1, price = price, extended = extended and true or false }
+			local info = ns.MerchantItemInfo(index)
+			if not info then
+				return nil
+			end
+			return { index = index, stack = info.stack or 1, available = info.available or -1, price = info.price, extended = info.extended and true or false }
 		end
 	end
 end

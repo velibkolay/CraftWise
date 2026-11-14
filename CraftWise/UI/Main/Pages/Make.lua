@@ -780,17 +780,37 @@ function MK.DrawBasketRow(content, pool, r, ctx, top)
 	end, { L["One craft less"] }, MK.BUTTON_HEIGHT)
 	minus:SetSize(28, MK.BUTTON_HEIGHT)
 	minus:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
+	local box = pool:CountBox(n, function(v)
+		MK.state.basketCount[id] = v
+		M.Refresh()
+	end)
+	box:SetPoint("LEFT", minus, "RIGHT", 6, 0)
 	local plus = pool:Button("+", function()
 		MK.state.basketCount[id] = math.min(ns.Basket.MAX_COUNT, MK.BasketCount(id) + 1)
 		M.Refresh()
 	end, { L["One craft more"] }, MK.BUTTON_HEIGHT)
 	plus:SetSize(28, MK.BUTTON_HEIGHT)
-	plus:SetPoint("LEFT", minus, "RIGHT", 6, 0)
+	plus:SetPoint("LEFT", box, "RIGHT", 6, 0)
+	local last = plus
+	-- Max: as many crafts as the reagents you already hold (those with no vendor source) allow.
+	local max = ns.Basket.Max(r.reagents)
+	if max then
+		local maxButton = pool:Button(L["Max"], function()
+			MK.state.basketCount[id] = math.max(1, max)
+			M.Refresh()
+		end, { L["Max"], (L["Sets the count to %d: what the reagents you hold that no vendor sells allow."]):format(max) }, MK.BUTTON_HEIGHT)
+		maxButton:SetSize(40, MK.BUTTON_HEIGHT)
+		maxButton:SetPoint("LEFT", plus, "RIGHT", 6, 0)
+		if maxButton.SetEnabled then
+			maxButton:SetEnabled(max >= 1)
+		end
+		last = maxButton
+	end
 	local inBasket = ns.Basket.Find(id)
 	local add = pool:Button((L["Add %d to basket"]):format(n) .. (inBasket and (" · " .. (L["%d in it"]):format(inBasket.count)) or ""), function()
 		ns.Basket.Add(id, ctx.professionID, MK.BasketCount(id))
 	end, { L["Add to basket"], L["Adds these crafts to Make › Basket: what to buy for them, minus your bags."] }, MK.BUTTON_HEIGHT)
-	add:SetPoint("LEFT", plus, "RIGHT", 6, 0)
+	add:SetPoint("LEFT", last, "RIGHT", 6, 0)
 	content.basketButton = add
 end
 

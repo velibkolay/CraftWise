@@ -144,3 +144,62 @@ it("the panel lists the basket's vendor lines this merchant sells, each with its
 	row.buy.scripts.OnClick(row.buy)
 	eq(table.concat(calls, ","), "2:20,2:20,2:10")
 end)
+
+it("Forever has no GetMerchantItemInfo global: the merchant slot, CanBuy and Buy read C_MerchantFrame.GetItemInfo", function()
+	local ns, stub, calls = Setup()
+	eq(GetMerchantItemInfo, nil, "the stub must not hand out the Vanilla global")
+	stub.Fire("MERCHANT_SHOW")
+	local info = ns.MerchantItemInfo(2)
+	eq(info.price, 20); eq(info.stack, 1); eq(info.available, -1); eq(info.extended, false)
+	eq(ns.MerchantItemInfo(9), nil)
+	local slot = ns.Basket.MerchantSlot(THREAD)
+	eq(slot.index, 2); eq(slot.price, 20); eq(slot.stack, 1)
+	eq(ns.Basket.CanBuy({ itemID = THREAD, quantity = 5 }), true)
+	eq(ns.Basket.Buy({ itemID = THREAD, quantity = 25 }), 25)
+	eq(table.concat(calls, ","), "2:20,2:5")
+	eq(ns.Basket.MerchantSlot(424242), nil)
+end)
+
+it("Max: crafts the held reagents allow, counting only reagents no vendor sells", function()
+	local ns = Setup()
+	local CLAM, SPICE = 1, 2
+	local held = { [CLAM] = 597, [SPICE] = 3 }
+	local function Held(id) return held[id] or 0 end
+	local vendor = { [SPICE] = true }
+	local function HasVendor(id) return vendor[id] == true end
+	local M = ns.Basket.MaxCrafts
+	eq(M({ { itemID = CLAM, quantity = 1 }, { itemID = SPICE, quantity = 1 } }, Held, HasVendor), 597)
+	eq(M({ { itemID = CLAM, quantity = 2 }, { itemID = SPICE, quantity = 1 } }, Held, HasVendor), 298)
+	held[CLAM] = 1
+	eq(M({ { itemID = CLAM, quantity = 2 } }, Held, HasVendor), 0, "a missing reagent allows none")
+	vendor[CLAM] = true
+	eq(M({ { itemID = CLAM, quantity = 1 }, { itemID = SPICE, quantity = 1 } }, Held, HasVendor), nil, "all sold by a vendor: no Max")
+	eq(M({}, Held, HasVendor), nil)
+	held[CLAM] = 50000; vendor[CLAM] = nil
+	eq(M({ { itemID = CLAM, quantity = 1 } }, Held, HasVendor), ns.Basket.MAX_COUNT)
+end)
+
+it("the count box: Enter or focus loss applies a valid number, Escape or nonsense restores the old one", function()
+	local ns = Setup()
+	local content = CreateFrame("Frame")
+	local pool = ns.Main.Pool(content)
+	local applied = {}
+	local box = pool:CountBox(7, function(n) applied[#applied + 1] = n end)
+	eq(box:GetText(), "7")
+	box:SetText("25")
+	box.scripts.OnEditFocusLost(box)
+	eq(applied[1], 25)
+	box:SetText("7")
+	box.scripts.OnEditFocusLost(box)
+	eq(#applied, 1, "unchanged: nothing applied")
+	box:SetText("99999")
+	box.scripts.OnEditFocusLost(box)
+	eq(applied[2], ns.Basket.MAX_COUNT, "clamped")
+	box:SetText("0")
+	box.scripts.OnEditFocusLost(box)
+	eq(#applied, 2); eq(box:GetText(), "7", "zero restores")
+	box:SetText("30")
+	box.scripts.OnEscapePressed(box)
+	box.scripts.OnEditFocusLost(box)
+	eq(#applied, 2); eq(box:GetText(), "7", "Escape restores")
+end)
