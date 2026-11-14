@@ -2,7 +2,7 @@
 // pay when the product goes to a vendor and vendor loops. Prices and names come from /api/browse (as the list
 // page); the recipes from /data/recipes.json. A price that is missing stays missing.
 import { type Browse, type BrowseItem, get, type House, mainHouse } from "./lib/api";
-import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, itemsOfSpell, keep, knownSpells, professionList, scopeOf, sortCrafts, toRow } from "./lib/crafts";
+import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, scopeOf, sortCrafts, toRow } from "./lib/crafts";
 import { type CraftNames, craftItBreakdown, loopTag, profitEl } from "./lib/craftview";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
 import { qualityClass } from "./lib/format";
@@ -264,7 +264,9 @@ const COLUMNS: Col[] = [
 	{ key: "ah", label: "AH sale", cls: "r", firstDesc: true },
 	{ key: "vendor", label: "Vendor sale", cls: "r", firstDesc: true },
 	{ key: "profit", label: "Profit", cls: "r c-profit", firstDesc: true },
+	{ key: "pct", label: "Profit %", cls: "r", firstDesc: true },
 	{ key: "vprofit", label: "Vendor profit", cls: "r c-profit", firstDesc: true },
+	{ key: "vpct", label: "Vendor profit %", cls: "r", firstDesc: true },
 ];
 
 function rowsNow(): CraftRow[] {
@@ -283,7 +285,7 @@ function renderTable(): void {
 	const shown = list.slice((st.page - 1) * PAGE, st.page * PAGE);
 	const note = failed ? ", some prices could not be loaded" : loading ? ", pricing the crafts" : "";
 	clear(heading, "Crafts ", h("span", { class: "hint count" }, `${list.length.toLocaleString("en-US")} ${list.length === 1 ? "craft" : "crafts"}${note}`));
-	clear(colHint, "AH sale: one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more). Vendor sale: what a vendor pays for the product. Reagents: each where it is cheaper, AH or vendor. A loop buys every reagent from a vendor and sells the product to one for more. Press a profit for the breakdown.");
+	clear(colHint, "AH sale: one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more). Vendor sale: what a vendor pays for the product. Reagents: each where it is cheaper, AH or vendor. A loop buys every reagent from a vendor and sells the product to one for more. Profit %: the return per gold spent on reagents (profit / reagents). Press a profit for the breakdown.");
 	document.title = "Crafts - Velikopter Market";
 	vendorBox.checked = st.vendorOnly;
 	loopBox.checked = st.loopsOnly;
@@ -322,6 +324,11 @@ function renderTable(): void {
 function cell(r: CraftRow, v: number | null): HTMLElement {
 	if (v === null && !r.ready) return h("td", { class: "r" }, h("span", { class: "hint" }, "…"));
 	return h("td", { class: "r" }, moneyEl(v));
+}
+
+function pctCell(r: CraftRow, v: number | null): HTMLElement {
+	if (v === null) return h("td", { class: "r" }, h("span", { class: "hint" }, r.ready ? "–" : "…"));
+	return h("td", { class: "r" }, h("span", { class: v >= 0 ? "profit" : "profit loss" }, formatPct(v)));
 }
 
 function profitButton(r: CraftRow, value: number | null, tip: string): HTMLElement {
@@ -365,11 +372,13 @@ function rowEl(r: CraftRow): HTMLElement {
 		cell(r, r.ah),
 		h("td", { class: "r" }, moneyEl(r.vendor), r.vendor === null ? null : h("span", { class: "sr" }, ", vendor price")),
 		profitButton(r, r.profit, r.profit === null ? "Unknown: a reagent or the product has no Horde AH price" : `Product ${skinMoney(r.craft.revenue!).short} - reagents ${skinMoney(r.cost!).short}`),
+		pctCell(r, r.pct),
 		profitButton(
 			r,
 			r.vprofit,
 			r.vprofit === null ? (v.sale === null ? "Vendors don't buy it, or the price isn't known" : "Unknown: a reagent has no price") : `Vendor sale ${skinMoney(v.sale!).short} - reagents ${skinMoney(r.cost!).short}`,
 		),
+		pctCell(r, r.vpct),
 	);
 }
 

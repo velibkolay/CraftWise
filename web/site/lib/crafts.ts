@@ -2,8 +2,8 @@
 // DOM, no fetch; the Worker tests import it. The maths is recipes.ts (craft, vendorCheck).
 import { craft, type Craft, type Quote, type RecipeData, recipeItemOf, type Spell, spellOf } from "./recipes";
 
-export type CraftSort = "name" | "profession" | "cost" | "ah" | "vendor" | "profit" | "vprofit";
-export const CRAFT_SORTS: CraftSort[] = ["name", "profession", "cost", "ah", "vendor", "profit", "vprofit"];
+export type CraftSort = "name" | "profession" | "cost" | "ah" | "vendor" | "profit" | "vprofit" | "pct" | "vpct";
+export const CRAFT_SORTS: CraftSort[] = ["name", "profession", "cost", "ah", "vendor", "profit", "vprofit", "pct", "vpct"];
 
 export interface CraftRow {
 	spell: Spell;
@@ -17,7 +17,24 @@ export interface CraftRow {
 	vendor: number | null;
 	profit: number | null;
 	vprofit: number | null;
+	pct: number | null; // profit / reagents cost (1.5 = +150 %)
+	vpct: number | null;
 	loop: boolean;
+}
+
+// The return per copper spent on reagents: profit / cost. Null when either is unknown or the cost is 0.
+export function pctOf(profit: number | null, cost: number | null): number | null {
+	if (profit === null || cost === null || cost <= 0) return null;
+	return profit / cost;
+}
+
+// "+150 %", "−25 %", "0 %"; whole numbers from 10 % up, one decimal below, thousands separated.
+export function formatPct(p: number): string {
+	const pc = p * 100;
+	const abs = Math.abs(pc);
+	const n = abs >= 10 ? Math.round(abs) : Math.round(abs * 10) / 10;
+	if (n === 0) return "0 %";
+	return `${pc < 0 ? "−" : "+"}${n.toLocaleString("en-US", { maximumFractionDigits: 1 })} %`;
 }
 
 // Every spell that makes an item, ascending by ID. Enchants and the like make none: nothing to sell.
@@ -73,6 +90,8 @@ export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fe
 		vendor: c.vendor.sale,
 		profit: c.profit,
 		vprofit: c.vendor.profit,
+		pct: pctOf(c.profit, c.cost),
+		vpct: pctOf(c.vendor.profit, c.cost),
 		loop: c.vendor.loop,
 	};
 }
@@ -94,6 +113,11 @@ export function sortCrafts(list: CraftRow[], key: CraftSort, desc: boolean): Cra
 		if (va === null && vb === null) return byName(a, b);
 		if (va === null) return 1; // unknown: always last
 		if (vb === null) return -1;
+		if (key === "pct" || key === "vpct") {
+			// Ties: the bigger absolute profit of that column first (in the sort's direction), then the name.
+			const pk = key === "pct" ? "profit" : "vprofit";
+			return dir * (va - vb) || dir * (Math.abs(a[pk]!) - Math.abs(b[pk]!)) || byName(a, b);
+		}
 		return dir * (va - vb) || byName(a, b);
 	});
 }

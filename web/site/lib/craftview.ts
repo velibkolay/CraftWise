@@ -2,6 +2,7 @@
 // The numbers come from recipes.ts; this only draws them.
 import { h, moneyEl, skinMoney } from "./dom";
 import { qualityClass } from "./format";
+import { formatPct, pctOf } from "./crafts";
 import { basisText, type Craft, depthText, type Priced, type RecipeRow, type Spell } from "./recipes";
 
 export type CraftNames = Map<number, { name: string | null; quality: number | null }>;
@@ -92,6 +93,7 @@ function line(label: string, value: Node | string, note: string | null = null): 
 // The sums under the reagents: reagent cost, the product's value, profit per craft; `extra` lines follow.
 function sums(c: Craft, extra: HTMLElement[], vendor = false): HTMLElement {
 	const s = c.spell;
+	const pc = pctOf(c.profit, c.cost);
 	const rows: (HTMLElement | null)[] = [line("Reagents", moneyEl(c.cost, "unknown"))];
 	if (s.output && c.noAhProduct) {
 		// No Horde AH price: no value and no profit; a vendor price only says how bad it can get.
@@ -112,6 +114,7 @@ function sums(c: Craft, extra: HTMLElement[], vendor = false): HTMLElement {
 		);
 		const profit = c.profit === null ? h("span", { class: "hint" }, "unknown") : h("span", {}, profitEl(c.profit), c.thin ? " " : null, c.thin ? thinTag(c.value) : null);
 		rows.push(line("Profit per craft", profit));
+		if (pc !== null) rows.push(line("Profit %", h("span", { class: pc >= 0 ? "profit" : "profit loss" }, formatPct(pc)), "profit / reagents"));
 	}
 	if (vendor && s.output) rows.push(...vendorLines(c));
 	return h("div", { class: "bd-sums" }, rows, extra);
@@ -124,6 +127,8 @@ function vendorLines(c: Craft): HTMLElement[] {
 		line("Sold to a vendor", v.sale === null ? h("span", { class: "hint" }, "no vendor price") : moneyEl(v.sale), v.sale === null ? "vendors don't buy it, or the price isn't known" : c.spell.qty !== 1 ? "vendor price × quantity" : null),
 		line("Vendor profit", v.profit === null ? h("span", { class: "hint" }, "unknown") : profitEl(v.profit), v.profit === null ? null : "vendor sale - reagents"),
 	];
+	const vp = pctOf(v.profit, c.cost);
+	if (vp !== null) lines.push(line("Vendor profit %", h("span", { class: vp >= 0 ? "profit" : "profit loss" }, formatPct(vp)), "vendor profit / reagents"));
 	if (v.loop) lines.push(line("Loop", h("span", {}, loopTag(), " ", profitEl(v.sale! - v.loopCost!)), `at vendor prices only: reagents ${skinMoney(v.loopCost!).short}`));
 	else if (v.loopCost === null) lines.push(line("Loop", h("span", { class: "hint" }, "no"), "a reagent isn't sold by a vendor"));
 	else lines.push(line("Loop", h("span", { class: "hint" }, "no"), "vendor sale isn't above the cost at vendor prices"));

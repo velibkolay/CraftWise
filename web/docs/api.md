@@ -258,7 +258,9 @@ and vendor profit. Same definitions as the addon (`vendorCheck` in `site/lib/rec
 Filters: profession, product name, "Profit when sold to a vendor" (vendor profit > 0), "Loops only" and, when
 `/api/me/characters` answers (Access login), "My crafts": the recipe spell IDs in `professions[].known` of the
 characters' snapshots (docs/snapshot.md). Only the prices of the filtered crafts are fetched (`/api/browse?ids=`).
-URL: `?prof=<skill line>&q=&vendor=1&loops=1&mine=1&sort=&dir=&p=`.
+Profit % = profit / reagents cost, Vendor profit % = vendor profit / reagents cost; null when the cost is unknown or 0
+or the profit is unknown (sorted last in both directions; ties by absolute profit, then name).
+URL: `?prof=<skill line>&q=&vendor=1&loops=1&mine=1&sort=&dir=&p=` (`sort` also takes `pct`, `vpct`).
 
 A Recipe list of 158 items needs about 300 more item IDs, so 3 to 4 browse requests (about 10 rows read per item).
 
