@@ -37,6 +37,7 @@ local OPTIONS = {
 	-- Gear only (#157, spec "Upgrades": dismiss from the item menu); the label flips once dismissed.
 	{ key = "dismiss", label = "Don't suggest as upgrade", undo = "Suggest as upgrade again", gear = true,
 		note = "Look up › Upgrades leaves it out (Settings › Bags and loot › Show dismissed upgrades lists it again)" },
+	{ key = "basket", label = "Open basket", note = "Make › Basket: what to buy for the crafts you added" },
 	{ key = "recipes", label = "Recipes using this", note = "Opens Make › Craft with every recipe of yours that uses it" },
 }
 ns.ItemMenuOptions = OPTIONS
@@ -105,7 +106,11 @@ end
 local function Choose(opt)
 	local itemID = menu.itemID
 	if itemID then
-		if opt.key == "recipes" then
+		if opt.key == "basket" then
+			if ns.Main and ns.Main.Open then
+				ns.Main.Open("basket")
+			end
+		elseif opt.key == "recipes" then
 			ns.ShowRecipesUsing(itemID)
 		elseif opt.key == "where" or opt.key == "history" then
 			ns.OpenItemLookup(itemID, opt.key)

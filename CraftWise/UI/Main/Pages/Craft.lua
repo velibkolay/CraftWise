@@ -219,10 +219,10 @@ M.RegisterPage({
 			r.profit == nil and not r.noItemOutput, ctx)
 	end,
 	Open = function(content, r, ctx)
-		MK.DrawOpen(content, r, nil, ctx)
+		MK.DrawOpen(content, r, { basket = true }, ctx)
 	end,
 	OpenHeight = function(r, ctx)
-		return MK.OpenHeight(r, nil, ctx)
+		return MK.OpenHeight(r, nil, ctx, { basket = true })
 	end,
 	RowTooltip = function(owner, r)
 		MK.ShowRecipeTooltip(owner, r, "profit")

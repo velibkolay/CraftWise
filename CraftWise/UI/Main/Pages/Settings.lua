@@ -376,6 +376,26 @@ local function Groups()
 		} },
 	} }
 
+	groups[#groups + 1] = { key = "loops", label = L["Vendor loops"], rows = {
+		{ key = "on", kind = "check", label = L["Loop alert"], text = L["On"],
+			sub = L["After prices change, one toast for vendor profits and loops that are new or clearly better. Click opens Make › Craft with Vendor check."],
+			get = function() return ns.Loops.Enabled() end,
+			set = function(v) S().loopAlert = v and true or false end },
+		{ key = "min", kind = "stepper", label = L["Smallest profit per craft"],
+			sub = L["Finds below this are not announced; 0 announces anything above 0."],
+			disabled = function() return not ns.Loops.Enabled() end,
+			get = function() return ns.Loops.MinProfit() end,
+			down = function()
+				S().loopAlertMin = Set.StepCopper(S().loopAlertMin, -1)
+				Changed()
+			end,
+			up = function()
+				S().loopAlertMin = Set.StepCopper(S().loopAlertMin, 1)
+				Changed()
+			end,
+			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
+	} }
+
 	groups[#groups + 1] = { key = "farm", label = L["Farm tracker"], rows = {
 		{ key = "on", kind = "check", label = L["Farm tracker"], text = L["On"],
 			get = function() return F.Enabled() end, set = function(v) F.Slash(v and "on" or "off") end },

@@ -95,9 +95,10 @@ it("Make: Craft, Learn and Level up are real pages in Make (one file each, in th
 	local keys = {}
 	for _, p in ipairs(M.SectionPages("make")) do
 		keys[#keys + 1] = p.key
-		eq(p.bridge, nil, p.key); eq(p.profession, true, p.key); eq(p.prices, true, p.key)
+		eq(p.bridge, nil, p.key); eq(p.prices, true, p.key)
+		if p.key ~= "basket" then eq(p.profession, true, p.key) end -- the basket spans professions (#186)
 	end
-	eq(table.concat(keys, ","), "craft,learn,level")
+	eq(table.concat(keys, ","), "craft,learn,level,basket")
 	eq(M.Page("level").label, "Level up")
 	local toc = io.open("CraftWise/CraftWise.toc"):read("*a")
 	local last = 0
@@ -253,7 +254,7 @@ it("Craft opened row: each reagent with quantity, total, source and have N; Pric
 	local cells = detail.content.reagentCells
 	eq(cells[2].x, ns.Main.Make.REAGENT_WIDTH + ns.Main.Make.REAGENT_GAP, "side by side")
 	eq(cells[1].hit.cwData.itemID, HIDE, "hover and right-click work on a reagent")
-	eq(detail.extent, ns.Main.Make.OpenHeight((Row(ns, "craft", R_BELT))) + 20 + 8)
+	eq(detail.extent, ns.Main.Make.OpenHeight((Row(ns, "craft", R_BELT)), nil, nil, { basket = true }) + 20 + 8)
 	local history = detail.content.history
 	eq(history.label.text, "Price history"); eq(history.shown, true)
 	local looked
@@ -540,4 +541,154 @@ it("States: a Make model that raises shows Error; the other Make pages still wor
 	eq(M.Frame().panel.title.text, "Craft could not be built.")
 	Make.Open(ns, "learn")
 	eq(M.shown.state, "list")
+end)
+
+----------------------------------------------------------------------------------------------------
+-- Vendor loop alert and basket (#186)
+----------------------------------------------------------------------------------------------------
+
+it("Loops (#186): finds are vendor profits above the minimum, a loop is marked, unknown prices are no find", function()
+	local ns = Load()
+	ns.db.vendor[HIDE] = 1
+	local finds = ns.Loops.Check()
+	eq(#finds, 2); eq(finds[1].name, "Test Gloves"); eq(finds[1].profit, 21); eq(finds[1].loop, true)
+	eq(finds[2].name, "Test Belt"); eq(finds[2].profit, 8)
+	ns.db.settings.loopAlertMin = 10
+	eq(#ns.Loops.Check(), 1, "below the minimum: not announced")
+	ns.db.settings.loopAlertMin = 0
+	ns.db.vendor[HIDE] = nil -- reagent at the AH only: vendor profit is negative, nothing to announce
+	eq(#ns.Loops.Check(), 0)
+	ns.db.settings.includeUnlearned = true
+	ns.db.vendor[HIDE] = 1
+	eq(#ns.Loops.Check(), 3, "Cloak joins with Unlearned on; Cap (profit 0) and Hat (no sale) never")
+end)
+
+it("Loops: Fresh keeps what was announced, repeats only new or clearly better finds and forgets what went away", function()
+	local ns = Load()
+	local L = ns.Loops
+	local finds = { { recipeID = 1, profit = 100, loop = false }, { recipeID = 2, profit = 50, loop = true } }
+	local fresh, keep = L.Fresh(finds, {})
+	eq(#fresh, 2)
+	fresh, keep = L.Fresh(finds, keep)
+	eq(#fresh, 0, "same finds again: no toast")
+	fresh, keep = L.Fresh({ { recipeID = 1, profit = 140, loop = false }, { recipeID = 2, profit = 50, loop = true } }, keep)
+	eq(#fresh, 0, "+40 % is not clearly better")
+	fresh, keep = L.Fresh({ { recipeID = 1, profit = 160, loop = false }, { recipeID = 2, profit = 50, loop = true } }, keep)
+	eq(#fresh, 1); eq(fresh[1].recipeID, 1)
+	fresh, keep = L.Fresh({ { recipeID = 1, profit = 160, loop = true } }, keep)
+	eq(#fresh, 1, "became a loop")
+	fresh, keep = L.Fresh({}, keep)
+	eq(next(keep), nil, "gone finds are forgotten")
+	fresh = L.Fresh({ { recipeID = 2, profit = 50, loop = true } }, keep)
+	eq(#fresh, 1, "and count as new when they come back")
+	eq(L.Summary({ { loop = true }, { loop = true }, { loop = false } }), "2 vendor loops · 1 vendor profit")
+	eq(L.Summary({}), nil)
+end)
+
+it("Loops: PRICES_CHANGED runs one debounced check, one toast per check, click opens Make › Craft with Vendor check", function()
+	local ns, stub, M = Load()
+	ns.db.vendor[HIDE] = 1
+	ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED")
+	eq(#ns.LootToast.Lines(), 0, "nothing before the debounce ends")
+	stub.RunTimers()
+	local lines = ns.LootToast.Lines()
+	eq(#lines, 1); eq(lines[1].text, "2 vendor loops"); eq(lines[1].detail, "Test Gloves"); eq(lines[1].copper, 21)
+	eq(ns.LootToast.LineParts(lines[1]).source, "per craft")
+	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	eq(#ns.LootToast.Lines(), 1, "the same finds: no second toast")
+	ns.db.settings.vendorCheck = false
+	lines[1].onClick(lines[1])
+	eq(ns.db.settings.vendorCheck, true); eq(M.CurrentPage().key, "craft")
+	ns.db.settings.loopAlert = false
+	ns.db.loopNotice = {}
+	ns.LootToast.Clear()
+	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	eq(#ns.LootToast.Lines(), 0, "switched off in Settings")
+end)
+
+it("Basket (#186): crafts add up, buy list = reagents minus bags split AH / vendor, ticks off as bags fill", function()
+	local ns, stub = Load()
+	local B = ns.Basket
+	ns.db.vendor[HIDE] = nil
+	B.Add(R_GLOVES, PROF, 3); B.Add(R_BELT, PROF, 2); B.Add(R_GLOVES, PROF, 1)
+	eq(#B.Entries(), 2); eq(B.Find(R_GLOVES).count, 4)
+	local plan = B.Plan()
+	-- 4 Gloves = 16 Testhide, 2 Belts = 4 Testhide + 2 Testthread
+	eq(plan.need[1].itemID, HIDE); eq(plan.need[1].quantity, 20); eq(plan.need[2].quantity, 2)
+	eq(#plan.split.auction, 1); eq(plan.split.auction[1].itemID, HIDE); eq(plan.split.auction[1].quantity, 20)
+	eq(#plan.split.vendor, 1); eq(plan.split.vendor[1].itemID, THREAD)
+	eq(plan.split.vendorCost, 2 * 20)
+	-- Gloves vendor sale 25, cost 40: -15 each; Belt 30, cost 40: -10 each
+	eq(plan.profit, -15 * 4 + -10 * 2); eq(plan.sale, 25 * 4 + 30 * 2)
+	-- bags: 20 Testhide in the bags: the AH line is done and shows as in bags
+	stub.bags[0] = { { itemID = HIDE, stackCount = 20, quality = 1 } }
+	stub.Fire("BAG_UPDATE_DELAYED")
+	plan = B.Plan()
+	eq(#plan.split.auction, 0); eq(#plan.done, 1); eq(plan.done[1].itemID, HIDE); eq(plan.done[1].held, 20)
+	B.SetCount(R_BELT, 0)
+	eq(#B.Entries(), 1, "count 0 removes it")
+	B.Clear()
+	eq(#B.Entries(), 0); eq(B.Plan().profit, nil)
+end)
+
+it("Basket page: crafts first, then AH, vendor and in-bags lines; empty basket says so", function()
+	local ns, stub, M = Load()
+	M.Open("basket")
+	eq(Make.Names(ns, "basket"), "")
+	eq(M.Frame().hero.name.text, "—")
+	ns.Basket.Add(R_BELT, PROF, 2)
+	M.Open("basket")
+	eq(Make.Names(ns, "basket"), "Test Belt,Testhide,Testthread")
+	local rows = Make.Rows(ns, "basket")
+	eq(rows[1].kind, "craft"); eq(rows[2].kind, "auction"); eq(rows[3].kind, "vendor")
+	eq(Plain(rows[3].view.cells.where), "vendor"); eq(Plain(rows[2].view.cells.qty), "×4")
+end)
+
+it("Basket: Auctionator list from the AH lines (its API), a search string without it, nothing without a name", function()
+	local ns = Load()
+	local B = ns.Basket
+	local lines = { { itemID = HIDE, quantity = 20 }, { itemID = 424242, quantity = 3 } }
+	eq(B.HasAuctionator(), false)
+	local n, why = B.CreateAuctionatorList(lines)
+	eq(n, nil); eq(why, "Auctionator isn't loaded")
+	eq(B.SearchString(lines[1]), '"Testhide";;;;;;;;;;;;;20')
+	eq(B.SearchString(lines[2]), nil, "no name loaded: no string")
+	local made
+	Auctionator = { API = { v1 = {
+		ConvertToSearchString = function(_, term) return term.searchString .. "|" .. term.quantity .. "|" .. tostring(term.isExact) end,
+		CreateShoppingList = function(caller, name, list) made = { caller, name, list } end } } }
+	n = B.CreateAuctionatorList(lines)
+	eq(n, 1); eq(made[1], "CraftWise"); eq(made[2], "CraftWise basket"); eq(made[3][1], "Testhide|20|true")
+end)
+
+it("Basket: Buy needs an open merchant that sells the item for gold alone, one at a time; one click buys the line, in stack-sized calls", function()
+	local ns, stub = Load()
+	local B = ns.Basket
+	local calls = {}
+	BuyMerchantItem = function(index, n) calls[#calls + 1] = index .. ":" .. n end
+	GetMerchantItemMaxStack = function() return 20 end
+	stub.money = 100000
+	local line = { itemID = THREAD, quantity = 50 }
+	local n, why = B.Buy(line)
+	eq(n, nil); eq(why, "Open a merchant that sells it"); eq(#calls, 0)
+	stub.merchant = { { itemID = HIDE, price = 10 }, { itemID = THREAD, price = 20 } }
+	stub.Fire("MERCHANT_SHOW")
+	eq(B.CanBuy({ itemID = 424242, quantity = 1 }), false)
+	n = B.Buy(line)
+	eq(n, 50); eq(table.concat(calls, ","), "2:20,2:20,2:10")
+	calls = {}
+	stub.money = 100
+	n, why = B.Buy(line)
+	eq(n, nil); eq(why, "Not enough gold"); eq(#calls, 0)
+	stub.money = 100000
+	stub.merchant[2].available = 7
+	eq(B.Buy(line), 7, "limited stock: never more than there is")
+	stub.merchant[2].available = nil
+	stub.merchant[2].stack = 5
+	n, why = B.Buy(line)
+	eq(n, nil); eq(why, "Sold in lots of 5: buy it by hand")
+	stub.merchant[2].stack, stub.merchant[2].extended = 1, true
+	eq(select(2, B.Buy(line)), "Costs more than gold: buy it by hand")
+	stub.Fire("MERCHANT_CLOSED")
+	eq(B.MerchantOpen(), false)
 end)

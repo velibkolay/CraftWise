@@ -38,6 +38,8 @@ Crafts.lua
 Bags.lua
 Holdings.lua
 Balance.lua
+Loops.lua
+Basket.lua
 BagSort.lua
 Junk.lua
 BagIcons.lua
@@ -79,4 +81,5 @@ UI\Main\Pages\MakeTooltips.lua
 UI\Main\Pages\Craft.lua
 UI\Main\Pages\Learn.lua
 UI\Main\Pages\LevelUp.lua
+UI\Main\Pages\Basket.lua
 UI\MinimapButton.lua

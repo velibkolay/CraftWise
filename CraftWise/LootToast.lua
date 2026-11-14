@@ -70,7 +70,7 @@ end
 -- 1 while shown, falling to 0 over the fade, 0 once over.
 function T.Alpha(line, now)
 	local age = now - line.t
-	local duration, fade = T.Duration(), T.Fade()
+	local duration, fade = line.duration or T.Duration(), T.Fade()
 	if age <= duration then
 		return 1
 	end
@@ -164,6 +164,13 @@ end
 function T.LineParts(line)
 	local Style = ns.Style
 	local parts = { test = line.test and true or nil }
+	if line.text then -- a line of another feature (the vendor loop alert, #186): text, best name, profit
+		parts.name, parts.color = line.text, Style.C.text
+		parts.count = line.detail
+		parts.money = line.copper and ("+" .. ns.FormatCoins(line.copper)) or nil
+		parts.source = line.copper and "per craft" or nil
+		return parts
+	end
 	if line.key == "money" then
 		parts.name, parts.color = "Coin", Style.C.text
 		parts.money = ns.FormatCoins(line.copper or 0)
@@ -262,6 +269,12 @@ local function Row(i)
 	row.source = Style.Text(row, "Caption", "text3")
 	row.test = Style.Text(row, "Caption", "text3")
 	row.test:SetText("test")
+	row:SetScript("OnMouseUp", function(self)
+		local click = self.line and self.line.onClick
+		if click then
+			click(self.line)
+		end
+	end)
 	row.parts = { row.name, row.count, row.money, row.source, row.test }
 	for _, fs in ipairs(row.parts) do
 		fs:SetJustifyH("LEFT")
@@ -309,7 +322,9 @@ function T.Render(now)
 	local bg = T.BackgroundAlpha()
 	for i, line in ipairs(lines) do
 		local row = Row(i)
-		row.icon:SetTexture(line.icon)
+		row.icon:SetTexture(line.icon or T.UNKNOWN_ICON)
+		row.line = line
+		row:EnableMouse(line.onClick ~= nil) -- clickable lines (#186) open their page
 		Fill(row, T.LineParts(line))
 		row.sheet:SetFlap(i == 1 and C.nokta or C.flap)
 		row.sheet:SetAlpha(bg)
@@ -393,6 +408,22 @@ function T.ShowItem(link, count, itemID)
 		return nil
 	end
 	return Show({ key = "item:" .. itemID, itemID = itemID, link = link, count = count or 1, icon = ItemIcon(itemID) })
+end
+
+-- A line of another feature, shown whatever the loot toast's own switch says (it has its own setting):
+-- { key, text, detail, copper, icon, duration, onClick }. A line with the same key is replaced.
+function T.ShowCustom(entry)
+	for i = #lines, 1, -1 do
+		if lines[i].key == entry.key then
+			table.remove(lines, i)
+		end
+	end
+	Build()
+	local now = GetTime()
+	local line = T.Add(entry, now)
+	anchor:SetScript("OnUpdate", OnUpdate)
+	T.Render(now)
+	return line
 end
 
 function T.ShowMoney(copper)
