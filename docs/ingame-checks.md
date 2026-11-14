@@ -776,3 +776,14 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Hover a row: the "Vendor check" section lists each reagent with AH price, vendor price and which was used, then the vendor sale and profit. A product no vendor buys never shows up with the chip on; a reagent without a vendor price shows "not sold by a vendor".
 - Chip off: nothing changes except the loop tag on loop rows. After a client patch changing sell prices, the vendor sale follows the client's price.
 - No new file: `/reload` is enough.
+
+### Vendor loop alert and basket (#186)
+
+- **New files (Loops.lua, Basket.lua, Pages/Basket.lua): restart the game completely, `/reload` is not enough.**
+- Settings › Vendor loops: Loop alert on, Smallest profit per craft at 0. Visit the AH with a full scan (or a merchant once) while a known craft has a vendor profit: one toast "N vendor loops / M vendor profits" with the best craft and its profit per craft, about 10 s. Browsing more AH pages right after gives no second toast; a new or clearly better (+50 %) find does. Click the toast: Make › Craft opens with Vendor check on. Shift-click: the best craft goes into the basket and Make › Basket opens.
+- Raise Smallest profit per craft above the best find: no toast. Loop alert off: no toast.
+- Make › Craft, open a row: "− +" and "Add N to basket" under the reagents. Make › Basket lists the crafts (open one: − + +10 Remove), then AH lines, vendor lines, items without a price, and what is already in the bags; the hero shows the AH and vendor totals and the expected vendor profit.
+- Put some of the reagents into your bags: those lines move to "in bags" (BAGS_CHANGED), no reload.
+- With Auctionator: the Auctionator list chip creates/replaces the shopping list "CraftWise basket" (check it in Auctionator\x27s Shopping tab: exact names with quantities). Without Auctionator: an AH line opens to a search string to copy.
+- Open a merchant that sells a vendor line (plain gold, sold one at a time): open the line, Buy N is enabled; one click buys exactly that quantity (more than a stack = several BuyMerchantItem calls in that click, check the bags). Sold in lots, with a currency cost, sold out, or not enough gold: the button stays off and says why. Closing the merchant disables it. Nothing is bought without the click.
+- Item menu: Open basket opens Make › Basket. Clear basket empties it.

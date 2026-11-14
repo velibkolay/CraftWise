@@ -60,7 +60,7 @@ it("Main: five sections in the spec's order; every sub-page of #150 is a real pa
 	local labels = {}
 	for _, s in ipairs(M.SECTIONS) do labels[#labels + 1] = s.label end
 	eq(table.concat(labels, ","), "Make,Sell,Gather,Look up,Music")
-	local want = { make = "Craft,Learn,Level up", sell = "Bags,Auctions,Ledger", gather = "Farm,Fishing,Crates",
+	local want = { make = "Craft,Learn,Level up,Basket", sell = "Bags,Auctions,Ledger", gather = "Farm,Fishing,Crates",
 		lookup = "Items,Upgrades", music = "Music" }
 	for section, list in pairs(want) do
 		local got = {}

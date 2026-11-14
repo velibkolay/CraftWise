@@ -45,7 +45,7 @@ it("Settings: the gear opens the page; the groups of the spec in its order; the 
 	eq(M.shown.page, "settings"); eq(M.shown.state, "custom")
 	local labels = {}
 	for _, g in ipairs(M.Settings.Groups()) do labels[#labels + 1] = g.label end
-	eq(table.concat(labels, ","), "Look,Prices,Tooltips,Bags and loot,Loot toast,Farm tracker,Fishing,AH rule,Snapshot")
+	eq(table.concat(labels, ","), "Look,Prices,Tooltips,Bags and loot,Loot toast,Vendor loops,Farm tracker,Fishing,AH rule,Snapshot")
 	local body = M.SlotsOf("settings").body
 	eq(body.nav.width, 170)
 	local C = ns.Style.C

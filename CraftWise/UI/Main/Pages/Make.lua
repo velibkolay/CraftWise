@@ -642,15 +642,16 @@ end
 
 -- Height of the opened part: where lines (Learn) and the reagent lines, at least the two buttons
 -- (docked: plus the row of buttons under the reagents).
-function MK.OpenHeight(r, whereLines, ctx)
+function MK.OpenHeight(r, whereLines, ctx, opts)
 	local where = (whereLines or 0) * MK.WHERE_LINE + ((whereLines or 0) > 0 and 6 or 0)
 	local reagents = where + Lines(#(r.reagents or {}), ctx) * MK.REAGENT_HEIGHT - 8
+	local basket = opts and opts.basket and (8 + MK.BUTTON_HEIGHT) or 0 -- the Add to basket row (#186)
 	if M.IsDocked(ctx) then
 		local any = r.outputItemID ~= nil or MK.CanOpenRecipe(r)
-		return reagents + (any and (8 + MK.BUTTON_HEIGHT) or 0)
+		return reagents + (any and (8 + MK.BUTTON_HEIGHT) or 0) + basket
 	end
 	local buttons = ButtonsTop(where) + 2 * MK.BUTTON_HEIGHT + MK.BUTTON_GAP
-	return math.max(reagents, MK.CanOpenRecipe(r) and buttons or 0)
+	return math.max(reagents + basket, MK.CanOpenRecipe(r) and buttons or 0)
 end
 
 -- Draws the opened part of a recipe row into the list's content frame (reused between rows; the shell's
@@ -724,6 +725,43 @@ function MK.DrawOpen(content, r, opts, ctx)
 	end
 	o:SetShown(MK.CanOpenRecipe(r))
 	content.openRecipe = o
+	if opts.basket then
+		MK.DrawBasketRow(content, pool, r, ctx, y + Lines(#content.reagentLines, ctx) * MK.REAGENT_HEIGHT - 8 + 8)
+	end
+end
+
+----------------------------------------------------------------------------------------------------
+-- Add to basket (#186): "− 3 +" and "Add 3 to basket" under the reagents of an opened Craft row. The count is
+-- kept per recipe for this session; the click adds that many crafts to Make › Basket.
+----------------------------------------------------------------------------------------------------
+
+MK.state.basketCount = {}
+
+function MK.BasketCount(recipeID)
+	return MK.state.basketCount[recipeID] or 1
+end
+
+function MK.DrawBasketRow(content, pool, r, ctx, top)
+	local id = r.recipeID
+	local n = MK.BasketCount(id)
+	local minus = pool:Button("−", function()
+		MK.state.basketCount[id] = math.max(1, MK.BasketCount(id) - 1)
+		M.Refresh()
+	end, { L["One craft less"] }, MK.BUTTON_HEIGHT)
+	minus:SetSize(28, MK.BUTTON_HEIGHT)
+	minus:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
+	local plus = pool:Button("+", function()
+		MK.state.basketCount[id] = math.min(ns.Basket.MAX_COUNT, MK.BasketCount(id) + 1)
+		M.Refresh()
+	end, { L["One craft more"] }, MK.BUTTON_HEIGHT)
+	plus:SetSize(28, MK.BUTTON_HEIGHT)
+	plus:SetPoint("LEFT", minus, "RIGHT", 6, 0)
+	local inBasket = ns.Basket.Find(id)
+	local add = pool:Button((L["Add %d to basket"]):format(n) .. (inBasket and (" · " .. (L["%d in it"]):format(inBasket.count)) or ""), function()
+		ns.Basket.Add(id, ctx.professionID, MK.BasketCount(id))
+	end, { L["Add to basket"], L["Adds these crafts to Make › Basket: what to buy for them, minus your bags."] }, MK.BUTTON_HEIGHT)
+	add:SetPoint("LEFT", plus, "RIGHT", 6, 0)
+	content.basketButton = add
 end
 
 ----------------------------------------------------------------------------------------------------

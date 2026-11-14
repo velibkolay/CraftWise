@@ -45,6 +45,8 @@ return {
 		GetMerchantItemID = UI .. "Vanilla/MerchantFrame.lua; " .. GAME .. " (vendor prices recorded)",
 		GetMerchantItemInfo = UI .. "Vanilla/MerchantFrame.lua",
 		GetMerchantNumItems = UI .. "Vanilla/MerchantFrame.lua; " .. GAME,
+		BuyMerchantItem = UI .. "Mainline/MerchantFrame.lua (BuyMerchantItem(itemButton:GetID(), numToPurchase), branch forever); the basket's Buy button (#186)",
+		GetMerchantItemMaxStack = UI .. "Mainline/MerchantFrame.lua (local maxStack = GetMerchantItemMaxStack(self:GetID()), branch forever)",
 		GetNumTrainerServices = UI .. "Mainline/Blizzard_TrainerUI.lua; " .. GAME .. " (trainer fees recorded)",
 		GetTrainerServiceCost = UI .. "Mainline/Blizzard_TrainerUI.lua; " .. GAME,
 		GetTrainerServiceInfo = UI .. "Mainline/Blizzard_TrainerUI.lua; " .. GAME,
