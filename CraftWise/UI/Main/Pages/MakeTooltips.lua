@@ -206,6 +206,33 @@ local function AddMarketSection(r)
 	end
 end
 
+-- Vendor check (#185): per reagent the AH and vendor unit prices and the one the cost used, then the
+-- vendor sale and profit, and the loop when it holds. Pure data comes from Profit.VendorCheck.
+function MK.AddVendorCheck(r)
+	GameTooltip:AddLine(" ")
+	Heading("Vendor check", r.vendorLoop and (GOOD .. "loop|r") or nil)
+	for _, line in ipairs(r.reagents or {}) do
+		local ah = line.ahUnit and Money(line.ahUnit) or Muted("no AH price")
+		local vendor = line.vendorBuy and Money(line.vendorBuy) or Muted("not sold by a vendor")
+		local used = line.source == "vendor" and "vendor" or line.source == "auction" and "AH"
+			or line.source == "paid" and "paid cost" or line.source == "crafted" and "crafted" or "none"
+		GameTooltip:AddDoubleLine(("%d × %s"):format(line.quantity, ItemName(line.itemID)),
+			("AH %s · vendor %s · used: %s"):format(ah, vendor, used), 1, 1, 1, 1, 1, 1)
+	end
+	if r.vendorSale then
+		GameTooltip:AddDoubleLine("Vendor sale", Money(r.vendorSale), 0.8, 0.8, 0.8, 1, 1, 1)
+	else
+		GameTooltip:AddDoubleLine("Vendor sale", Muted("vendors don't buy it / price not known"), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if r.vendorProfit then
+		GameTooltip:AddDoubleLine("Vendor profit (sale - reagents as used)", (r.vendorProfit < 0 and BAD .. "-" or GOOD .. "+")
+			.. Money(math.abs(r.vendorProfit)) .. "|r", 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if r.vendorCost then
+		GameTooltip:AddDoubleLine("Reagents all at vendors", Money(r.vendorCost), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+end
+
 local function CraftWiseHeader()
 	GameTooltip:AddLine(("|T%s:12|t %sCraftWise|r"):format(Style.Media.keyW, Style.Hex("keyGold")))
 end
@@ -282,6 +309,9 @@ function MK.ShowRecipeTooltip(owner, r, view)
 		end
 	end
 	AddBalance(r)
+	if r.vendorView or r.vendorLoop then
+		MK.AddVendorCheck(r)
+	end
 	if r.outputItemID then
 		GameTooltip:AddLine(" ")
 		Heading("Sells for", SellText(r))

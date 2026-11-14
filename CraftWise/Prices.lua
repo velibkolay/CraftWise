@@ -253,6 +253,20 @@ function ns.GetBuyPrice(itemID)
 	return nil
 end
 
+-- The price functions Profit.VendorCheck reads (#185).
+ns.VendorCheckPrices = {
+	buy = function(itemID)
+		return ns.GetVendorBuyPrice(itemID)
+	end,
+	sell = function(itemID)
+		return ns.GetVendorSellPrice(itemID)
+	end,
+	auction = function(itemID)
+		local q = ns.AuctionQuote(itemID)
+		return q and q.copper or nil
+	end,
+}
+
 -- Reagent cost basis per view (#47): "ah" (the cheapest of vendor and AH, as above) or "paid" (what
 -- you paid for the units you hold, from the ledger #46; per reagent the AH basis when there is none).
 ns.COST_BASIS_VIEWS = { "profit", "learn", "level", "upgrades" }

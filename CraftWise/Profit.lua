@@ -170,6 +170,47 @@ function Profit.Evaluate(recipe, prices)
 	return result
 end
 
+-- Vendor check (#185): `result` is Profit.Evaluate's result for `recipe`; vendor = {
+--   buy = fn(itemID) -> copper | nil   (vendor buy price of one unit),
+--   sell = fn(itemID) -> copper | nil  (vendor sell price of one unit; 0 or nil = no value),
+--   auction = fn(itemID) -> copper | nil (optional: AH unit price, only to show next to the vendor's) }.
+-- Adds to result and to each reagent line (nothing is ever guessed, a missing price is nil):
+--   vendorSale    product vendor sell price x output quantity (nil: no output, or no price)
+--   vendorProfit  vendorSale - result.cost (reagents each where cheaper, as today); nil when either is missing
+--   vendorCost    reagents at vendor buy prices x quantities; nil unless every reagent has one
+--   vendorLoop    true when vendorCost and vendorSale exist and vendorSale - vendorCost > 0: buy, craft, sell,
+--                 no AH involved
+--   line.vendorBuy, line.ahUnit   the two unit prices per reagent, for the breakdown
+function Profit.VendorCheck(result, recipe, vendor)
+	local cost, all = 0, #(result.reagents or {}) > 0
+	for _, line in ipairs(result.reagents or {}) do
+		local buy = vendor.buy(line.itemID)
+		line.vendorBuy = buy and buy > 0 and buy or nil
+		line.ahUnit = vendor.auction and vendor.auction(line.itemID) or nil
+		if line.vendorBuy then
+			cost = cost + line.vendorBuy * line.quantity
+		else
+			all = false
+		end
+	end
+	result.vendorCost = all and cost or nil
+	result.vendorSale, result.vendorProfit, result.vendorLoop = nil, nil, nil
+	local out = recipe.output
+	if out and out.quantity and out.quantity > 0 then
+		local sell = vendor.sell(out.itemID)
+		if sell and sell > 0 then
+			result.vendorSale = sell * out.quantity
+		end
+	end
+	if result.vendorSale and result.costComplete then
+		result.vendorProfit = result.vendorSale - result.cost
+	end
+	if result.vendorSale and result.vendorCost and result.vendorSale - result.vendorCost > 0 then
+		result.vendorLoop = true
+	end
+	return result
+end
+
 -- Sort comparator factory. Rows without the key sort last regardless of direction.
 function Profit.Comparator(key, desc)
 	return function(a, b)

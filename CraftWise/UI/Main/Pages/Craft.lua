@@ -47,6 +47,9 @@ function CraftPage.Caption(r, ctx)
 	elseif r.sellsFor then
 		local tag = MK.SaleTag(r.sellSource, r.cutUnverified)
 		sells = MK.PlainMoney(r.sellsFor) .. (tag and (" " .. tag) or "")
+		if r.vendorLoop then
+			sells = sells .. " · " .. L["loop"] -- every reagent from a vendor, product to a vendor (#185)
+		end
 		if r.sellSource == "auction" then
 			sells = sells .. MK.StaleAge(ctx)
 		end
@@ -83,7 +86,7 @@ local SORT_NOTES = { profit = L["by profit"], name = L["by name"] }
 -- "short N <reagent>", profit; the rail runs cost (grey) then profit (white) along the sale price.
 function CraftPage.Hero(rows, ctx)
 	local h, why = ns.HeroCards.BestCraft(rows, { professionID = ctx.professionID })
-	local label = L["Best craft right now"]
+	local label = ctx.vendorCheck and L["Best vendor craft right now"] or L["Best craft right now"]
 	if not h then
 		return MK.NoHero(label, why)
 	end
@@ -155,6 +158,7 @@ end
 function CraftPage.Model(ctx)
 	local s = ns.db.settings
 	local rows, hidden = MK.CraftRows(ctx.professionID, s)
+	ctx.vendorCheck = s.vendorCheck and true or false
 	local values = {}
 	for i, r in ipairs(rows) do
 		CraftPage.View(r, ctx)
@@ -170,7 +174,9 @@ function CraftPage.Model(ctx)
 	if uncut > 0 then
 		right[#right + 1] = (L["%d sell where the AH cut is unverified"]):format(uncut)
 	end
-	if hidden > 0 then
+	if s.vendorCheck then
+		right[#right + 1] = (L["%d hidden: no vendor profit"]):format(hidden)
+	elseif hidden > 0 then
 		right[#right + 1] = (L["%d hidden: no price"]):format(hidden)
 	end
 	return {
@@ -178,8 +184,10 @@ function CraftPage.Model(ctx)
 		hero = CraftPage.Hero(rows, ctx),
 		listTitle = #rows == 1 and L["1 recipe"] or (L["%d recipes"]):format(#rows),
 		listNote = MK.SortNote(M.Page("craft"), SORT_NOTES),
-		empty = L["No recipes match. Clear the filter or turn on Unlearned."],
-		footer = L["Prices"] .. ": " .. MK.PriceBasisText() .. " · " .. MK.BasisNote("profit", rows),
+		empty = s.vendorCheck and L["No craft earns when sold to a vendor. Clear the filter, turn on Unlearned or turn off Vendor check."]
+			or L["No recipes match. Clear the filter or turn on Unlearned."],
+		footer = (s.vendorCheck and (L["Vendor check: sells to a vendor, profit = vendor price - reagents; loop = every reagent from a vendor"] .. " · ") or "")
+			.. L["Prices"] .. ": " .. MK.PriceBasisText() .. " · " .. MK.BasisNote("profit", rows),
 		footerRight = table.concat(right, " · "),
 	}
 end
@@ -199,6 +207,7 @@ M.RegisterPage({
 		slot.chips = {
 			MK.SettingChip(slot, L["Unlearned"], "includeUnlearned", L["Also list recipes you don't know yet."]),
 			MK.SettingChip(slot, L["Hide unpriced"], "hideUnpriced", L["Leave out recipes without a profit; the footer counts them."]),
+			MK.SettingChip(slot, L["Vendor check"], "vendorCheck", L["Sell the product to a vendor: list the crafts that earn that way, best first. Loop = all reagents from vendors too."]),
 		}
 		MK.LayoutChips(slot, slot.chips)
 	end,
