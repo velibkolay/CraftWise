@@ -211,6 +211,40 @@ function Profit.VendorCheck(result, recipe, vendor)
 	return result
 end
 
+-- Return on the gold put in (#197): profit / cost x 100. nil unless both are known and the cost is above
+-- zero (a free craft has no ratio), so such rows can go last.
+function Profit.Percent(profit, cost)
+	if profit == nil or cost == nil or cost <= 0 then
+		return nil
+	end
+	return profit / cost * 100
+end
+
+-- Comparator for rows { pct, profit, name }: highest % first (desc) or lowest first; rows without a % last
+-- either way (among themselves by profit, desc, then name); equal % by absolute profit, then name.
+function Profit.ByPercent(desc)
+	return function(a, b)
+		local pa, pb = a.pct, b.pct
+		if (pa == nil) ~= (pb == nil) then
+			return pa ~= nil
+		end
+		if pa ~= nil and pa ~= pb then
+			if desc then
+				return pa > pb
+			end
+			return pa < pb
+		end
+		local fa, fb = a.profit, b.profit
+		if (fa == nil) ~= (fb == nil) then
+			return fa ~= nil
+		end
+		if fa ~= nil and fa ~= fb then
+			return fa > fb
+		end
+		return tostring(a.name or "") < tostring(b.name or "")
+	end
+end
+
 -- Sort comparator factory. Rows without the key sort last regardless of direction.
 function Profit.Comparator(key, desc)
 	return function(a, b)

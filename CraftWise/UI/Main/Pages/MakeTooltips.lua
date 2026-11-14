@@ -206,6 +206,32 @@ local function AddMarketSection(r)
 	end
 end
 
+-- Return on the cost (#197) and how the product moved: "disappeared" is measured at the profit house over
+-- 7 days (sold or expired, never "sold"); without a record the tooltip says so, nothing is guessed.
+function MK.AddReturn(r)
+	if r.pct == nil then
+		return
+	end
+	GameTooltip:AddLine(" ")
+	Heading("Return", MK.PercentText(r.pct))
+	Note("  profit / cost to craft = " .. Money(r.profit) .. " / " .. Money(r.cost), true)
+	local Mk = ns.Market
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	if not (r.outputItemID and Mk and Mk.IsLastOnlyAt and house) then
+		return
+	end
+	if Mk.IsLastOnlyAt(r.outputItemID, house) == nil then
+		Note("  No market history for the product at this house: movement unknown.", true)
+		return
+	end
+	local gone = Mk.Disappeared(r.outputItemID, house)
+	if gone > 0 then
+		Note(("  %d units disappeared in 7 days at prices up to the typical (sold or expired)."):format(gone), true)
+	else
+		Note("  No units seen disappearing in 7 days.", true)
+	end
+end
+
 -- Vendor check (#185): per reagent the AH and vendor unit prices and the one the cost used, then the
 -- vendor sale and profit, and the loop when it holds. Pure data comes from Profit.VendorCheck.
 function MK.AddVendorCheck(r)
@@ -354,6 +380,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 			Warn("The AH cut at this house isn't measured yet, so no profit is shown (it is never assumed).", true)
 		end
 	end
+	MK.AddReturn(r)
 	AddMarketSection(r)
 	if r.oldestAge and r.oldestAge > 1 then
 		Warn(("Oldest price is %d days old."):format(r.oldestAge))

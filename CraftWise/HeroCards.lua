@@ -57,7 +57,7 @@ function Hero.BestCraft(rows, opts)
 	if not rows or #rows == 0 then
 		return nil, "no recipes yet"
 	end
-	local known, best, priced = 0, nil, 0
+	local known, best, priced, bestPct = 0, nil, 0, nil
 	for _, r in ipairs(rows) do
 		if r.status == "known" then
 			known = known + 1
@@ -66,8 +66,14 @@ function Hero.BestCraft(rows, opts)
 				if not best or r.profit > best.profit or (r.profit == best.profit and ByName(r, best)) then
 					best = r
 				end
+				if r.pct ~= nil and (not bestPct or ns.Profit.ByPercent(true)(r, bestPct)) then
+					bestPct = r
+				end
 			end
 		end
+	end
+	if opts.sort == "pct" and bestPct then
+		best = bestPct -- the list is sorted by profit %: the card follows it (#197)
 	end
 	if known == 0 then
 		return nil, "no known recipe"
@@ -88,7 +94,7 @@ function Hero.BestCraft(rows, opts)
 		recipeID = best.recipeID, name = best.name, icon = best.icon,
 		outputItemID = best.outputItemID, outputQuantity = best.outputQuantity,
 		color = best.skillColor,
-		profit = best.profit, cost = best.cost, sale = best.sellsFor,
+		profit = best.profit, cost = best.cost, sale = best.sellsFor, pct = best.pct,
 		sellSource = best.sellSource, sellLabel = best.sellLabel, thin = best.thin, oldestAge = best.oldestAge,
 		chance = chance, chanceKind = kind, chanceEstimate = estimate or false,
 		short = short, candidates = priced,

@@ -144,11 +144,11 @@ it("Craft rows: icon, name in its skill colour, rail of profit (zero at 18 %), c
 	eq(bracers.view.tips.profit[1], "No sale price")
 	-- the cell's own tip on hover
 	local _, bf = Row(ns, "craft", R_BRACERS)
-	local hit = bf.hits[5]
+	local hit = bf.hits[6]
 	hit.scripts.OnEnter(hit)
 	eq(CraftWiseInverseTip.title.text, "No sale price")
 	hit.scripts.OnLeave(hit)
-	eq(list.headers[2].label.text, "Recipe"); eq(list.headers[5].col.key, "profit")
+	eq(list.headers[2].label.text, "Recipe"); eq(list.headers[5].col.key, "pct"); eq(list.headers[6].col.key, "profit")
 	-- the row data keeps what the docked layout needs: name over rail, result right, sub-figure under it
 	for _, r in ipairs(Make.Rows(ns, "craft")) do
 		assert(r.view.name and r.view.result and r.view.sub and r.view.nameColor and r.view.resultColor, r.name)
@@ -162,7 +162,7 @@ it("Craft hero: best profit among known priced recipes, colour word, skill-up ch
 	local f = M.Frame()
 	eq(f.hero.shown, true)
 	eq(f.hero.label.text, "Best craft right now"); eq(f.hero.name.text, "Test Belt")
-	eq(Plain(f.hero.sub.text), "Yellow · skill-up ~83% · short 1 Testhide +1 more")
+	eq(Plain(f.hero.sub.text), "Yellow · skill-up ~83% · short 1 Testhide +1 more · 375%")
 	eq(f.hero.figure.text, "+" .. ns.FormatCoins(150))
 	local slot = M.SlotsOf("craft").hero
 	local width = 880 - 44 - 32 - 240 - 170 - 48
@@ -520,13 +520,13 @@ it("States: Scanning: rows keep their prices, missing figures are skeleton bars"
 	Make.Open(ns, "craft", PROF)
 	local _, bracers = Row(ns, "craft", R_BRACERS)
 	local _, belt = Row(ns, "craft", R_BELT)
-	eq(bracers.cwSkeleton.shown, true); eq(bracers.cells[5].text, "")
+	eq(bracers.cwSkeleton.shown, true); eq(bracers.cells[6].text, "")
 	eq(belt.cwSkeleton == nil or belt.cwSkeleton.shown == false, true, "a priced row keeps its figure")
-	eq(belt.cells[5].text, "+" .. ns.FormatCoins(150))
+	eq(belt.cells[6].text, "+" .. ns.FormatCoins(150))
 	ns.Market.ScanProgress = function() return nil end
 	M.Refresh()
 	_, bracers = Row(ns, "craft", R_BRACERS)
-	eq(bracers.cwSkeleton.shown, false); eq(bracers.cells[5].text, "—")
+	eq(bracers.cwSkeleton.shown, false); eq(bracers.cells[6].text, "—")
 end)
 
 it("States: a Make model that raises shows Error; the other Make pages still work", function()
@@ -734,4 +734,50 @@ it("Craft › Disenchant check: expected disenchant value - reagents for disench
 	local all = Make.CaptureTooltip(function() Make.Hover(ns, "craft", R_BELT) end)
 	assert(all:find("Disenchant check", 1, true) and all:find("measured, 20 disenchants", 1, true), all)
 	assert(all:find("Expected value", 1, true) and all:find("Profit (value - reagents)", 1, true), all)
+end)
+
+it("Craft tooltip: the % with its basis, and the product's movement as a measured hint or 'no history' (#197)", function()
+	local ns = Load()
+	Make.Open(ns, "craft", PROF, false)
+	local text = Make.CaptureTooltip(function() assert(Make.Hover(ns, "craft", R_BELT)) end)
+	assert(text:find("Return | 375%", 1, true), text)
+	assert(text:find("profit / cost to craft", 1, true), text)
+	assert(text:find("disappearing in 7 days", 1, true) or text:find("units disappeared in 7 days", 1, true)
+		or text:find("No market history", 1, true), text)
+	assert(not text:find("sold in", 1, true), "never a sales speed")
+end)
+
+it("Loops: finds are ordered by profit %, unpriced last; Basket crafts likewise (#197)", function()
+	local ns = Load()
+	local P = ns.Profit
+	local finds = {
+		{ name = "Rich", profit = 5000, pct = P.Percent(5000, 100000) },
+		{ name = "Lean", profit = 1500, pct = P.Percent(1500, 1000) },
+		{ name = "Unknown", profit = 9000 },
+	}
+	ns.Loops.Sort(finds)
+	eq(finds[1].name, "Lean"); eq(finds[2].name, "Rich"); eq(finds[3].name, "Unknown")
+end)
+
+it("Craft: sort by profit % puts the best return first, is remembered, rows without one stay last, the hero follows (#197)", function()
+	local ns, _, M = Load()
+	local list = Make.Open(ns, "craft", PROF, false)
+	local belt, gloves = Row(ns, "craft", R_BELT), Row(ns, "craft", R_GLOVES)
+	eq(belt.pct, 375, "Belt: profit 150 on a cost of 40"); eq(gloves.pct, -37.5, "Gloves lose 15 on 40")
+	eq(Row(ns, "craft", R_BRACERS).pct, nil)
+	local f = M.Frame()
+	eq(list.headers[5].label.text:gsub(" |T.*$", ""), "Return")
+	list.headers[5].scripts.OnClick(list.headers[5])
+	eq(f.listBar.note.text, "by profit %")
+	eq(Make.Names(ns, "craft"), "Test Belt,Test Gloves,Test Bracers", "no price last")
+	eq(f.hero.name.text, "Test Belt")
+	eq(belt.view.cells.pct, "375%"); eq(gloves.view.cells.pct, "-37%"); eq(gloves.view.colors.pct, "danger")
+	-- remembered in the database, and used again after the window is rebuilt
+	eq(ns.db.settings.ui.sort.craft.key, "pct"); eq(ns.db.settings.ui.sort.craft.desc, true)
+	local key, desc = M.Sort(M.Page("craft"))
+	eq(key, "pct"); eq(desc, true)
+	M.state.sort = {}
+	eq((M.Sort(M.Page("craft"))), "pct", "from the database when the session has none")
+	ns.db.settings.ui.sort.craft = { key = "nonsense", desc = true }
+	eq((M.Sort(M.Page("craft"))), "profit", "an unknown saved key is ignored")
 end)

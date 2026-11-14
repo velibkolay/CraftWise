@@ -266,7 +266,7 @@ it("Gather › Fishing (#156): zone list, tooltips, sorting by every header, a z
 	for _, header in ipairs(list.headers) do
 		if header:IsShown() then header.scripts.OnClick(header) end
 	end
-	M.state.sort.fishing = nil
+	M.ResetSort("fishing")
 	M.Refresh()
 	-- Open the zone: the reference side (10 own < 50), the eel first by value per catch.
 	row = list.box.frames[1]

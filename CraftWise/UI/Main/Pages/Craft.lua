@@ -11,7 +11,7 @@ local Style, L = ns.Style, ns.L
 local C = Style.C
 
 local ZERO_AT = 0.18
-local RESULT_COLUMN = 5
+local RESULT_COLUMN = 6
 
 local CraftPage = {}
 M.CraftPage = CraftPage
@@ -26,6 +26,7 @@ local COLUMNS = {
 		return { value = d and d.value, max = ctx.railMax, zeroAt = ZERO_AT }
 	end },
 	MK.Column("cost", L["Cost"] .. " " .. Style.Glyph("arrow", 10, "text3") .. " " .. L["sells"], 150, "RIGHT", "Figure"),
+	MK.Column("pct", L["Return"], 62, "RIGHT", "Figure", true),
 	MK.Column("profit", L["Profit"], 96, "RIGHT", "FigureBold", true),
 }
 CraftPage.COLUMNS = COLUMNS
@@ -79,16 +80,28 @@ function CraftPage.View(r, ctx)
 		view.tips.cost = view.tips.profit
 	end
 	view.cells.profit, view.colors.profit = view.result, view.resultColor
+	view.cells.pct, view.colors.pct = MK.PercentText(r.pct), r.pct and r.pct < 0 and "danger" or "text2"
+	view.tips.pct = { L["Return"], L["Profit divided by the cost to craft."] }
 	view.missing = r.profit == nil and not r.noItemOutput -- a skeleton while scanning (both layouts)
 	return MK.Attach(r, view)
 end
 
-local SORT_NOTES = { profit = L["by profit"], name = L["by name"] }
+local SORT_NOTES = { profit = L["by profit"], pct = L["by profit %"], name = L["by name"] }
+
+-- The list's own order: by % (rows without one last), else the shell's.
+function CraftPage.SortRows(rows, key, desc)
+	if key == "pct" then
+		table.sort(rows, ns.Profit.ByPercent(desc))
+		return rows
+	end
+	table.sort(rows, ns.Profit.Comparator(key, desc))
+	return rows
+end
 
 -- Hero card (spec: best profit among known, priced recipes): name, colour word, skill-up chance,
 -- "short N <reagent>", profit; the rail runs cost (grey) then profit (white) along the sale price.
 function CraftPage.Hero(rows, ctx)
-	local h, why = ns.HeroCards.BestCraft(rows, { professionID = ctx.professionID })
+	local h, why = ns.HeroCards.BestCraft(rows, { professionID = ctx.professionID, sort = (M.Sort(M.Page("craft"))) })
 	local label = ctx.vendorCheck and L["Best vendor craft right now"] or ctx.disenchantCheck and L["Best disenchant craft right now"]
 		or L["Best craft right now"]
 	if not h then
@@ -104,6 +117,9 @@ function CraftPage.Hero(rows, ctx)
 	if short then
 		parts[#parts + 1] = (L["short %d %s"]):format(short.missing, MK.ItemName(short.itemID))
 			.. (#h.short > 1 and (" " .. (L["+%d more"]):format(#h.short - 1)) or "")
+	end
+	if h.pct then
+		parts[#parts + 1] = MK.PercentText(h.pct)
 	end
 	local figure, color = MK.Signed(h.profit)
 	return {
@@ -208,6 +224,7 @@ M.RegisterPage({
 	columns = COLUMNS,
 	rowHeight = 38,
 	sort = { key = "profit", desc = true },
+	SortRows = CraftPage.SortRows,
 	Model = CraftPage.Model,
 	Hero = DrawHero,
 	Tools = MK.BuildTools,

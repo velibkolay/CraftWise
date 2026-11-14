@@ -819,3 +819,13 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - The report now ends its CraftWise section with "CraftWise asked the client to load N items (M more skipped)" and the callers. Every load the client answers is an event that every addon with a `GET_ITEM_INFO_RECEIVED` handler runs; compare N with the event counts (`GET_ITEM_INFO_RECEIVED`, `ITEM_DATA_LOAD_RESULT`) of the same recording.
 - **Hitches from Baganator or Syndicator are outside CraftWise.** If the slowest frames show "CraftWise inside it" at a few ms and the Addons table lists Baganator / Syndicator (or GearQuestForever, ShortestPathForever) with ticks over 50 or 100 ms, the time is in those addons. CraftWise cannot fix it; report it to them, or try bags with only one of them enabled.
 
+
+## Make › Craft: sort by profit % (#197)
+
+- No TOC change; `/reload` is enough.
+- Make › Craft: the new **Return** column (profit / cost to craft) shows next to Profit; click its header to sort. The list bar note reads "by profit %". Check a 1g-cost craft with 10s profit (10 %) sits below a 10s-cost craft with 15s profit (150 %). Rows with no price or a free craft (no cost) stay at the bottom, also when the sort is reversed.
+- The hero card "Best craft right now" follows the chosen sort and shows the % in its line. Switch back to Profit and it returns to the highest absolute profit.
+- `/reload`: the chosen sort is still there (saved in `settings.ui.sort`).
+- Vendor check and Disenchant check: the % uses that mode's profit over the same cost.
+- Hover a craft: **Return** section with the %, then either "N units disappeared in 7 days at prices up to the typical (sold or expired)", "No units seen disappearing in 7 days", or "No market history for the product at this house". It is a measured count from CraftWiseMarketDB, never a speed.
+- Vendor loop toast and Make › Basket: the best return per gold is first (toast text names the top find; the basket lists crafts by %).

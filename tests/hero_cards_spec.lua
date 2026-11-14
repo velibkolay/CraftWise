@@ -147,3 +147,17 @@ it("auction totals: reads the tracker's own summary", function()
 	eq(t.ifAllSell.count, 2); eq(t.ifAllSell.noBuyout, 1); eq(t.returning.units, 5)
 	eq(t.ifAllSell.copper, 190, "200 less the 5% cut")
 end)
+
+it("best craft: sorted by profit %, the card follows the sort and carries the %; without any % it falls back to profit (#197)", function()
+	local ns = Load()
+	local rows = {
+		{ recipeID = 1, name = "Alpha", status = "known", profit = 1000, cost = 10000, pct = 10, reagents = {} },
+		{ recipeID = 2, name = "Beta", status = "known", profit = 1500, cost = 1000, pct = 150, reagents = {} },
+		{ recipeID = 3, name = "Free", status = "known", profit = 9000, cost = 0, reagents = {} },
+	}
+	eq(ns.HeroCards.BestCraft(rows, {}).recipeID, 3, "by profit")
+	local h = ns.HeroCards.BestCraft(rows, { sort = "pct" })
+	eq(h.recipeID, 2); eq(h.pct, 150)
+	rows[1].pct, rows[2].pct = nil, nil
+	eq(ns.HeroCards.BestCraft(rows, { sort = "pct" }).recipeID, 3, "no % anywhere: by profit")
+end)

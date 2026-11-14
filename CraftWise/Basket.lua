@@ -180,13 +180,28 @@ function Basket.Plan()
 	for _, e in ipairs(Entries()) do
 		local row = RowOf(e, cache)
 		if row then
-			plan.crafts[#plan.crafts + 1] = { entry = e, row = row, count = e.count }
+			plan.crafts[#plan.crafts + 1] = { entry = e, row = row, count = e.count,
+				pct = row.costComplete and ns.Profit.Percent(row.vendorProfit, row.cost) or nil }
 			items[#items + 1] = { reagents = row.reagents, count = e.count }
 			expected[#expected + 1] = { count = e.count, vendorSale = row.vendorSale, vendorProfit = row.vendorProfit }
 		else
 			plan.missing[#plan.missing + 1] = e
 		end
 	end
+	-- Best return per gold first (#197); the sort is stable on the entry order for equal rows.
+	for i, c in ipairs(plan.crafts) do
+		c.i = i
+	end
+	local cmp = ns.Profit.ByPercent(true)
+	table.sort(plan.crafts, function(a, b)
+		local x, y = { pct = a.pct, profit = a.row.vendorProfit, name = a.row.name }, { pct = b.pct, profit = b.row.vendorProfit, name = b.row.name }
+		if cmp(x, y) then
+			return true
+		elseif cmp(y, x) then
+			return false
+		end
+		return a.i < b.i
+	end)
 	plan.need = Basket.Combine(items)
 	if #plan.need > 0 then
 		plan.balance = ns.ReagentBalance(plan.need, 1)
