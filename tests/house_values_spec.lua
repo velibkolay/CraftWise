@@ -209,6 +209,7 @@ end)
 
 it("disenchant value prices each material at the profit house after its cut", function()
 	local ns, stub = Load({ auctionator = true })
+	stub.items[1] = { name = "Green Hat", classID = 4, level = 20, quality = 2 }
 	ns.DisenchantData = { Lookup = function() return { { itemID = 7, chance = 0.5, quantity = 2 }, { itemID = 8, chance = 1, quantity = 1 } } end }
 	Seed(7, HORDE, { typs = { 100, 100, 100 }, tiers = { 60, 10 }, total = 10 })
 	stub.ah[8] = 40
@@ -226,7 +227,7 @@ it("disenchant value prices each material at the profit house after its cut", fu
 	stub.DisableAuctionator()
 	eq(ns.DisenchantValue(1, 2), nil, "a material without a price")
 	-- Through the Bags view.
-	stub.items[10] = { name = "Green Sword", sellPrice = 1 }
+	stub.items[10] = { name = "Green Sword", sellPrice = 1, classID = 2, level = 20, quality = 2 }
 	stub.itemClass[10] = 2
 	Bags(stub, { { itemID = 10, stackCount = 1, quality = 2 } })
 	stub.EnableAuctionator()

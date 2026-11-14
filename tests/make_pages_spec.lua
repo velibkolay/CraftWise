@@ -692,3 +692,46 @@ it("Basket: Buy needs an open merchant that sells the item for gold alone, one a
 	stub.Fire("MERCHANT_CLOSED")
 	eq(B.MerchantOpen(), false)
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Disenchant check (#190)
+----------------------------------------------------------------------------------------------------
+
+it("Craft › Disenchant check: expected disenchant value - reagents for disenchantable products, source in the caption, tooltip lines", function()
+	local ns, stub, M = Load()
+	local DUST = 10940
+	GetBuildInfo = function() return "1.60.1", "70938" end
+	assert(loadfile("CraftWise/Data/DisenchantGuide.lua"))("CraftWise", ns)
+	stub.items[BELT].classID, stub.items[BELT].level, stub.items[BELT].quality = 4, 20, 2
+	stub.items[GLOVES].classID, stub.items[GLOVES].level, stub.items[GLOVES].quality = 4, 18, 2
+	Seed(DUST, 50)
+	-- 20 disenchants of the belt gave 2 dust each
+	DisenchantryDB = { disenchantSamples = { ["1.60.1:70938:" .. BELT .. ":2:20:4:normal"] = { count = 20,
+		materials = { [DUST] = { total = 40, hits = 20, min = 2, max = 2 } } } } }
+	Make.Open(ns, "craft", PROF)
+	local chips = M.SlotsOf("craft").listTools.chips
+	eq(chips[4].label.text, "Disenchant check"); eq(chips[4].on, false)
+	chips[4].scripts.OnClick(chips[4])
+	eq(ns.db.settings.disenchantCheck, true); eq(chips[4].on, true)
+	-- Belt: 2 dust x 47.5 = 95, reagents 40: +55
+	local belt = Row(ns, "craft", R_BELT)
+	eq(belt.sellSource, "disenchant"); eq(belt.sellsFor, 95); eq(belt.profit, 55)
+	local sub = Plain(belt.view.sub)
+	assert(sub:find("disenchant · 20 samples", 1, true), sub)
+	eq(M.Frame().hero.label.text, "Best disenchant craft right now")
+	-- the gloves (item level 18, same bracket and kind) have no records of their own: pooled from the belt's
+	local g = Row(ns, "craft", R_GLOVES)
+	eq(g.deDetails.source, "pooled"); eq(g.profit, 55)
+	assert(Plain(g.view.sub):find("disenchant · pooled 20", 1, true), Plain(g.view.sub))
+	-- Bracers (no item with a sell price) and the rest aren't armour or weapon here: left out
+	eq(Make.Names(ns, "craft"), "Test Belt,Test Gloves")
+	-- Vendor check and Disenchant check exclude each other
+	chips[3].scripts.OnClick(chips[3])
+	eq(ns.db.settings.vendorCheck, true); eq(ns.db.settings.disenchantCheck, false)
+	chips[4].scripts.OnClick(chips[4])
+	eq(ns.db.settings.vendorCheck, false); eq(ns.db.settings.disenchantCheck, true)
+	-- the tooltip: materials, value, profit and the source
+	local all = Make.CaptureTooltip(function() Make.Hover(ns, "craft", R_BELT) end)
+	assert(all:find("Disenchant check", 1, true) and all:find("measured, 20 disenchants", 1, true), all)
+	assert(all:find("Expected value", 1, true) and all:find("Profit (value - reagents)", 1, true), all)
+end)

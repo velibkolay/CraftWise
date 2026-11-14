@@ -5,7 +5,7 @@
 ## X-License: GPL-3.0
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\CraftWise\Media\cw-key-w
-## OptionalDeps: Auctionator
+## OptionalDeps: Auctionator, Disenchantry
 ## AddonCompartmentFunc: CraftWise_OnAddonCompartmentClick
 ## SavedVariables: CraftWiseDB, CraftWiseMarketDB
 ## SavedVariablesPerCharacter: CraftWiseCharDB
@@ -16,6 +16,7 @@ Data\Recipes.lua
 UsedIn.lua
 Tooltip.lua
 Data\Vendor.lua
+Data\DisenchantGuide.lua
 Data\Sources.lua
 Data\Thresholds.lua
 Money.lua
@@ -40,6 +41,7 @@ Holdings.lua
 Balance.lua
 Loops.lua
 Basket.lua
+Disenchant.lua
 BagSort.lua
 Junk.lua
 BagIcons.lua

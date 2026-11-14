@@ -787,3 +787,13 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - With Auctionator: the Auctionator list chip creates/replaces the shopping list "CraftWise basket" (check it in Auctionator\x27s Shopping tab: exact names with quantities). Without Auctionator: an AH line opens to a search string to copy.
 - Open a merchant that sells a vendor line (plain gold, sold one at a time): open the line, Buy N is enabled; one click buys exactly that quantity (more than a stack = several BuyMerchantItem calls in that click, check the bags). Sold in lots, with a currency cost, sold out, or not enough gold: the button stays off and says why. Closing the merchant disables it. Nothing is bought without the click.
 - Item menu: Open basket opens Make › Basket. Clear basket empties it.
+
+### Disenchant values and Disenchant check (#190)
+
+- **TOC changed (OptionalDeps: Disenchantry, new Data/DisenchantGuide.lua and Disenchant.lua): restart the game completely.**
+- Without Disenchantry, or before any disenchant: Make › Craft › Disenchant check lists crafts of uncommon or better armour and weapons with the sale tag "disenchant · guide"; the tooltip says "Classic table (guide)" and "not measured on Forever". Settings › Disenchant says the guide is used.
+- With Disenchantry loaded: disenchant an uncommon or better armour or weapon (Enchanting open), `/reload`. The same item now shows "disenchant · N samples" (or "few samples" below Settings › Disenchant › Few samples below), the tooltip lists the materials with chance, quantity, unit price and "measured, N disenchants". Another item of the same quality, type and item-level bracket shows "pooled N".
+- Check the sample key in `WTF/Account/<account>/SavedVariables/Disenchantry.lua` (`disenchantSamples`): `<version>:<build>:<itemID>:<quality>:<baseItemLevel>:<classID>:<normal|salvager>`; CraftWise reads it as is and never writes it. After a client patch (new build) the old samples are ignored until new ones exist.
+- With the Arcane Salvager buff (1283701) active the tooltip says so and only salvager samples count; without the buff the normal ones. Without salvager samples the guide answers.
+- Sell › Bags: a disenchantable item with a value shows in the Disenchant group when that pays most; its value matches the Craft tooltip per item. Vendor check and Disenchant check cannot both be on (turning one on turns the other off).
+- Enchanter wands (Lesser Magic Wand etc.) get no value.

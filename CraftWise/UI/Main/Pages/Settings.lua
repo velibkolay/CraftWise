@@ -396,6 +396,27 @@ local function Groups()
 			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
 	} }
 
+	groups[#groups + 1] = { key = "disenchant", label = L["Disenchant"], rows = {
+		{ key = "source", kind = "text", label = L["Values from"], text = function()
+			if ns.Disenchant.Samples() then
+				return L["Measured: Disenchantry's records of your disenchants, then pooled records of the same kind of item, then the Classic table (guide)."]
+			end
+			return L["Disenchantry's records aren't loaded: the Classic table (guide) is used. Install Disenchantry and disenchant to get measured values."]
+		end },
+		{ key = "minSamples", kind = "stepper", label = L["Few samples below"],
+			sub = L["Values from fewer disenchants than this are marked \"few samples\"."],
+			get = function() return ns.Disenchant.MinSamples() end,
+			down = function()
+				S().disenchantMinSamples = math.max(1, ns.Disenchant.MinSamples() - 1)
+				Changed("BAGS_CHANGED")
+			end,
+			up = function()
+				S().disenchantMinSamples = math.min(1000, ns.Disenchant.MinSamples() + 1)
+				Changed("BAGS_CHANGED")
+			end,
+			format = function(v) return tostring(v) end },
+	} }
+
 	groups[#groups + 1] = { key = "farm", label = L["Farm tracker"], rows = {
 		{ key = "on", kind = "check", label = L["Farm tracker"], text = L["On"],
 			get = function() return F.Enabled() end, set = function(v) F.Slash(v and "on" or "off") end },
