@@ -9,8 +9,13 @@
 --   per day with the nokta on the latest point (Line objects; seven 4 unit day bars where the client has
 --   no CreateLine); Used in (UsedIn); Where to buy (Merchant), vendor sell price, your last purchase.
 --   Outside the market scope only the latest price is kept: "latest only" and no chart.
--- Prices are the profit house's (Settings › Prices). The item menu's Where to buy and Price history open
--- this page on the item: ns.ShowItemLookup(itemID, "where" | "history").
+-- Prices are the profit house's (Settings › Prices). The item menu's Where to buy opens this page on the
+-- item: ns.ShowItemLookup(itemID, "where" | "history"). Price history buttons show the site address instead
+-- (ns.ShowPriceHistory, UI/ItemMenu.lua, #202); "history" here is the focus of /craftwise market.
+-- Cost on open (#202): nothing walks all the market data per refresh. The recorded-key index lives in
+-- Market.lua, the sorted "Your recipes" list and the search names are cached here (Cache) while
+-- Market.DataVersion() stays the same, and a list row is priced when the scroll box first reads it
+-- (LazyRow). The page's Refresh is a timed hook ("Look up › Items: Refresh") in Settings › Debug.
 --
 -- Watched hook for #165: ns.ItemWatch = { List() -> itemIDs, IsWatched(itemID) -> bool, Toggle(itemID) }.
 -- Until it exists neither the chip nor the card's toggle shows.
@@ -162,6 +167,64 @@ local function Cap(ids)
 	return ids, more
 end
 
+-- Caches (#202). The market data holds thousands of items, so nothing that walks all of them runs on
+-- every refresh: the sorted list behind the "Your recipes" chip and the lower-case names a search reads
+-- are built once and kept while Market.DataVersion() (keys, scope, stored names) stays the same.
+-- Items.cacheBuilds counts the builds, for the specs.
+Items.cacheBuilds = 0
+local cache = {}
+local function Cache()
+	local v = ns.Market.DataVersion()
+	if cache.version ~= v then
+		cache = { version = v }
+		Items.cacheBuilds = Items.cacheBuilds + 1
+	end
+	return cache
+end
+
+-- Name used to order and search the whole market data: the stored one (a table read), never a client call.
+local function StoredLower(itemID)
+	return (ns.Market.StoredName(itemID) or ""):lower()
+end
+
+-- A search looks at the client's name of at most this many recorded items without a stored name.
+Items.UNNAMED_MAX = 300
+
+-- Recorded items whose lower-case stored name contains `lower`, then (up to Items.UNNAMED_MAX of the
+-- items without a stored name) those the client names so. Returns ids and the matched set.
+local function FindRecorded(lower)
+	local c = Cache()
+	if not c.lowerNames then
+		local names, unnamed = {}, {}
+		for itemID in pairs(ns.Market.RecordedItemIDs()) do
+			local name = StoredLower(itemID)
+			if name == "" then
+				unnamed[#unnamed + 1] = itemID
+			else
+				names[itemID] = name
+			end
+		end
+		table.sort(unnamed)
+		c.lowerNames, c.unnamed = names, unnamed
+	end
+	local ids, seen = {}, {}
+	for itemID, name in pairs(c.lowerNames) do
+		if name:find(lower, 1, true) then
+			seen[itemID] = true
+			ids[#ids + 1] = itemID
+		end
+	end
+	for i = 1, math.min(#c.unnamed, Items.UNNAMED_MAX) do
+		local itemID = c.unnamed[i]
+		local name = Items.Name(itemID)
+		if name and name:lower():find(lower, 1, true) then
+			seen[itemID] = true
+			ids[#ids + 1] = itemID
+		end
+	end
+	return ids, seen
+end
+
 -- Items a search finds: the item of an ID or link; else recorded items (AH or merchants) whose name
 -- contains the text, exact names first. Returns itemIDs and how many more matched than Items.LIST_MAX.
 function Items.Search(query)
@@ -173,23 +236,17 @@ function Items.Search(query)
 	if wanted then
 		return { wanted }, 0
 	end
-	local lower, seen, ids = query:lower(), {}, {}
-	for itemID in pairs(ns.Market.RecordedItemIDs()) do
-		local name = Items.Name(itemID)
-		if name and name:lower():find(lower, 1, true) then
-			seen[itemID] = true
-			ids[#ids + 1] = itemID
-		end
-	end
+	local lower = query:lower()
+	local ids, seen = FindRecorded(lower)
 	for _, itemID in ipairs((ns.Merchant.FindItems(query))) do
 		if not seen[itemID] then
 			seen[itemID] = true
 			ids[#ids + 1] = itemID
 		end
 	end
-	local names = {}
+	local stored, names = Cache().lowerNames or {}, {}
 	for _, id in ipairs(ids) do
-		names[id] = DisplayName(id):lower()
+		names[id] = stored[id] or DisplayName(id):lower()
 	end
 	table.sort(ids, function(a, b)
 		local ea, eb = names[a] == lower, names[b] == lower
@@ -219,13 +276,30 @@ function Items.ChipItems(chip)
 		end
 		return ids, 0
 	end
-	local ids = {}
-	for itemID in pairs(ns.Market.RecordedItemIDs()) do
-		if ns.Market.InScope(itemID) then
-			ids[#ids + 1] = itemID
+	-- Your recipes: every recorded item in the market scope by name. Sorted once per change of the data
+	-- (by the stored names), then the first Items.LIST_MAX are copied out.
+	local c = Cache()
+	if not c.recipes then
+		local ids, names = {}, {}
+		for itemID in pairs(ns.Market.RecordedItemIDs()) do
+			if ns.Market.InScope(itemID) then
+				ids[#ids + 1] = itemID
+				names[itemID] = StoredLower(itemID)
+			end
 		end
+		table.sort(ids, function(a, b)
+			if names[a] ~= names[b] then
+				return names[a] < names[b]
+			end
+			return a < b
+		end)
+		c.recipes = ids
 	end
-	return Cap(SortByName(ids))
+	local out = {}
+	for i = 1, math.min(#c.recipes, Items.LIST_MAX) do
+		out[i] = c.recipes[i]
+	end
+	return out, math.max(0, #c.recipes - Items.LIST_MAX)
 end
 
 -- The market key used for an item at the profit house: the plain ID, else its first suffix variant.
@@ -329,6 +403,24 @@ function Items.Row(itemID, now)
 	return row
 end
 
+-- A row whose figures are worked out when first read: the list holds up to Items.LIST_MAX rows but the
+-- scroll box draws a dozen, so opening the page prices only those (#202). itemID and key are set at once.
+local LazyRow = {
+	__index = function(row, k)
+		setmetatable(row, nil)
+		local now = row.priceNow
+		row.priceNow = nil
+		for field, v in pairs(Items.Row(row.itemID, now)) do
+			rawset(row, field, v)
+		end
+		return rawget(row, k)
+	end,
+}
+
+function Items.LazyRow(itemID, now)
+	return setmetatable({ key = itemID, itemID = itemID, priceNow = now }, LazyRow)
+end
+
 -- The left list: { rows, empty, more, chips, chip, searching }.
 function Items.ListModel(now)
 	local query = Items.state.query or ""
@@ -342,7 +434,7 @@ function Items.ListModel(now)
 	end
 	local rows = {}
 	for i, id in ipairs(ids) do
-		rows[i] = Items.Row(id, now)
+		rows[i] = Items.LazyRow(id, now)
 	end
 	local empty
 	if searching then
@@ -1221,7 +1313,7 @@ M.RegisterPage({
 		BuildCard(body)
 		body.search = Items.searchBox
 	end,
-	Refresh = function(body, ctx)
+	Refresh = ns.Timed("Look up › Items: Refresh", function(body, ctx)
 		local model = Items.Model()
 		Items.lastModel = model
 		body.search = Items.searchBox
@@ -1247,7 +1339,7 @@ M.RegisterPage({
 		Items.rowNameWidth = nil
 		DrawList(body, model.list)
 		DrawCard(body, model.card, width)
-	end,
+	end),
 })
 
 ----------------------------------------------------------------------------------------------------

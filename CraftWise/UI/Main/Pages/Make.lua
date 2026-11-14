@@ -723,12 +723,12 @@ function MK.DrawOpen(content, r, opts, ctx)
 		hit:SetSize(MK.REAGENT_WIDTH, MK.REAGENT_HEIGHT - 8)
 		content.reagentCells[i] = { head = head, total = total, note = note, hit = hit, x = x, y = top }
 	end
-	-- Price history of the crafted item: Look up › Items on it.
+	-- Price history of the crafted item: the address of its page on the site (#202).
 	local itemID = r.outputItemID
 	local top = ButtonsTop(y)
 	local h = pool:Button(L["Price history"], function()
 		ns.OpenItemLookup(itemID, "history")
-	end, { L["Price history"], L["Auction house prices recorded for the crafted item."] }, MK.BUTTON_HEIGHT)
+	end, { L["Price history"], L["Shows the address of the crafted item's page on the site, with its price history."] }, MK.BUTTON_HEIGHT)
 	local docked = M.IsDocked(ctx)
 	if docked then
 		top = DockedButtonsTop(y, #content.reagentLines, ctx)
