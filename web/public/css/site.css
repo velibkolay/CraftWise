@@ -379,7 +379,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 @keyframes v-hop { from { transform: scale(0); } to { transform: scale(1); } }
 @property --cut { syntax: "<length>"; inherits: false; initial-value: 0px; }
 /* :root raises the rule over the skin's plain `background: none` resets (.pane, .pane .tip) */
-:root[data-skin="velikopter"] :is(.wbtn:not(.dark), .skinswitch .wtab[aria-pressed="true"], .me-pane, .popup, .tip.chart-tip, .cr-tag, .flag, .thin) {
+:root[data-skin="velikopter"] :is(.wbtn:not(.dark), .skinswitch .wtab[aria-pressed="true"], .me-pane, .popup, .tip.chart-tip, .cr-tag, .flag, .thin, .loop) {
 	background:
 		linear-gradient(45deg, var(--flap) 50%, transparent 50%) top right / var(--cut) var(--cut) no-repeat,
 		linear-gradient(225deg, transparent calc(var(--cut) * 0.7071), var(--fill) 0);
@@ -886,6 +886,8 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 .pbtn:hover .mp, .pbtn:hover > .hint { text-decoration: underline; text-underline-offset: 3px; }
 .thin { display: inline-block; padding: 0 4px; font-family: var(--font-ui); font-size: 11px; line-height: 15px; letter-spacing: 0.02em; color: var(--text-3); border: 1px solid currentColor; border-radius: 3px; cursor: help; }
 .pbtn .thin { margin-left: -2px; }
+/* The loop marker (#185, provisional): the thin tag's shape in the accent colour. */
+.loop { display: inline-block; padding: 0 4px; font-family: var(--font-ui); font-size: 11px; line-height: 15px; letter-spacing: 0.02em; color: var(--accent); border: 1px solid currentColor; border-radius: 3px; cursor: help; }
 .chev { flex: none; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid var(--text-3); transition: transform 120ms; }
 .chev.open { transform: rotate(90deg); }
 .tbl tr.detail > td { height: auto; padding-top: 12px; padding-bottom: 16px; white-space: normal; }
@@ -908,7 +910,7 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 [data-skin="classic"] .tbl.bd th { height: 24px; font-size: 13px; }
 [data-skin="velikopter"] .tbl tbody tr.detail > td, [data-skin="velikopter"] .tbl tbody tr.detail:hover > td { background: var(--surface-2); }
 [data-skin="velikopter"] .tbl.bd { border-top: 0; }
-[data-skin="velikopter"] .thin { --fill: var(--tag-fill); --flap: var(--tag-flap); --cut: var(--cut-s); padding: 0 8px 0 5px; border: 0; border-radius: 0; }
+[data-skin="velikopter"] :is(.thin, .loop) { --fill: var(--tag-fill); --flap: var(--tag-flap); --cut: var(--cut-s); padding: 0 8px 0 5px; border: 0; border-radius: 0; }
 /* the Velikopter rows are wider (padded money, more padding): a little less padding on recipe lists */
 [data-skin="velikopter"] .tbl.list.recipes th, [data-skin="velikopter"] .tbl.list.recipes td { padding-left: 10px; padding-right: 10px; }
 [data-skin="velikopter"] .tbl.list.recipes th:first-child, [data-skin="velikopter"] .tbl.list.recipes td:first-child { padding-left: 24px; }

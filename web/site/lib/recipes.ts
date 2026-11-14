@@ -184,6 +184,30 @@ export interface Craft {
 	vendorFloor: number | null; // then: what a vendor pays for one unit, when vendors buy it
 	worst: number | null; // then: vendor floor x output quantity - reagent cost (the profit at worst)
 	thin: boolean; // the product's price rests on a thin market (isThin)
+	vendor: VendorCheck;
+}
+
+// The vendor check (#185): the product sold to a vendor, whatever the auction house pays.
+export interface VendorCheck {
+	sale: number | null; // vendor sell price x output quantity, rounded down; null when vendors don't buy it or it isn't known
+	profit: number | null; // sale - reagent cost (each reagent where cheaper); null when either is unknown. Needs no AH price for the product.
+	loopCost: number | null; // reagents all bought from vendors; null when one has no vendor buy price
+	loop: boolean; // every reagent has a vendor buy price and sale - loopCost > 0: no auction house supply involved
+}
+
+export function vendorCheck(data: RecipeData, spell: Spell, quotes: Map<number, Quote>, cost: number | null): VendorCheck {
+	let sale: number | null = null;
+	if (spell.output) {
+		const unit = vendorSell(quotes.get(spell.output), data.sell[String(spell.output)]);
+		if (unit !== null) sale = Math.floor(unit * spell.qty);
+	}
+	let loopCost: number | null = spell.reagents.length ? 0 : null;
+	for (const r of spell.reagents) {
+		const buy = data.vendor[String(r.item)];
+		if (loopCost === null || buy === undefined || buy <= 0) loopCost = null;
+		else loopCost += buy * r.qty;
+	}
+	return { sale, profit: sale !== null && cost !== null ? sale - cost : null, loopCost, loop: sale !== null && loopCost !== null && sale - loopCost > 0 };
 }
 
 export function craft(data: RecipeData, spell: Spell, quotes: Map<number, Quote>): Craft {
@@ -217,7 +241,7 @@ export function craft(data: RecipeData, spell: Spell, quotes: Map<number, Quote>
 		}
 	}
 	const profit = cost !== null && revenue !== null ? revenue - cost : null;
-	return { spell, reagents, cost, value, revenue, profit, missing, noAhProduct, vendorFloor, worst, thin: isThin(value) };
+	return { spell, reagents, cost, value, revenue, profit, missing, noAhProduct, vendorFloor, worst, thin: isThin(value), vendor: vendorCheck(data, spell, quotes, cost) };
 }
 
 // How many crafts earn back the recipe's price; only when a craft makes a profit and the recipe has a price.
