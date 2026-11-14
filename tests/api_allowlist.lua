@@ -43,7 +43,6 @@ return {
 		GetNumBuybackItems = UI .. "Mainline/MerchantFrame.lua (MerchantFrame_UpdateMerchantInfo, MerchantFrame_UpdateBuybackInfo)",
 		GetMerchantFilter = UI .. "Mainline/MerchantFrame.lua (FilterDropdown IsSelected: GetMerchantFilter() == filter, LE_LOOT_FILTER_ALL)",
 		GetMerchantItemID = UI .. "Vanilla/MerchantFrame.lua; " .. GAME .. " (vendor prices recorded)",
-		GetMerchantItemInfo = UI .. "Vanilla/MerchantFrame.lua",
 		GetMerchantNumItems = UI .. "Vanilla/MerchantFrame.lua; " .. GAME,
 		BuyMerchantItem = UI .. "Mainline/MerchantFrame.lua (BuyMerchantItem(itemButton:GetID(), numToPurchase), branch forever); the basket's Buy button (#186)",
 		GetMerchantItemMaxStack = UI .. "Mainline/MerchantFrame.lua (local maxStack = GetMerchantItemMaxStack(self:GetID()), branch forever)",

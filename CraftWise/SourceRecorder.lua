@@ -165,16 +165,9 @@ end
 ----------------------------------------------------------------------------------------------------
 
 local function MerchantInfo(index_)
-	if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
-		local info = C_MerchantFrame.GetItemInfo(index_)
-		if info then
-			return info.price, info.stackCount, info.numAvailable, info.hasExtendedCost
-		end
-		return nil
-	end
-	if GetMerchantItemInfo then
-		local _, _, price, quantity, available, _, _, extended = GetMerchantItemInfo(index_)
-		return price, quantity, available, extended
+	local info = ns.MerchantItemInfo(index_)
+	if info then
+		return info.price, info.stack, info.available, info.extended
 	end
 end
 

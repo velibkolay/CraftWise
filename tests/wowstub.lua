@@ -20,6 +20,10 @@ function frameMeta.SetShown(self, v) if v then self:Show() else self:Hide() end 
 function frameMeta.SetTexture(self, t) self.texture = t end
 function frameMeta.SetText(self, t) self.text = t end
 function frameMeta.GetText(self) return self.text end
+function frameMeta.HookScript(self, name, fn) self.hooks = self.hooks or {}; self.hooks[name] = self.hooks[name] or {}; table.insert(self.hooks[name], fn) end
+function frameMeta.SetID(self, id) self.id = id end
+function frameMeta.GetID(self) return self.id end
+function frameMeta.SetEnabled(self, v) self.enabled = v end
 function frameMeta.GetChecked(self) return self.checked end
 function frameMeta.SetChecked(self, v) self.checked = v end
 local function widget() return setmetatable({ events = {}, scripts = {} }, frameMeta) end
@@ -256,10 +260,13 @@ stub.buyback = 0 -- entries on the merchant's buyback tab
 function GetNumBuybackItems() return stub.buyback end
 function GetMerchantNumItems() return #stub.merchant end
 function GetMerchantItemID(i) return stub.merchant[i].itemID end
-function GetMerchantItemInfo(i)
+-- Forever has C_MerchantFrame.GetItemInfo (a table), not the Vanilla GetMerchantItemInfo global.
+C_MerchantFrame = { GetItemInfo = function(i)
 	local m = stub.merchant[i]
-	return "item", nil, m.price, m.stack or 1, m.available or -1, true, true, m.extended
-end
+	if not m then return nil end
+	return { name = "item", price = m.price, stackCount = m.stack or 1, numAvailable = m.available or -1,
+		isUsable = true, hasExtendedCost = m.extended and true or false }
+end }
 -- m.costs = { { amount, link, currencyName } } for extended costs
 function GetMerchantItemCostInfo(i) return #(stub.merchant[i].costs or {}) end
 function GetMerchantItemCostItem(i, n)
@@ -415,7 +422,9 @@ C_CVar = { GetCVar = function(k) return stub.cvars[k] end, SetCVar = function(k,
 
 -- Bag moves: picking up a slot puts it on the cursor; dropping on a slot swaps (as in the client).
 stub.bagFamily = {}
-C_Container.GetContainerNumFreeSlots = function(bag) return 0, stub.bagFamily[bag] or 0 end
+-- stub.free[bag] = free slots of a bag (default 0)
+stub.free = {}
+C_Container.GetContainerNumFreeSlots = function(bag) return stub.free[bag] or 0, stub.bagFamily[bag] or 0 end
 stub.cursor = nil
 C_Container.PickupContainerItem = function(bag, slot)
 	stub.bags[bag] = stub.bags[bag] or {}

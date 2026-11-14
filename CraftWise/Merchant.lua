@@ -164,25 +164,19 @@ end
 -- Items
 ----------------------------------------------------------------------------------------------------
 
+-- One merchant slot as the Forever client gives it (C_MerchantFrame.GetItemInfo, a table; the old
+-- GetMerchantItemInfo global is Vanilla only and does not exist here): { name, price, stack, available
+-- (-1 unlimited), usable, extended, currency } or nil. Shared by every module that reads the open merchant.
 local function ItemInfo(index)
-	if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
-		local info = C_MerchantFrame.GetItemInfo(index)
-		if not info then
-			return nil
-		end
-		return { name = Text(info.name), price = Number(info.price), stack = Number(info.stackCount),
-			available = Number(info.numAvailable), usable = info.isUsable, extended = info.hasExtendedCost,
-			currency = Number(info.currencyID) }
+	local info = C_MerchantFrame and C_MerchantFrame.GetItemInfo and C_MerchantFrame.GetItemInfo(index)
+	if not info then
+		return nil
 	end
-	if GetMerchantItemInfo then
-		local name, _, price, stack, available, _, usable, extended = GetMerchantItemInfo(index)
-		if name == nil and price == nil then
-			return nil
-		end
-		return { name = Text(name), price = Number(price), stack = Number(stack), available = Number(available),
-			usable = usable, extended = extended }
-	end
+	return { name = Text(info.name), price = Number(info.price), stack = Number(info.stackCount),
+		available = Number(info.numAvailable), usable = info.isUsable, extended = info.hasExtendedCost,
+		currency = Number(info.currencyID) }
 end
+ns.MerchantItemInfo = ItemInfo
 
 -- Currencies and items the merchant asks besides (or instead of) copper.
 local function Costs(index)

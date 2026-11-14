@@ -919,6 +919,49 @@ function Pool:Button(label, onClick, tip, height)
 	return b
 end
 
+-- A number box for a count (1..Basket.MAX_COUNT) showing `value`. Enter or losing focus applies a valid
+-- number through onApply(n); Escape, or text that isn't a number, puts the old value back.
+function Pool:CountBox(value, onApply)
+	local box = self:Take("countbox", function(owner)
+		local e = CreateFrame("EditBox", nil, owner)
+		e:SetSize(52, 24)
+		e:SetAutoFocus(false)
+		e:SetNumeric(true)
+		e:SetMaxLetters(4)
+		e:SetFontObject(Style.Fonts.Small)
+		e:SetJustifyH("CENTER")
+		e:SetTextInsets(4, 4, 0, 0)
+		e.border = Style.Border(e, Style.C.ruleStrong)
+		e:SetScript("OnEditFocusGained", function(this)
+			this:HighlightText()
+		end)
+		e:SetScript("OnEnterPressed", function(this)
+			this:ClearFocus() -- the focus loss below applies it
+		end)
+		e:SetScript("OnEscapePressed", function(this)
+			this.cwEscaped = true
+			this:SetText(tostring(this.cwValue))
+			this:ClearFocus()
+		end)
+		e:SetScript("OnEditFocusLost", function(this)
+			local escaped = this.cwEscaped
+			this.cwEscaped = nil
+			local n = not escaped and ns.Basket.ParseQuantity(this:GetText())
+			if n and n ~= this.cwValue then
+				this.cwApply(n)
+			else
+				this:SetText(tostring(this.cwValue))
+			end
+		end)
+		return e
+	end)
+	box.cwValue, box.cwApply = value, onApply
+	if not (box.HasFocus and box:HasFocus()) then
+		box:SetText(tostring(value))
+	end
+	return box
+end
+
 -- A mouse area over a line: hover shows an item's tooltip (itemID) or the inverse tip; right-click opens
 -- the item menu, Shift-click links the item, like a list row.
 function Pool:Hit(data)

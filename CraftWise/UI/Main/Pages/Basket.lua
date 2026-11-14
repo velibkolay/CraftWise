@@ -185,20 +185,37 @@ function B.Open(content, r, ctx)
 		end, { L["One craft less"], L["At zero the recipe leaves the basket."] }, 24)
 		minus:SetSize(28, 24)
 		minus:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -4)
+		local box = pool:CountBox(c.count, function(v)
+			Bk.SetCount(c.entry.recipeID, v)
+		end)
+		box:SetPoint("LEFT", minus, "RIGHT", 6, 0)
 		local plus = pool:Button("+", function()
 			Bk.SetCount(c.entry.recipeID, c.count + 1)
 		end, { L["One craft more"] }, 24)
 		plus:SetSize(28, 24)
-		plus:SetPoint("LEFT", minus, "RIGHT", 6, 0)
+		plus:SetPoint("LEFT", box, "RIGHT", 6, 0)
 		local ten = pool:Button("+10", function()
 			Bk.SetCount(c.entry.recipeID, c.count + 10)
 		end, { L["Ten crafts more"] }, 24)
 		ten:SetSize(40, 24)
 		ten:SetPoint("LEFT", plus, "RIGHT", 6, 0)
+		local last = ten
+		local max = Bk.Max(c.row.reagents)
+		if max then
+			local maxButton = pool:Button(L["Max"], function()
+				Bk.SetCount(c.entry.recipeID, max)
+			end, { L["Max"], (L["Sets the count to %d: what the reagents you hold that no vendor sells allow."]):format(max) }, 24)
+			maxButton:SetSize(40, 24)
+			maxButton:SetPoint("LEFT", ten, "RIGHT", 6, 0)
+			if maxButton.SetEnabled then
+				maxButton:SetEnabled(max >= 1)
+			end
+			last = maxButton
+		end
 		local remove = pool:Button(L["Remove from basket"], function()
 			Bk.Remove(c.entry.recipeID)
 		end, { L["Remove from basket"] }, 24)
-		remove:SetPoint("LEFT", ten, "RIGHT", 12, 0)
+		remove:SetPoint("LEFT", last, "RIGHT", 12, 0)
 	elseif r.kind == "auction" then
 		if Bk.HasAuctionator() then
 			Say(L["Use Auctionator list in the list bar: it builds the shopping list \"CraftWise basket\" from the AH lines."])
