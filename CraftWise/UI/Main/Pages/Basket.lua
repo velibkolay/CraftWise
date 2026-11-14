@@ -53,9 +53,9 @@ end
 -- The rows of a plan (Basket.Plan()).
 function B.Rows(plan)
 	local rows = {}
-	for _, c in ipairs(plan.crafts) do
+	for i, c in ipairs(plan.crafts) do
 		local r = NewRow("craft", "craft:" .. c.entry.recipeID, c.row.name, c.row.outputItemID, c.row.icon)
-		r.craft = c
+		r.craft, r.rank = c, i -- the plan lists the crafts by profit % (#197)
 		local profit = c.row.vendorProfit and c.row.vendorProfit * c.count or nil
 		local total, color = M.DASH, "text3"
 		if profit then
@@ -85,6 +85,9 @@ function B.Rows(plan)
 	table.sort(rows, function(a, b)
 		if a.order ~= b.order then
 			return a.order < b.order
+		end
+		if a.rank and b.rank and a.rank ~= b.rank then
+			return a.rank < b.rank
 		end
 		return (a.name or "") < (b.name or "")
 	end)

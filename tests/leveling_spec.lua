@@ -108,7 +108,7 @@ it("Make › Level up: sorted best first, chance bars, the maths in the tooltip"
 	for _, h in ipairs(list.headers) do
 		if h.col and h.col.sort then h.scripts.OnClick(h) end
 	end
-	ns.Main.state.sort.level = nil
+	ns.Main.ResetSort("level")
 	-- nothing recorded: yellow/green rows fall back to the formula estimate, tooltips still render
 	ns.db.skillups = {}
 	ns.Main.Refresh()

@@ -75,6 +75,7 @@ M.UI_DEFAULTS = {
 	section = "make", -- a section key or M.SETTINGS
 	pages = {}, -- [section] = the sub-page last shown there
 	profession = nil, -- professionID chosen on the Make pages
+	sort = {}, -- [page key] = { key, desc }: the list sort last chosen (#197)
 	layout = "window", -- "window", "dockLeft" or "dockRight" (Docked.lua, #161)
 	escape = true, -- Close with Escape (Settings > Look)
 	locked = false, -- Lock position (Settings > Look)
@@ -628,6 +629,17 @@ end
 -- The sort of a page this session: key, desc (the page's default sort until a header is clicked).
 function M.Sort(page)
 	local s = M.state.sort[page.key]
+	if not s then
+		local saved = M.UI().sort[page.key]
+		if type(saved) == "table" and saved.key then
+			for _, col in ipairs(page.columns or {}) do
+				if col.sort and col.key == saved.key then
+					s = { key = saved.key, desc = saved.desc and true or false }
+					break
+				end
+			end
+		end
+	end
 	if s then
 		return s.key, s.desc
 	end
@@ -640,12 +652,19 @@ end
 -- A header click: sort by the column, again to reverse.
 function M.ClickSort(page, key)
 	local cur, desc = M.Sort(page)
+	local s = { key = key, desc = true }
 	if cur == key then
-		M.state.sort[page.key] = { key = key, desc = not desc }
-	else
-		M.state.sort[page.key] = { key = key, desc = true }
+		s.desc = not desc
 	end
+	M.state.sort[page.key] = s
+	M.UI().sort[page.key] = { key = s.key, desc = s.desc } -- remembered across sessions (#197)
 	M.Refresh()
+end
+
+-- Back to the page's default sort (forgets the chosen one).
+function M.ResetSort(pageKey)
+	M.state.sort[pageKey] = nil
+	M.UI().sort[pageKey] = nil
 end
 
 -- Sorts rows by row[key] (nil last), ties by name; the page's own SortRows when it has one.

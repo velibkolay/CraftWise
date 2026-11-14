@@ -66,7 +66,7 @@ P.DEFAULT_SORT = { spots = { key = "gph", desc = true }, log = { key = "catches"
 
 function P.SetMode(mode)
 	Saved().fishMode = mode == "log" and "log" or "spots"
-	M.state.sort[P.KEY] = nil
+	M.ResetSort(P.KEY)
 	if P.page then
 		P.page.sort = P.DEFAULT_SORT[P.Mode()]
 	end

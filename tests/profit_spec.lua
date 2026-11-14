@@ -137,3 +137,27 @@ it("vendor check: multi-output recipes use the average output quantity", functio
 		{ [1] = 10 }, { [1] = 10 }, { [9] = 20 })
 	eq(r.vendorSale, 30); eq(r.vendorProfit, 20); eq(r.vendorLoop, true)
 end)
+
+it("Percent: profit over cost; nil without a profit or with a cost of zero or less (#197)", function()
+	eq(P.Percent(150, 100), 150); eq(P.Percent(10, 100), 10); eq(P.Percent(-50, 100), -50)
+	eq(P.Percent(5, 0), nil, "a free craft has no ratio"); eq(P.Percent(5, nil), nil); eq(P.Percent(nil, 100), nil)
+end)
+
+it("ByPercent: the 150 % craft is above the 10 % one; no % last in both directions; ties by profit, then name (#197)", function()
+	-- 1g cost, 10s profit = 10 %; 10s cost, 15s profit = 150 %
+	local rows = {
+		{ name = "Big", pct = P.Percent(1000, 10000), profit = 1000 },
+		{ name = "Small", pct = P.Percent(1500, 1000), profit = 1500 },
+		{ name = "Free", pct = P.Percent(900, 0), profit = 900 },
+		{ name = "Unpriced" },
+		{ name = "TieB", pct = 50, profit = 20 }, { name = "TieA", pct = 50, profit = 20 }, { name = "TieRich", pct = 50, profit = 99 },
+	}
+	table.sort(rows, P.ByPercent(true))
+	local names = {}
+	for _, r in ipairs(rows) do names[#names + 1] = r.name end
+	eq(table.concat(names, ","), "Small,TieRich,TieA,TieB,Big,Free,Unpriced")
+	table.sort(rows, P.ByPercent(false))
+	names = {}
+	for _, r in ipairs(rows) do names[#names + 1] = r.name end
+	eq(table.concat(names, ","), "Big,TieRich,TieA,TieB,Small,Free,Unpriced", "ascending: no-% rows still last")
+end)

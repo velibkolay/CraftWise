@@ -144,6 +144,14 @@ function MK.NoHero(label, reason)
 	return { label = label, name = M.DASH, nameColor = "text3", sub = MK.Sentence(reason) }
 end
 
+-- "150%" / "-12%" (whole percent), a dash without one.
+function MK.PercentText(pct)
+	if pct == nil then
+		return M.DASH
+	end
+	return ("%d%%"):format(math.floor(pct + 0.5))
+end
+
 -- "by profit": how the list is sorted, for the list bar.
 function MK.SortNote(page, notes)
 	local key = M.Sort(page)
@@ -251,6 +259,10 @@ function MK.CraftRows(professionID, settings, query)
 				out[#out + 1] = r
 			end
 		end
+	end
+	for _, r in ipairs(out) do
+		-- Return on the gold put in (#197): the mode's own profit over the cost to craft (never changed here).
+		r.pct = r.costComplete and ns.Profit.Percent(r.profit, r.cost) or nil
 	end
 	return out, hidden
 end

@@ -40,19 +40,15 @@ function Loops.Finds(rows, opts)
 	for _, r in ipairs(rows or {}) do
 		if (r.status == "known" or opts.includeUnlearned) and r.vendorProfit and r.vendorProfit > min then
 			out[#out + 1] = { recipeID = r.recipeID, professionID = opts.professionID, name = r.name,
-				profit = r.vendorProfit, loop = r.vendorLoop and true or false, outputItemID = r.outputItemID }
+				profit = r.vendorProfit, loop = r.vendorLoop and true or false, outputItemID = r.outputItemID,
+				pct = r.costComplete and ns.Profit.Percent(r.vendorProfit, r.cost) or nil }
 		end
 	end
 	return out
 end
 
 function Loops.Sort(finds)
-	table.sort(finds, function(a, b)
-		if a.profit ~= b.profit then
-			return a.profit > b.profit
-		end
-		return (a.name or "") < (b.name or "")
-	end)
+	table.sort(finds, ns.Profit.ByPercent(true)) -- best return per gold first (#197)
 	return finds
 end
 
@@ -95,6 +91,7 @@ function Loops.Summary(fresh)
 	return table.concat(parts, " · ")
 end
 
+-- (ordered by profit %, rows without one last)
 -- Every profession of this character: the finds, best first.
 function Loops.Check()
 	local all = {}
