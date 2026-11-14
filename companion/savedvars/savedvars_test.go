@@ -379,3 +379,22 @@ func TestClassNamesListPart(t *testing.T) {
 		t.Fatalf("%v %v", m.ClassNames, m.SubclassNames)
 	}
 }
+
+// #165: the addon's item watch list, from the fixture (items 9001 and 9004) and as an emptied or missing table.
+func TestWatchList(t *testing.T) {
+	f := load(t)
+	if len(f.DB.Watch) != 2 || f.DB.Watch[9001] == 0 || f.DB.Watch[9004] <= f.DB.Watch[9001] {
+		t.Fatalf("watch %v", f.DB.Watch)
+	}
+	empty, err := Read(strings.NewReader("CraftWiseDB = {\n[\"watch\"] = {\n},\n}\n"))
+	if err != nil || len(empty.Problems) != 0 {
+		t.Fatal(err, empty.Problems)
+	}
+	if empty.DB.Watch == nil || len(empty.DB.Watch) != 0 {
+		t.Fatalf("an emptied list must read as empty, not missing: %#v", empty.DB.Watch)
+	}
+	old, err := Read(strings.NewReader("CraftWiseDB = {\n[\"snapshots\"] = {\n},\n}\n"))
+	if err != nil || old.DB.Watch != nil {
+		t.Fatal(err, old.DB.Watch)
+	}
+}

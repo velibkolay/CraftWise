@@ -108,6 +108,8 @@ export interface PrivateUpload {
 	fishing: PrivateDoc[];
 	characters: Character[];
 	ledger: LedgerEntry[];
+	// The addon's watch list (#165), replacing the stored one; null = the upload doesn't carry it.
+	watch: { item: number; added: number }[] | null;
 }
 
 type Obj = Record<string, unknown>;
@@ -483,6 +485,22 @@ export function validatePrivate(body: unknown, now: number): PrivateUpload {
 		return { uid: `${base}#${n}`, ...e };
 	});
 
-	if (!snapshots.length && !auctions.length && !fishing.length && !ledger.length) fail("body", "nothing to store");
-	return { snapshots, auctions, fishing, characters: snapshots.map(charInfo), ledger };
+	// `watch` present (even empty) = the whole list; absent = leave the stored one alone.
+	let watch: PrivateUpload["watch"] = null;
+	if (b.watch !== undefined && b.watch !== null) {
+		const seen = new Set<number>();
+		watch = [];
+		arr(b.watch, "watch", L.MAX_WATCH).forEach((v, i) => {
+			const path = `watch[${i}]`;
+			const o = obj(v, path);
+			const item = int(o.i, `${path}.i`);
+			if (item < 1) fail(`${path}.i`, "expected an item ID");
+			if (seen.has(item)) return;
+			seen.add(item);
+			watch!.push({ item, added: time(o.t, `${path}.t`, now) });
+		});
+	}
+
+	if (!snapshots.length && !auctions.length && !fishing.length && !ledger.length && watch === null) fail("body", "nothing to store");
+	return { snapshots, auctions, fishing, characters: snapshots.map(charInfo), ledger, watch };
 }

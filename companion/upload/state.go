@@ -26,6 +26,9 @@ type State struct {
 	Prices map[string]*PriceMark `json:"prices,omitempty"`
 	// Docs: hash of the private document sent, per "<kind>\x1f<character>".
 	Docs map[string]uint64 `json:"docs,omitempty"`
+	// Watch: hash of the watch list sent (#165); nil = never sent. The list is sent whole, only when it
+	// differs.
+	Watch *uint64 `json:"watch,omitempty"`
 	// Ledger: newest entry time sent and how many entries had that time.
 	LedgerT     int64 `json:"ledgerT,omitempty"`
 	LedgerAtT   int   `json:"ledgerAtT,omitempty"`

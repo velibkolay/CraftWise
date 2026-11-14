@@ -8,8 +8,8 @@
 //	POST /api/upload          public market data: a subset of CraftWiseMarketDB as the savedvars
 //	                          and market types marshal it (houses, scans, names, itemInfo, items,
 //	                          classNames, subclassNames)
-//	POST /api/private/upload  private data: snapshots, auctions, fishing (documents per character)
-//	                          and the ledger
+//	POST /api/private/upload  private data: snapshots, auctions, fishing (documents per character),
+//	                          the ledger and the item watch list
 //
 // A value the addon doesn't have is left out (omitempty / nil), never filled in. The Auctionator
 // fallback prices (#90) are never sent.
@@ -40,6 +40,9 @@ const (
 	MinTime   = 1_600_000_000
 	MaxFuture = 86400
 )
+
+// MaxWatch is the most watched items in one private upload (#165, web/src/limits.ts).
+const MaxWatch = 1000
 
 // PublicPayload is the body of POST /api/upload. Houses goes into every request.
 type PublicPayload struct {
@@ -80,6 +83,15 @@ type PrivatePayload struct {
 	Auctions  map[string]Doc `json:"auctions,omitempty"`
 	Fishing   map[string]Doc `json:"fishing,omitempty"`
 	Ledger    []LedgerEntry  `json:"ledger,omitempty"`
+	// Watch is the addon's whole watch list (#165): it replaces the stored one, so a pointer to a
+	// possibly empty list (omitted only when nil = not sent).
+	Watch *[]WatchItem `json:"watch,omitempty"`
+}
+
+// WatchItem is one entry of CraftWiseDB.watch: the item ID and the Unix time it was watched.
+type WatchItem struct {
+	I int64 `json:"i"`
+	T int64 `json:"t"`
 }
 
 // Doc is one private document: its time and the data (a JSON object).

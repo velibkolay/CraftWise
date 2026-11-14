@@ -132,7 +132,8 @@ change), so after the first upload names and sell prices cost no writes.
   "snapshots": { "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner": { "t": 1794400000, "data": { "v": 1, "t": 1794400000, "char": { "name": "Velikopter" } } } },
   "auctions":  { "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner": { "t": 1794400000, "data": { "active": [], "sold": [] } } },
   "fishing":   { "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner": { "t": 1794400000, "data": { "days": 90, "catches": 12 } } },
-  "ledger": [ { "t": 1794399000, "c": "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner", "k": "ahbuy", "i": 2589, "q": 20, "m": 2000, "w": "CAMWOW EU4 Realm 8 PvP|H", "n": "Linen Cloth" } ]
+  "ledger": [ { "t": 1794399000, "c": "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner", "k": "ahbuy", "i": 2589, "q": 20, "m": 2000, "w": "CAMWOW EU4 Realm 8 PvP|H", "n": "Linen Cloth" } ],
+  "watch": [ { "i": 2589, "t": 1794399000 } ]
 }
 ```
 
@@ -142,6 +143,7 @@ change), so after the first upload names and sell prices cost no writes.
 | `auctions[<char key>]` | `CraftWiseMarketDB.auctions.chars[<char key>]` as `data`; `t` = when the companion read the file | |
 | `fishing[<char key>]` | the fishing summary (`snapshot.fishing` and `snapshot.fishingZones`) as `data` | |
 | `ledger[]` | `CraftWiseMarketDB.ledger.entries[]` as they are (`t`, `c`, `k`, `i`, `q`, `m`, `w`, `n`, `l`) | `t`, `c`, `k` required. At most 5,000 per request. The link `l` is checked, not stored. |
+| `watch[]` | `CraftWiseDB.watch` (#165, the addon's item watch list, `{ [itemID] = Unix time it was watched }`) as `{ "i": itemID, "t": time }` | The **whole list**: it replaces the stored one. Absent or `null` = leave the stored list alone; `[]` = the player emptied it. `i` an item ID of 1 or more, `t` a time (as everywhere), at most 1,000, a repeated `i` counts once. |
 
 - Character key `"<realm>-<name> <surname>"` (or `"<realm>-<name>"`, #77). At most 50 per section.
 - Each document (`data`, an object) at most 450,000 bytes as JSON. A document replaces the stored
@@ -151,7 +153,13 @@ change), so after the first upload names and sell prices cost no writes.
   money and place) are numbered in list order, so both of two identical vendor sales are kept and
   sending the log again adds nothing. Kept forever.
 
-Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledger" }, "rowsWritten" }`.
+Watch list (#165): the companion sends it when it differs from the list it sent last (a hash in its state
+file), in the same request as the other private data. The Worker stores it in `watch` (one row per item,
+`0004_watch.sql`; one list for the site's owner, like the characters and the ledger): items no longer in the
+upload are deleted, changed times updated, unchanged rows aren't written, so re-sending costs no writes.
+It goes one way only, addon to site; the site never writes it back (the companion only reads SavedVariables).
+
+Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledger", "watch" }, "rowsWritten" }`.
 
 ## Public read API
 
@@ -198,7 +206,7 @@ every price: a jump at a thin market is no trend. Cached in D1 until the house's
 next UTC day.
 
 `/api/browse` takes exactly one of `class` (an item class ID, or `none` for items without info; optionally
-`subclass`), `q` (as `/api/items`, at most 50 items) or `ids` (at most 100 item IDs, the site's favourites). Each
+`subclass`), `q` (as `/api/items`, at most 50 items) or `ids` (at most 100 item IDs, the site's favourites: the browser's own plus, behind Access, the addon's watch list from `/api/me/watch`, #165; the site marks the addon's ones "Watched in the addon" and can't remove them). Each
 item: `{ id, name, quality, icon, class, subclass, className, subclassName, sellPrice, current, typical, days }` with `current` and `typical` as on
 `/api/items/<id>` (house of the request, suffix 0; `current` `null` when the house has no price) and `days` the
 daily rows of the last 9 days (`{ day, src, lo, typ, hi, qtyMax }`), enough for a 24 h and a 7 day change and a
@@ -250,6 +258,7 @@ expiry), so the private data stays closed if the Access app is missing or miscon
 | `GET /api/me` | `{ email }` of the Access login |
 | `GET /api/me/characters` | `{ characters: [{ key, realm, name, surname, faction, race, class, level, snapshotT, auctionsT, fishingT }] }` |
 | `GET /api/me/characters/<char key>` | `{ key, snapshot, auctions, fishing }`, each `{ t, data }` or `null` |
+| `GET /api/me/watch` | `{ watch: [{ item, added }] }`, the addon's watch list (#165), newest first (`added` = when it was watched). Empty before the first upload or when nothing is watched. |
 | `GET /api/me/ledger?char=<key>&since=<t>&limit=500` | `{ entries: [{ char, t, kind, item, qty, money, place, name }] }`, newest first (limit 1..5000) |
 | `GET /api/me/usage` | `{ day, rowsWritten, uploads, budget, softBudget, dbBytes }`: today's D1 writes against the budget (`WRITE_BUDGET`) and its soft limit (80%), and the database size |
 | `GET /api/me/tokens` | `{ tokens: [{ id, prefix, name, scopes, created, createdBy, lastUsed, revoked }] }` |

@@ -187,7 +187,7 @@ describe("private upload and read", () => {
 		};
 		let res = await privateUpload(token, body);
 		expect(res.status).toBe(200);
-		expect((await res.json<{ received: unknown }>()).received).toEqual({ snapshots: 1, auctions: 1, fishing: 1, ledger: 3 });
+		expect((await res.json<{ received: unknown }>()).received).toEqual({ snapshots: 1, auctions: 1, fishing: 1, ledger: 3, watch: 0 });
 		res = await privateUpload(token, body); // again: nothing new
 		expect((await res.json<{ rowsWritten: number }>()).rowsWritten).toBe(1);
 		// an older snapshot never replaces a newer one

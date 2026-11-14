@@ -9,7 +9,8 @@ on `/reload` and logout) and, after each change, sends what is new since the las
   points, changed daily aggregates and newer `last` values per item and house). Never the
   Auctionator fallback prices.
 - **Private** (`POST /api/private/upload`, can be turned off): each character's snapshot, the
-  auction tracker's records, the fishing summary and new ledger entries.
+  auction tracker's records, the fishing summary, new ledger entries and the item watch list (#165,
+  `CraftWiseDB.watch`, sent whole when it changed; the site shows it as favourites, one way, never written back).
 
 The request format is `web/docs/api.md`. The companion only reads the game's files: no game
 memory, no input, nothing written into the World of Warcraft folder.

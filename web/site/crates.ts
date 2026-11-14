@@ -4,7 +4,7 @@ import { type Browse, get, type House, pickHouse } from "./lib/api";
 import { GUIDE_SOURCES } from "./lib/crateFavorGuide";
 import * as C from "./lib/crates";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, nowSeconds, onSkinChange, s, slot, statusBar, topBar } from "./lib/dom";
-import { isFavourite, toggleFavourite } from "./lib/favs";
+import { favouriteLabel, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import { age, qualityClass } from "./lib/format";
 import * as M from "./lib/me";
 
@@ -241,8 +241,8 @@ function renderDetail(): void {
 	const now = nowSeconds();
 	const c = st.crates?.list.find((x) => x.id === st.sel) ?? null;
 	const fill = c?.fill ?? null;
-	favBtn.disabled = !fill?.id;
-	favBtn.textContent = fill?.id && isFavourite(fill.id) ? "Remove Bundle from Favourites" : "Add Bundle to Favourites";
+	favBtn.disabled = !fill?.id || isFromAddon(fill.id);
+	favBtn.textContent = fill?.id ? favouriteLabel(fill.id, "Bundle") : "Add Bundle to Favourites";
 	if (fill?.id) {
 		histBtn.setAttribute("href", `/item/${fill.id}`);
 		histBtn.removeAttribute("aria-disabled");
@@ -611,6 +611,7 @@ function latestChar(): string | null {
 async function main(): Promise<void> {
 	readUrl();
 	loading("Loading your crates");
+	void syncAddonWatch().then((changed) => changed && st.crates && renderDetail());
 	try {
 		st.chars = (await get<{ characters: M.Character[] }>("/api/me/characters")).characters;
 	} catch (err) {
