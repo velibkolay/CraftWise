@@ -108,6 +108,8 @@ const favBtn = h("button", { type: "button", class: "wbtn dark", disabled: true 
 const histBtn = h("a", { class: "wbtn", "aria-disabled": "true" }, "Price History");
 const footnote = h("p", { class: "hint footnote" });
 const colHint = h("span", { class: "hint" });
+// On recipe lists (#185): the checkbox filters the listed item (the pattern), not the craft; the crafts view has the craft's check.
+const vendorHint = h("span", { class: "hint", hidden: true }, "Filters this item, not its craft: ", h("a", { href: "/crafts" }, "Profit when sold to a vendor"), " is in Crafts");
 
 function shell(): void {
 	const side = h(
@@ -139,7 +141,8 @@ function shell(): void {
 			raritySel,
 			h("label", { class: "field", for: "f-min" }, h("span", { class: "lbl" }, "Listed at least")),
 			minInput,
-			h("label", { class: "field vcheck", for: "f-vendor" }, vendorBox, h("span", { class: "lbl" }, "Better sold to a vendor")),
+			h("label", { class: "field vcheck", for: "f-vendor", title: "This item: a vendor pays more than the auction house after the cut" }, vendorBox, h("span", { class: "lbl" }, "Better sold to a vendor")),
+			vendorHint,
 		),
 		h("div", { class: "inset" }, tableWrap),
 	);
@@ -531,6 +534,7 @@ function renderTable(): void {
 	const priceNote = recipes && pricing === "loading" ? ", pricing the recipes" : recipes && pricing === "failed" ? ", the recipe prices could not be loaded" : "";
 	clear(heading, title(), " ", h("span", { class: "hint count" }, count + (data.more ? ", first 500 shown" : "") + priceNote));
 	clear(colHint, recipes ? "Profit is one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more) minus its reagents, each where it is cheaper: AH or vendor. Pays back: crafts until the recipe's AH price is earned back. Press a profit for the breakdown." : "Market Price is the typical price of the last 7 days. Vendor is what a vendor pays for one. Listed is units on the auction house.");
+	vendorHint.hidden = !recipes;
 	document.title = `${title()} - Velikopter Market`;
 
 	const favs = new Set(favourites());
