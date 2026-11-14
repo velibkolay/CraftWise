@@ -22,11 +22,11 @@ from pathlib import Path
 from forever_tools import wago
 
 USER_AGENT = "CraftWise-data-gen/1.0"
-BUILD = "1.60.1.70790"
+BUILD = "1.60.1.70938"
 # wago.tools lists the live client under this product.
 PRODUCT = "wowf"
 # Date this source snapshot was selected, not the date of each regeneration.
-SOURCE_DATE = "2026-11-07"
+SOURCE_DATE = "2026-11-14"
 UPSTREAM = "https://github.com/cjber/skillup-forever"
 # SpellEffect.Effect codes the generators read.
 DUMMY = 3
@@ -195,8 +195,13 @@ def generate(ability_rows, skills, selected, names, effects, retired=None):
         except (ValueError, TypeError):
             counts["skip:missing/invalid data"] += 1
             continue
-        if grey <= yellow:
-            counts["skip:grey<=yellow"] += 1
+        if grey < yellow:
+            counts["skip:grey<yellow"] += 1
+            continue
+        # grey == yellow: the recipe goes from orange straight to grey. Keep it only when it makes something (a
+        # create-item or enchant effect); the rest of these rows are profession ranks, Find Herbs and the like.
+        if grey == yellow and not effects.get(spell, set()) & {CREATE_ITEM, ENCHANT_ITEM}:
+            counts["skip:grey==yellow, makes nothing"] += 1
             continue
         # Mining's open-lock gathering abilities have thresholds but are not
         # crafting recipes. Do not emit them as smelting recipes.
@@ -253,7 +258,7 @@ def render(emitted):
         f"-- tools/gen_thresholds.py ({UPSTREAM}, GPL-3.0-or-later).",
         "-- Orange and green are left out: upstream reconciles orange against Classic data and green is derived,",
         "-- neither is this client's data.",
-        "-- Recipes with grey <= yellow in DB2 are absent (unknown). Recipes the game retired (RETIRED in the generator)",
+        "-- Rows with grey == yellow are kept as the DB2 gives them (the recipe goes from orange straight to grey) when the spell makes an item or an enchant. Recipes with grey < yellow are absent (unknown). Recipes the game retired (RETIRED in the generator)",
         "-- are left out.",
         "local _, ns = ...",
         "-- stylua: ignore",

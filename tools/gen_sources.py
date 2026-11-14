@@ -19,6 +19,7 @@ Usage: python3 tools/gen_sources.py [--refresh | --offline], after gen_threshold
 """
 
 import argparse
+import re
 import sys
 import urllib.error
 from collections import Counter, defaultdict
@@ -121,6 +122,13 @@ def render(scrolls):
     return "\n".join(lines) + "\n"
 
 
+def recipe_data_ids():
+    """Recipe spells in the generated Recipes.lua (ns.RecipeData), so Sources never lists a recipe without them."""
+    text = (DATA / "Recipes.lua").read_text(encoding="utf-8")
+    table = text.split("ns.RecipeData = {", 1)[-1].split("\n}", 1)[0]
+    return {int(m) for m in re.findall(r"^\t\[(\d+)\] = ", table, re.M)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group()
@@ -129,6 +137,8 @@ def main():
     args = parser.parse_args()
     options = {"refresh": args.refresh, "offline": args.offline}
     ids = threshold_ids()
+    # gen_recipes.py leaves out recipes with a non-item reagent; a source for a recipe without RecipeData is unusable.
+    ids &= recipe_data_ids()
     scrolls, skipped, seen = scroll_requirements(
         ids,
         db2("ItemSparse", ("ID", "RequiredSkill", "RequiredSkillRank", "Flags_0"), **options),
