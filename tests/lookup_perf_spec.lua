@@ -207,3 +207,178 @@ it("Look up › Items: the page's Refresh is a timed hook in the recorder (Setti
 	for _, line in ipairs(seen) do found = found or line == "hook|Look up › Items: Refresh" end
 	assert(found, "recorded: " .. table.concat(seen, ", "))
 end)
+
+----------------------------------------------------------------------------------------------------
+-- The first build runs in slices over frames (#202 follow-up)
+----------------------------------------------------------------------------------------------------
+
+-- Timers that wait until the spec runs them, and a clock that moves 0.5 ms per look at it.
+local function SliceClock()
+	local queue, looks = {}, 0
+	C_Timer.After = function(_, fn) queue[#queue + 1] = fn end
+	debugprofilestop = function() looks = looks + 1; return looks * 0.5 end
+	return function() -- runs the oldest queued slice; false when none waits
+		local fn = table.remove(queue, 1)
+		if fn then fn() end
+		return fn ~= nil
+	end, function() return #queue end
+end
+
+-- The old one-shot answer: every recorded item of the scope by stored name then ID, and the names to search.
+local function Reference(ns)
+	local ids, once = {}, {}
+	for key in pairs(CraftWiseMarketDB.items) do
+		local id = tonumber(tostring(key):match("^%d+"))
+		if id and CraftWiseMarketDB.scope.items[id] and not once[id] then once[id] = true; ids[#ids + 1] = id end
+	end
+	table.sort(ids, function(a, b)
+		local na, nb = (CraftWiseMarketDB.names[a] or ""):lower(), (CraftWiseMarketDB.names[b] or ""):lower()
+		if na ~= nb then return na < nb end
+		return a < b
+	end)
+	return ids
+end
+
+it("first build in slices: the page says Loading…, no slice works past its budget, and the result equals the one-shot build", function()
+	local ns, _, M = Load()
+	SeedMarket(ns, 6000)
+	CraftWiseMarketDB.items["200003:77"] = CraftWiseMarketDB.items[200003] -- a suffix variant
+	local step = SliceClock()
+	local I, Mk = M.Items, ns.Market
+	local seen = {}
+	ns.SetRecorder(function(kind, _, label) seen[#seen + 1] = kind .. "|" .. label end)
+	-- count what each slice handles: index keys asked for, scope items looked at
+	local handled, perSlice = 0, {}
+	local build, inScope = Mk.BuildIndexStep, Mk.InScope
+	Mk.BuildIndexStep = function(n) handled = handled + n; return build(n) end
+	Mk.InScope = function(id) handled = handled + 1; return inScope(id) end
+	local builds = Mk.indexBuilds
+	local list = I.ListModel(NOW)
+	eq(list.loading, true); eq(#list.rows, 0); eq(list.empty, "Loading…")
+	eq(Mk.indexBuilds, builds, "opening built nothing in this frame")
+	eq(handled, 0)
+	local slices = 0
+	while step() do
+		slices = slices + 1
+		perSlice[#perSlice + 1] = handled
+		handled = 0
+		assert(slices < 1000, "never finishes")
+	end
+	Mk.BuildIndexStep, Mk.InScope = build, inScope
+	local worst = 0
+	for _, n in ipairs(perSlice) do worst = math.max(worst, n) end
+	assert(slices >= 20, "spread over frames: " .. slices .. " slices")
+	-- 4 ms at 0.5 ms a look is 8 looks of SLICE_KEYS items, plus the one that tips it over
+	assert(worst <= I.SLICE_KEYS * 10, "a slice handled " .. worst .. " items")
+	assert(worst <= I.SLICE_MAX + I.SLICE_KEYS)
+	eq(I.cacheBuilds, 1)
+	local sliceHooks = 0
+	for _, line in ipairs(seen) do if line == "hook|Look up › Items: build slice" then sliceHooks = sliceHooks + 1 end end
+	eq(sliceHooks, slices, "every slice is a timed hook")
+	-- the same answer as the one-shot build
+	local ref = Reference(ns)
+	local ids, more = I.ChipItems("recipes")
+	eq(#ids, I.LIST_MAX); eq(more, #ref - I.LIST_MAX)
+	for i = 1, I.LIST_MAX do eq(ids[i], ref[i], "row " .. i) end
+	local keys = Mk.ItemKeys(200003)
+	eq(#keys, 2); eq(keys[1], 200003); eq(keys[2], "200003:77")
+	local found = I.Search("synthetic 0059")
+	local want = 0
+	for _, name in pairs(CraftWiseMarketDB.names) do if name:lower():find("synthetic 0059", 1, true) then want = want + 1 end end
+	eq(#found, want)
+	eq(I.ListModel(NOW).loading, nil)
+end)
+
+it("first build: a finished build refreshes the open page; Items.Key doesn't build the index while it waits", function()
+	local ns, _, M = Load()
+	SeedMarket(ns, 1500)
+	local step = SliceClock()
+	local I = M.Items
+	M.Open("items")
+	eq(I.lastModel.list.loading, true)
+	local builds = ns.Market.indexBuilds
+	eq(I.Key(200003), 200003); eq(ns.Market.indexBuilds, builds)
+	while step() do end
+	eq(I.lastModel.list.loading, nil, "the page was refreshed when the build finished")
+	eq(#I.lastModel.list.rows, I.LIST_MAX)
+	eq(I.lastModel.list.rows[1].itemID, 200000 + 1500 - (1500 % 3))
+end)
+
+it("first build: it starts by itself after login, so the page opens ready", function()
+	local ns, stub, M = Load()
+	SeedMarket(ns, 1500)
+	local step = SliceClock()
+	local I = M.Items
+	eq(I.cacheBuilds, 0)
+	stub.RunTimers() -- the prebuild timer
+	while step() do end
+	eq(I.cacheBuilds, 1)
+	local list = I.ListModel(NOW)
+	eq(list.loading, nil); eq(#list.rows, I.LIST_MAX)
+end)
+
+it("first build: a key added part way starts it over and the new item is in the result", function()
+	local ns, stub, M = Load()
+	SeedMarket(ns, 1500)
+	local step = SliceClock()
+	local I, Mk = M.Items, ns.Market
+	I.Warm()
+	for _ = 1, 3 do step() end
+	eq(I.cacheBuilds, 0)
+	CraftWiseMarketDB.scope.items[5] = true -- unnamed: first in the list
+	stub.zone, stub.subzone = "Orgrimmar", ""
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	stub.commodity[5] = { rows = { { unitPrice = 100, quantity = 3 } }, total = 3 }
+	stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 5)
+	stub.RunTimers()
+	while step() do end
+	eq(I.cacheBuilds, 1)
+	eq(I.ChipItems("recipes")[1], 5)
+	eq(Mk.ItemKeys(5)[1], 5)
+end)
+
+it("first build: Items.WarmNow finishes it in one go for a typed command", function()
+	local ns, _, M = Load()
+	SeedMarket(ns, 900)
+	SliceClock()
+	local I = M.Items
+	eq(I.ListModel(NOW).loading, true)
+	I.WarmNow()
+	local list = I.ListModel(NOW)
+	eq(list.loading, nil); eq(#list.rows, I.LIST_MAX)
+	I.state.query = ""
+	ns.OpenItemsFromSlash("synthetic 00005")
+	eq(I.Selected(), 200000 + 900 - 5, "a typed name that matches one item selects it")
+end)
+
+it("the card's Used in index is built in slices too: Loading… first, then the same recipes as the one-shot build", function()
+	local ns, stub = LoadAddon({ data = true })
+	stub.clock = NOW
+	time = function() return stub.clock end
+	stub.Fire("PLAYER_LOGIN")
+	local I = ns.Main.Items
+	local reagent
+	for _, data in pairs(ns.RecipeData) do
+		if data.reagents and data.reagents[1] then reagent = data.reagents[1].itemID break end
+	end
+	assert(reagent, "the bundled data has a recipe")
+	-- the one-shot answer, from a second index built in one call
+	local expected = #ns.UsedIn(reagent)
+	assert(expected > 0)
+	ns.Notify("RECIPES_CHANGED") -- drops the index
+	eq(ns.UsedInReady(), false)
+	local step = SliceClock()
+	local widest, calls = 0, 0
+	local usedStep = ns.UsedInStep
+	ns.UsedInStep = function(n) calls = calls + 1; widest = math.max(widest, n or 0); return usedStep(n) end
+	local card = I.Card(reagent, NOW)
+	eq(card.usedIn[1].left, "Loading…")
+	local slices = 0
+	while step() do slices = slices + 1 end
+	assert(slices >= 2, "spread over frames: " .. slices)
+	assert(widest <= I.SLICE_KEYS, "a step handled " .. widest .. " recipes")
+	eq(ns.UsedInReady(), true)
+	ns.UsedInStep = usedStep
+	eq(#ns.UsedIn(reagent), expected, "the same recipes as the one-shot build")
+	assert(I.Card(reagent, NOW).usedIn[1].left ~= "Loading…")
+end)

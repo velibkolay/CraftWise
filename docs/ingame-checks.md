@@ -852,3 +852,11 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Opening the vendor with an empty basket does no basket work; with a basket and several bag changes the vendor window should not stutter (record it with Settings › Debug if it does, `MerchantBuy: item click` and `BAGS_CHANGED` show there).
 - **Merchant slot read (fix, #201):** Forever has no `GetMerchantItemInfo` global; `ns.MerchantItemInfo` (Merchant.lua) reads `C_MerchantFrame.GetItemInfo` for Basket, Prices and SourceRecorder. With a merchant open, Make › Basket must draw without "Basket could not be built", and a vendor line's Buy shows "Buy N" (not greyed) for a gold-only item.
 - **Count box and Max (Make › Craft opened row, Make › Basket craft row):** type a number into the box next to − / +: Enter or clicking elsewhere applies it (the "Add N to basket" label / the basket count follow), Escape puts the old number back, 0 or empty puts it back, above 9999 becomes 9999. **Max** sets the count to what the reagents you already hold allow, ignoring reagents a vendor sells (Goblin Deviled Clams with 597 Tangy Clam Meat: 597, Hot Spices not counted). It is hidden when every reagent has a vendor source and greyed when a held reagent is missing.
+
+## Look up › Items: first open in slices (#202 follow-up)
+
+- No TOC change; `/reload` is enough.
+- Log in and wait about 20 s before opening anything: the index and the "Your recipes" list build in small slices after login (Settings › Debug › Record shows "Look up › Items: prebuild" and many short "build slice" and "used-in slice" hooks, none over a few ms). Then open Look up › Items: it appears without a hitch and the list is already there.
+- Open Look up › Items right after login (before the 20 s): the list says "Loading…" for a moment, then fills in by itself. The game doesn't hitch. Click a recent item meanwhile: its card opens, "Used in" says "Loading…" and fills in.
+- At the auction house, scan, then open Look up › Items: no hitch (the older list stays while a new one builds).
+- `/craftwise market <part of a name>` on a fresh login still works (it waits for the whole build once, in one frame; a visible hitch there is expected).

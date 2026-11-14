@@ -167,45 +167,240 @@ local function Cap(ids)
 	return ids, more
 end
 
--- Caches (#202). The market data holds thousands of items, so nothing that walks all of them runs on
--- every refresh: the sorted list behind the "Your recipes" chip and the lower-case names a search reads
--- are built once and kept while Market.DataVersion() (keys, scope, stored names) stays the same.
--- Items.cacheBuilds counts the builds, for the specs.
+-- Cache (#202). The market data holds tens of thousands of items, so nothing that walks all of them runs
+-- inside a frame the player sees. The key index (Market.BuildIndexStep) and one pass over the recorded items
+-- that gathers (a) the first Items.LIST_MAX of "Your recipes" by stored name and how many there are, and
+-- (b) the lower-case stored names a search reads, are built in slices: each slice runs from a C_Timer.After(0)
+-- until Items.SLICE_MS (or Items.SLICE_MAX items) is used, as a timed hook ("Look up › Items: build slice",
+-- Settings › Debug). Until the first build is done the list says "Loading…"; a finished build refreshes the
+-- page. It starts a short while after login (prebuild) or at the latest when the page is first refreshed, and
+-- starts over when Market.DataVersion() (keys, scope, stored names) moves; the older result is used meanwhile.
+-- Items.cacheBuilds counts the finished builds, for the specs.
 Items.cacheBuilds = 0
-local cache = {}
-local function Cache()
-	local v = ns.Market.DataVersion()
-	if cache.version ~= v then
-		cache = { version = v }
-		Items.cacheBuilds = Items.cacheBuilds + 1
-	end
-	return cache
-end
+Items.SLICE_MS = 4 -- time one slice may take
+Items.SLICE_KEYS = 40 -- items handled between two looks at the clock
+Items.SLICE_MAX = 800 -- and at most this many in a slice, whatever the clock says
+Items.PREBUILD_DELAY = 20 -- seconds after login
+-- A search looks at the client's name of at most this many recorded items without a stored name.
+Items.UNNAMED_MAX = 300
+
+local latest -- the last complete build: { version, top, topNames, count, lowerNames, unnamed }
+local job -- the build in progress: { version, stage = "index" | "lists", ... }
+local sliceQueued, starting = false, false
 
 -- Name used to order and search the whole market data: the stored one (a table read), never a client call.
 local function StoredLower(itemID)
 	return (ns.Market.StoredName(itemID) or ""):lower()
 end
 
--- A search looks at the client's name of at most this many recorded items without a stored name.
-Items.UNNAMED_MAX = 300
+local function NewJob()
+	return { version = ns.Market.DataVersion(), stage = "index" }
+end
 
--- Recorded items whose lower-case stored name contains `lower`, then (up to Items.UNNAMED_MAX of the
--- items without a stored name) those the client names so. Returns ids and the matched set.
-local function FindRecorded(lower)
-	local c = Cache()
-	if not c.lowerNames then
-		local names, unnamed = {}, {}
-		for itemID in pairs(ns.Market.RecordedItemIDs()) do
+-- `a` before `b` in "Your recipes": by stored name, then item ID.
+local function Before(names, a, b)
+	if names[a] ~= names[b] then
+		return names[a] < names[b]
+	end
+	return a < b
+end
+
+-- Keeps the first Items.LIST_MAX items by name in c.top (sorted), c.topNames their names.
+local function TopAdd(c, itemID, name)
+	local top, names = c.top, c.topNames
+	names[itemID] = name
+	if #top >= Items.LIST_MAX and not Before(names, itemID, top[#top]) then
+		names[itemID] = nil
+		return
+	end
+	local lo, hi = 1, #top + 1
+	while lo < hi do
+		local mid = math.floor((lo + hi) / 2)
+		if Before(names, top[mid], itemID) then
+			lo = mid + 1
+		else
+			hi = mid
+		end
+	end
+	table.insert(top, lo, itemID)
+	if #top > Items.LIST_MAX then
+		names[table.remove(top)] = nil
+	end
+end
+
+-- Does up to budgetMs (and maxItems items) of the build; true once it is complete (j.result). A false with
+-- j.restart set says the table moved under the cursor: start over.
+local function Work(j, budgetMs, maxItems)
+	local Mk = ns.Market
+	local started, handled = debugprofilestop(), 0
+	local function room()
+		return handled < maxItems and debugprofilestop() - started < budgetMs
+	end
+	if j.stage == "index" then
+		repeat
+			handled = handled + Items.SLICE_KEYS
+			if Mk.BuildIndexStep(Items.SLICE_KEYS) then
+				j.stage = "lists"
+				j.byItem = Mk.RecordedItemIDs()
+				j.c = { top = {}, topNames = {}, count = 0, lowerNames = {}, unnamed = {} }
+			end
+		until j.stage ~= "index" or not room()
+		if j.stage == "index" then
+			return false
+		end
+	end
+	local c = j.c
+	repeat
+		for _ = 1, Items.SLICE_KEYS do
+			local ok, itemID = pcall(next, j.byItem, j.cursor)
+			if not ok then
+				j.restart = true
+				return false
+			end
+			if itemID == nil then
+				c.version = j.version
+				j.result = c
+				return true
+			end
+			j.cursor = itemID
 			local name = StoredLower(itemID)
 			if name == "" then
-				unnamed[#unnamed + 1] = itemID
+				if #c.unnamed < Items.UNNAMED_MAX then
+					c.unnamed[#c.unnamed + 1] = itemID
+				end
 			else
-				names[itemID] = name
+				c.lowerNames[itemID] = name
+			end
+			if Mk.InScope(itemID) then
+				c.count = c.count + 1
+				TopAdd(c, itemID, name)
 			end
 		end
-		table.sort(unnamed)
-		c.lowerNames, c.unnamed = names, unnamed
+		handled = handled + Items.SLICE_KEYS
+	until not room()
+	return false
+end
+
+local function PageShown()
+	local f = M.Frame and M.Frame()
+	local page = M.CurrentPage and M.CurrentPage()
+	return f and f:IsShown() and page and page.key == "items" and true or false
+end
+
+local function Finish(j)
+	latest = j.result
+	Items.cacheBuilds = Items.cacheBuilds + 1
+	job = nil
+end
+
+local Schedule
+local Slice = ns.Timed("Look up › Items: build slice", function()
+	sliceQueued = false
+	if not job then
+		return
+	end
+	if job.restart or job.version ~= ns.Market.DataVersion() then
+		job = NewJob() -- the data moved: start over
+	end
+	if Work(job, Items.SLICE_MS, Items.SLICE_MAX) then
+		Finish(job)
+		if not starting and PageShown() then
+			M.Refresh() -- the list was "Loading…" or older
+		end
+	else
+		Schedule()
+	end
+end)
+
+function Schedule()
+	if not sliceQueued then
+		sliceQueued = true
+		C_Timer.After(0, Slice)
+	end
+end
+
+-- Starts (or restarts) the build unless the cache is current. Returns true when it is.
+function Items.Warm()
+	local version = ns.Market.DataVersion()
+	if latest and latest.version == version then
+		return true
+	end
+	if not job or job.version ~= version then
+		job = NewJob()
+	end
+	starting = true -- a stub that runs the timer at once finishes inside this call: nothing to refresh then
+	Schedule()
+	starting = false
+	return latest ~= nil and latest.version == version
+end
+
+-- The whole build now, in this frame: for a typed command that needs the answer at once.
+function Items.WarmNow()
+	if latest and latest.version == ns.Market.DataVersion() then
+		return
+	end
+	local j = NewJob()
+	while not Work(j, math.huge, math.huge) do
+		j = NewJob()
+	end
+	job = nil
+	Finish(j)
+end
+
+-- The "Used in" index of UsedIn.lua walks every bundled recipe; the card needs it, so it is built in the
+-- same kind of slices (Items.WarmUsedIn). True when it is ready; the card shows "Loading…" until then.
+local usedInQueued, usedInStarting = false, false
+local UsedInSlice
+local function ScheduleUsedIn()
+	if not usedInQueued then
+		usedInQueued = true
+		C_Timer.After(0, UsedInSlice)
+	end
+end
+UsedInSlice = ns.Timed("Look up › Items: used-in slice", function()
+	usedInQueued = false
+	local started, done = debugprofilestop(), false
+	repeat
+		done = ns.UsedInStep(Items.SLICE_KEYS)
+	until done or debugprofilestop() - started >= Items.SLICE_MS
+	if not done then
+		ScheduleUsedIn()
+	elseif not usedInStarting and PageShown() then
+		M.Refresh()
+	end
+end)
+
+function Items.WarmUsedIn()
+	if not ns.UsedInStep or ns.UsedInReady() then
+		return true
+	end
+	usedInStarting = true
+	ScheduleUsedIn()
+	usedInStarting = false
+	return ns.UsedInReady()
+end
+
+-- What the list and the search read: the current build, else the older one, nil before the first.
+local function Cache()
+	Items.Warm()
+	return latest
+end
+
+-- A short while after login the build starts by itself, so it is ready before the page is first opened.
+ns.On("PLAYER_LOGIN", function()
+	C_Timer.NewTimer(Items.PREBUILD_DELAY, ns.Timed("Look up › Items: prebuild", function()
+		Items.Warm()
+		Items.WarmUsedIn()
+	end))
+end)
+
+-- Recorded items whose lower-case stored name contains `lower`, then (up to Items.UNNAMED_MAX of the
+-- items without a stored name) those the client names so. Returns ids and the matched set; nil while
+-- the first build isn't done.
+local function FindRecorded(lower)
+	local c = Cache()
+	if not c then
+		return nil
 	end
 	local ids, seen = {}, {}
 	for itemID, name in pairs(c.lowerNames) do
@@ -214,8 +409,7 @@ local function FindRecorded(lower)
 			ids[#ids + 1] = itemID
 		end
 	end
-	for i = 1, math.min(#c.unnamed, Items.UNNAMED_MAX) do
-		local itemID = c.unnamed[i]
+	for _, itemID in ipairs(c.unnamed) do
 		local name = Items.Name(itemID)
 		if name and name:lower():find(lower, 1, true) then
 			seen[itemID] = true
@@ -226,7 +420,8 @@ local function FindRecorded(lower)
 end
 
 -- Items a search finds: the item of an ID or link; else recorded items (AH or merchants) whose name
--- contains the text, exact names first. Returns itemIDs and how many more matched than Items.LIST_MAX.
+-- contains the text, exact names first. Returns itemIDs and how many more matched than Items.LIST_MAX; nil
+-- while the first build of the cache isn't done (Items.WarmNow waits for it).
 function Items.Search(query)
 	query = tostring(query or ""):match("^%s*(.-)%s*$")
 	if query == "" then
@@ -238,13 +433,16 @@ function Items.Search(query)
 	end
 	local lower = query:lower()
 	local ids, seen = FindRecorded(lower)
+	if not ids then
+		return nil
+	end
 	for _, itemID in ipairs((ns.Merchant.FindItems(query))) do
 		if not seen[itemID] then
 			seen[itemID] = true
 			ids[#ids + 1] = itemID
 		end
 	end
-	local stored, names = Cache().lowerNames or {}, {}
+	local stored, names = latest and latest.lowerNames or {}, {}
 	for _, id in ipairs(ids) do
 		names[id] = stored[id] or DisplayName(id):lower()
 	end
@@ -276,35 +474,25 @@ function Items.ChipItems(chip)
 		end
 		return ids, 0
 	end
-	-- Your recipes: every recorded item in the market scope by name. Sorted once per change of the data
-	-- (by the stored names), then the first Items.LIST_MAX are copied out.
+	-- Your recipes: the first Items.LIST_MAX recorded items of the market scope by stored name, from the
+	-- cache; nil while the first build isn't done.
 	local c = Cache()
-	if not c.recipes then
-		local ids, names = {}, {}
-		for itemID in pairs(ns.Market.RecordedItemIDs()) do
-			if ns.Market.InScope(itemID) then
-				ids[#ids + 1] = itemID
-				names[itemID] = StoredLower(itemID)
-			end
-		end
-		table.sort(ids, function(a, b)
-			if names[a] ~= names[b] then
-				return names[a] < names[b]
-			end
-			return a < b
-		end)
-		c.recipes = ids
+	if not c then
+		return nil
 	end
 	local out = {}
-	for i = 1, math.min(#c.recipes, Items.LIST_MAX) do
-		out[i] = c.recipes[i]
+	for i, id in ipairs(c.top) do
+		out[i] = id
 	end
-	return out, math.max(0, #c.recipes - Items.LIST_MAX)
+	return out, math.max(0, c.count - Items.LIST_MAX)
 end
 
 -- The market key used for an item at the profit house: the plain ID, else its first suffix variant.
 function Items.Key(itemID)
-	local keys = ns.Market.ItemKeys(itemID)
+	local keys = ns.Market.ItemKeys(itemID, true) -- nil while the index is still being built: the plain ID
+	if not keys then
+		return itemID, {}
+	end
 	return keys[1] or itemID, keys
 end
 
@@ -421,16 +609,22 @@ function Items.LazyRow(itemID, now)
 	return setmetatable({ key = itemID, itemID = itemID, priceNow = now }, LazyRow)
 end
 
--- The left list: { rows, empty, more, chips, chip, searching }.
+-- The left list: { rows, empty, more, chips, chip, searching, loading }; loading while the first build of the
+-- cache isn't done (empty then says so).
 function Items.ListModel(now)
 	local query = Items.state.query or ""
 	local searching = query:match("%S") ~= nil
 	local chip = Items.Chip()
+	Items.Warm() -- the page needs the key index, whichever chip shows
 	local ids, more
 	if searching then
 		ids, more = Items.Search(query)
 	else
 		ids, more = Items.ChipItems(chip)
+	end
+	if not ids then
+		return { rows = {}, empty = L["Loading…"], more = 0, chips = Items.Chips(), chip = chip, searching = searching,
+			loading = true }
 	end
 	local rows = {}
 	for i, id in ipairs(ids) do
@@ -675,21 +869,22 @@ function Items.Card(itemID, now)
 
 	-- Used in.
 	local used = {}
-	for i, g in ipairs(ns.UsedInSummary and ns.UsedInSummary(itemID) or {}) do
+	local usedReady = Items.WarmUsedIn()
+	for i, g in ipairs(usedReady and ns.UsedInSummary and ns.UsedInSummary(itemID) or {}) do
 		if i > 2 then
 			break
 		end
 		used[#used + 1] = { left = g.profession, right = g.mine and (L["%d recipes · %d known"]):format(g.count, g.known)
 			or (L["%d recipes"]):format(g.count) }
 	end
-	for _, e in ipairs(ns.UsedIn and ns.UsedIn(itemID) or {}) do
+	for _, e in ipairs(usedReady and ns.UsedIn and ns.UsedIn(itemID) or {}) do
 		if #used >= 4 or e.state ~= "known" then
 			break
 		end
 		used[#used + 1] = { left = e.name, right = "×" .. (e.quantity or 1), rightColor = "text2" }
 	end
 	if #used == 0 then
-		used[1] = { left = L["No recipe uses it."], leftColor = "text2" }
+		used[1] = { left = usedReady and L["No recipe uses it."] or L["Loading…"], leftColor = "text2" }
 	end
 	card.usedIn = used
 
@@ -1414,7 +1609,8 @@ function ns.OpenItemsFromSlash(arg, focus)
 		if Items.searchBox then
 			Items.searchBox:SetText(arg)
 		end
-		local found = Items.Search(arg)
+		Items.WarmNow() -- a typed name wants its answer now
+		local found = Items.Search(arg) or {}
 		if #found == 1 then
 			Items.Select(found[1], focus)
 		end

@@ -482,15 +482,65 @@ function M.DecodeEntry(s)
 end
 
 -- Index of the recorded keys (#202): { items = db.items it was built from, byItem = { [itemID] = { key, ... } } }.
--- Built on first use and dropped when a key is added or removed (GetEntry, StoreLast, DropEntry), so reading
--- the keys of an item or the recorded item IDs never walks CraftWiseMarketDB again. indexVersion, scopeVersion
+-- Reading the keys of an item or the recorded item IDs never walks CraftWiseMarketDB. It is built in slices
+-- (BuildIndexStep, a few hundred keys per call, so no frame pays for all of them) and, once built, kept up
+-- to date key by key (KeyAdded, KeyRemoved in GetEntry, StoreLast and DropEntry). indexVersion, scopeVersion
 -- and namesVersion change with the keys, the scope and the stored names: callers key their caches on them.
 M.indexBuilds = 0 -- how often the index was built, for the specs
-local index
+local index -- complete
+local building -- { items, byItem, cursor } while BuildIndexStep is part way
 local indexVersion, scopeVersion, namesVersion = 0, 0, 0
 
+local function ItemIDOfKey(itemKey)
+	return type(itemKey) == "number" and itemKey or tonumber(tostring(itemKey):match("^%d+"))
+end
+
+-- The plain itemID first, then its suffix variants by key.
+local function SortKeys(itemID, keys)
+	table.sort(keys, function(a, b)
+		if (a == itemID) ~= (b == itemID) then
+			return a == itemID
+		end
+		return tostring(a) < tostring(b)
+	end)
+end
+
+local function KeyAdded(itemKey)
+	indexVersion = indexVersion + 1
+	building = nil -- a table that grew can't be walked on from where it stopped
+	local itemID = index and ItemIDOfKey(itemKey)
+	if itemID then
+		local keys = index.byItem[itemID]
+		if keys then
+			keys[#keys + 1] = itemKey
+			SortKeys(itemID, keys)
+		else
+			index.byItem[itemID] = { itemKey }
+		end
+	end
+end
+
+local function KeyRemoved(itemKey)
+	indexVersion = indexVersion + 1
+	building = nil
+	local itemID = index and ItemIDOfKey(itemKey)
+	local keys = itemID and index.byItem[itemID]
+	if keys then
+		for i, key in ipairs(keys) do
+			if key == itemKey then
+				table.remove(keys, i)
+				break
+			end
+		end
+		if keys[1] == nil then
+			index.byItem[itemID] = nil
+		end
+	end
+end
+
+-- The saved data was replaced: nothing built from the old one is valid.
 local function DropIndex()
-	index = nil
+	index, building = nil, nil
 	indexVersion = indexVersion + 1
 end
 
@@ -507,7 +557,7 @@ local function GetEntry(itemKey, houseKey, create)
 		end
 		perItem = {}
 		db.items[itemKey] = perItem
-		DropIndex()
+		KeyAdded(itemKey)
 	end
 	local entry = perItem[houseKey]
 	if type(entry) == "string" then
@@ -545,7 +595,7 @@ local function StoreLast(itemKey, houseKey, last)
 	if not perItem then
 		perItem = {}
 		db.items[itemKey] = perItem
-		DropIndex()
+		KeyAdded(itemKey)
 	end
 	local entry = perItem[houseKey]
 	if entry == nil or (type(entry) == "string" and IsLastOnly(entry)) then
@@ -564,10 +614,6 @@ function M.ItemKey(itemID, suffix)
 		return itemID .. ":" .. suffix
 	end
 	return itemID
-end
-
-local function ItemIDOfKey(itemKey)
-	return tonumber(tostring(itemKey):match("^%d+"))
 end
 
 -- The field after the four gem slots in item:id:enchant:gem1:gem2:gem3:gem4:suffix.
@@ -1275,7 +1321,7 @@ local function DropEntry(itemKey, houseKey)
 	perItem[houseKey] = nil
 	if next(perItem) == nil then
 		db.items[itemKey] = nil
-		DropIndex()
+		KeyRemoved(itemKey)
 	end
 end
 
@@ -1805,35 +1851,61 @@ end
 
 -- Look up › Items (#157). Read only.
 
--- The recorded keys by item, built once per change of the key set (see DropIndex, #202).
-local function Index()
-	if index and index.items == db.items then
-		return index
+-- One slice of building the index: walks up to maxKeys more keys of the saved data (all of them without
+-- maxKeys). Returns true once the index is complete. A key added or removed in between starts it over.
+function M.BuildIndexStep(maxKeys)
+	if not db then
+		return true
 	end
-	local byItem = {}
-	for key in pairs(db.items) do
-		local itemID = type(key) == "number" and key or ItemIDOfKey(key)
+	if index and index.items == db.items then
+		return true
+	end
+	if not building or building.items ~= db.items then
+		building = { items = db.items, byItem = {} }
+	end
+	local b = building
+	local key = b.cursor
+	for _ = 1, maxKeys or math.huge do
+		local ok, nextKey = pcall(next, b.items, key)
+		if not ok then
+			building = nil -- the cursor key is gone: start over
+			return false
+		end
+		key = nextKey
+		if key == nil then
+			for itemID, keys in pairs(b.byItem) do
+				if keys[2] then
+					SortKeys(itemID, keys)
+				end
+			end
+			index, building = { items = b.items, byItem = b.byItem }, nil
+			M.indexBuilds = M.indexBuilds + 1
+			return true
+		end
+		local itemID = ItemIDOfKey(key)
 		if itemID then
-			local keys = byItem[itemID]
+			local keys = b.byItem[itemID]
 			if keys then
 				keys[#keys + 1] = key
 			else
-				byItem[itemID] = { key }
+				b.byItem[itemID] = { key }
 			end
 		end
 	end
-	for itemID, keys in pairs(byItem) do
-		if keys[2] then
-			table.sort(keys, function(a, b)
-				if (a == itemID) ~= (b == itemID) then
-					return a == itemID
-				end
-				return tostring(a) < tostring(b)
-			end)
-		end
+	b.cursor = key
+	return false
+end
+
+-- Is the index complete? Callers that must not pay for building it check this and wait for it.
+function M.IndexReady()
+	return db ~= nil and index ~= nil and index.items == db.items
+end
+
+-- The index, built on the spot when it isn't there yet (the page builds it in slices before it asks).
+local function Index()
+	while not M.IndexReady() do
+		M.BuildIndexStep()
 	end
-	index = { items = db.items, byItem = byItem }
-	M.indexBuilds = M.indexBuilds + 1
 	return index
 end
 
@@ -1844,8 +1916,11 @@ function M.DataVersion()
 end
 
 -- The item keys recorded for an item: the plain itemID first, then its suffix variants by key. A new
--- table, so a caller may keep or change it.
-function M.ItemKeys(itemID)
+-- table, so a caller may keep or change it. noBuild: nil while the index isn't built, instead of building it.
+function M.ItemKeys(itemID, noBuild)
+	if noBuild and not M.IndexReady() then
+		return nil
+	end
 	local keys = db and Index().byItem[itemID]
 	local out = {}
 	for i, key in ipairs(keys or {}) do
@@ -1854,8 +1929,9 @@ function M.ItemKeys(itemID)
 	return out
 end
 
--- Every itemID with a record at any house, as the keys of a table (the value is the item's key list). Shared until
--- the key set changes: iterate it, never change it.
+-- Every itemID with a record at any house, as the keys of a table (the value is the item's key list). One
+-- table shared by all callers and changed as keys come and go: iterate it, never change it, and don't
+-- keep it across frames while Market.DataVersion() moves.
 function M.RecordedItemIDs()
 	return db and Index().byItem or {}
 end
