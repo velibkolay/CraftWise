@@ -17,6 +17,7 @@ UsedIn.lua
 Tooltip.lua
 Data\Vendor.lua
 Data\DisenchantGuide.lua
+Data\CrateFavorGuide.lua
 Data\Sources.lua
 Data\Thresholds.lua
 Money.lua

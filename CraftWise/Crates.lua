@@ -398,9 +398,34 @@ end)
 -- Cost per Favor
 ----------------------------------------------------------------------------------------------------
 
+-- The guide's Favor for a crate (Data/CrateFavorGuide.lua, generated from the site's crateFavorGuide.ts): rank
+-- is any word of the part after the colon, kind its last word ("Waylaid Crate: Earthly Expert Herbs" = Expert,
+-- Herbs). Artisan and unknown ranks or kinds have no value. Returns favor, basis ("listed" | "rule") or nil.
+function C.GuideFavor(name)
+	local guide = ns.CrateFavorGuide
+	if not (guide and type(name) == "string") then
+		return nil
+	end
+	local label = name:match(":%s*(.*)$") or name
+	local words = {}
+	for w in label:gmatch("%S+") do
+		words[#words + 1] = w
+	end
+	local kind = words[#words]
+	for _, w in ipairs(words) do
+		local row = guide.table[w]
+		local cell = row and kind and row[kind]
+		if cell then
+			return cell[1], cell[2]
+		end
+	end
+	return nil
+end
+
 -- Reward per crate: the tooltip's, else the most often measured gain (ties: the smaller; a 5% chance
 -- doubles it, so the usual value is the one seen most), else the same from a crate of the same name.
--- Returns n, from ("tooltip" | "seen"), observations.
+-- else the guide's (labelled so, never mixed with measured data).
+-- Returns n, from ("tooltip" | "seen" | "guide"), observations.
 function C.Reward(itemID)
 	local store = Store() or {}
 	local function from(rec)
@@ -437,6 +462,11 @@ function C.Reward(itemID)
 				return n, src, obs
 			end
 		end
+	end
+	-- Nothing measured and no tooltip: the published guide, by rank and kind of the crate's name (#176).
+	local g = C.GuideFavor(rec.name)
+	if g then
+		return g, "guide", nil
 	end
 	return nil
 end
@@ -600,7 +630,7 @@ local function RewardText(e, favor)
 	if not e.reward then
 		return "reward not seen yet"
 	end
-	local how = e.rewardFrom == "tooltip" and "tooltip" or ("seen at %d turn-in%s"):format(e.observed or 0, e.observed == 1 and "" or "s")
+	local how = e.rewardFrom == "tooltip" and "tooltip" or e.rewardFrom == "guide" and "guide" or ("seen at %d turn-in%s"):format(e.observed or 0, e.observed == 1 and "" or "s")
 	return ("%d %s (%s)"):format(e.reward, favor, how)
 end
 
