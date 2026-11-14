@@ -59,7 +59,7 @@ it("module callbacks and timed hooks are listed; a timed hook passes its result 
 	has(text, "Module callbacks")
 	has(text, "PERF_NOTE")
 	has(text, "7.0 ms | 1x | 7.0 ms")
-	has(text, "Hooks on bag frames")
+	has(text, "Hooks and timers")
 	has(text, "BagIcons: test hook: 4.0 ms | 1x | 4.0 ms")
 end)
 
@@ -132,4 +132,54 @@ it("Settings > Debug: Record toggles, Copy report opens the box with the text, C
 	clear.scripts.OnClick(clear)
 	eq(ns.Perf.Text(), nil)
 	has(ns.Perf.Status(), "Nothing recorded")
+end)
+
+it("a vendor seen again changes no price: PRICES_CHANGED only for a new or different one, tagged vendor", function()
+	local ns, stub = Load()
+	local notes = {}
+	ns.Listen("PRICES_CHANGED", function(source) notes[#notes + 1] = source or "none" end)
+	stub.merchant = { { itemID = 2320, price = 10, stack = 1 }, { itemID = 2324, price = 50, stack = 5 } }
+	stub.Fire("MERCHANT_SHOW")
+	eq(#notes, 1); eq(notes[1], "vendor")
+	stub.Fire("MERCHANT_UPDATE")
+	stub.Fire("MERCHANT_SHOW")
+	eq(#notes, 1, "same prices, no news")
+	stub.merchant[1].price = 12
+	stub.Fire("MERCHANT_UPDATE")
+	eq(#notes, 2)
+	eq(ns.db.vendor[2320], 12)
+	eq(ns.RecordMerchant(), 2, "still returns how many it saw")
+end)
+
+it("Crates ignore vendor price changes (no scan of the market items) but still scan on auction price changes", function()
+	local ns, stub = Load()
+	local scans = 0
+	ns.Crates.ScanMarket = function() scans = scans + 1 end
+	ns.Notify("PRICES_CHANGED", "vendor")
+	eq(scans, 0)
+	ns.Notify("PRICES_CHANGED")
+	eq(scans, 1)
+end)
+
+it("item data requests: one per item per ITEM_REQUEST_SECONDS, force asks anyway, the recorder counts both", function()
+	local ns, stub = Load()
+	local asked = {}
+	C_Item.RequestLoadItemDataByID = function(id) asked[#asked + 1] = id end
+	eq(ns.RequestItemData(100, "A"), true)
+	eq(ns.RequestItemData(100, "B"), false, "asked a moment ago")
+	eq(ns.RequestItemData(101, "B"), true)
+	eq(#asked, 2)
+	eq(ns.RequestItemData(100, "C", true), true, "forced")
+	eq(#asked, 3)
+	stub.now = stub.now + ns.ITEM_REQUEST_SECONDS + 1
+	eq(ns.RequestItemData(100, "A"), true, "after the window")
+	ns.Perf.Start()
+	ns.RequestItemData(100, "Prices.lua test")
+	ns.RequestItemData(100, "Prices.lua test")
+	ns.RequestItemData(100, "Prices.lua test")
+	ns.RequestItemData(555, "Market.lua test")
+	local text = table.concat(ns.Perf.Stop(), "\n")
+	has(text, "CraftWise asked the client to load 1 items (3 more skipped")
+	has(text, "Market.lua test: 1 sent, 0 skipped")
+	has(text, "Prices.lua test: 0 sent, 3 skipped")
 end)

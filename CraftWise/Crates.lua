@@ -255,7 +255,7 @@ function C.Consider(itemID, src)
 	if not name then
 		if not waiting[itemID] and C_Item and C_Item.RequestLoadItemDataByID then
 			waiting[itemID] = src or true
-			pcall(C_Item.RequestLoadItemDataByID, itemID)
+			ns.RequestItemData(itemID, "Crates.lua Consider", true)
 		end
 		return nil
 	end
@@ -320,7 +320,10 @@ ns.On("MERCHANT_SHOW", function()
 end)
 
 local lastMarket
-ns.Listen("PRICES_CHANGED", function()
+ns.Listen("PRICES_CHANGED", function(source)
+	if source == "vendor" then
+		return -- a vendor's prices add no auction house item to look at (#194)
+	end
 	local now = Now()
 	if lastMarket and now - lastMarket < C.MARKET_EVERY then
 		return

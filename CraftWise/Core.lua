@@ -575,6 +575,44 @@ local function FinishWait(job)
 	job.fn()
 end
 
+-- The one place that asks the client to load item data (#194). Every load answers with
+-- GET_ITEM_INFO_RECEIVED / ITEM_DATA_LOAD_RESULT, and every addon that listens (Baganator, Syndicator,
+-- our own handlers) pays for each answer, so an item asked for in the last ns.ITEM_REQUEST_SECONDS is
+-- not asked again (its answer is already on the way, or it never had one). force = ask anyway (a caller
+-- that waits for this item's own answer). label names the caller in the recorder's report.
+ns.ITEM_REQUEST_SECONDS = 10
+local requested, requestedCount = {}, 0
+function ns.RequestItemData(itemID, label, force)
+	if type(itemID) ~= "number" or not (C_Item and C_Item.RequestLoadItemDataByID) then
+		return false
+	end
+	local now = GetTime()
+	local at = requested[itemID]
+	if at and not force and now - at < ns.ITEM_REQUEST_SECONDS then
+		if recorder then
+			recorder("skipped", "item load", label or "?", 0)
+		end
+		return false
+	end
+	if not at then
+		requestedCount = requestedCount + 1
+		if requestedCount > 4000 then
+			for id, t in pairs(requested) do
+				if now - t >= ns.ITEM_REQUEST_SECONDS then
+					requested[id] = nil
+					requestedCount = requestedCount - 1
+				end
+			end
+		end
+	end
+	requested[itemID] = now
+	if recorder then
+		recorder("request", "item load", label or "?", 0)
+	end
+	pcall(C_Item.RequestLoadItemDataByID, itemID)
+	return true
+end
+
 -- Runs fn once the client has every item in itemIDs, or after ns.ITEM_WAIT_SECONDS. known(itemID)
 -- may say an item needs no request (the caller has a stored name). Runs fn right away when nothing
 -- is missing. Blizzard's Forever UI answers C_Item.RequestLoadItemDataByID with ITEM_DATA_LOAD_RESULT
@@ -598,7 +636,7 @@ function ns.WithItemNames(itemIDs, fn, known)
 	end)
 	for _, itemID in ipairs(missing) do
 		if not job.done then
-			pcall(C_Item.RequestLoadItemDataByID, itemID)
+			ns.RequestItemData(itemID, "Core.lua WithItemNames", true)
 		end
 	end
 end

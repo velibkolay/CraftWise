@@ -130,6 +130,21 @@ function Perf.Record(kind, name, label, ms)
 	if not s then
 		return
 	end
+	if kind == "request" or kind == "skipped" then
+		local r = s.requests[label]
+		if not r then
+			r = { label = label, sent = 0, skipped = 0 }
+			s.requests[label] = r
+		end
+		if kind == "request" then
+			r.sent = r.sent + 1
+			s.sent = s.sent + 1
+		else
+			r.skipped = r.skipped + 1
+			s.skipped = s.skipped + 1
+		end
+		return
+	end
 	local key = kind .. "\0" .. name .. "\0" .. tostring(label)
 	local st = s.stats[key]
 	if not st then
@@ -190,7 +205,7 @@ function Perf.Start()
 		return
 	end
 	state = { t0 = Now(), last = Now(), stats = {}, frames = 0, worst = 0, over33 = 0, over50 = 0, over100 = 0,
-		spikes = {}, cw = 0, cwTotal = 0, topMs = 0, addons = AddonSnapshot() }
+		spikes = {}, cw = 0, cwTotal = 0, topMs = 0, addons = AddonSnapshot(), requests = {}, sent = 0, skipped = 0 }
 	ns.SetRecorder(Perf.Record)
 	ticker:Show()
 end
@@ -263,9 +278,25 @@ local function Build(s, seconds)
 	section("Module callbacks (inside the handlers above):", notifies, function(h)
 		return ("  %s %s: %s | %dx | %s"):format(h.name, h.label, Ms(h.total), h.n, Ms(h.max))
 	end)
-	section("Hooks on bag frames:", hooks, function(h)
+	section("Hooks and timers:", hooks, function(h)
 		return ("  %s: %s | %dx | %s"):format(h.name, Ms(h.total), h.n, Ms(h.max))
 	end)
+
+	-- Item data loads CraftWise asked the client for (each answer is an event every addon handles).
+	add("")
+	add(("CraftWise asked the client to load %d items (%d more skipped: asked in the last %d s)"):format(s.sent, s.skipped,
+		ns.ITEM_REQUEST_SECONDS or 0))
+	local reqs = {}
+	for _, r in pairs(s.requests) do
+		reqs[#reqs + 1] = r
+	end
+	table.sort(reqs, function(a, b)
+		if a.sent ~= b.sent then return a.sent > b.sent end
+		return a.label < b.label
+	end)
+	for i = 1, math.min(Perf.TOP, #reqs) do
+		add(("  %s: %d sent, %d skipped"):format(reqs[i].label, reqs[i].sent, reqs[i].skipped))
+	end
 
 	local rows = AddonRows(s.addons)
 	if #rows > 0 then

@@ -812,3 +812,10 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Check that a slow frame (over 30 ms) shows up in the list when you open the bags, and that "CraftWise inside it" tells whether CraftWise or another addon (Auctionator, Bagnon, Disenchantry, ShortestPathForever) holds the time. If every handler shows ~0 ms while the frame is long, the cost is outside CraftWise handlers: read the addon table.
 - If the handler labels read `#12` instead of `Bags.lua:40`, `debugstack` returned an unexpected format: report the line.
 - No Lua error from `C_AddOnProfiler` calls (all wrapped; a missing function only leaves its lines out).
+
+### After the first recording: vendor price news and item loads (#194)
+
+- Open the same vendor twice, and flip its pages: with unchanged prices CraftWise does no price work after the first visit (`PRICES_CHANGED` fires only for a vendor price that is new or different, and Crates no longer rescan the auction house items for it). Record once more: `MERCHANT_SHOW` should be a few ms at most and `Crates.lua` should not show under Module callbacks. The bag-frame and vendor hitches that remain are listed in the report under "Addons".
+- The report now ends its CraftWise section with "CraftWise asked the client to load N items (M more skipped)" and the callers. Every load the client answers is an event that every addon with a `GET_ITEM_INFO_RECEIVED` handler runs; compare N with the event counts (`GET_ITEM_INFO_RECEIVED`, `ITEM_DATA_LOAD_RESULT`) of the same recording.
+- **Hitches from Baganator or Syndicator are outside CraftWise.** If the slowest frames show "CraftWise inside it" at a few ms and the Addons table lists Baganator / Syndicator (or GearQuestForever, ShortestPathForever) with ticks over 50 or 100 ms, the time is in those addons. CraftWise cannot fix it; report it to them, or try bags with only one of them enabled.
+

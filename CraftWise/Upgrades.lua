@@ -194,7 +194,7 @@ local function RequestItem(itemID)
 	end
 	waiting[itemID] = true
 	if C_Item and C_Item.RequestLoadItemDataByID then
-		pcall(C_Item.RequestLoadItemDataByID, itemID)
+		ns.RequestItemData(itemID, "Upgrades.lua RequestItem", true)
 	end
 end
 
