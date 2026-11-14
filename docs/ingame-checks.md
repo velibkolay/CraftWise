@@ -694,6 +694,11 @@ Needs a **full game restart**: three new files in the TOC (`UI/Main/Pages/Farm.l
 - [ ] Crates: the sub bar says "Merchant's Favor on this character: N". Two folded cards side by side (Best of the crates you hold / Best to buy and fill) with name and the line under it; "None priced" when there is none. Rows: icon, crate name with "10 Favor · measured" (or "· tooltip", or "reward not seen yet") under it in grey, Crate, Fill ("no price" grey when no bundle has a price), the cost-per-Favor rail (shorter = cheaper), You hold, Per Favor (bold). Carry a crate and open the page: it shows up within a few seconds. Click a row: crate price, every bundle with its price (cheapest marked), the reward and how it was measured, what is missing in red.
 - [ ] Every Gather page in combat: open, switch chips and rows, no error. Hairlines and rails stay one pixel at UI scale 0.64.
 
+## Crate Favor guide (#176)
+Needs a **full game restart**: `Data/CrateFavorGuide.lua` is a new file in the TOC; `/reload` is not enough.
+- [ ] Gather › Crates: a crate you never turned in and whose tooltip states no reward (Apprentice/Journeyman/Expert, not Artisan) shows "5 Favor · guide" (value by rank and kind) under its name, and is ranked by cost per Favor. Opened, the Reward line says "guide (Forever Mastery, Forever Changes), not measured". An Artisan crate still says "reward not seen yet".
+- [ ] After one turn-in of that crate the note changes to "N Favor · measured" and the guide value is no longer used; a crate whose tooltip states the reward says "· tooltip".
+
 ## Look up, Music, Settings (#157, part 1)
 Needs a **full game restart**: four new files in the TOC (`UI/Main/Pages/Items.lua`, `Upgrades.lua`, `Music.lua`, `Settings.lua`), and three left it (`UI/ProfitFrame/SongPicker.lua`, `UI/Records/Market.lua`, `UI/Records/Where.lua`); `/reload` is not enough. Compare with the boards "Look up · Items", "Look up · Upgrades", "Music" and "Settings" (canvas page Screens).
 - [ ] Look up, Music and the gear open real pages; none says "has not moved here yet". The profit window has no Upgrades or Music button and its view buttons don't overlap; the Records window has only Snapshot left.

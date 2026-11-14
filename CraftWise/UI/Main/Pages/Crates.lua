@@ -34,13 +34,23 @@ end
 -- Model
 ----------------------------------------------------------------------------------------------------
 
--- "10 Favor · measured" | "10 Favor · tooltip" | "reward not seen yet".
+-- "10 Favor · measured" | "10 Favor · tooltip" | "10 Favor · guide" | "reward not seen yet".
 function P.RewardNote(e)
 	if not e.reward then
 		return L["reward not seen yet"]
 	end
-	local how = e.rewardFrom == "tooltip" and L["tooltip"] or L["measured"]
+	local how = e.rewardFrom == "tooltip" and L["tooltip"] or e.rewardFrom == "guide" and L["guide"] or L["measured"]
 	return ("%d %s · %s"):format(e.reward, L["Favor"], how)
+end
+
+-- The guide's source for the tooltip: "guide (Forever Mastery, Forever Changes), not measured".
+function P.GuideNote()
+	local g = ns.CrateFavorGuide
+	local names = {}
+	for _, src in ipairs(g and g.sources or {}) do
+		names[#names + 1] = src.label
+	end
+	return (L["guide (%s), not measured"]):format(table.concat(names, ", "))
 end
 
 local function Scan(now)
@@ -55,7 +65,7 @@ end
 
 local function Row(e, max)
 	return { key = e.id, itemID = e.id, name = e.name or ("item " .. tostring(e.id)), note = P.RewardNote(e),
-		measured = e.rewardFrom == "seen", crate = e.crate, crateLabel = e.crateLabel, fill = e.fillCost,
+		measured = e.rewardFrom == "seen", guide = e.rewardFrom == "guide", crate = e.crate, crateLabel = e.crateLabel, fill = e.fillCost,
 		fillName = e.fill and e.fill.name, fillN = e.fill and e.fill.n, hasOptions = #e.options > 0,
 		perFavor = e.perFavor, fillPerFavor = e.fillPerFavor, held = e.held, railMax = max, entry = e }
 end
@@ -83,7 +93,7 @@ function P.Model(ctx)
 		listTitle = L["Waylaid crates by cost per Favor"],
 		listNote = L["crate bought + cheapest bundle, divided by the Favor it gives"],
 		empty = L["No Waylaid crate seen yet: carry one, or let an auction house scan see one."],
-		footer = L["Favor per crate: measured at your turn-ins, or as the crate's tooltip states it."],
+		footer = L["Favor per crate: measured at your turn-ins, as the crate's tooltip states it, else the published guide (labelled guide)."],
 	}
 end
 
@@ -286,8 +296,15 @@ local function Lines(row, favor)
 	end
 	local reward
 	if e.reward then
-		reward = ("%d %s"):format(e.reward, favor) .. Paint(" · " .. (e.rewardFrom == "tooltip" and L["from the tooltip"]
-			or (L["seen at %d turn-ins"]):format(e.observed or 0)), "text3")
+		local how
+		if e.rewardFrom == "tooltip" then
+			how = L["from the tooltip"]
+		elseif e.rewardFrom == "guide" then
+			how = P.GuideNote()
+		else
+			how = (L["seen at %d turn-ins"]):format(e.observed or 0)
+		end
+		reward = ("%d %s"):format(e.reward, favor) .. Paint(" · " .. how, "text3")
 	else
 		reward = Paint(L["Reward not seen yet: turn one in once."], "text3")
 	end
