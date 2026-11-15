@@ -699,3 +699,120 @@ it("buy at in the tooltips: marked for a missing reagent, plain when held, bundl
 	MK.AddBuyAt({ itemID = THREAD or 99999, quantity = 1 }, held)
 	eq(#lines, 0, "no vendor known, no line")
 end)
+
+-- Nearest vendor, the panel and waypoints (#276 scope change) ------------------------------------------------
+
+local function Maps(stub)
+	-- 1411 Durotar and 1454 Orgrimmar are on continent 12 (Kalimdor); 1429 Elwynn is on 13.
+	local info = { [1411] = { mapType = 3, parentMapID = 12 }, [1454] = { mapType = 3, parentMapID = 12 },
+		[1429] = { mapType = 3, parentMapID = 13 }, [12] = { mapType = 2, parentMapID = 946 }, [13] = { mapType = 2, parentMapID = 946 } }
+	Enum.UIMapType = { Continent = 2 }
+	local set = {}
+	C_Map = { GetBestMapForUnit = function() return stub.map end,
+		GetPlayerMapPosition = function() return stub.pos end,
+		GetMapInfo = function(id) return info[id] end,
+		CanSetUserWaypointOnMap = function(id) return id ~= 99 end,
+		SetUserWaypoint = function(point) set[#set + 1] = point; return true end }
+	UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { uiMapID = map, x = x, y = y } end }
+	local tracked
+	C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) tracked = v end }
+	return set, function() return tracked end
+end
+
+local function Seed2(ns, stub)
+	stub.items[NOIR] = { name = "Bottle of Noir" }
+	UnitFactionGroup = function() return "Horde" end
+	stub.zone = "Orgrimmar"
+	stub.map, stub.pos = 1454, { x = 0.50, y = 0.50 }
+	ns.db.merchants = {
+		[1] = { name = "Far Barman", zone = "Orgrimmar", map = 1454, x = 80, y = 80, group = "H", t = 1,
+			items = { [NOIR] = { p = 50, s = 1, n = -1, t = 1 } } },
+		[2] = { name = "Near Barman", zone = "Orgrimmar", map = 1454, x = 52, y = 49, group = "H", t = 1,
+			items = { [NOIR] = { p = 90, s = 1, n = -1, t = 1 } } },
+		[3] = { name = "Durotar Barman", zone = "Durotar", map = 1411, x = 40, y = 40, t = 1,
+			items = { [NOIR] = { p = 10, s = 1, n = -1, t = 1 } } },
+		[4] = { name = "Elwynn Barman", zone = "Elwynn Forest", map = 1429, x = 30, y = 30, t = 1,
+			items = { [NOIR] = { p = 5, s = 1, n = -1, t = 1 } } },
+		[5] = { name = "Unplaced Barman", zone = "Silithus", t = 1,
+			items = { [NOIR] = { p = 1, s = 1, n = -1, t = 1 } } },
+	}
+end
+
+it("nearest vendor: same map by distance, then the same zone, then the continent; never across continents", function()
+	local ns, stub = setup()
+	Maps(stub)
+	Seed2(ns, stub)
+	local all = ns.Merchant.BuyAtAll(NOIR)
+	local order = {}
+	for _, e in ipairs(all.entries) do order[#order + 1] = e.merchant.name .. ":" .. tostring(e.scope) end
+	eq(table.concat(order, ","), "Near Barman:map,Far Barman:map,Durotar Barman:continent,Unplaced Barman:nil,Elwynn Barman:nil", "no scope: the cheapest first")
+	eq(all.nearest.merchant.name, "Near Barman")
+	-- Standing in a zone with no recorded vendor on a map the vendors share only by name: the zone ranks next.
+	stub.map, stub.pos = 1411, { x = 0.1, y = 0.1 }
+	stub.zone = "Durotar"
+	all = ns.Merchant.BuyAtAll(NOIR)
+	eq(all.entries[1].merchant.name, "Durotar Barman"); eq(all.entries[1].scope, "map")
+	-- No position (instance or unknown map): the zone, then the continent, no distances.
+	stub.map, stub.pos = nil, nil
+	stub.zone = "Orgrimmar"
+	all = ns.Merchant.BuyAtAll(NOIR)
+	eq(all.entries[1].scope, "zone"); eq(all.entries[1].distance, nil)
+	-- Nothing comparable: no nearest is claimed.
+	stub.zone = "Stormwind City"
+	stub.map = 1429
+	ns.db.merchants = { [4] = ns.db.merchants[1] }
+	ns.db.merchants[4].zone = "Orgrimmar"; ns.db.merchants[4].map = 1454
+	all = ns.Merchant.BuyAtAll(NOIR)
+	eq(all.entries[1].scope, nil); eq(all.nearest, nil)
+end)
+
+it("waypoint: UiMapPoint at the recorded map and position as fractions, super-tracked; refuses without a location", function()
+	local ns, stub = setup()
+	local set, tracked = Maps(stub)
+	Seed2(ns, stub)
+	local all = ns.Merchant.BuyAtAll(NOIR)
+	local ok = ns.Merchant.Waypoint(all.nearest)
+	eq(ok, true); eq(#set, 1); eq(set[1].uiMapID, 1454); eq(set[1].x, 0.52); eq(set[1].y, 0.49); eq(tracked(), true)
+	local unplaced
+	for _, e in ipairs(all.entries) do if e.merchant.name == "Unplaced Barman" then unplaced = e end end
+	local bad, why = ns.Merchant.Waypoint(unplaced)
+	eq(bad, false); eq(why, "No location was recorded for this vendor"); eq(#set, 1)
+	-- A map that doesn't take waypoints.
+	all.entries[1].merchant.map = 99
+	bad, why = ns.Merchant.Waypoint(all.entries[1])
+	eq(bad, false); eq(why, "A waypoint can't be set on that map")
+	-- TomTom, when loaded, gets it too.
+	local tt = {}
+	TomTom = { AddWaypoint = function(_, map, x, y, opts) tt[#tt + 1] = { map, x, y, opts.title } end }
+	ns.Merchant.Waypoint(all.nearest)
+	TomTom = nil
+	eq(#tt, 0, "the near vendor's map was changed to 99 above: refused before TomTom")
+	all.entries[1].merchant.map = 1454
+	TomTom = { AddWaypoint = function(_, map, x, y, opts) tt[#tt + 1] = { map, x, y, opts.title } end }
+	ns.Merchant.Waypoint(all.entries[1])
+	TomTom = nil
+	eq(#tt, 1); eq(tt[1][1], 1454); eq(tt[1][4], "Near Barman")
+end)
+
+it("the panel: every vendor listed, the nearest marked, buttons set waypoints only when clicked", function()
+	local ns, stub = setup()
+	local set = Maps(stub)
+	Seed2(ns, stub)
+	local owner = CreateFrame("Frame", nil, UIParent)
+	local P = ns.BuyAtPanel
+	local panel = P.Toggle(NOIR, owner)
+	assert(panel and panel:IsShown(), "opens")
+	eq(#set, 0, "opening sets no waypoint")
+	assert(panel.rows[1].text:GetText():find("Near Barman", 1, true), panel.rows[1].text:GetText())
+	assert(panel.rows[1].text:GetText():find("nearest on this map", 1, true), "the nearest is marked")
+	assert(panel.rows[2].text:GetText():find("Far Barman", 1, true))
+	eq(panel.rows[4].text:GetText():find("Unplaced Barman", 1, true) ~= nil, true)
+	eq(panel.rows[4].go.enabled, false, "no location: no waypoint button")
+	panel.nearest.scripts.OnClick(panel.nearest)
+	eq(#set, 1); eq(set[1].uiMapID, 1454); eq(set[1].x, 0.52)
+	panel.rows[2].go.scripts.OnClick(panel.rows[2].go)
+	eq(#set, 2); eq(set[2].x, 0.8)
+	P.Toggle(NOIR, owner)
+	eq(panel:IsShown(), false, "the same reagent again closes it")
+	eq(P.Toggle(99999, owner), nil, "nothing known: no panel")
+end)

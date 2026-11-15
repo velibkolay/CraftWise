@@ -65,6 +65,7 @@ UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua
 UI\MerchantBuy.lua
+UI\BuyAtPanel.lua
 UI\TrainAll.lua
 UI\FarmFrame.lua
 UI\FarmHistory.lua

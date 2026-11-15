@@ -61,6 +61,7 @@ return {
 		BuyTrainerService = UI .. "Mainline/Blizzard_TrainerUI.lua (ClassTrainerTrainButton_OnClick, CONFIRM_PROFESSION OnAccept: BuyTrainerService(skillIndex))",
 		GetTrainerServiceNumAbilityReq = UI .. "Mainline/Blizzard_TrainerUI.lua (ClassTrainerFrame_InitServiceButton: required abilities)",
 		GetTrainerServiceAbilityReq = UI .. "Mainline/Blizzard_TrainerUI.lua (ClassTrainerFrame_InitServiceButton: ability name and whether you have it)",
+		["UiMapPoint.CreateFromCoordinates"] = UI .. "Blizzard_ObjectAPI/Mainline/UiMapPoint.lua (defines it); Blizzard_SharedMapDataProviders/WaypointLocationDataProvider.lua (UiMapPoint.CreateFromCoordinates(mapID, x, y) then C_Map.SetUserWaypoint)",
 		PlaySound = UI .. "Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseBuyDialog.lua (PlaySound(SOUNDKIT.LOOT_WINDOW_COIN_SOUND)); sale alert (#235)",
 		PlaySoundFile = GAME .. " (Music tab songs, 2026-10-01)",
 		StopSound = UI .. "Blizzard_HousingDashboardInitiatives.lua; " .. GAME .. " (music stops with the cast)",

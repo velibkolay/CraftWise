@@ -752,7 +752,15 @@ function MK.DrawOpen(content, r, opts, ctx)
 		total:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -1)
 		local note = pool:Text("Caption", "text2", line.note)
 		note:SetPoint("TOPLEFT", total, "BOTTOMLEFT", 0, -1)
-		local hit = pool:Hit({ itemID = line.itemID })
+		local hitData = { itemID = line.itemID }
+		if ns.BuyAtPanel and ns.Merchant and ns.Merchant.BuyAtAll(line.itemID) then
+			-- A click lists where to buy it (#276): the recorded vendors, the nearest marked, with waypoints.
+			hitData.lines = { { L["Click"], L["Where to buy it"] } }
+			hitData.onClick = function(button)
+				ns.BuyAtPanel.Toggle(line.itemID, button)
+			end
+		end
+		local hit = pool:Hit(hitData)
 		hit:SetPoint("TOPLEFT", content, "TOPLEFT", x, top)
 		hit:SetSize(MK.REAGENT_WIDTH, MK.REAGENT_HEIGHT - 8)
 		content.reagentCells[i] = { head = head, total = total, note = note, hit = hit, x = x, y = top }
