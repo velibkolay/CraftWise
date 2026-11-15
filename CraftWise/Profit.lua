@@ -78,6 +78,34 @@ function Profit.UnitCost(itemID, prices, depth, visiting)
 	return bought
 end
 
+-- Highest unit price of each AH-bought reagent that still breaks even (#261): (what one craft sells for - the cost
+-- of every other reagent at the cost basis in `result`) / (units of the reagent one craft uses), rounded down.
+-- Only for lines priced from the AH (source "auction": vendor, crafted and paid lines are not bought at an AH price),
+-- and only when the sale (after the cut, or at the vendor/Junk value) and every other reagent's cost are known:
+-- else nothing, never a guess. Sets on the line: maxBuy (copper, >= 0) or maxBuyLoss = true when even free the
+-- craft loses money (the other reagents cost more than the sale), and overMax = true when the current unit price
+-- is above maxBuy.
+function Profit.MaxBuy(result)
+	for _, line in ipairs(result.reagents or {}) do
+		line.maxBuy, line.maxBuyLoss, line.overMax = nil, nil, nil
+		if line.source == "auction" and line.total and result.sellsFor and result.costComplete and not result.cutUnverified
+			and line.quantity and line.quantity > 0 then
+			local room = result.sellsFor - (result.cost - line.total)
+			if room <= 0 then
+				line.maxBuyLoss = true
+			else
+				line.maxBuy = math.floor(room / line.quantity)
+				if line.maxBuy <= 0 then
+					line.maxBuy, line.maxBuyLoss = nil, true
+				else
+					line.overMax = line.unit > line.maxBuy or nil
+				end
+			end
+		end
+	end
+	return result
+end
+
 -- recipe: { reagents = { { itemID, quantity } }, output = { itemID, quantity } | nil,
 --           learned = bool, learnCost = copper | nil }
 -- prices: { buy = fn(itemID) -> { copper, source, age, label, thin } | nil,
@@ -168,7 +196,7 @@ function Profit.Evaluate(recipe, prices)
 			result.breakEven = math.ceil(recipe.learnCost / result.profit)
 		end
 	end
-	return result
+	return Profit.MaxBuy(result)
 end
 
 -- Vendor check (#185): `result` is Profit.Evaluate's result for `recipe`; vendor = {
