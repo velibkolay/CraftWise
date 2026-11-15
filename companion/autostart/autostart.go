@@ -21,7 +21,7 @@ const ValueName = "CraftWise Companion"
 const RunKey = `Software\Microsoft\Windows\CurrentVersion\Run`
 
 // ErrUnsupported: no autostart on this system.
-var ErrUnsupported = errors.New("only on Windows")
+var ErrUnsupported = errors.New("only on Windows and macOS")
 
 // Store reads and writes string values of one key (the Run key).
 type Store interface {

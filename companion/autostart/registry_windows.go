@@ -34,6 +34,9 @@ const (
 // Supported reports whether autostart can be set here.
 func Supported() bool { return true }
 
+// Label is the name of the setting.
+func Label() string { return "Start with Windows" }
+
 // System is the Run key of the current user.
 func System() Store { return runKey{} }
 

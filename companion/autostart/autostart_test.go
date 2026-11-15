@@ -1,6 +1,8 @@
 package autostart
 
 import (
+	"os"
+	"path/filepath"
 	"errors"
 	"strings"
 	"testing"
@@ -231,5 +233,64 @@ func TestSupportedMatchesSystem(t *testing.T) {
 	}
 	if Supported() != (New().Store != nil) {
 		t.Error("New() store doesn't match Supported()")
+	}
+}
+
+func TestLaunchAgentRoundTrip(t *testing.T) {
+	const prog = "/Users/v/Apps/CraftWise & Co/craftwise-companion"
+	dir := filepath.Join(t.TempDir(), "LaunchAgents") // does not exist yet
+	m := Manager{Store: LaunchAgent{Dir: dir}, Exe: func() (string, error) { return prog, nil }}
+
+	if s, err := m.State(); err != nil || s.On || s.Exists {
+		t.Fatalf("fresh: %+v %v", s, err)
+	}
+	s, err := m.Set(true)
+	if err != nil || !s.On {
+		t.Fatalf("on: %+v %v", s, err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, LaunchLabel+".plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<string>" + LaunchLabel + "</string>", "CraftWise &amp; Co", "<key>RunAtLoad</key>\n\t<true/>"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("plist lacks %q:\n%s", want, b)
+		}
+	}
+	if strings.Contains(string(b), "KeepAlive") {
+		t.Errorf("plist has KeepAlive:\n%s", b)
+	}
+	if got := PlistProgram(b); got != prog {
+		t.Errorf("PlistProgram = %q, want %q", got, prog)
+	}
+	if s, _ := m.Set(false); s.Exists || s.On {
+		t.Errorf("off: %+v", s)
+	}
+	if _, err := os.Stat(filepath.Join(dir, LaunchLabel+".plist")); !os.IsNotExist(err) {
+		t.Errorf("plist still there: %v", err)
+	}
+	if s, err := m.Set(false); err != nil || s.Exists {
+		t.Errorf("off again: %+v %v", s, err)
+	}
+}
+
+func TestLaunchAgentOtherExeAndGarbage(t *testing.T) {
+	dir := t.TempDir()
+	other := Manager{Store: LaunchAgent{Dir: dir}, Exe: func() (string, error) { return "/a/other", nil }}
+	mine := Manager{Store: LaunchAgent{Dir: dir}, Exe: func() (string, error) { return "/a/mine", nil }}
+	other.Set(true)
+	s, _ := mine.State()
+	if s.On || !s.Exists || s.Registered != `"/a/other"` {
+		t.Errorf("other exe: %+v", s)
+	}
+	if s, _ := mine.Toggle(); !s.On {
+		t.Errorf("toggle should rewrite for this exe: %+v", s)
+	}
+	os.WriteFile(filepath.Join(dir, LaunchLabel+".plist"), []byte("not a plist"), 0o644)
+	if s, _ := mine.State(); s.On || !s.Exists {
+		t.Errorf("garbage: %+v", s)
+	}
+	if s, _ := mine.Set(true); !s.On {
+		t.Errorf("overwrite garbage: %+v", s)
 	}
 }

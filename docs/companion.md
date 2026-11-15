@@ -48,6 +48,12 @@ after moving the exe it shows unticked, and ticking it again writes the new path
 exe in `shell:startup` works too (then leave the menu item unticked, or it starts twice; the second
 one exits because one is already running).
 
+Autostart on macOS: `./craftwise-companion -autostart on` writes
+`~/Library/LaunchAgents/com.velikopter.craftwise-companion.plist` (runs the binary at login, no
+`KeepAlive`, so quitting it keeps it down); `-autostart off` deletes it. launchd picks it up at the
+next login; it does not start a second copy now. `-status` shows `Start at login: on` only when the
+plist starts this exact binary, so after moving the binary run `-autostart on` again.
+
 Command line:
 
 | Flag | |
@@ -56,11 +62,29 @@ Command line:
 | `-dry-run` | build the requests and log their size, send nothing, change no state |
 | `-dump <dir>` | dry run, and write the request bodies as JSON into `<dir>` |
 | `-full` | with `-once`: send everything again |
-| `-status` | print the file locations, the last upload and (Windows) whether it starts with Windows |
-| `-autostart on\|off` | Windows: start with Windows or not (same as the menu item), then exit; elsewhere it prints "only on Windows" and exits with 1 |
+| `-status` | print the file locations, the last upload and (Windows, macOS) whether it starts at login |
+| `-autostart on\|off` | Windows: start with Windows or not (same as the menu item); macOS: start at login (LaunchAgent); then exit. Elsewhere it prints "only on Windows and macOS" and exits with 1 |
 | `-open site\|me\|config\|log` | open one of them and exit |
 | `-no-tray` | run in the foreground (Windows) |
 | `-dir <dir>` | settings, state and log directory |
+
+## Install on a Mac (Apple silicon)
+
+1. Build it (needs Go 1.22+) or copy the `craftwise-companion` binary from the PC:
+   `cd companion && GOOS=darwin GOARCH=arm64 go build -o craftwise-companion ./cmd/craftwise-companion`
+2. Put it where it stays, e.g. `~/Applications/CraftWise/`, and make it runnable:
+   `chmod +x ~/Applications/CraftWise/craftwise-companion`. If macOS blocks a copied binary:
+   `xattr -d com.apple.quarantine ~/Applications/CraftWise/craftwise-companion`.
+3. Run `~/Applications/CraftWise/craftwise-companion -open config`. It creates the settings file
+   (`~/Library/Application Support/CraftWise Companion/config.json`) and opens it.
+4. On wow.velikopter.com/me (signed in) create an upload token with scopes `public` and `private`
+   and paste it as `token` in `config.json`. Leave `wowPath` empty if WoW is in
+   `/Applications/World of Warcraft`, else set it to the `_forever_` folder.
+5. Check: `~/Applications/CraftWise/craftwise-companion -once`, then `/me` shows this Mac's
+   characters (log in and `/reload` in game first, so `CraftWise.lua` exists).
+6. Start at login: `~/Applications/CraftWise/craftwise-companion -autostart on`. Log out and in
+   (or reboot); `companion.log` in the settings folder shows "CraftWise Companion ... started".
+   Turn it off with `-autostart off`.
 
 ## Files
 
