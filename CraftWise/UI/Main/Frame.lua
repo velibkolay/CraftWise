@@ -237,8 +237,8 @@ local function UpdateStatus(page)
 	head.status:SetShown(text ~= nil)
 	head.statusHit:SetShown(text ~= nil)
 	local stale = kind == "stale"
-	head.status:SetFontObject(Style.Fonts[(stale or kind == "scanning") and "Label" or "Caption"])
-	local c = stale and C.danger or C.text3
+	head.status:SetFontObject(Style.Fonts[(stale or kind == "scanning" or kind == "done") and "Label" or "Caption"])
+	local c = stale and C.danger or kind == "done" and C.text or C.text3
 	head.status:SetTextColor(c[1], c[2], c[3], 1)
 	if kind == "scanning" then
 		head.live:ClearAllPoints()
@@ -247,7 +247,8 @@ local function UpdateStatus(page)
 		head.live:Show()
 		local p = status.scanning
 		local width = M.Layout().metrics.width or 880
-		f.progress.fill:SetWidth(math.max(p.total > 0 and width * p.done / p.total or 0, 0.01))
+		local fraction = status.own and status.own.fraction or (p and p.total > 0 and p.done / p.total) or 0
+		f.progress.fill:SetWidth(math.max(width * fraction, 0.01))
 		f.progress:Show()
 	else
 		head.live:Hide()
@@ -298,6 +299,90 @@ local function UpdateScanButton()
 		btn:SetEnabled(model.enabled)
 		btn:SetAlpha(model.enabled and 1 or 0.6)
 	end
+end
+
+-- The bar under the auction house window (#285): what the scan is doing, as a line, a bar and a hint, for
+-- someone who looks at the auctions and not at the CraftWise window. Parented to UIParent and anchored below
+-- Blizzard's AuctionHouseFrame, outside its art; it only exists once a scan was asked for.
+local ahBar
+local AH_BAR_POLL = 0.25
+
+local function BuildAHBar()
+	local bar = CreateFrame("Frame", nil, UIParent)
+	bar:SetFrameStrata("DIALOG")
+	bar:SetHeight(50)
+	bar.sheet = Style.Sheet(bar, C.card, C.cardFlap, 10, false)
+	bar.text = Style.Text(bar, "Label", "text")
+	bar.text:SetPoint("TOPLEFT", bar, "TOPLEFT", 14, -9)
+	bar.text:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -14, -9)
+	bar.text:SetJustifyH("LEFT")
+	bar.text:SetWordWrap(false)
+	bar.track = bar:CreateTexture(nil, "ARTWORK")
+	Style.Fill(bar.track, C.rule)
+	bar.track:SetHeight(4)
+	bar.track:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 14, 20)
+	bar.track:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -14, 20)
+	bar.fill = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+	Style.Fill(bar.fill, C.live)
+	bar.fill:SetHeight(4)
+	bar.fill:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 14, 20)
+	bar.hint = Style.Text(bar, "Caption", "text2")
+	bar.hint:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 14, 5)
+	bar.hint:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -14, 5)
+	bar.hint:SetJustifyH("LEFT")
+	bar.hint:SetWordWrap(false)
+	local elapsed = 0
+	bar:SetScript("OnUpdate", function(self, dt)
+		elapsed = elapsed + (dt or 0)
+		if elapsed >= AH_BAR_POLL then
+			elapsed = 0
+			M.UpdateAHBar()
+		end
+	end)
+	return bar
+end
+
+function M.AHBar()
+	return ahBar
+end
+
+function M.UpdateAHBar()
+	local host = _G.AuctionHouseFrame
+	local model = host and host.IsShown and host:IsShown() and M.ScanModel() or nil
+	if not model then
+		if ahBar then
+			ahBar:Hide()
+		end
+		return nil
+	end
+	if not ahBar then
+		ahBar = BuildAHBar()
+	end
+	if ahBar.host ~= host then
+		ahBar.host = host
+		ahBar:ClearAllPoints()
+		ahBar:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, -4)
+		ahBar:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -4)
+	end
+	local failed, done = model.kind == "failed", model.kind == "done"
+	ahBar.text:SetText(model.text)
+	local c = failed and C.danger or C.text
+	ahBar.text:SetTextColor(c[1], c[2], c[3], 1)
+	local hint = model.hint or ""
+	if model.eta then
+		hint = hint .. "  ·  " .. (L["≈ %s left"]):format(M.Clock(model.eta))
+	end
+	ahBar.hint:SetText(hint)
+	local fc = done and C.text or C.live
+	ahBar.fill:SetVertexColor(fc[1], fc[2], fc[3], 1)
+	ahBar.track:SetShown(model.fraction ~= nil)
+	ahBar.fill:SetShown(model.fraction ~= nil)
+	if model.fraction then
+		local width = (ahBar:GetWidth() or host:GetWidth() or 640) - 28
+		ahBar.fill:SetWidth(math.max(width * model.fraction, 0.01))
+	end
+	ahBar:Show()
+	return model
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -1258,7 +1343,10 @@ end
 ns.Listen("RECIPES_CHANGED", M.Refresh)
 ns.Listen("PROFESSIONS_CHANGED", M.Refresh)
 ns.Listen("PRICES_CHANGED", M.Refresh)
-ns.Listen("AH_STATE_CHANGED", M.Refresh)
+ns.Listen("AH_STATE_CHANGED", function()
+	M.UpdateAHBar()
+	M.Refresh()
+end)
 -- The own scan (#6): a failure says why in the chat (the click may have been minutes ago), a finished one
 -- what it brought; the header follows each state.
 ns.Listen("OWN_SCAN_CHANGED", function(state)
@@ -1270,5 +1358,6 @@ ns.Listen("OWN_SCAN_CHANGED", function(state)
 		ns.Print((L["Scan finished: %s rows, %s items priced."]):format(M.Thousands(s.last.rows),
 			M.Thousands((s.last.items or 0) + (s.last.lastOnly or 0))))
 	end
+	M.UpdateAHBar()
 	M.Refresh()
 end)

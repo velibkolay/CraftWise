@@ -1055,15 +1055,22 @@ function M.CurrentHouse()
 	return currentHouse
 end
 
--- The full scan being recorded (main window "Scanning" state, #153): { house, label, done, total } with
--- done = rows read so far (all of them while the rows are stored), nil when no scan runs.
+-- The full scan being recorded (main window "Scanning" state, #153): { house, label, done, total, phase }.
+-- phase "read": done = rows read so far of total = rows in the list. phase "store" (#285): done = items
+-- stored of total = items to store (rows are collected per item first, so the two differ). nil when no scan
+-- runs.
 function M.ScanProgress()
 	local scan = job
 	if not scan or scan.aborted then
 		return nil
 	end
-	local done = scan.phase == "commit" and scan.count or math.min(scan.read or 0, scan.count)
-	return { house = scan.house, label = M.HouseLabel(scan.house), done = done, total = scan.count }
+	if scan.phase == "commit" then
+		local total = scan.toStore or scan.count
+		return { house = scan.house, label = M.HouseLabel(scan.house), done = math.min(scan.stored or 0, total),
+			total = total, phase = "store", rows = scan.count }
+	end
+	return { house = scan.house, label = M.HouseLabel(scan.house), done = math.min(scan.read or 0, scan.count),
+		total = scan.count, phase = "read", rows = scan.count }
 end
 
 -- When anything (full scan, search, browse) was last recorded at a house; nil when nothing was (#153).
@@ -1167,7 +1174,8 @@ end
 function M.OwnScan(now)
 	now = now or time()
 	return {
-		state = own.state, house = own.house, requestedAt = own.requestedAt, listAt = own.listAt,
+		state = own.state, house = own.house, requestedAt = own.requestedAt, listAt = own.listAt, phaseAt = own.phaseAt,
+		rows = own.rows, timeout = M.OWN_WAIT_SECONDS,
 		elapsed = own.requestedAt and OWN_ACTIVE[own.state] and math.max(0, now - own.requestedAt) or nil,
 		error = own.error, detail = own.detail, finishedAt = own.finishedAt,
 		cooldown = M.ScanCooldown(now), block = M.ScanBlock(now),
@@ -1318,8 +1326,9 @@ end
 local function CommitScan(scan)
 	scan.phase = "commit"
 	scan.commitSlice = {}
+	scan.stored = 0
 	if scan.own and own.token == scan.ownToken and own.state == "reading" then
-		SetOwn("storing")
+		SetOwn("storing", { phaseAt = time() })
 	end
 	local keys, seen = {}, {}
 	for key in pairs(scan.rows) do
@@ -1337,7 +1346,9 @@ local function CommitScan(scan)
 			keys[#keys + 1] = key
 		end
 	end
+	scan.toStore = #keys
 	Chunked(#keys, COMMIT_PER_FRAME * LIGHT_SHARE, function(i)
+		scan.stored = i -- the header and the AH bar show items stored of items to store
 		local key = keys[i]
 		if scan.unread[ItemIDOfKey(key)] then
 			return 1
@@ -1471,7 +1482,7 @@ local function OnReplicateList()
 	job = scan
 	if mine then
 		CancelOwnTimer()
-		SetOwn("reading", { listAt = time(), rows = count })
+		SetOwn("reading", { listAt = time(), phaseAt = time(), rows = count })
 	end
 	Chunked(count, ROWS_PER_FRAME, function(i)
 		local index = i - 1 -- the list is 0-based, as Auctionator reads it

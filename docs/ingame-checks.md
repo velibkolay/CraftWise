@@ -994,3 +994,14 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
   - Whether a failed or timed-out request still uses up the 15 minutes. CraftWise keeps the countdown after a timeout; note whether a second click earlier works.
 - **After the scan:** the AH status in the header reads "scanned 0 min ago", Sell › Auctions, Make and the Bags prices use the new data, and scope items have history from the one list (look at Look up › Items › Price history for an item you track). The scan is logged `kind = "full"`, `source = "own"` in `CraftWiseMarketDB.scans` for the house.
 - **Failures:** close the auction house while the button says "Waiting": a chat line says the house closed and nothing was stored. Close it while it reads: the same. Close it while "Storing": the scan finishes.
+
+## Own AH scan: progress shown per phase (#285)
+
+- No TOC change; `/reload` is enough. Click "Scan AH" and watch the header (a Make or Sell page, where the AH status shows) and the bar CraftWise draws under Blizzard's auction house window:
+  - **Waiting:** "Waiting for the server · 0:23 / 2:00" with a bar that fills towards the timeout; the button reads "Waiting · 0:23 / 2:00". Note how long the list really takes (the 120 s is a placeholder).
+  - **Reading:** "Reading the list · N of TOTAL · NN %", hint "Keep the auction house open." After a few seconds the tooltip and the bar add "≈ m:ss left", worked out from the rows read so far (nothing else): compare it with the real time.
+  - **Storing:** "Storing prices · N of M · NN %" (items stored of items to store, not rows) with the hint "Closing the auction house is safe now." Close the house here: the scan must finish. Check that the bar keeps moving, that the game doesn't stutter (the frames are cut at 6 ms), and that the percentage reaches 100 %.
+  - **Done:** "Scan done · ROWS rows · ITEMS items · m:ss" in bold white in the header and on the bar for 10 s, plus a chat line. Then the button reads "Next scan in 14:52", counting down.
+  - **Failed:** the reason in red ("Scan failed · no list within 2:00", "the auction house was closed", ...), until the next click.
+- **Where the bar sits:** it is anchored 4 units under `AuctionHouseFrame`, outside its art. Check that it is visible and doesn't sit on the screen's bottom edge or on top of another window (the Forever AH layout has not been read). If it is off screen, say so: it needs another anchor.
+- **The countdown:** hover the button while it says "Next scan in ...": the tooltip says the server allows one list per account every 15 minutes, counted from the request, so it runs after a failed scan, a closed house or another addon's scan too. Close the auction house while "Waiting" or "Reading": the countdown must still run after reopening.

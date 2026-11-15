@@ -549,6 +549,7 @@ function M.PriceStatus(now)
 	s.age = s.at and math.max(0, now - s.at) or nil
 	s.stale = s.age ~= nil and s.age > M.STALE_SECONDS
 	s.scanning = market and market.ScanProgress and market.ScanProgress() or nil
+	s.own = M.ScanModel(now) -- our own scan's phase, progress and result (#285)
 	return s
 end
 
@@ -556,6 +557,15 @@ end
 -- without a house.
 function M.StatusText(status)
 	local Style = ns.Style
+	local own = status.own
+	if own and own.text then
+		if own.kind == "scanning" then
+			return Style.Hex("live") .. own.text .. "|r", "scanning"
+		elseif own.kind == "failed" then
+			return own.text, "stale"
+		end
+		return own.text, "done"
+	end
 	if status.scanning then
 		local p = status.scanning
 		return Style.Hex("live") .. L["Scanning"] .. " " .. (p.label or "") .. "|r" .. Style.Hex("text2") .. " · "
@@ -582,13 +592,24 @@ function M.StatusText(status)
 end
 
 ----------------------------------------------------------------------------------------------------
--- "Scan AH" (#6): the button in the header while an auction house is open. The model is pure (it reads
--- Market only); Frame.lua draws it. A click asks the server for the whole list once, never by itself.
+-- Scan AH (#6, #285): the button in the header while an auction house is open, and what the scan says while
+-- it runs. The models are pure (they read Market only); Frame.lua draws them in the header (status line,
+-- progress line, button) and on a small bar at the auction house. A click asks the server for the whole list
+-- once, never by itself. Only numbers the client gives; the one estimate (≈ left) is computed from the
+-- progress measured so far and labelled as such.
 ----------------------------------------------------------------------------------------------------
 
--- 754 -> "12:34".
+M.SCAN_DONE_SECONDS = 10 -- the summary of a finished scan stays this long
+
+-- 754 -> "12:34" (rounded up: the countdown of the cooldown).
 function M.Countdown(seconds)
 	seconds = math.max(0, math.ceil(seconds or 0))
+	return ("%d:%02d"):format(math.floor(seconds / 60), seconds % 60)
+end
+
+-- 23.9 -> "0:23" (rounded down: time that has passed).
+function M.Clock(seconds)
+	seconds = math.max(0, math.floor(seconds or 0))
 	return ("%d:%02d"):format(math.floor(seconds / 60), seconds % 60)
 end
 
@@ -606,11 +627,81 @@ function M.ScanFailText(reason, detail)
 	return (L["The game refused the scan request: %s"]):format(tostring(detail or "?"))
 end
 
+-- The same in a few words, for the header.
+local function ScanFailShort(reason, timeout)
+	if reason == "timeout" then
+		return (L["no list within %s"]):format(M.Clock(timeout))
+	elseif reason == "closed" then
+		return L["the auction house was closed"]
+	elseif reason == "changed" then
+		return L["the list changed"]
+	end
+	return L["the game refused the request"]
+end
+
+-- Seconds left, worked out from what was measured so far: only after 3 s and 5 % of the work, never for a
+-- finished or unknown phase.
+local function Eta(done, total, since, now)
+	if not (done and total and since and total > 0) or done >= total then
+		return nil
+	end
+	local spent = now - since
+	if spent < 3 or done / total < 0.05 then
+		return nil
+	end
+	return math.ceil(spent * (total - done) / done)
+end
+
+-- What the own scan shows right now, nil when there is nothing to show (idle, or a finished scan's summary
+-- has been up for M.SCAN_DONE_SECONDS):
+--   { state, kind = "scanning" | "done" | "failed", text, hint, fraction (0..1 or nil), eta (seconds or nil) }
+function M.ScanModel(now)
+	now = now or time()
+	local market = ns.Market
+	if not (market and market.OwnScan) then
+		return nil
+	end
+	local s = market.OwnScan(now)
+	local st = s.state
+	local model = { state = st }
+	if st == "requested" or st == "waiting" then
+		local elapsed, timeout = s.elapsed or 0, s.timeout or 0
+		model.kind = "scanning"
+		model.text = (L["Waiting for the server · %s / %s"]):format(M.Clock(elapsed), M.Clock(timeout))
+		model.fraction = timeout > 0 and math.min(elapsed / timeout, 1) or 0
+		model.hint = L["Keep the auction house open."]
+	elseif st == "reading" or st == "storing" then
+		local p = market.ScanProgress and market.ScanProgress()
+		local done, total = p and p.done or 0, p and p.total or s.rows or 0
+		local reading = st == "reading"
+		model.kind = "scanning"
+		model.fraction = total > 0 and math.min(done / total, 1) or 0
+		model.text = ((reading and L["Reading the list · %s of %s · %d %%"] or L["Storing prices · %s of %s · %d %%"]))
+			:format(M.Thousands(done), M.Thousands(total), math.floor(model.fraction * 100))
+		model.hint = reading and L["Keep the auction house open."] or L["Closing the auction house is safe now."]
+		model.eta = Eta(done, total, s.phaseAt, now)
+	elseif st == "done" and s.finishedAt and now - s.finishedAt <= M.SCAN_DONE_SECONDS then
+		local last = s.last or {}
+		model.kind = "done"
+		model.fraction = 1
+		model.text = (L["Scan done · %s rows · %s items · %s"]):format(M.Thousands(last.rows or 0),
+			M.Thousands((last.items or 0) + (last.lastOnly or 0)), M.Clock(s.finishedAt - (s.requestedAt or s.finishedAt)))
+		model.hint = L["Everything is stored. The button now counts down to the next scan."]
+	elseif st == "failed" then
+		model.kind = "failed"
+		model.text = (L["Scan failed · %s"]):format(ScanFailShort(s.error, s.timeout))
+		model.hint = M.ScanFailText(s.error, s.detail)
+	else
+		return nil
+	end
+	return model
+end
+
 -- { show, label, enabled, state, tip = { title, lines... } } of the header's scan button.
 --   ready        "Scan AH"                         enabled
---   cooldown     "Scan AH · 12:34"                 disabled; the server allows one list per 15 minutes
---   requested / waiting   "Waiting for the list · 8 s"
---   reading / storing     "Reading · 1 200 of 5 000" / "Storing"
+--   cooldown     "Next scan in 12:34"              disabled; the tooltip says why it counts
+--   requested / waiting   "Waiting · 0:23 / 2:00"
+--   reading / storing     "Reading · 24 %" / "Storing · 27 %"
 function M.ScanButton(now)
 	now = now or time()
 	local market = ns.Market
@@ -624,27 +715,37 @@ function M.ScanButton(now)
 	end
 	model.show, model.state = true, s.state
 	local tip = model.tip
+	local scan = M.ScanModel(now)
 	tip[1] = L["Scan the auction house"]
 	if s.state == "requested" or s.state == "waiting" then
-		model.label = (L["Waiting for the list · %d s"]):format(math.floor(s.elapsed or 0))
-		tip[#tip + 1] = L["The request is out. Large lists can take a while to arrive."]
+		model.label = (L["Waiting · %s / %s"]):format(M.Clock(s.elapsed or 0), M.Clock(s.timeout or 0))
 	elseif s.state == "reading" or s.state == "storing" then
-		local p = market.ScanProgress and market.ScanProgress()
-		if s.state == "reading" and p then
-			model.label = (L["Reading · %s of %s"]):format(M.Thousands(p.done), M.Thousands(p.total))
-		else
-			model.label = L["Storing"]
-		end
-		tip[#tip + 1] = L["The rows are read and stored a few milliseconds at a time."]
+		local pct = math.floor((scan and scan.fraction or 0) * 100)
+		model.label = ((s.state == "reading" and L["Reading · %d %%"] or L["Storing · %d %%"])):format(pct)
 	elseif s.cooldown > 0 then
-		model.label = L["Scan AH"] .. " · " .. M.Countdown(s.cooldown)
-		tip[#tip + 1] = (L["One full list per account every 15 minutes: next scan in %s."]):format(M.Countdown(s.cooldown))
+		model.label = (L["Next scan in %s"]):format(M.Countdown(s.cooldown))
 	else
 		model.label, model.enabled = L["Scan AH"], true
-		tip[#tip + 1] = L["Asks for every auction at once (one request, only when you click). The game may stutter or lag while the list arrives."]
 	end
-	if s.state == "failed" then
-		tip[#tip + 1] = ns.Style.Hex("danger") .. M.ScanFailText(s.error, s.detail) .. "|r"
+	if scan and scan.kind == "scanning" then
+		tip[#tip + 1] = scan.text
+		tip[#tip + 1] = scan.hint
+		if scan.eta then
+			tip[#tip + 1] = (L["≈ %s left (worked out from the progress so far)"]):format(M.Clock(scan.eta))
+		end
+	elseif s.cooldown > 0 then
+		tip[#tip + 1] = (L["Next scan in %s."]):format(M.Countdown(s.cooldown))
+		tip[#tip + 1] = L["The server allows one full list per account every 15 minutes. The countdown starts when the request is sent, not when the list arrives, so it runs after a failed scan or a closed auction house too. A list another addon asked for counts as well."]
+		if scan and scan.kind == "failed" then
+			tip[#tip + 1] = ns.Style.Hex("danger") .. scan.hint .. "|r"
+		elseif scan and scan.kind == "done" then
+			tip[#tip + 1] = scan.text
+		end
+	else
+		tip[#tip + 1] = L["Asks for every auction at once (one request, only when you click). The game may stutter or lag while the list arrives."]
+		if scan and scan.kind == "failed" then
+			tip[#tip + 1] = ns.Style.Hex("danger") .. scan.hint .. "|r"
+		end
 	end
 	local last = s.last
 	if last then
