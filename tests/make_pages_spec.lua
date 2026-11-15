@@ -1131,3 +1131,60 @@ it("Learn: without What's Training?'s data nothing changes", function()
 	for _, w in ipairs(plainWhere(ns, R_HAT)) do assert(w.origin ~= "wt") end
 	eq(select(1, ns.RecipeStatus(ns.charDB.professions[PROF], R_HAT, { learned = false })), "unlearned")
 end)
+
+-- NPC names and spawns from an installed QuestieDB at run time (#304)
+local function withQuestie(ns)
+	UnitFactionGroup = function() return "Horde" end
+	ns.RecipeVendors = { [R_HAT] = { item = HAT, { 8145, 357, "H" }, { 12246, 405 } } }
+	ns.RecipeVendorAreas = { [357] = "Feralas", [405] = "Desolace" }
+	NpcDB = {
+		name = function(id) if id == 8145 then return "Sheendra Tallgrass" end end,
+		spawns = function(id) if id == 8145 then return { [357] = { { 74.4, 42.8 } }, [405] = { { 1, 2 } } } end end,
+	}
+	LibQuestieDB = { RequireContract = function() return true end }
+	Enum.UIMapType = { Continent = 2, Zone = 3 }
+	C_Map = C_Map or {}
+	C_Map.GetMapChildrenInfo = function() return { { name = "Feralas", mapID = 1444, mapType = 3 }, { name = "Desolace", mapID = 1443, mapType = 3 } } end
+end
+
+it("Learn: a vendor gets its name, spawn and map from QuestieDB, labelled by both sources, with a waypoint position", function()
+	local ns = Load({ unlearned = true })
+	withQuestie(ns)
+	local byNpc = {}
+	for _, w in ipairs(ns.RecipeWhere(R_HAT)) do if w.origin == "wt" then byNpc[w.npcID] = w end end
+	local sheendra = byNpc[8145]
+	eq(sheendra.text, "Vendor: Sheendra Tallgrass (Feralas 74.4, 42.8)")
+	eq(sheendra.label, "source: Questie/What's Training?, not seen in game")
+	eq(sheendra.map, 1444); eq(sheendra.x, 74.4); eq(sheendra.y, 42.8)
+	-- an NPC Questie doesn't know stays as before: id, zone, the What's Training? label, no position
+	local other = byNpc[12246]
+	eq(other.text, "Vendor: NPC 12246 (Desolace)"); eq(other.label, "source: What's Training?, not seen in game")
+	eq(other.x, nil); eq(other.map, nil)
+	-- the position works for the existing waypoint code (Merchant.Waypoint reads entry.merchant.map/x/y)
+	local set
+	C_Map.CanSetUserWaypointOnMap = function() return true end
+	C_Map.SetUserWaypoint = function(p) set = p end
+	UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
+	assert(ns.Merchant.Waypoint({ merchant = sheendra }))
+	eq(set.map, 1444); assert(math.abs(set.x - 0.744) < 1e-9)
+end)
+
+it("Learn: our own record wins over QuestieDB too; without QuestieDB or when it errors nothing changes", function()
+	local ns = Load({ unlearned = true })
+	withQuestie(ns)
+	ns.db.sources = ns.db.sources or {}
+	ns.db.sources[HAT] = { recipe = R_HAT, vendors = { [8145] = { name = "Sheendra (recorded)", zone = "Feralas", faction = "H", price = 5000, t = 1000 } } }
+	local texts = {}
+	for _, w in ipairs(ns.RecipeWhere(R_HAT)) do texts[#texts + 1] = w.text end
+	local joined = table.concat(texts, "\n")
+	assert(joined:find("Sheendra (recorded)", 1, true), joined)
+	assert(not joined:find("Sheendra Tallgrass", 1, true), "the recorded NPC isn't repeated from Questie\n" .. joined)
+	ns = Load({ unlearned = true })
+	withQuestie(ns)
+	NpcDB = nil
+	texts = {}
+	for _, w in ipairs(ns.RecipeWhere(R_HAT)) do if w.origin == "wt" then texts[#texts + 1] = w.text end end
+	eq(table.concat(texts, " | "), "Vendor: NPC 8145 (Feralas) | Vendor: NPC 12246 (Desolace)")
+	NpcDB = { name = function() error("boom") end, spawns = function() error("boom") end }
+	for _, w in ipairs(ns.RecipeWhere(R_HAT)) do if w.origin == "wt" then assert(w.text:find("NPC", 1, true), w.text) end end
+end)

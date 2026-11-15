@@ -1063,3 +1063,9 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Needs a full game restart (new data file in the TOC). Open Make › Learn on Cooking with Hot Wolf Ribs unlearned and never opened its vendor: the row and the tooltip show "Vendor: NPC 8145 (Feralas)" and "NPC 12246 (Desolace)" labelled "source: What's Training?, not seen in game"; the Alliance vendor (NPC 7947) is not listed for a Horde character.
 - Walk to a listed vendor and open its window: the line gets the NPC's name and the recorded price, and the "not seen in game" label goes. No coordinates or waypoint appear for a vendor only What's Training? knows.
 - Check a few NPC ids and zones from the list against the game (Wowhead/in game); report wrong ones on #302.
+
+## Learn vendors: names and coordinates from an installed QuestieDB (#304)
+- With QuestieDB loaded: Make › Learn, Hot Wolf Ribs (Cooking, Horde): "Vendor: Sheendra Tallgrass (Feralas 74.4, 42.8)" labelled "source: Questie/What's Training?, not seen in game". Check the name and the coordinates in game. A vendor Questie doesn't know stays "NPC <id> (zone)".
+- Without QuestieDB (disable it, `/reload`): the same vendors show as "NPC 8145 (Feralas)" again, no error.
+- Walk to the vendor and open it: our own recorded name, price and "seen by you" replace the line.
+- The line carries a map and position, so Merchant.Waypoint works for it; there is no button for it on the Learn page yet.

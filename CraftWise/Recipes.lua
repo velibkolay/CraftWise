@@ -561,6 +561,54 @@ end
 -- count as recorded too, and then the recorded line wins. No names, coordinates or prices: the tables have none,
 -- so a vendor shows as "NPC <id>" with its zone. Every line is labelled until our recorder has seen it.
 ns.WT_LABEL = "source: What's Training?, not seen in game"
+ns.WT_QUESTIE_LABEL = "source: Questie/What's Training?, not seen in game"
+
+-- NPC name and spawn from an installed QuestieDB at run time (#304): its global NpcDB (QuestieDB's public read API,
+-- ready as soon as the add-on has loaded, the data is baked into its TOC and decoded per NPC on first read; nothing
+-- is copied into CraftWise). nil without it, for an unknown NPC or an incompatible contract. x and y are map
+-- percentages of the NPC's first spawn in `area` (Questie keys spawns by area ID), nil when it has none there.
+local questieMemo = {}
+function ns.QuestieNpc(npcID, area)
+	local db, lib = rawget(_G, "NpcDB"), rawget(_G, "LibQuestieDB")
+	if not (db and db.name) or (lib and lib.RequireContract and not lib.RequireContract(1)) then
+		return nil
+	end
+	local key = npcID * 100000 + (area or 0)
+	local found = questieMemo[key]
+	if found == nil then
+		found = false
+		local ok, name = pcall(db.name, npcID)
+		if ok and type(name) == "string" and name ~= "" then
+			found = { name = name }
+			local okSpawns, spawns = pcall(db.spawns, npcID)
+			local spawn = okSpawns and type(spawns) == "table" and area and spawns[area] and spawns[area][1]
+			if type(spawn) == "table" and tonumber(spawn[1]) and tonumber(spawn[2]) then
+				found.x, found.y = tonumber(spawn[1]), tonumber(spawn[2])
+			end
+		end
+		questieMemo[key] = found
+	end
+	return found or nil
+end
+
+-- The map ID of a zone by its name (the client's own map tree, matched exactly), for a waypoint at a Questie spawn:
+-- QuestieDB doesn't publish its area -> map table, so it isn't used. nil when no zone map has that name.
+local zoneMaps
+local function MapOfZone(zone)
+	if not (zone and C_Map and C_Map.GetMapChildrenInfo and Enum and Enum.UIMapType) then
+		return nil
+	end
+	if not zoneMaps then
+		zoneMaps = {}
+		local ok, list = pcall(C_Map.GetMapChildrenInfo, 946, nil, true) -- Cosmic: every map below it
+		for _, info in ipairs(ok and list or {}) do
+			if info.name and (info.mapType == Enum.UIMapType.Zone or info.mapType == Enum.UIMapType.Continent) and not zoneMaps[info.name] then
+				zoneMaps[info.name] = info.mapID
+			end
+		end
+	end
+	return zoneMaps[zone]
+end
 local function WhatsTrainingVendors(recipeID, data, mine)
 	local entry = ns.RecipeVendors and ns.RecipeVendors[recipeID]
 	if not entry then
@@ -583,8 +631,13 @@ local function WhatsTrainingVendors(recipeID, data, mine)
 		local npc, area, faction = v[1], v[2], v[3]
 		if not seen[npc] and (faction == nil or mine == nil or faction == mine) then
 			local zone = ns.RecipeVendorAreas and ns.RecipeVendorAreas[area]
-			out[#out + 1] = { kind = "vendor", text = ("Vendor: NPC %d%s"):format(npc, zone and (" (" .. zone .. ")") or ""),
-				faction = faction, own = true, origin = "wt", npcID = npc, label = ns.WT_LABEL }
+			local q = ns.QuestieNpc(npc, area)
+			local where = zone and (q and q.x and ("%s %.1f, %.1f"):format(zone, q.x, q.y) or zone) or (q and q.x and ("%.1f, %.1f"):format(q.x, q.y))
+			-- map, x, y: a waypoint can be set from these (Merchant.Waypoint reads entry.merchant), only with a Questie spawn
+			out[#out + 1] = { kind = "vendor", text = ("Vendor: %s%s"):format(q and q.name or ("NPC " .. npc), where and (" (" .. where .. ")") or ""),
+				faction = faction, own = true, origin = "wt", npcID = npc, name = q and q.name, zone = zone,
+				map = q and q.x and MapOfZone(zone) or nil, x = q and q.x, y = q and q.y,
+				label = q and ns.WT_QUESTIE_LABEL or ns.WT_LABEL }
 		end
 	end
 	return out
