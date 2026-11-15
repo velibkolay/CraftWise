@@ -17,7 +17,9 @@
 --   teach        { "<recipe item ID>": [spell ID, required skill] }      (Sources.lua)
 --   spells       { "<spell ID>": [skillLine, output item ID or 0 (no item: enchant etc.), output quantity (mean
 --                  yield), reagent ID, quantity, reagent ID, quantity, ...] }    (Recipes.lua RecipeData)
---   names        { "<spell ID>": "name" } for spells that make no item (the item name says what the others make)
+--   names        { "<spell ID>": "name" } the recipe's name (client SpellName). For a spell that makes no item it is the
+--                only name; for the others it names the product when the site has no item name for it (#271), marked as
+--                "from the recipe". Spells whose name is ambiguous within their profession have none.
 --   vendor       { "<item ID>": copper per unit a vendor sells it for }   (Vendor.lua)
 --   sell         { "<item ID>": copper a vendor pays for one }            (Recipes.lua ItemSellPrices)
 local G = {}
@@ -177,9 +179,9 @@ function G.Build(root)
 	end
 	for _, byName in pairs(ns.RecipeNames or {}) do
 		for name, spell in pairs(byName) do
-			-- false: the name is ambiguous within the profession. Only spells that make no item need a name.
+			-- false: the name is ambiguous within the profession (no name).
 			local r = spell and ns.RecipeData[spell]
-			if r and not r.output then
+			if r then
 				out.names[spell] = name
 			end
 		end

@@ -326,6 +326,8 @@ view). The maths is `site/lib/recipes.ts` (tested in `test/recipes.test.ts`):
 spell of `recipes.json` that makes an item, with the product, profession, reagent cost, AH sale, vendor sale, profit
 and vendor profit. Same definitions as the addon (`vendorCheck` in `site/lib/recipes.ts`):
 
+- Product name (#271): the item's name from the AH scans; when the item was never scanned, the recipe's own name from
+  `recipes.json` `names` (the client's spell name, shown in italics with a tooltip). No name at all stays "Item <id>".
 - Vendor sale = the product's vendor sell price (`sellPrice` from the API, else the bundled `sell`) x output
   quantity, rounded down; no price (vendors don't buy it, or not known) gives no value.
 - Vendor profit = vendor sale - reagent cost (each reagent where it is cheaper, AH or vendor). Needs no AH price for
