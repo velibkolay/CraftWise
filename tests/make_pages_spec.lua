@@ -145,11 +145,11 @@ it("Craft rows: icon, name in its skill colour, rail of profit (zero at 18 %), c
 	eq(bracers.view.tips.profit[1], "No sale price")
 	-- the cell's own tip on hover
 	local _, bf = Row(ns, "craft", R_BRACERS)
-	local hit = bf.hits[6]
+	local hit = bf.hits[7]
 	hit.scripts.OnEnter(hit)
 	eq(CraftWiseInverseTip.title.text, "No sale price")
 	hit.scripts.OnLeave(hit)
-	eq(list.headers[2].label.text, "Recipe"); eq(list.headers[5].col.key, "pct"); eq(list.headers[6].col.key, "profit")
+	eq(list.headers[2].label.text, "Recipe"); eq(list.headers[5].col.key, "pct"); eq(list.headers[6].col.key, "daily"); eq(list.headers[7].col.key, "profit")
 	-- the row data keeps what the docked layout needs: name over rail, result right, sub-figure under it
 	for _, r in ipairs(Make.Rows(ns, "craft")) do
 		assert(r.view.name and r.view.result and r.view.sub and r.view.nameColor and r.view.resultColor, r.name)
@@ -524,13 +524,13 @@ it("States: Scanning: rows keep their prices, missing figures are skeleton bars"
 	Make.Open(ns, "craft", PROF)
 	local _, bracers = Row(ns, "craft", R_BRACERS)
 	local _, belt = Row(ns, "craft", R_BELT)
-	eq(bracers.cwSkeleton.shown, true); eq(bracers.cells[6].text, "")
+	eq(bracers.cwSkeleton.shown, true); eq(bracers.cells[7].text, "")
 	eq(belt.cwSkeleton == nil or belt.cwSkeleton.shown == false, true, "a priced row keeps its figure")
-	eq(belt.cells[6].text, "+" .. ns.FormatCoins(150))
+	eq(belt.cells[7].text, "+" .. ns.FormatCoins(150))
 	ns.Market.ScanProgress = function() return nil end
 	M.Refresh()
 	_, bracers = Row(ns, "craft", R_BRACERS)
-	eq(bracers.cwSkeleton.shown, false); eq(bracers.cells[6].text, "—")
+	eq(bracers.cwSkeleton.shown, false); eq(bracers.cells[7].text, "—")
 end)
 
 it("States: a Make model that raises shows Error; the other Make pages still work", function()
@@ -891,4 +891,133 @@ it("All professions: Add to basket uses the row's own profession", function()
 	M.Open("craft")
 	local row = Row(ns, "craft", R_PIE)
 	assert(row and row.professionID == COOK, "the pie row knows its profession")
+end)
+
+-- Make › Craft: Per day, the profit the market can absorb (#231)
+local function GoneAt(itemID, perDay, days)
+	local today = math.floor(NOW / DAY)
+	local entry = CraftWiseMarketDB.items[itemID][HORDE]
+	local typ = entry.days[today].typ -- keep the seeded price
+	entry.days = {}
+	for i = 0, days - 1 do
+		entry.days[today - i] = { lo = typ, typ = typ, hi = typ, n = 1, gone = perDay }
+	end
+end
+
+it("Per day formula: profit per craft times the crafts a day the market takes, per item of the yield", function()
+	local _, _, M = Load()
+	local C = M.CraftPage
+	local d = C.Daily({ profit = 150, outputQuantity = 1, sellSource = "auction" }, { gone = 70, days = 7 })
+	eq(d.perDay, 10); eq(d.crafts, 10); eq(d.daily, 1500)
+	d = C.Daily({ profit = 150, outputQuantity = 3, sellSource = "auction" }, { gone = 70, days = 7 })
+	eq(d.crafts, 70 / 7 / 3); eq(d.daily, 150 * 70 / 7 / 3)
+	d = C.Daily({ profit = 150, outputQuantity = 1, sellSource = "auction" }, { gone = 30, days = 3 })
+	eq(d.perDay, 10, "divided by the days with data, not by 7"); eq(d.daily, 1500)
+	d = C.Daily({ profit = -20, outputQuantity = 1, sellSource = "auction" }, { gone = 70, days = 7 })
+	eq(d.daily, -200, "a loss a day")
+	d = C.Daily({ profit = 150, outputQuantity = 1, sellSource = "auction" }, { gone = 0, days = 7 })
+	eq(d.daily, 0, "nothing disappeared")
+end)
+
+it("Per day gates: a reason and no figure without profit, item, auction price, history or enough days; vendor has no limit", function()
+	local _, _, M = Load()
+	local C = M.CraftPage
+	local info = { gone = 70, days = 7 }
+	eq(C.Daily({ profit = 150, sellSource = "auction", noItemOutput = true }, info).reason, "item")
+	eq(C.Daily({ sellSource = "auction" }, info).reason, "profit")
+	eq(C.Daily({ profit = 150, sellSource = "vendor" }, info).noLimit, true)
+	eq(C.Daily({ profit = 150, sellSource = "vendor" }, nil).noLimit, true, "a vendor needs no market history")
+	eq(C.Daily({ profit = 150, sellSource = "disenchant" }, info).reason, "other")
+	eq(C.Daily({ profit = 150, sellSource = "auction" }, nil).reason, "history")
+	local short = C.Daily({ profit = 150, sellSource = "auction" }, { gone = 70, days = 2 })
+	eq(short.reason, "short"); eq(short.days, 2)
+	eq(C.Daily({ profit = 150, sellSource = "auction" }, { gone = 70, days = 3 }).daily, 150 * 70 / 3)
+	local text, color, tip = C.DailyCell(short)
+	eq(text, "—"); assert(tip[2]:find("2 of 3 days", 1, true), tip[2])
+	text, _, tip = C.DailyCell({ noLimit = true })
+	eq(text, "no limit")
+end)
+
+it("Per day on the Craft rows: from the saved market data at the profit house; vendor, unpriced and unknown history", function()
+	local ns, _, M = Load()
+	GoneAt(BELT, 14, 5) -- 14 units a day over 5 days of history
+	Make.Open(ns, "craft", PROF)
+	local belt, gloves, bracers = Row(ns, "craft", R_BELT), Row(ns, "craft", R_GLOVES), Row(ns, "craft", R_BRACERS)
+	eq(belt.daily.days, 5); eq(belt.daily.gone, 70)
+	eq(belt.dailyProfit, 150 * 14)
+	eq(Plain(belt.view.cells.daily), "+" .. Plain(ns.FormatCoins(2100)))
+	eq(gloves.daily.noLimit, true); eq(gloves.view.cells.daily, "no limit")
+	eq(bracers.daily.reason, "profit"); eq(bracers.view.cells.daily, "—")
+	GoneAt(BELT, 14, 2)
+	M.Refresh()
+	eq(Row(ns, "craft", R_BELT).daily.reason, "short")
+	CraftWiseMarketDB.items[BELT] = nil
+	M.Refresh()
+	eq(Row(ns, "craft", R_BELT).daily.noLimit, true, "no AH data left: the vendor price is the sale")
+end)
+
+it("Per day sorts: figures first (best first), then vendor rows, then rows without a reason figure", function()
+	local ns, _, M = Load()
+	GoneAt(BELT, 14, 5)
+	GoneAt(GLOVES, 5, 5)
+	ns.db.settings.includeUnlearned = true
+	GoneAt(CLOAK, 2, 5)
+	Make.Open(ns, "craft", PROF)
+	local C = M.CraftPage
+	local rows = Make.Rows(ns, "craft")
+	C.SortRows(rows, "daily", true)
+	local names = {}
+	for _, r in ipairs(rows) do names[#names + 1] = r.name end
+	-- belt: +150 x 14/day; cloak (unlearned): +65 x 2/day; cap (unlearned): a figure of 0, nothing disappeared; the
+	-- vendor-sold gloves have no limit and come after the figures; bracers and hat have no figure
+	eq(names[1], "Test Belt"); eq(names[2], "Test Cloak"); eq(names[3], "Test Cap")
+	eq(names[4], "Test Gloves", "vendor rows after the figures")
+	C.SortRows(rows, "daily", false)
+	eq(rows[1].name, "Test Cap"); eq(rows[2].name, "Test Cloak"); eq(rows[3].name, "Test Belt")
+	eq(rows[4].name, "Test Gloves", "rows without a figure stay last in both directions")
+	local _ = table.concat(names, ",")
+	eq(M.Page("craft").columns[6].key, "daily"); eq(M.Page("craft").columns[6].sort, true)
+end)
+
+it("Per day includes unlearned recipes (the Unlearned chip) and says how long learning takes to pay back", function()
+	local ns, _, M = Load({ unlearned = true })
+	GoneAt(CLOAK, 2, 4)
+	Make.Open(ns, "craft", PROF)
+	local cloak = Row(ns, "craft", R_CLOAK)
+	eq(cloak.status ~= "known", true)
+	eq(cloak.daily.daily, 65 * 2)
+	assert(Make.Hover(ns, "craft", R_CLOAK))
+	local text = Make.CaptureTooltip(function() Make.Hover(ns, "craft", R_CLOAK) end)
+	assert(text:find("Per day", 1, true), text)
+	assert(text:find("Learning costs", 1, true) and text:find("days to pay back", 1, true), text)
+end)
+
+it("Per day tooltip: wording is disappeared, the history depth is shown, never 'sold'", function()
+	local ns = Load()
+	GoneAt(BELT, 14, 5)
+	Make.Open(ns, "craft", PROF)
+	local text = Make.CaptureTooltip(function() Make.Hover(ns, "craft", R_BELT) end)
+	assert(text:find("70 units disappeared in 5 days of history", 1, true), text)
+	assert(text:find("14 a day", 1, true), text)
+	local per_day = text:match("Per day.-\n(.-)\n")
+	assert(per_day and not per_day:find("sold", 1, true), tostring(per_day))
+end)
+
+it("Per day with All professions: every merged row has its figure", function()
+	local ns, _, M = Load()
+	GoneAt(BELT, 14, 5)
+	M.SetProfession("all")
+	M.Open("craft")
+	for _, r in ipairs(Make.Rows(ns, "craft")) do
+		assert(r.daily, r.name .. " has a Per day result")
+	end
+end)
+
+it("Per day: an item marked Junk counts as vendor (no limit)", function()
+	local ns = Load()
+	GoneAt(BELT, 14, 5)
+	ns.db.junk[BELT] = true
+	Make.Open(ns, "craft", PROF)
+	local belt = Row(ns, "craft", R_BELT)
+	eq(belt.sellSource, "vendor"); eq(belt.daily.noLimit, true); eq(belt.view.cells.daily, "no limit")
 end)

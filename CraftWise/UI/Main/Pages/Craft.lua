@@ -11,7 +11,7 @@ local Style, L = ns.Style, ns.L
 local C = Style.C
 
 local ZERO_AT = 0.18
-local RESULT_COLUMN = 6
+local RESULT_COLUMN = 7
 
 local CraftPage = {}
 M.CraftPage = CraftPage
@@ -27,9 +27,85 @@ local COLUMNS = {
 	end },
 	MK.Column("cost", L["Cost"] .. " " .. Style.Glyph("arrow", 10, "text3") .. " " .. L["sells"], 150, "RIGHT", "Figure"),
 	MK.Column("pct", L["Return"], 62, "RIGHT", "Figure", true),
+	MK.Column("daily", L["Per day"], 92, "RIGHT", "Figure", true),
 	MK.Column("profit", L["Profit"], 96, "RIGHT", "FigureBold", true),
 }
 CraftPage.COLUMNS = COLUMNS
+
+----------------------------------------------------------------------------------------------------
+-- Per day (#231): the profit the market can absorb
+----------------------------------------------------------------------------------------------------
+
+-- Units that disappeared at the profit house over the last 7 days at prices up to the typical (ns.Market.
+-- Disappeared: sold or expired, never "sold") and how many of those 7 days have market data at all. The per day
+-- figure divides by the days with data, not by 7, so a short history doesn't understate it; below
+-- Market.MIN_HISTORY_DAYS days of data there is no figure. Returns { gone, days } or nil without any history for the
+-- product at the house. Reads the saved market data only.
+CraftPage.WINDOW_DAYS = 7
+
+function CraftPage.MarketInfo(itemID)
+	local Mk = ns.Market
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	if not (itemID and Mk and Mk.IsLastOnlyAt and house) or Mk.IsLastOnlyAt(itemID, house) == nil then
+		return nil
+	end
+	local entry = CraftWiseMarketDB and CraftWiseMarketDB.items and CraftWiseMarketDB.items[itemID]
+	entry = entry and entry[house]
+	local today, days = math.floor(time() / 86400), 0
+	for day = today - CraftPage.WINDOW_DAYS + 1, today do
+		if entry and entry.days and entry.days[day] then
+			days = days + 1
+		end
+	end
+	return { gone = Mk.Disappeared(itemID, house), days = days }
+end
+
+-- The daily figure of a row (pure over the row and the market info): profit per craft times the crafts a day the
+-- market takes = (units disappeared per day) / (items per craft). Returns
+--   { daily = copper, crafts = crafts a day, perDay = units a day, gone, days }                 a figure
+--   { noLimit = true }                                  sold to a vendor (Junk counts as vendor): no market limit
+--   { reason = "profit" | "item" | "other" | "history" | "short", days = n }                    no figure, and why
+-- Vendor rows are not ranked by this figure: a vendor takes everything, the limit is your crafting time (see
+-- Speed and Profit/h on Make > Crafted), so they sort after the rows with a figure.
+function CraftPage.Daily(r, info)
+	if r.noItemOutput then
+		return { reason = "item" }
+	elseif r.profit == nil then
+		return { reason = "profit" }
+	elseif r.sellSource == "vendor" then
+		return { noLimit = true }
+	elseif r.sellSource ~= "auction" then
+		return { reason = "other" }
+	elseif not info then
+		return { reason = "history" }
+	elseif info.days < ns.Market.MIN_HISTORY_DAYS then
+		return { reason = "short", days = info.days }
+	end
+	local perDay = info.gone / info.days
+	local crafts = perDay / math.max(r.outputQuantity or 1, 1)
+	return { daily = r.profit * crafts, crafts = crafts, perDay = perDay, gone = info.gone, days = info.days }
+end
+
+local DAILY_REASONS = {
+	profit = L["No profit yet: a price is missing."],
+	item = L["This recipe makes no item."],
+	other = L["Its sale isn't an auction price."],
+	history = L["No market history for the product at the profit house."],
+}
+
+-- Cell text, colour and tip of the Per day column for a Daily() result.
+function CraftPage.DailyCell(d)
+	if d.daily then
+		local text, color = MK.Signed(d.daily)
+		return text, color, { L["Per day"], (L["Profit per craft times the crafts a day the market takes: %s units disappeared in %d days at prices up to the typical (sold or expired). Approx."]):format(
+			ns.CraftLog.Format(d.gone), d.days) }
+	elseif d.noLimit then
+		return L["no limit"], "text3", { L["Per day"], L["Sold to a vendor: no market limit. See Make › Crafted for profit per hour."] }
+	elseif d.reason == "short" then
+		return M.DASH, "text3", { L["Per day"], (L["Market history too short: %d of %d days."]):format(d.days, ns.Market.MIN_HISTORY_DAYS) }
+	end
+	return M.DASH, "text3", { L["Per day"], DAILY_REASONS[d.reason] or "" }
+end
 
 -- "1g 50s → 2g 70s AH": cost, sale and its tag; a missing figure says why (pure). Also returns the
 -- two halves.
@@ -82,6 +158,9 @@ function CraftPage.View(r, ctx)
 	view.cells.profit, view.colors.profit = view.result, view.resultColor
 	view.cells.pct, view.colors.pct = MK.PercentText(r.pct), r.pct and r.pct < 0 and "danger" or "text2"
 	view.tips.pct = { L["Return"], L["Profit divided by the cost to craft."] }
+	r.daily = CraftPage.Daily(r, CraftPage.MarketInfo(r.outputItemID))
+	r.dailyProfit = r.daily.daily
+	view.cells.daily, view.colors.daily, view.tips.daily = CraftPage.DailyCell(r.daily)
 	view.missing = r.profit == nil and not r.noItemOutput -- a skeleton while scanning (both layouts)
 	MK.Attach(r, view)
 	if ctx.all and r.professionName then
@@ -92,10 +171,41 @@ function CraftPage.View(r, ctx)
 	return r
 end
 
-local SORT_NOTES = { profit = L["by profit"], pct = L["by profit %"], name = L["by name"] }
+local SORT_NOTES = { profit = L["by profit"], pct = L["by profit %"], name = L["by name"], daily = L["by profit per day"] }
 
--- The list's own order: by % (rows without one last), else the shell's.
+-- By the daily figure: rows without one last either way; among those the vendor rows (no limit) first, by profit.
+function CraftPage.ByDaily(desc)
+	return function(a, b)
+		local da, db = a.dailyProfit, b.dailyProfit
+		if da ~= nil and db ~= nil and da ~= db then
+			if desc then
+				return da > db
+			end
+			return da < db
+		elseif (da == nil) ~= (db == nil) then
+			return da ~= nil
+		elseif da == nil then
+			local va, vb = a.daily and a.daily.noLimit or false, b.daily and b.daily.noLimit or false
+			if va ~= vb then
+				return va
+			end
+		end
+		local pa, pb = a.profit, b.profit
+		if (pa == nil) ~= (pb == nil) then
+			return pa ~= nil
+		elseif pa ~= pb then
+			return pa > pb
+		end
+		return (a.name or "") < (b.name or "")
+	end
+end
+
+-- The list's own order: by % or by the daily figure (rows without one last), else the shell's.
 function CraftPage.SortRows(rows, key, desc)
+	if key == "daily" then
+		table.sort(rows, CraftPage.ByDaily(desc))
+		return rows
+	end
 	if key == "pct" then
 		table.sort(rows, ns.Profit.ByPercent(desc))
 		return rows
