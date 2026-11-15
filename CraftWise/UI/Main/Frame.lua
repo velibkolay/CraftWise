@@ -326,15 +326,21 @@ local function UpdateScanButton()
 	end
 end
 
--- The bar under the auction house window (#285): what the scan is doing, as a line, a bar and a hint, for
--- someone who looks at the auctions and not at the CraftWise window. Parented to UIParent and anchored below
--- Blizzard's AuctionHouseFrame, outside its art; it only exists once a scan was asked for.
+-- The bar above the auction house window (#285, #297): what the scan is doing, as a line, a bar and a hint, for
+-- someone who looks at the auctions and not at the CraftWise window. Parented to UIParent and anchored to the
+-- TOP of Blizzard's AuctionHouseFrame, in the free space above it: the tabs (and the extra ones other addons
+-- add) hang below the frame, so nothing clickable is under it. It takes no mouse input at all, so even where the
+-- screen edge pushes it over the frame, clicks go through. A finished or failed scan's line stays M.AH_BAR_LINGER
+-- seconds (the header keeps it longer), and Settings > Look can switch the bar off (ui.ahBar).
+M.AH_BAR_LINGER = 6
 local ahBar
 local AH_BAR_POLL = 0.25
 
 local function BuildAHBar()
 	local bar = CreateFrame("Frame", nil, UIParent)
 	bar:SetFrameStrata("DIALOG")
+	bar:EnableMouse(false) -- never in the way of another frame's clicks (#297)
+	bar:SetClampedToScreen(true)
 	bar:SetHeight(50)
 	bar.sheet = Style.Sheet(bar, C.card, C.cardFlap, 10, false)
 	bar.text = Style.Text(bar, "Label", "text")
@@ -373,7 +379,10 @@ end
 
 function M.UpdateAHBar()
 	local host = _G.AuctionHouseFrame
-	local model = host and host.IsShown and host:IsShown() and M.ScanModel() or nil
+	local model = host and host.IsShown and host:IsShown() and M.UI().ahBar ~= false and M.ScanModel() or nil
+	if model and model.kind ~= "scanning" and time() - (model.finishedAt or time()) > M.AH_BAR_LINGER then
+		model = nil -- done or failed: the line goes after a few seconds, the header keeps it
+	end
 	if not model then
 		if ahBar then
 			ahBar:Hide()
@@ -386,8 +395,8 @@ function M.UpdateAHBar()
 	if ahBar.host ~= host then
 		ahBar.host = host
 		ahBar:ClearAllPoints()
-		ahBar:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, -4)
-		ahBar:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -4)
+		ahBar:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 4)
+		ahBar:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 4)
 	end
 	local failed, done = model.kind == "failed", model.kind == "done"
 	ahBar.text:SetText(model.text)

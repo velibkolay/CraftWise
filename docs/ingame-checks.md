@@ -1041,3 +1041,8 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - A pause of several minutes between two crafts is still a break: it doesn't add to the active time beyond the craft's own cast.
 - Cancel a cast (move or press Esc) and craft again: the cancelled cast doesn't count.
 - Short recipes (3 s) show the same Speed as before.
+
+## Own AH scan: the bar no longer covers the tabs (#297)
+
+- No TOC change; `/reload` is enough. The scan bar moved from under the auction house window (where it sat over the tabs Alış / Satış / … and the tabs other addons add) to **4 units above the window's top edge**, taking no mouse input at all. Check with Auctionator, Mastercraft and Disenchantry loaded: during a scan every AH tab is clickable, and clicks go through the bar even if it overlaps something. If the AH window sits so high that the bar can't fit above it, the screen clamp pushes the bar down over the window's title strip (visual only, no clicks): note where the AH window sits, and whether the bar is then readable.
+- The done or failed line leaves the bar after 6 s (`Main.AH_BAR_LINGER`); the header keeps the summary 10 s and a failure until the next click. Settings › Look has "Scan bar" to switch the bar off.
