@@ -98,22 +98,26 @@ it("#241: another format version is left alone", function()
 	eq(CraftWiseMarketDB.sync, nil)
 end)
 
-it("#241: the login timer reads the file, merges it and tells the other windows the prices moved", function()
+it("#241: the file is merged at login, while the loading screen is up: nothing is left for the world, the other windows are told once", function()
 	local M, stub, ns = Market()
 	InScope({ 100 })
 	local seen = 0
 	ns.Listen("PRICES_CHANGED", function(source) if source == "sync" then seen = seen + 1 end end)
 	CraftWiseSync = File({ [100] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - 100, min = 90, qty = 12, listings = 3 } }) } })
 	local v0 = M.DataVersion()
+	local hooks = {}
+	ns.SetRecorder(function(kind, _, label) hooks[#hooks + 1] = kind .. "|" .. label end)
 	stub.Fire("PLAYER_LOGIN")
-	eq(next(CraftWiseMarketDB.items[100] or {}), nil, "not in the login frame")
-	stub.RunTimers()
-	eq(Stored(M, 100).last.min, 90)
+	local labelled = false
+	for _, line in ipairs(hooks) do labelled = labelled or line == "hook|Market: sync merge (login)" end
+	eq(labelled, true, "Settings > Debug lists it under its own label")
+	eq(Stored(M, 100).last.min, 90, "there when the login handlers return")
 	eq(M.Current(100, HORDE).min, 90)
 	assert(M.DataVersion() ~= v0, "caches keyed on the data version restart")
 	eq(seen, 1)
 	eq(M.SyncStatus().state, "done")
 	eq(M.SyncStatus().machine, "MacBook")
+	eq(M.SyncBusy(), false)
 	eq(CraftWiseSync.market, nil, "the strings are let go once merged")
 end)
 
@@ -125,7 +129,7 @@ it("#241: an entry the other machine has and this one doesn't is added with its 
 	local theirs = { last = { t = NOW - 100, min = 90, qty = 12, listings = 3 },
 		raw = { Point(NOW - 3600, 95, 10), Point(NOW - 100, 90, 12) },
 		days = { [TODAY] = Day(88, 2, 7), [TODAY - 3] = Day(70, 4, 11) } }
-	eq(Merge(M, File({ [100] = { [HORDE] = M.EncodeEntry(theirs) } })), "merging")
+	eq(Merge(M, File({ [100] = { [HORDE] = M.EncodeEntry(theirs) } })), "done")
 	eq(type(CraftWiseMarketDB.items[100][HORDE]), "string", "stored packed")
 	local e = Stored(M, 100)
 	eq(e.last.min, 90); eq(#e.raw, 2); eq(e.raw[1].t, NOW - 3600); eq(e.days[TODAY].n, 2); eq(e.days[TODAY - 3].lo, 70)
@@ -248,7 +252,7 @@ it("#241: the same file again changes nothing, a rewritten file with the same da
 	eq(Dump(M), first)
 	-- the file was written again and holds the same market
 	local v = M.DataVersion()
-	eq(Merge(M, Build(NOW - 30)), "merging")
+	eq(Merge(M, Build(NOW - 30)), "done")
 	eq(Dump(M), first, "nothing changed")
 	eq(M.SyncStatus().changed, 0)
 	eq(M.DataVersion(), v, "no cache restarts for nothing")
@@ -285,7 +289,7 @@ it("#241: malformed entries are skipped, not a Lua error, and the good ones stil
 		[109] = { [HORDE] = (good:gsub("|.*", "|1,2,3|")) }, -- a point with an odd tier list
 	}
 	items[100]["not a house"] = good
-	eq(Merge(M, File(items)), "merging")
+	eq(Merge(M, File(items)), "done")
 	eq(Stored(M, 100).last.min, 90)
 	eq(Stored(M, 101), nil); eq(Stored(M, 102), nil); eq(Stored(M, 103), nil); eq(Stored(M, 104), nil)
 	eq(Stored(M, 105), nil); eq(Stored(M, 106), nil); eq(Stored(M, 108), nil)
@@ -377,18 +381,14 @@ it("#241: at most 30 scans of the other machine are kept", function()
 	eq(CraftWiseMarketDB.syncScans[HORDE][1].t, NOW - 3000)
 end)
 
-------------------------------------------------------------------------------------- slices
+------------------------------------------------------------------------------------- the loading screen's time
 
--- Timers that wait until the spec runs them, and a clock that moves 1 ms per look at it.
-local function SliceClock()
-	local queue, looks = {}, 0
-	C_Timer.After = function(_, fn) queue[#queue + 1] = fn end
+-- A clock that moves 1 ms per look at it; any use of a frame or timer for the merge is an error.
+local function LoadingClock()
+	local looks = 0
 	debugprofilestop = function() looks = looks + 1; return looks * 1.0 end
-	return function()
-		local fn = table.remove(queue, 1)
-		if fn then fn() end
-		return fn ~= nil
-	end
+	C_Timer.After = function() error("no frame is used for the merge") end
+	C_Timer.NewTimer = function() error("no timer is used for the merge") end
 end
 
 local function Count(t)
@@ -397,55 +397,60 @@ local function Count(t)
 	return n
 end
 
-it("#241: the merge runs in slices: nothing in the frame that starts it, a few entries per frame, the same result as in one go", function()
-	local M, _, ns = Market()
-	local ids, entries = {}, {}
+local function Entries(M, ids)
+	local entries = {}
 	for id = 1, 1500 do
-		ids[#ids + 1] = id
+		ids[id] = id
 		entries[id] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - id, min = 100 + id, qty = 5 }, raw = { Point(NOW - id, 100 + id, 5) }, days = { [TODAY] = Day(100 + id, 1, 0) } }) }
 	end
-	InScope(ids)
-	local step = SliceClock()
-	local hooks = {}
-	ns.SetRecorder(function(kind, _, label) hooks[#hooks + 1] = kind .. "|" .. label end)
-	eq(Merge(M, File(entries, { names = { [1] = "One", [2] = "Two" } })), "merging")
-	eq(Count(CraftWiseMarketDB.items), 0, "nothing merged in the frame that started it")
-	local slices, worst, last = 0, 0, 0
-	while step() do
-		slices = slices + 1
-		local now = Count(CraftWiseMarketDB.items)
-		worst = math.max(worst, now - last)
-		last = now
-		assert(slices < 2000, "never finishes")
-	end
-	assert(slices >= 20, "spread over frames: " .. slices)
-	assert(worst <= M.SYNC_CHECK * 6, "a slice merged " .. worst .. " items")
+	return entries
+end
+
+it("#241: a file bigger than the loading screen's time is finished at logout, before the file is saved, with the same result", function()
+	local M, stub, ns = Market()
+	local ids = {}
+	InScope((function() Entries(M, ids) return ids end)())
+	LoadingClock()
+	M.SYNC_LOGIN_MS = 50 -- ms; one look at the clock is 1 ms here and it looks every M.SYNC_CHECK entries
+	CraftWiseSync = File(Entries(M, {}), { names = { [1] = "One", [2] = "Two" } })
+	eq(M.StartSync(), "partial") -- what the login handler calls
+	eq(M.SyncBusy(), true)
+	local part = Count(CraftWiseMarketDB.items)
+	assert(part > 0 and part < 1500 and part <= 50 * M.SYNC_CHECK + M.SYNC_CHECK, "the loading screen's budget was used: " .. part)
+	eq(CraftWiseMarketDB.sync, nil, "written is only recorded when it is all merged")
+	stub.Fire("PLAYER_LOGOUT")
+	eq(M.SyncBusy(), false)
 	eq(Count(CraftWiseMarketDB.items), 1500)
-	eq(M.SyncStatus().state, "done")
+	eq(CraftWiseMarketDB.sync.atLogout, true)
 	eq(CraftWiseMarketDB.names[2], "Two")
-	local sliceHooks = 0
-	for _, line in ipairs(hooks) do if line == "hook|Market: sync merge slice" then sliceHooks = sliceHooks + 1 end end
-	eq(sliceHooks, slices, "every slice is a timed hook")
-	-- the one-go result
-	local sliced = Dump(M)
+	-- the same file merged in one go
+	local whole = Dump(M)
 	local M2 = Market()
 	InScope(ids)
-	Merge(M2, File(entries))
-	eq(Dump(M2):len() > 0, true)
-	eq(sliced, Dump(M2), "the same entries")
+	CraftWiseSync = File(Entries(M2, {}))
+	eq(M2.StartSync(), "done")
+	eq(whole, Dump(M2), "the same entries")
 end)
 
-it("#241: a merge that is not finished at logout is not marked done, and the next login does it again", function()
-	local M = Market()
+it("#241: a game that closes before the merge is finished doesn't mark it done, the next login does it again", function()
+	local M, stub = Market()
 	InScope({ 1, 2, 3 })
-	local step = SliceClock()
+	LoadingClock()
+	M.SYNC_LOGIN_MS = 5
 	local entries = {}
 	for id = 1, 300 do entries[id] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - id, min = 10, qty = 1 } }) } end
-	Merge(M, File(entries))
-	step(); step() -- two slices, then the game closes
-	eq(CraftWiseMarketDB.sync, nil, "written is only recorded when it is all merged")
+	eq(Merge(M, File(entries)), "partial")
+	eq(CraftWiseMarketDB.sync, nil)
 	local partial = Count(CraftWiseMarketDB.items)
 	assert(partial > 0 and partial < 300, "part way: " .. partial)
+	-- a crash or a kill: no logout. The next login reads the file again.
+	local again = {}
+	for id = 1, 300 do again[id] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - id, min = 10, qty = 1 } }) } end
+	M.SYNC_LOGIN_MS = 10 ^ 9
+	CraftWiseSync = File(again)
+	-- (a new Lua state would have no job; here the old one is finished first)
+	stub.Fire("PLAYER_LOGOUT")
+	eq(Count(CraftWiseMarketDB.items), 300)
 end)
 
 ------------------------------------------------------------------------------------- what the rest of the addon sees
