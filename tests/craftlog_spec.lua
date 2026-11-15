@@ -183,3 +183,130 @@ it("Make › Crafted with an empty log says so", function()
 	eq(#model.rows, 0)
 	eq(model.hero.name, "—")
 end)
+
+-- Make › Crafted: search, filters, sorting (#205 follow-up)
+local function seedLog(ns)
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, before = { [R_CLAMS] = 1500, [R_BOOTS] = 20 }, chars = {
+		["TestRealm-Main Tanner"] = { [R_BOOTS] = { days = { [20261110] = { 5, 5 } } }, [R_CLAMS] = { days = { [20261115] = { 2, 2 } } } },
+		["TestRealm-Alt Mage"] = { [R_BOOTS] = { days = { [20261115] = { 3, 3 } } } } } }
+end
+
+it("Crafted default order: today, then 7 days, then total (undated included), then name", function()
+	local ns = setup()
+	seedLog(ns)
+	local P = ns.Main.CraftedPage
+	local rows = P.SortRows(P.Rows(T(2026, 11, 15)), "today", true)
+	local names = {}
+	for _, r in ipairs(rows) do names[#names + 1] = r.recipeID .. ":" .. r.today .. "/" .. r.week .. "/" .. r.total end
+	eq(table.concat(names, " "), R_BOOTS .. ":3/8/28 " .. R_CLAMS .. ":2/2/1502")
+end)
+
+it("Crafted with nothing today or this week falls back to the total, not the alphabet", function()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	local list = { { name = "Barbaric Harness", recipeID = 1, today = 0, week = 0, total = 25 },
+		{ name = "Goblin Deviled Clams", recipeID = 2, today = 0, week = 0, total = 1532 },
+		{ name = "Alpha", recipeID = 3, today = 0, week = 0, total = 25 } }
+	ns.Main.CraftedPage.SortRows(list, "today", true)
+	eq(list[1].name, "Goblin Deviled Clams"); eq(list[2].name, "Alpha"); eq(list[3].name, "Barbaric Harness")
+end)
+
+it("Crafted sorting by a column: desc then asc, ties by the default order; by name A-Z", function()
+	local ns = setup()
+	local P = ns.Main.CraftedPage
+	local function ids(rows) local t = {} for _, r in ipairs(rows) do t[#t + 1] = r.name end return table.concat(t, ",") end
+	local rows = { { name = "B", recipeID = 1, today = 1, week = 5, total = 50 }, { name = "A", recipeID = 2, today = 1, week = 9, total = 10 },
+		{ name = "C", recipeID = 3, today = 0, week = 5, total = 70 } }
+	eq(ids(P.SortRows(rows, "total", true)), "C,B,A")
+	eq(ids(P.SortRows(rows, "total", false)), "A,B,C")
+	eq(ids(P.SortRows(rows, "week", true)), "A,B,C", "week 9 first, then the tie at 5 goes to the larger today")
+	eq(ids(P.SortRows(rows, "name", false)), "A,B,C")
+	eq(ids(P.SortRows(rows, "name", true)), "C,B,A")
+end)
+
+it("Crafted header clicks sort and flip, and the shell remembers the choice", function()
+	local ns = setup()
+	local M = ns.Main
+	local page = M.Page("crafted")
+	for _, col in ipairs(page.columns) do
+		if col.key ~= "icon" then eq(col.sort, true, col.key) end
+	end
+	local key, desc = M.Sort(page)
+	eq(key, "today"); eq(desc, true)
+	M.ClickSort(page, "total")
+	key, desc = M.Sort(page)
+	eq(key, "total"); eq(desc, true)
+	M.ClickSort(page, "total")
+	key, desc = M.Sort(page)
+	eq(key, "total"); eq(desc, false)
+	eq(M.UI().sort.crafted.key, "total"); eq(M.UI().sort.crafted.desc, false)
+	M.state.sort.crafted = nil -- a new session reads the saved choice
+	key, desc = M.Sort(page)
+	eq(key, "total"); eq(desc, false)
+end)
+
+it("Crafted search filters by recipe name through Make's filter box", function()
+	local ns = setup()
+	seedLog(ns)
+	local P = ns.Main.CraftedPage
+	ns.Main.Make.state.query = ""
+	eq(#P.Rows(T(2026, 11, 15)), 2)
+	ns.Main.Make.state.query = "BOOT"
+	local rows = P.Rows(T(2026, 11, 15))
+	eq(#rows, 1); eq(rows[1].recipeID, R_BOOTS)
+	ns.Main.Make.state.query = "zzz"
+	eq(#P.Rows(T(2026, 11, 15)), 0)
+	ns.Main.Make.state.query = ""
+end)
+
+it("Crafted character filter: one character's dated crafts only, undated crafts drop out", function()
+	local ns = setup()
+	seedLog(ns)
+	local P = ns.Main.CraftedPage
+	local rows = P.SortRows(P.Rows(T(2026, 11, 15), { char = "TestRealm-Alt Mage" }), "today", true)
+	eq(#rows, 1); eq(rows[1].recipeID, R_BOOTS); eq(rows[1].total, 3); eq(rows[1].before, 0)
+	rows = P.SortRows(P.Rows(T(2026, 11, 15), { char = "TestRealm-Main Tanner" }), "today", true)
+	eq(#rows, 2); eq(rows[1].recipeID, R_CLAMS); eq(rows[1].total, 2); eq(rows[2].total, 5)
+	eq(table.concat(ns.CraftLog.Characters(), ","), "TestRealm-Alt Mage,TestRealm-Main Tanner")
+	rows = P.Rows(T(2026, 11, 15), {})
+	eq(#rows, 2, "all characters")
+end)
+
+it("Crafted profession filter: by the recipe's skill line", function()
+	local ns = setup()
+	seedLog(ns)
+	local P = ns.Main.CraftedPage
+	local ok = ns.RecipeLine(R_BOOTS)
+	eq(ok, 165)
+	eq(#P.Rows(T(2026, 11, 15), { line = 165 }), 2)
+	eq(#P.Rows(T(2026, 11, 15), { line = 171 }), 0)
+	local lines = P.Lines()
+	eq(#lines, 1); eq(lines[1][1], 165)
+end)
+
+it("Crafted page draws its filter tools and the chips choose all or one", function()
+	local ns = setup()
+	seedLog(ns)
+	local M = ns.Main
+	M.Open("crafted")
+	local P = M.CraftedPage
+	P.SetChar("TestRealm-Alt Mage")
+	eq(P.state.char, "TestRealm-Alt Mage")
+	P.SetChar("all")
+	eq(P.state.char, nil)
+	P.SetLine(165)
+	eq(P.state.line, 165)
+	P.SetLine("all")
+	eq(P.state.line, nil)
+end)
+
+it("the craft log's lines go through the locale table", function()
+	local ns = setup()
+	seedLog(ns)
+	ns.L["Crafted %s \194\183 today %s"] = "Hergestellt %s \194\183 heute %s"
+	ns.L["Before the log (undated): %s"] = "Vor dem Log (ohne Datum): %s"
+	local lines = ns.CraftLog.Lines(R_BOOTS, T(2026, 11, 15))
+	eq(lines.headline, "Hergestellt 28 \194\183 heute 3")
+	eq(lines.before, "Vor dem Log (ohne Datum): 20")
+end)

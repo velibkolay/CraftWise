@@ -379,7 +379,7 @@ local function MenuButton(i)
 		b.label:SetPoint("LEFT", b, "LEFT", 28, 0)
 		b:SetScript("OnClick", function(self)
 			menu:Hide()
-			M.SetProfession(self.id)
+			menu.onPick(self.id)
 		end)
 		b:SetScript("OnEnter", function(self)
 			self.bg:Show()
@@ -392,19 +392,23 @@ local function MenuButton(i)
 	return b
 end
 
--- The professions to choose from, under the chip; the current one has the nokta.
-function MK.ShowProfessionMenu(anchor)
+-- The choices under a chip: entries = { { id, label } }; the current id has the nokta; onPick(id) on a click.
+-- The Make profession menu and the Crafted page's profession and character menus share this frame.
+function MK.ShowChoiceMenu(anchor, entries, current, onPick)
 	if not menu then
 		BuildMenu()
 	end
-	local ids = M.ProfessionIDs()
-	local current = M.Profession()
-	local profs = ns.charDB and ns.charDB.professions or {}
-	for i, id in ipairs(ids) do
+	menu.onPick = onPick
+	local ids = {}
+	for i, e in ipairs(entries) do
+		ids[i] = e[1]
+	end
+	for i, e in ipairs(entries) do
+		local id = e[1]
 		local b = MenuButton(i)
 		b.id = id
 		b.current = id == current
-		b.label:SetText(ProfessionLabel(id, profs[id]))
+		b.label:SetText(e[2])
 		b.label:SetFontObject(b.current and Style.Fonts.BodyBold or Style.Fonts.Body)
 		b.bg:SetShown(b.current)
 		b:ClearAllPoints()
@@ -424,6 +428,16 @@ function MK.ShowProfessionMenu(anchor)
 	menu:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
 	menu:Show()
 	return menu
+end
+
+-- The professions to choose from, under the chip; the current one has the nokta.
+function MK.ShowProfessionMenu(anchor)
+	local profs = ns.charDB and ns.charDB.professions or {}
+	local entries = {}
+	for _, id in ipairs(M.ProfessionIDs()) do
+		entries[#entries + 1] = { id, ProfessionLabel(id, profs[id]) }
+	end
+	return MK.ShowChoiceMenu(anchor, entries, (M.Profession()), M.SetProfession)
 end
 
 function MK.Menu()

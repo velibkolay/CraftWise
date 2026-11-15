@@ -79,16 +79,17 @@ function CL.Lines(recipeID, now)
 		return nil
 	end
 	local out = { total = total, today = c.today, chars = {}, dated = c.total }
-	out.headline = ("Crafted %s \194\183 today %s"):format(CL.Format(total), CL.Format(c.today))
+	local L = ns.L
+	out.headline = (L["Crafted %s \194\183 today %s"]):format(CL.Format(total), CL.Format(c.today))
 	for _, ch in ipairs(c.chars) do
-		out.chars[#out.chars + 1] = { name = CL.CharLabel(ch.key), text = ("today %s \194\183 7 days %s \194\183 total %s"):format(
+		out.chars[#out.chars + 1] = { name = CL.CharLabel(ch.key), text = (L["today %s \194\183 7 days %s \194\183 total %s"]):format(
 			CL.Format(ch.today), CL.Format(ch.week), CL.Format(ch.total)) }
 	end
 	if c.before > 0 then
-		out.before = ("Before the log (undated): %s"):format(CL.Format(c.before))
+		out.before = (L["Before the log (undated): %s"]):format(CL.Format(c.before))
 	end
 	if c.earlier > 0 then
-		out.earlier = ("Older than %d days: %s"):format(CL.KEEP_DAYS, CL.Format(c.earlier))
+		out.earlier = (L["Older than %d days: %s"]):format(CL.KEEP_DAYS, CL.Format(c.earlier))
 	end
 	return out
 end
@@ -195,9 +196,20 @@ function CL.Counts(recipeID, now)
 	return out
 end
 
+-- Characters in the log, sorted.
+function CL.Characters()
+	local out = {}
+	for key in pairs(ns.db and ns.db.crafted and ns.db.crafted.chars or {}) do
+		out[#out + 1] = key
+	end
+	table.sort(out)
+	return out
+end
+
 -- Every logged recipe for the Crafted page: { recipeID, today, week, total, before } with total = dated plus
--- undated, sorted by today, then week, then total.
-function CL.List(now)
+-- undated, sorted by today, then week, then total. charKey = only that character's dated crafts (the undated
+-- crafts have no character and drop out).
+function CL.List(now, charKey)
 	local log = CL.Store()
 	local list, byRecipe = {}, {}
 	if not log then
@@ -213,8 +225,11 @@ function CL.List(now)
 		end
 		return r
 	end
-	for _, char in pairs(log.chars) do
+	for key, char in pairs(log.chars) do
 		for recipeID, entry in pairs(char) do
+			if charKey and key ~= charKey then
+				break
+			end
 			local r = Row(recipeID)
 			for day, b in pairs(entry.days) do
 				local age = todayNumber - CL.DayNumber(day)
@@ -231,7 +246,7 @@ function CL.List(now)
 			end
 		end
 	end
-	for recipeID, n in pairs(log.before) do
+	for recipeID, n in pairs(not charKey and log.before or {}) do
 		local r = Row(recipeID)
 		r.before, r.total = n, r.total + n
 	end
