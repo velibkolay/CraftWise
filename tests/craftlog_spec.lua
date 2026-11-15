@@ -735,3 +735,98 @@ it("Crafted opens in the window and the docked layout without an error", functio
 	assert(M.Frame(), "docked")
 	M.UI().layout = "window"
 end)
+
+-- Active crafting time (#251)
+it("active time: each gap up to 30 s between two crafts is added to the day of the later craft; the first craft adds 0", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100)
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 0, "no gap before the first craft of a run")
+	craftAt(stub, R_BOOTS, 102.5)
+	craftAt(stub, R_BOOTS, 105)
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 5)
+end)
+
+it("active time: a break over 30 s adds nothing, exactly 30 s counts, and the run restarts after it", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100)
+	craftAt(stub, R_BOOTS, 130) -- 30 s
+	craftAt(stub, R_BOOTS, 200) -- break
+	craftAt(stub, R_BOOTS, 203) -- 3 s from after the break
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 33)
+end)
+
+it("active time: gaps run across recipes, so alternating recipes are not counted twice", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100)
+	craftAt(stub, R_CLAMS, 103) -- 3 s to the clams
+	craftAt(stub, R_BOOTS, 106) -- 3 s to the boots
+	eq(entryOf(ns, R_CLAMS).days[20261115][5], 3)
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 3)
+end)
+
+it("active time: a gap across midnight goes to the day of the later craft", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15, 23) end
+	craftAt(stub, R_BOOTS, 100)
+	time = function() return T(2026, 11, 16, 0) end
+	craftAt(stub, R_BOOTS, 104)
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 0)
+	eq(entryOf(ns, R_BOOTS).days[20261116][5], 4)
+end)
+
+it("active time: today and 7 days per recipe and over the characters; old days without time give nothing", function()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, chars = {
+		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 0, 0, 120 }, [20261112] = { 3, 3, 0, 0, 60 } } } },
+		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 30 } } }, [R_CLAMS] = { days = { [20261115] = { 1, 1 } } } } } }
+	local now = T(2026, 11, 15)
+	local byID = {}
+	for _, e in ipairs(ns.CraftLog.List(now)) do byID[e.recipeID] = e end
+	eq(byID[R_BOOTS].activeToday, 150); eq(byID[R_BOOTS].activeWeek, 210)
+	eq(byID[R_CLAMS].activeToday, nil, "a day without time shows nothing")
+	byID = {}
+	for _, e in ipairs(ns.CraftLog.List(now, "A")) do byID[e.recipeID] = e end
+	eq(byID[R_BOOTS].activeToday, 120)
+end)
+
+it("the 90-day fold carries the active seconds; days without time stay without", function()
+	local ns = setup()
+	local now = T(2026, 11, 15)
+	ns.db.crafted = { seeded = true, chars = { A = { [R_BOOTS] = { days = { [20260801] = { 2, 2, 0, 0, 40 }, [20260802] = { 1, 1 } } } } } }
+	eq(ns.CraftLog.Fold(now), 2)
+	eq(ns.db.crafted.chars.A[R_BOOTS].earlier[5], 40)
+end)
+
+it("CraftLog.FormatDuration: seconds, minutes, hours", function()
+	local F = setup().CraftLog.FormatDuration
+	eq(F(45), "45 s"); eq(F(60), "1 min"); eq(F(3600), "1 h"); eq(F(4320), "1 h 12 min"); eq(F(0.2), "0 s")
+end)
+
+it("Crafted summary card: today's active time, the 7-day time in the window, follows the character filter; nothing without time", function()
+	local ns = setup()
+	local M, P = ns.Main, ns.Main.CraftedPage
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, chars = {
+		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 43800, 4, 4320 }, [20261112] = { 3, 3, 0, 0, 600 } } } },
+		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 60 } } } } } }
+	M.Make.state.query = ""
+	local hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(hero.name:find("1 h 13 min active", 1, true), hero.name)
+	assert(hero.name:find(ns.Main.Make.PlainMoney(43800 * 3600 / 4380) .. "/h", 1, true), "gold per active hour: " .. hero.name)
+	assert(hero.sub:find("(1 h 23 min active)", 1, true), hero.sub)
+	assert(not P.Model({ metrics = M.DOCKED_METRICS }).hero.sub:find("active", 1, true), "docked: key figure only")
+	P.state.char = "B"
+	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(hero.name:find("1 min active", 1, true), hero.name)
+	assert(not hero.name:find("/h", 1, true), "no profit recorded for B: no rate")
+	P.state.char = nil
+	ns.db.crafted.chars.A[R_BOOTS].days[20261115][5] = nil
+	ns.db.crafted.chars.A[R_BOOTS].days[20261112][5] = nil
+	ns.db.crafted.chars.B[R_BOOTS].days[20261115][5] = nil
+	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(not hero.name:find("active", 1, true) and not hero.sub:find("active", 1, true), "no time recorded: nothing shown")
+end)
