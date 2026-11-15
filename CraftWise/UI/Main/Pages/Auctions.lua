@@ -30,6 +30,38 @@ P.STATUS = {
 	cancelled = { key = "returning", text = L["Returning"], color = "text2", order = 4 },
 }
 
+-- A click on a card shows that group's auctions only (#269): the card's key -> the list's status key, and
+-- how the list is titled then. Uncertain records stay visible in every filter, labelled as always.
+-- P.filter: the card key now filtering, nil = all.
+P.GROUPS = {
+	way = { status = "sold", title = L["%d sold, waiting in the mail"], empty = L["No sold auction is waiting in the mail."] },
+	all = { status = "listed", title = L["%d listed"], empty = L["No auction is listed."] },
+	back = { status = "returning", title = L["%d returning by mail"], empty = L["No auction is on its way back."] },
+}
+P.filter = nil
+
+function P.SetFilter(key)
+	P.filter = (key ~= nil and P.filter ~= key and P.GROUPS[key]) and key or nil -- the same card again clears it
+	if M.Refresh then
+		M.Refresh()
+	end
+end
+
+-- The rows a filter keeps: the group's own and the uncertain ones.
+function P.Filtered(rows, key)
+	local group = key and P.GROUPS[key]
+	if not group then
+		return rows
+	end
+	local out = {}
+	for _, r in ipairs(rows) do
+		if r.status == group.status or r.status == "uncertain" then
+			out[#out + 1] = r
+		end
+	end
+	return out
+end
+
 -- What a record pays into the mailbox: youGet, why (nil youGet), depositKnown.
 function P.YouGet(rec)
 	local A = ns.Auctions
@@ -212,10 +244,23 @@ function P.Model(ctx)
 	local now = time()
 	local rows, ids = P.Rows(A and A.List() or {}, now)
 	S.LoadNames(ids)
-	local model = { rows = rows, empty = L["No auction listed, sold or returning. Post one and it shows here."] }
+	local all = rows
+	local group = P.filter and P.GROUPS[P.filter]
+	rows = P.Filtered(rows, P.filter)
+	local model = { rows = rows, empty = group and group.empty or L["No auction listed, sold or returning. Post one and it shows here."] }
+	if group then
+		local n = 0
+		for _, r in ipairs(rows) do
+			if r.status == group.status then
+				n = n + 1
+			end
+		end
+		model.listTitle = (group.title):format(n)
+		model.listNote = L["click the card again or All to show everything"]
+	end
 	local totals = ns.HeroCards.AuctionTotals()
 	if totals then
-		model.hero = { bare = true, height = 80, cards = P.Cards(totals, rows) }
+		model.hero = { bare = true, height = 80, cards = P.Cards(totals, all), selected = P.filter }
 		if M.IsDocked(ctx) then
 			model.hero.height = M.Docked.StackCardsHeight(#model.hero.cards) -- provisional (#161 Q4)
 		end
@@ -320,8 +365,18 @@ function P.Hero(card, hero, ctx, slot)
 	for i, def in ipairs(hero.cards) do
 		local c = slot.cards[i]
 		if not c then
-			c = CreateFrame("Frame", nil, slot)
+			c = CreateFrame("Button", nil, slot)
 			c.sheet = Style.Sheet(c, C.card, C.cardFlap, 14, false)
+			c.selectedBorder = Style.Border(c, C.text)
+			c:SetScript("OnClick", function(self)
+				P.SetFilter(self.key)
+			end)
+			c:HookScript("OnEnter", function(self)
+				Style.ShowTip(self, self.label or "", L["Click to show these"])
+			end)
+			c:HookScript("OnLeave", function(self)
+				Style.HideTip(self)
+			end)
 			c.stat = S.Stat(c, true)
 			c.stat:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -12)
 			c.stat:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -14, 12)
@@ -330,11 +385,34 @@ function P.Hero(card, hero, ctx, slot)
 		c:ClearAllPoints()
 		c:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
 		c:SetSize(w, hero.height or 80)
-		c.key = def.key
+		c.key, c.label = def.key, def.label
+		c.selectedBorder.top:SetShown(hero.selected == def.key)
+		c.selectedBorder.bottom:SetShown(hero.selected == def.key)
+		c.selectedBorder.left:SetShown(hero.selected == def.key)
+		c.selectedBorder.right:SetShown(hero.selected == def.key)
 		local figure = def.count and tostring(def.count) or S.Coins(def.copper)
 		c.stat:Set(def.label, figure, def.caption, nil, def.count and def.unit or nil)
 		c:Show()
 	end
+end
+
+-- The list bar's All chip: on while nothing filters; a click clears the filter.
+function P.ListTools(slot)
+	slot.all = Style.Chip(slot, L["All"])
+	slot.all:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+	slot.all:SetScript("OnClick", function()
+		P.SetFilter(nil)
+	end)
+	slot.all:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["All"], L["Show every auction again."])
+	end)
+	slot.all:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+end
+
+function P.UpdateListTools(slot)
+	slot.all:SetOn(P.filter == nil)
 end
 
 function P.Tools(slot)
@@ -358,6 +436,6 @@ M.RegisterPage({
 	key = "auctions", section = "sell", label = L["Auctions"], order = 2, events = { "AUCTIONS_CHANGED" },
 	columns = P.columns, Model = P.Model, InitRow = P.InitRow, Hero = P.Hero,
 	DockedRow = P.DockedRow, DockedHero = P.DockedHero,
-	Tools = P.Tools, UpdateTools = P.UpdateTools,
+	Tools = P.Tools, UpdateTools = P.UpdateTools, ListTools = P.ListTools, UpdateListTools = P.UpdateListTools,
 	P = P,
 })
