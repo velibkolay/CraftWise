@@ -601,7 +601,7 @@ end
 -- Where column `index` sits in a row of the current layout.
 function MK.ColumnAt(columns, index, ctx)
 	local m = ctx.metrics or M.WINDOW_METRICS
-	return M.ColumnLayout(columns, m.width or 880, m.pad or 22)[index]
+	return M.ColumnLayout(columns, m.width or 880, m.pad or 22, nil, m.baseWidth)[index]
 end
 
 -- While a scan runs, a figure that is still missing is a skeleton bar in its column (spec "Scanning").

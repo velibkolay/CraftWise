@@ -31,6 +31,7 @@ local COLUMNS = {
 	MK.Column("profit", L["Profit"], 96, "RIGHT", "FigureBold", true),
 }
 CraftPage.COLUMNS = COLUMNS
+COLUMNS[2].grow = 300 -- dragged wider (#280) the recipe name gets room before the profit rail does
 
 ----------------------------------------------------------------------------------------------------
 -- Per day (#231): the profit the market can absorb

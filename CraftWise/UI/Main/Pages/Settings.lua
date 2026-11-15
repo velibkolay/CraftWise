@@ -261,6 +261,7 @@ local function Groups()
 			end },
 		{ key = "reset", kind = "buttons", label = "", buttons = {
 			{ key = "reset", text = L["Reset window positions"], onClick = Set.ResetPositions },
+			{ key = "resetSize", text = L["Reset window size"], onClick = function() M.ResetSize() end },
 		} },
 	} }
 

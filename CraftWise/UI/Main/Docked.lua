@@ -32,7 +32,7 @@ M.Docked = D
 
 M.DOCKED_METRICS = {
 	docked = true,
-	width = 380, edge = 20, top = 20, bottom = 20, cut = 22, slide = 0.2,
+	width = 380, baseWidth = 380, edge = 20, top = 20, bottom = 20, cut = 22, slide = 0.2,
 	header = 64, keyIcon = 34, keyX = 16, keyY = 14, titleX = 128, titleY = 13, rightPad = 28, buttonGap = 4,
 	buttonSize = 22, buttonY = 20,
 	tabRow = 40, tabsTop = 14, tabGap = 20, tabHeight = 25, tabsX = 18, statusGap = 0,
@@ -66,6 +66,24 @@ local function Place(frame, side, m, out)
 	frame:SetPoint("BOTTOM" .. edge, UIParent, "BOTTOM" .. edge, x, m.bottom)
 end
 
+-- Width the sheet gets when the cursor is at x (pixels from the left of the screen): `scale` is the sheet's
+-- effective scale, `screenPx` the screen's width in pixels. The sheet sits `m.edge` from its edge.
+function D.WidthFromCursor(side, m, cursorX, scale, screenPx)
+	scale = (tonumber(scale) or 1) > 0 and (tonumber(scale) or 1) or 1
+	if side == "right" then
+		return ((tonumber(screenPx) or 0) - (tonumber(cursorX) or 0)) / scale - m.edge
+	end
+	return (tonumber(cursorX) or 0) / scale - m.edge
+end
+
+local function DragWidth(side)
+	return function(frame, m)
+		local cx = GetCursorPosition()
+		local screen = (UIParent:GetWidth() or 0) * (UIParent:GetEffectiveScale() or 1)
+		return D.WidthFromCursor(side, m, cx, frame:GetEffectiveScale(), screen)
+	end
+end
+
 -- Slides the sheet in from its edge (spec "Mouse and keys": 200 ms; nothing fades or bounces).
 function D.SlideIn(frame, side, m)
 	frame.cwSlide = side
@@ -81,6 +99,13 @@ local function Apply(side)
 		frame:SetWidth(m.width)
 		frame.movable = false
 		frame:SetMovable(false)
+		-- The sheet's width is dragged at its inner edge (#280); no corner grip here.
+		frame.grip:Hide()
+		frame.edge:ClearAllPoints()
+		local inner = side == "right" and "LEFT" or "RIGHT"
+		frame.edge:SetPoint("TOP" .. inner, frame, "TOP" .. inner, 0, -m.header)
+		frame.edge:SetPoint("BOTTOM" .. inner, frame, "BOTTOM" .. inner, 0, 0)
+		frame.edge:Show()
 		frame.sheet:SetCut(m.cut)
 		frame.head.art:SetTexture(Style.Media.headerNarrow)
 		-- Swapped in place (from the window or the other side): it slides in. A scale change only places it.
@@ -153,7 +178,7 @@ if D.SIDES[1].key ~= D.DEFAULT_SIDE then
 end
 for _, s in ipairs(D.SIDES) do
 	M.RegisterLayout(s.key, { label = s.label, docked = true, side = s.side, metrics = M.DOCKED_METRICS,
-		Apply = Apply(s.side), Arrange = Arrange, OnShow = OnShow(s.side) })
+		Apply = Apply(s.side), Arrange = Arrange, OnShow = OnShow(s.side), DragWidth = DragWidth(s.side) })
 end
 
 ----------------------------------------------------------------------------------------------------
