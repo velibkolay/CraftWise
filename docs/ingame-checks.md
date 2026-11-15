@@ -1069,3 +1069,7 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Without QuestieDB (disable it, `/reload`): the same vendors show as "NPC 8145 (Feralas)" again, no error.
 - Walk to the vendor and open it: our own recorded name, price and "seen by you" replace the line.
 - The line carries a map and position, so Merchant.Waypoint works for it; there is no button for it on the Learn page yet.
+
+## Key bindings: one header (#306)
+- `/console scriptErrors 1`, then log in or `/reload`: no "Binding header CRAFTWISE was attempted to be loaded more than once" warning.
+- Game menu › Options › Key Bindings: the three bindings (party, main window, farm) are still listed together under CraftWise.
