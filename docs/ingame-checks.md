@@ -1058,3 +1058,8 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - **Accepting is yours:** the addon never calls `AcceptTrade` or `C_SecureTransfer.AcceptTrade` (a spec checks the source). Press Trade yourself.
 - **After the trade:** the line reads "sent N of M stacks"; the stacks that left the bags count as sent (it looks at the bag slots that were placed, again a few seconds after the window closed). Quantities on the list shrink by what went out, and the button reads "Fill next 6". Cancel a trade: nothing counts as sent and the same stacks are offered again. Check both, and that a soulbound stack is skipped with "Nothing left to send (N bound stacks can't be traded)" when only those remain.
 - Send lists are stored in `CraftWiseDB.send` (`work`, `lists`, `partners`) and are meant to be reused for mail (#300).
+
+## Make › Learn: where to buy a recipe, from What's Training?'s data (#302)
+- Needs a full game restart (new data file in the TOC). Open Make › Learn on Cooking with Hot Wolf Ribs unlearned and never opened its vendor: the row and the tooltip show "Vendor: NPC 8145 (Feralas)" and "NPC 12246 (Desolace)" labelled "source: What's Training?, not seen in game"; the Alliance vendor (NPC 7947) is not listed for a Horde character.
+- Walk to a listed vendor and open its window: the line gets the NPC's name and the recorded price, and the "not seen in game" label goes. No coordinates or waypoint appear for a vendor only What's Training? knows.
+- Check a few NPC ids and zones from the list against the game (Wowhead/in game); report wrong ones on #302.

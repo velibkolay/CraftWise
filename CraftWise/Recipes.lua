@@ -521,8 +521,11 @@ function ns.RecipeStatus(prof, recipeID, recipe)
 	end
 	local data = SourceEntry(recipeID)
 	if data then
-		local status = data.vendors and "vendor" or data.quests and "quest" or (data.drops or data.world) and "drop" or "unlearned"
+		local status = (data.vendors or ns.RecipeVendors and ns.RecipeVendors[recipeID]) and "vendor" or data.quests and "quest" or (data.drops or data.world) and "drop" or "unlearned"
 		return status, data.skill, data.skill and data.skill > skill or false
+	end
+	if ns.RecipeVendors and ns.RecipeVendors[recipeID] then
+		return "vendor", nil, false -- What's Training?'s table lists vendors for it (#302)
 	end
 	return "unlearned"
 end
@@ -552,6 +555,41 @@ function ns.LearnCost(recipeID)
 	end
 end
 
+-- Vendors from What's Training?'s tables (#302, bundled ns.RecipeVendors, never read at run time): the vendors of
+-- the player's faction and the neutral ones that CraftWise's own records don't already have. `data` = the merged
+-- source entry (recorded vendors carry their NPC ID in `id`); the merchant recorder's sellers of the teaching item
+-- count as recorded too, and then the recorded line wins. No names, coordinates or prices: the tables have none,
+-- so a vendor shows as "NPC <id>" with its zone. Every line is labelled until our recorder has seen it.
+ns.WT_LABEL = "source: What's Training?, not seen in game"
+local function WhatsTrainingVendors(recipeID, data, mine)
+	local entry = ns.RecipeVendors and ns.RecipeVendors[recipeID]
+	if not entry then
+		return {}
+	end
+	local seen = {}
+	for _, v in ipairs(data and data.vendors or {}) do
+		if v.id then
+			seen[v.id] = true
+		end
+	end
+	local item = entry.item or (data and data.item)
+	if item and ns.Merchant and ns.Merchant.Sellers then
+		for _, s in ipairs(ns.Merchant.Sellers(item)) do
+			seen[s.npcID] = true
+		end
+	end
+	local out = {}
+	for _, v in ipairs(entry) do
+		local npc, area, faction = v[1], v[2], v[3]
+		if not seen[npc] and (faction == nil or mine == nil or faction == mine) then
+			local zone = ns.RecipeVendorAreas and ns.RecipeVendorAreas[area]
+			out[#out + 1] = { kind = "vendor", text = ("Vendor: NPC %d%s"):format(npc, zone and (" (" .. zone .. ")") or ""),
+				faction = faction, own = true, origin = "wt", npcID = npc, label = ns.WT_LABEL }
+		end
+	end
+	return out
+end
+
 -- Where to get a recipe, as short lines for the Learn view ("Trainer", "Vendor: Name (Zone)", ...).
 -- Own faction and neutral vendors first; the other faction's are kept and tagged.
 function ns.RecipeWhere(recipeID)
@@ -562,9 +600,10 @@ function ns.RecipeWhere(recipeID)
 			label = seen and "seen by you" or "bundled data" }
 	end
 	local data = SourceEntry(recipeID)
+	local faction = UnitFactionGroup and UnitFactionGroup("player")
+	local mine = faction == "Horde" and "H" or faction == "Alliance" and "A" or nil
+	local wtLines = WhatsTrainingVendors(recipeID, data, mine)
 	if data then
-		local faction = UnitFactionGroup and UnitFactionGroup("player")
-		local mine = faction == "Horde" and "H" or faction == "Alliance" and "A" or nil
 		local own, other = {}, {}
 		for _, v in ipairs(data.vendors or {}) do
 			local cost = v.currency and ("%s %s"):format(v.price or "?", v.currency) or (v.price and ns.FormatMoney(v.price))
@@ -586,6 +625,10 @@ function ns.RecipeWhere(recipeID)
 		for _, e in ipairs(other) do
 			lines[#lines + 1] = e
 		end
+		for _, e in ipairs(wtLines) do
+			lines[#lines + 1] = e
+		end
+		wtLines = {}
 		for _, d in ipairs(data.drops or {}) do
 			local chance = d.chance and (" %.1f%%"):format(d.chance) or ""
 			local name = d.name or (d.key and d.key:gsub(":", " #")) or "?"
@@ -605,6 +648,9 @@ function ns.RecipeWhere(recipeID)
 				lines[#lines + 1] = { kind = "auction", text = "AH: " .. ns.FormatMoney(quote.copper), origin = "auction", label = quote.label }
 			end
 		end
+	end
+	for _, e in ipairs(wtLines) do -- a recipe the bundled sources don't know at all
+		lines[#lines + 1] = e
 	end
 	return lines
 end

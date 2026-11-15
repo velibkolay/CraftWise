@@ -1079,3 +1079,55 @@ it("item tooltip: other reagents costing more than the sale say 'loses money at 
 	eq(belt.loss, true)
 	assert(tipLines(ns, HIDE):find("loses money at any price for Test Belt", 1, true))
 end)
+
+-- Where to buy a recipe from What's Training?'s data (#302)
+local function plainWhere(ns, recipeID)
+	local out = {}
+	for _, w in ipairs(ns.RecipeWhere(recipeID)) do out[#out + 1] = w end
+	return out
+end
+
+it("Learn: vendors from What's Training?'s data, own faction and neutral only, labelled not seen, no coordinates", function()
+	local ns = Load({ unlearned = true })
+	UnitFactionGroup = function() return "Horde" end
+	ns.RecipeVendors = { [R_HAT] = { item = HAT, { 7947, 357, "A" }, { 8145, 357, "H" }, { 12246, 405 } },
+		[R_CLOAK] = { item = CLOAK, { 7947, 357, "A" }, { 8145, 357, "H" } } }
+	ns.RecipeVendorAreas = { [357] = "Feralas", [405] = "Desolace" }
+	local lines = plainWhere(ns, R_HAT)
+	local text = {}
+	for _, w in ipairs(lines) do
+		if w.origin == "wt" then
+			text[#text + 1] = w.text
+			eq(w.label, "source: What's Training?, not seen in game")
+			eq(w.x, nil); eq(w.mapID, nil)
+		end
+	end
+	eq(table.concat(text, " | "), "Vendor: NPC 8145 (Feralas) | Vendor: NPC 12246 (Desolace)")
+	eq(select(1, ns.RecipeStatus(ns.charDB.professions[PROF], R_HAT, { learned = false })), "vendor")
+	Make.Open(ns, "learn", PROF)
+	local tip = Make.CaptureTooltip(function() Make.Hover(ns, "learn", R_CLOAK) end)
+	assert(tip:find("NPC 8145 (Feralas)", 1, true) and tip:find("not seen in game", 1, true), "[" .. tostring(tip) .. "]")
+	assert(not tip:find("NPC 7947", 1, true), "the other faction's vendor is left out")
+end)
+
+it("Learn: a vendor our own recorder has seen wins over What's Training?'s line for the same NPC", function()
+	local ns = Load({ unlearned = true })
+	UnitFactionGroup = function() return "Horde" end
+	ns.RecipeVendors = { [R_HAT] = { item = HAT, { 8145, 357, "H" }, { 12246, 405 } } }
+	ns.RecipeVendorAreas = { [357] = "Feralas", [405] = "Desolace" }
+	ns.db.sources = ns.db.sources or {}
+	ns.db.sources[HAT] = { recipe = R_HAT, vendors = { [8145] = { name = "Sheendra Tallgrass", zone = "Feralas", faction = "H", price = 5000, t = 1000 } } }
+	local all = {}
+	for _, w in ipairs(plainWhere(ns, R_HAT)) do all[#all + 1] = w.text .. "|" .. tostring(w.label) end
+	local joined = table.concat(all, "\n")
+	assert(joined:find("Sheendra Tallgrass", 1, true), joined)
+	assert(not joined:find("NPC 8145", 1, true), "our record wins: no What's Training? line for that NPC\n" .. joined)
+	assert(joined:find("NPC 12246 (Desolace)|source: What's Training?, not seen in game", 1, true), joined)
+end)
+
+it("Learn: without What's Training?'s data nothing changes", function()
+	local ns = Load({ unlearned = true })
+	ns.RecipeVendors = nil
+	for _, w in ipairs(plainWhere(ns, R_HAT)) do assert(w.origin ~= "wt") end
+	eq(select(1, ns.RecipeStatus(ns.charDB.professions[PROF], R_HAT, { learned = false })), "unlearned")
+end)
