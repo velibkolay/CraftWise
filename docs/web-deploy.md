@@ -135,3 +135,18 @@ between. Uploads that reach the old Worker after the migration and before the me
 ```powershell
 npx wrangler d1 execute craftwise --remote --command "UPDATE prices SET updated = t WHERE updated IS NULL OR updated < t"
 ```
+
+## #266 (`0006_crafted.sql`): the craft log
+
+The migration only adds the table `crafted` (no existing row is touched, no index besides the primary key).
+Apply it from the PR's branch before merging (step 4 above), in PowerShell:
+```powershell
+cd C:\Users\Veli\Documents\GitHub\craftwise\web
+git fetch origin
+git switch claude/cw-266-crafted-site
+npx wrangler d1 migrations apply craftwise --remote
+git switch main
+```
+The running Worker keeps working in between (it doesn't know the table). After the merge deploys, update the
+companion; its first upload sends every day of the craft log once (one row written per day, a few thousand at
+most), later uploads only the changed days.

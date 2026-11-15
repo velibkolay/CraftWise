@@ -149,6 +149,7 @@ function keyBar(sub: Node | string, view: View | null): HTMLElement {
 			h("span", { class: "grow" }),
 			skinSwitch(),
 			tab("me", "/me", "Me", "ntab me"),
+			privateView(view) ? tab("crafted", "/me/crafted", "Crafted", "ntab me") : null,
 			privateView(view) ? tab("fishing", "/me/fishing", "Fishing", "ntab me") : null,
 		),
 		h("p", { class: "hint crumbs" }, sub),
@@ -168,11 +169,11 @@ export function statusBar(house: House | null): HTMLElement {
 	return bar;
 }
 
-export type View = "browse" | "favourites" | "crafts" | "crates" | "me" | "fishing";
+export type View = "browse" | "favourites" | "crafts" | "crates" | "me" | "crafted" | "fishing";
 
-// The private pages behind Access (/me, /me/crates, /me/fishing): only they show the fishing page in the nav.
+// The private pages behind Access (/me, /me/crates, /me/crafted, /me/fishing): only they show the crafted and fishing pages in the nav.
 function privateView(view: View | null): boolean {
-	return view === "me" || view === "crates" || view === "fishing";
+	return view === "me" || view === "crates" || view === "crafted" || view === "fishing";
 }
 
 export function bottomTabs(active: View | null): HTMLElement {
@@ -186,6 +187,7 @@ export function bottomTabs(active: View | null): HTMLElement {
 		tab("crafts", "/crafts", "Crafts"),
 		tab("crates", "/me/crates", "Waylaid Crates"),
 		tab("me", "/me", "My Characters"),
+		privateView(active) ? tab("crafted", "/me/crafted", "Crafted") : null,
 		privateView(active) ? tab("fishing", "/me/fishing", "Fishing") : null,
 	);
 }

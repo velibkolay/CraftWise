@@ -30,6 +30,31 @@ type DB struct {
 	// Watch is the item watch list (#165): [itemID] = Unix time it was watched. Nil when the file has
 	// no `watch` (an older addon); an empty non-nil map is a list the player emptied.
 	Watch map[int64]int64 `json:"watch,omitempty"`
+	// Crafted is the craft log (#205, Crafts.lua): per character and recipe, per local day. Nil when the
+	// file has no `crafted` (an addon older than #205).
+	Crafted *Crafted `json:"crafted,omitempty"`
+}
+
+// Crafted is CraftWiseDB.crafted: Chars[character][recipe spell ID]. The undated `before` seed, the
+// folded `earlier` totals and the speed ring are not read: only dated days go to the site (#266).
+type Crafted struct {
+	Chars map[string]map[int64]CraftedRecipe `json:"chars,omitempty"`
+}
+
+// CraftedRecipe holds one recipe's days, keyed by the local day as YYYYMMDD.
+type CraftedRecipe struct {
+	Days map[int64]CraftedDay `json:"days,omitempty"`
+}
+
+// CraftedDay is one day of one recipe of one character. Items, Profit, Known and Active are nil
+// when the addon didn't record them (days from before they were), never filled in. Profit is the
+// estimate recorded at craft time, in copper; Active is seconds of active crafting.
+type CraftedDay struct {
+	Crafts *int64   `json:"crafts,omitempty"`
+	Items  *int64   `json:"items,omitempty"`
+	Profit *float64 `json:"profit,omitempty"`
+	Known  *int64   `json:"known,omitempty"`
+	Active *float64 `json:"active,omitempty"`
 }
 
 // MarketDB is CraftWiseMarketDB (#26, #46, #81, #90, #92, #120).
@@ -276,6 +301,10 @@ func (r *reader) db(v any) *DB {
 	if w := r.table(t.Get("watch"), "CraftWiseDB.watch"); w != nil {
 		out.Watch = map[int64]int64{}
 		r.unmarshal(w, &out.Watch, "CraftWiseDB.watch")
+	}
+	if c := r.table(t.Get("crafted"), "CraftWiseDB.crafted"); c != nil {
+		out.Crafted = &Crafted{}
+		r.unmarshal(c, out.Crafted, "CraftWiseDB.crafted")
 	}
 	snaps := r.table(t.Get("snapshots"), "CraftWiseDB.snapshots")
 	if snaps == nil {

@@ -207,6 +207,7 @@ and the packed variants table whole (one row per item and house).
 | `auctions[<char key>]` | `CraftWiseMarketDB.auctions.chars[<char key>]` as `data`; `t` = when the companion read the file | |
 | `fishing[<char key>]` | the fishing summary (`snapshot.fishing` and `snapshot.fishingZones`) as `data` | |
 | `ledger[]` | `CraftWiseMarketDB.ledger.entries[]` as they are (`t`, `c`, `k`, `i`, `q`, `m`, `w`, `n`, `l`) | `t`, `c`, `k` required. At most 5,000 per request. The link `l` is checked, not stored. |
+| `crafted[]` | `CraftWiseDB.crafted` (#205, #266: `chars[<char key>][<recipe spell ID>].days[<YYYYMMDD>]`) as one row per character, recipe and day: `{ "c": char key, "r": recipe spell ID, "d": day as YYYYMMDD, "n": crafts, "i": items, "p": profit, "k": priced crafts, "a": active seconds }` | `c`, `r`, `d`, `n` required (`n` 1 or more, `d` a local day 2020..2100). `i`, `p`, `k`, `a` only when the addon recorded them (older days have no profit or time): `p` is the estimate recorded at craft time in copper, may be negative, an integer; `k` at most `n`; `a` 0 to 86,400. At most 5,000 per request. The undated `before` seed and the folded `earlier` totals are not sent. |
 | `watch[]` | `CraftWiseDB.watch` (#165, the addon's item watch list, `{ [itemID] = Unix time it was watched }`) as `{ "i": itemID, "t": time }` | The **whole list**: it replaces the stored one. Absent or `null` = leave the stored list alone; `[]` = the player emptied it. `i` an item ID of 1 or more, `t` a time (as everywhere), at most 1,000, a repeated `i` counts once. |
 
 - Character key `"<realm>-<name> <surname>"` (or `"<realm>-<name>"`, #77). At most 50 per section.
@@ -217,13 +218,25 @@ and the packed variants table whole (one row per item and house).
   money and place) are numbered in list order, so both of two identical vendor sales are kept and
   sending the log again adds nothing. Kept forever.
 
+Craft log (#266): the companion sends the days whose row changed since it last sent them (a hash per
+character, recipe and day in its state file), as `crafted[]`. The Worker stores them in `crafted`
+(`0006_crafted.sql`, primary key character + recipe + day, no other index), kept forever: the addon folds days
+older than 90 into undated totals, the site keeps every day it received. A row is written only when its `n`
+is larger than the stored one (a day's craft count only grows), so re-sending a day, or an older copy of the
+file, writes nothing; a new day or more crafts write one row. `GET /api/me/crafted` reads them (Private API).
+Both machines (#237) send their own characters' logs the same way. The page `/me/crafted` (`site/crafted.ts`,
+`site/lib/craftedlog.ts`) shows crafts and estimated profit per recipe for today, the last 7 days (today and the
+six before) and in total, the active time and the profit per active hour, with the same wording as the addon:
+the profit is the estimate recorded at craft time, not money received. A period without a recorded profit or
+time shows a dash; a `*` marks a profit that misses crafts without a price.
+
 Watch list (#165): the companion sends it when it differs from the list it sent last (a hash in its state
 file), in the same request as the other private data. The Worker stores it in `watch` (one row per item,
 `0004_watch.sql`; one list for the site's owner, like the characters and the ledger): items no longer in the
 upload are deleted, changed times updated, unchanged rows aren't written, so re-sending costs no writes.
 It goes one way only, addon to site; the site never writes it back (the companion only reads SavedVariables).
 
-Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledger", "watch" }, "rowsWritten" }`.
+Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledger", "crafted", "watch" }, "rowsWritten" }`.
 
 ## Public read API
 
@@ -362,6 +375,7 @@ expiry), so the private data stays closed if the Access app is missing or miscon
 | `GET /api/me/characters/<char key>` | `{ key, snapshot, auctions, fishing }`, each `{ t, data }` or `null` |
 | `GET /api/me/watch` | `{ watch: [{ item, added }] }`, the addon's watch list (#165), newest first (`added` = when it was watched). Empty before the first upload or when nothing is watched. |
 | `GET /api/me/ledger?char=<key>&since=<t>&limit=500` | `{ entries: [{ char, t, kind, item, qty, money, place, name }] }`, newest first (limit 1..5000) |
+| `GET /api/me/crafted` | `?char=<key>&since=<YYYYMMDD>`: the craft log (#266), `{ rows: [[char, recipe, day, n, items, profit, known, active], ...], more }`, oldest day first (then character, recipe), at most 30000 rows (`more` = ask again with `since` of the last day). `null` = not recorded |
 | `GET /api/me/usage` | `{ day, rowsWritten, uploads, budget, softBudget, dbBytes }`: today's D1 writes against the budget (`WRITE_BUDGET`) and its soft limit (80%), and the database size |
 | `GET /api/me/tokens` | `{ tokens: [{ id, prefix, name, scopes, created, createdBy, lastUsed, revoked }] }` |
 | `POST /api/me/tokens` | body `{ "name": "Companion PC", "scopes": ["public", "private"] }` (scopes default to both) → `201 { id, token, prefix, name, scopes, created }`. The token is shown only here. At most 20 active tokens. |
@@ -471,7 +485,7 @@ Two levels, both `429 write_budget` with `Retry-After` until 00:00 UTC:
   What a row costs: an insert or an update of a `prices`, `points`, `variants` or `variant_days`
   row and of a `daily` row built from `last` 1 (no secondary index); a CraftWise daily aggregate 2
   (the row and `daily_typ`, which the top movers need); an item 1 plus one per search word (2.6
-  words per item on average); a ledger entry 2 (the row and `ledger_by_char`); a house 2 (`key` is
+  words per item on average); a ledger entry 2 (the row and `ledger_by_char`); a craft log day 1 (the row, no index; 0 when it is sent again unchanged); a house 2 (`key` is
   unique); a class or subclass name 1. The two indexes stay: without them the top movers and the ledger page would read every
   row of a house's history or of the ledger. Uploads stop with `429 write_budget` when the next
   request could take the day over the budget (`WRITE_BUDGET`, see above; an upper bound per request:
