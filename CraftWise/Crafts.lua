@@ -16,6 +16,95 @@ ns.CraftLog = ns.CraftLog or {}
 local CL = ns.CraftLog
 CL.KEEP_DAYS = 90
 
+-- Craft speed (#209): the gap between two crafts of the same recipe by the same character, measured with
+-- GetTime(). A gap longer than BREAK_SECONDS is a break (so is the first craft of a run) and is not counted.
+-- Per character and recipe, entry.speed = { n = gaps counted, sum = their seconds, gaps = the last GAP_KEEP
+-- gaps as a ring (position n % GAP_KEEP + 1) for the median }: bounded, one write per craft. The figures show
+-- from MIN_GAPS gaps on. Nothing else is measured or assumed (no cast-time table).
+CL.BREAK_SECONDS = 30
+CL.GAP_KEEP = 50
+CL.MIN_GAPS = 5
+local lastCraft = {} -- [recipeID] = GetTime() of this session's previous craft of it (this character)
+
+-- The speed table of a log entry, after one craft at clock time `at` (seconds, nil = unknown).
+local function AddGap(entry, recipeID, at)
+	local before = lastCraft[recipeID]
+	lastCraft[recipeID] = at
+	if not (at and before) then
+		return
+	end
+	local gap = at - before
+	if gap <= 0 or gap > CL.BREAK_SECONDS then
+		return
+	end
+	local speed = entry.speed
+	if not speed then
+		speed = { n = 0, sum = 0, gaps = {} }
+		entry.speed = speed
+	end
+	gap = math.floor(gap * 100 + 0.5) / 100
+	speed.gaps[speed.n % CL.GAP_KEEP + 1] = gap
+	speed.n, speed.sum = speed.n + 1, speed.sum + gap
+end
+
+-- Median of a list of numbers (does not change it).
+function CL.Median(list)
+	local n = #list
+	if n == 0 then
+		return nil
+	end
+	local sorted = {}
+	for i = 1, n do
+		sorted[i] = list[i]
+	end
+	table.sort(sorted)
+	if n % 2 == 1 then
+		return sorted[(n + 1) / 2]
+	end
+	return (sorted[n / 2] + sorted[n / 2 + 1]) / 2
+end
+
+-- Speed of a recipe over all characters: { sec = median seconds per craft, perHour = crafts per hour, n = gaps
+-- counted, mean = sum / n }, nil below MIN_GAPS gaps. perHour is 3600 / sec.
+function CL.Speed(recipeID)
+	local log = ns.db and ns.db.crafted
+	if not log then
+		return nil
+	end
+	local gaps, n, sum = {}, 0, 0
+	for _, char in pairs(log.chars or {}) do
+		local speed = char[recipeID] and char[recipeID].speed
+		if speed then
+			n, sum = n + speed.n, sum + speed.sum
+			for _, g in ipairs(speed.gaps) do
+				gaps[#gaps + 1] = g
+			end
+		end
+	end
+	if n < CL.MIN_GAPS then
+		return nil
+	end
+	local sec = CL.Median(gaps)
+	if not sec or sec <= 0 then
+		return nil
+	end
+	return { sec = sec, perHour = 3600 / sec, n = n, mean = sum / n }
+end
+
+-- Profit per hour at today's prices: crafts per hour times the profit per craft; nil without either.
+function CL.ProfitPerHour(speed, profit)
+	if not (speed and profit) then
+		return nil
+	end
+	return speed.perHour * profit
+end
+
+-- "12.5" (one decimal, none for whole numbers).
+function CL.FormatSeconds(sec)
+	local s = ("%.1f"):format(sec)
+	return (s:gsub("%.0$", ""))
+end
+
 -- Days since 1970-01-01 of a YYYYMMDD key (pure calendar maths, no time zone).
 function CL.DayNumber(ymd)
 	local y, m, d = math.floor(ymd / 10000), math.floor(ymd / 100) % 100, ymd % 100
@@ -91,6 +180,7 @@ function CL.Lines(recipeID, now)
 	if c.earlier > 0 then
 		out.earlier = (L["Older than %d days: %s"]):format(CL.KEEP_DAYS, CL.Format(c.earlier))
 	end
+	out.speed = CL.Speed(recipeID)
 	return out
 end
 
@@ -103,7 +193,7 @@ local function Yield(recipe)
 end
 
 -- One craft: one write into today's bucket.
-function CL.Record(recipeID, recipe, now)
+function CL.Record(recipeID, recipe, now, clock)
 	local log = CL.Store()
 	local key = log and ns.CharKey()
 	if not key then
@@ -127,6 +217,7 @@ function CL.Record(recipeID, recipe, now)
 	end
 	bucket[1] = bucket[1] + 1
 	bucket[2] = bucket[2] + (Yield(recipe) or 0)
+	AddGap(entry, recipeID, clock)
 	ns.Notify("CRAFTLOG_CHANGED", recipeID)
 end
 
@@ -362,7 +453,7 @@ function ns.OnCraft(recipeID)
 	if not prof then
 		return
 	end
-	CL.Record(recipeID, recipe) -- every craft counts, with or without a skill update (#205)
+	CL.Record(recipeID, recipe, nil, GetTime and GetTime() or nil) -- every craft counts, with or without a skill update (#205)
 	ns.CheckSkills()
 	local now = Now()
 	local craft = { recipeID = recipeID, prof = prof, skill = tracked[prof], difficulty = recipe.difficulty, time = now }

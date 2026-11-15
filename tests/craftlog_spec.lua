@@ -155,7 +155,7 @@ it("Make tooltip: Crafted lines and the profit at today's prices, labelled appro
 	assert(text:find("Crafted", 1, true), text)
 	assert(text:find("today 2", 1, true), text)
 	assert(text:find("counted before the log", 1, true), text)
-	assert(text:find("at today's prices", 1, true), text)
+	assert(text:find("Profit of all crafts at today's AH prices", 1, true), text)
 	assert(text:find("(approx.)", 1, true), text)
 end)
 
@@ -309,4 +309,183 @@ it("the craft log's lines go through the locale table", function()
 	local lines = ns.CraftLog.Lines(R_BOOTS, T(2026, 11, 15))
 	eq(lines.headline, "Hergestellt 28 \194\183 heute 3")
 	eq(lines.before, "Vor dem Log (ohne Datum): 20")
+end)
+
+-- Craft speed (#209)
+local function craftAt(stub, id, t)
+	stub.now = t
+	craft(stub, id)
+end
+
+local function entryOf(ns, id)
+	return ns.db.crafted.chars[ns.CharKey()][id]
+end
+
+it("speed: the first craft of a run measures nothing, then each gap up to 30 s counts", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100)
+	eq(entryOf(ns, R_BOOTS).speed, nil, "first craft: no gap")
+	craftAt(stub, R_BOOTS, 102.5)
+	craftAt(stub, R_BOOTS, 105)
+	local s = entryOf(ns, R_BOOTS).speed
+	eq(s.n, 2); eq(s.sum, 5); eq(s.gaps[1], 2.5); eq(s.gaps[2], 2.5)
+end)
+
+it("speed: a gap over 30 s is a break and starts a new run; exactly 30 s counts", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100)
+	craftAt(stub, R_BOOTS, 130) -- 30 s: counts
+	craftAt(stub, R_BOOTS, 200) -- 70 s: break
+	craftAt(stub, R_BOOTS, 202) -- 2 s: counts, measured from the craft after the break
+	local s = entryOf(ns, R_BOOTS).speed
+	eq(s.n, 2); eq(s.sum, 32)
+end)
+
+it("speed: gaps are per recipe, another recipe in between does not end the run of the first", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100)
+	craftAt(stub, R_CLAMS, 101)
+	craftAt(stub, R_BOOTS, 104)
+	eq(entryOf(ns, R_BOOTS).speed.n, 1); eq(entryOf(ns, R_BOOTS).speed.sum, 4)
+	eq(entryOf(ns, R_CLAMS).speed, nil)
+end)
+
+it("speed: the median of an odd and an even count, without changing the list", function()
+	local ns = setup()
+	local list = { 5, 1, 3 }
+	eq(ns.CraftLog.Median(list), 3); eq(list[1], 5)
+	eq(ns.CraftLog.Median({ 4, 1, 2, 3 }), 2.5)
+	eq(ns.CraftLog.Median({}), nil)
+end)
+
+it("speed: nothing shows below 5 gaps; from 5 on the median, crafts per hour and the count", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	local t = 100
+	craftAt(stub, R_BOOTS, t)
+	for i = 1, 4 do t = t + 2; craftAt(stub, R_BOOTS, t) end
+	eq(entryOf(ns, R_BOOTS).speed.n, 4)
+	eq(ns.CraftLog.Speed(R_BOOTS), nil, "4 gaps")
+	eq(ns.CraftLog.Lines(R_BOOTS).speed, nil)
+	t = t + 2; craftAt(stub, R_BOOTS, t)
+	local sp = ns.CraftLog.Speed(R_BOOTS)
+	eq(sp.n, 5); eq(sp.sec, 2); eq(sp.perHour, 1800); eq(sp.mean, 2)
+	eq(ns.CraftLog.Lines(R_BOOTS).speed.n, 5)
+end)
+
+it("speed: the median ignores a few slow gaps; the ring keeps the last 50 and the count keeps counting", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	local t = 100
+	craftAt(stub, R_BOOTS, t)
+	local gaps = { 2, 2, 2, 2, 2, 20, 25 }
+	for _, g in ipairs(gaps) do t = t + g; craftAt(stub, R_BOOTS, t) end
+	eq(ns.CraftLog.Speed(R_BOOTS).sec, 2)
+	for i = 1, 60 do t = t + 3; craftAt(stub, R_BOOTS, t) end
+	local s = entryOf(ns, R_BOOTS).speed
+	eq(#s.gaps, 50, "bounded")
+	eq(s.n, 67)
+	eq(ns.CraftLog.Speed(R_BOOTS).sec, 3, "the last 50 are all 3 s")
+end)
+
+it("speed: profit per hour is crafts per hour times the profit per craft, a dash without a profit", function()
+	local ns = setup()
+	local sp = { sec = 2, perHour = 1800, n = 5 }
+	eq(ns.CraftLog.ProfitPerHour(sp, 150), 270000)
+	eq(ns.CraftLog.ProfitPerHour(sp, -10), -18000)
+	eq(ns.CraftLog.ProfitPerHour(sp, nil), nil)
+	eq(ns.CraftLog.ProfitPerHour(nil, 150), nil)
+	eq(ns.CraftLog.FormatSeconds(2), "2"); eq(ns.CraftLog.FormatSeconds(2.46), "2.5")
+end)
+
+it("speed: the speed pools every character's gaps of a recipe", function()
+	local ns = setup()
+	ns.db.crafted = { seeded = true, before = {}, chars = {
+		["R-A One"] = { [R_BOOTS] = { days = {}, speed = { n = 3, sum = 6, gaps = { 2, 2, 2 } } } },
+		["R-B Two"] = { [R_BOOTS] = { days = {}, speed = { n = 3, sum = 12, gaps = { 4, 4, 4 } } } } } }
+	local sp = ns.CraftLog.Speed(R_BOOTS)
+	eq(sp.n, 6); eq(sp.sec, 3); eq(sp.mean, 3)
+end)
+
+it("Crafted page: speed columns are sortable, rows without a speed sort last either way", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	local P = ns.Main.CraftedPage
+	local rows = { { name = "A", recipeID = 1, today = 0, week = 0, total = 5 }, { name = "B", recipeID = 2, today = 0, week = 0, total = 9, sec = 3, perHour = 1200, profitHour = 500 },
+		{ name = "C", recipeID = 3, today = 0, week = 0, total = 7, sec = 2, perHour = 1800, profitHour = 900 } }
+	local function ids(r) local t = {} for _, x in ipairs(r) do t[#t + 1] = x.name end return table.concat(t, ",") end
+	eq(ids(P.SortRows(rows, "profitHour", true)), "C,B,A")
+	eq(ids(P.SortRows(rows, "profitHour", false)), "B,C,A")
+	eq(ids(P.SortRows(rows, "sec", false)), "C,B,A")
+	for _, key in ipairs({ "sec", "perHour", "profitHour" }) do
+		local found
+		for _, col in ipairs(P.COLUMNS) do if col.key == key then found = col.sort end end
+		eq(found, true, key)
+	end
+end)
+
+it("Crafted page: a recipe with a measured speed shows sec/craft, crafts/h and profit/h, others a dash", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	local key = ns.CharKey()
+	ns.db.crafted = { seeded = true, before = {}, chars = { [key] = {
+		[R_BOOTS] = { days = { [20261115] = { 6, 6 } }, speed = { n = 5, sum = 10, gaps = { 2, 2, 2, 2, 2 } } },
+		[R_CLAMS] = { days = { [20261115] = { 1, 1 } } } } } }
+	ns.Main.Make.state.query = ""
+	local rows = ns.Main.CraftedPage.Rows(T(2026, 11, 15), {})
+	local byId = {}
+	for _, r in ipairs(rows) do byId[r.recipeID] = r end
+	eq(byId[R_BOOTS].view.cells.sec, "2"); eq(byId[R_BOOTS].view.cells.perHour, "1,800")
+	eq(byId[R_BOOTS].sec, 2)
+	eq(byId[R_CLAMS].view.cells.sec, ns.Main.DASH); eq(byId[R_CLAMS].profitHour, nil)
+	ns.Main.Open("crafted")
+end)
+
+it("speed: the Make tooltip shows the figures and 'measured over N crafts', a dash without a profit", function()
+	local ns = setup()
+	local shown = {}
+	GameTooltip = GameTooltip or {}
+	GameTooltip.AddLine = function(_, text) shown[#shown + 1] = tostring(text) end
+	GameTooltip.AddDoubleLine = function(_, l, r) shown[#shown + 1] = tostring(l) .. " | " .. tostring(r) end
+	ns.Main.Make.AddSpeedLines(nil, 100)
+	eq(#shown, 0, "nothing without a speed")
+	ns.Main.Make.AddSpeedLines({ sec = 2, perHour = 1800, n = 7 }, nil)
+	local text = table.concat(shown, "\n")
+	assert(text:find("2 sec per craft", 1, true) and text:find("1,800 per hour", 1, true), text)
+	assert(text:find("measured over 7 crafts", 1, true), text)
+	assert(text:find("Profit per hour at today's AH prices | " .. ns.Main.DASH, 1, true), text)
+end)
+
+it("profit per hour follows the Profit view's cost basis: paid cost or today's AH, labelled, partial flagged", function()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.GetBuyPrice = function() return { copper = 100, source = "auction", label = "AH" } end
+	ns.GetPaidBuyPrice = function() return { copper = 40, source = "paid", label = "paid cost, 1 of 2 units", paidPartial = true, paidNote = "x", noCraft = true } end
+	ns.GetSellValue = function() return { copper = 1000, source = "auction", label = "AH" } end
+	ns.db.crafted = { seeded = true, before = {}, chars = { [ns.CharKey()] = {
+		[R_BOOTS] = { days = { [20261115] = { 6, 6 } }, speed = { n = 5, sum = 10, gaps = { 2, 2, 2, 2, 2 } } } } } }
+	ns.Main.Make.state.query = ""
+	local P = ns.Main.CraftedPage
+	local function row()
+		for _, r in ipairs(P.Rows(T(2026, 11, 15), {})) do
+			if r.recipeID == R_BOOTS then return r end
+		end
+	end
+	ns.db.settings.costBasis.profit = "ah"
+	local ah = row()
+	assert(ah.profit, "the row has a profit at AH prices")
+	eq(ah.profitHour, 1800 * ah.profit)
+	eq(ah.basis.label, "at today's AH prices"); eq(ah.basis.partial, false)
+	ns.db.settings.costBasis.profit = "paid"
+	local paid = row()
+	assert(paid.profit > ah.profit, "cheaper paid reagents: more profit per craft")
+	eq(paid.profitHour, 1800 * paid.profit)
+	assert(paid.profitHour > ah.profitHour, "profit per hour changes with the basis")
+	eq(paid.basis.label, "at paid cost"); eq(paid.basis.partial, true)
+	assert(paid.view.cells.profitHour:find("*", 1, true), "partial paid cost is starred")
+	assert(paid.view.tips.profitHour[1]:find("at paid cost", 1, true))
+	eq(ns.Main.Make.ProfitBasis().label, "at paid cost")
 end)
