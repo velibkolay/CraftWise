@@ -991,6 +991,9 @@ function Pool:Hit(data)
 			end
 			if mouse == "LeftButton" and IsShiftKeyDown() then
 				M.LinkToChat(d.itemID)
+			elseif mouse == "LeftButton" and d.onClick then
+				HideTips(this)
+				d.onClick(this)
 			elseif (mouse == "RightButton" or mouse == "MiddleButton") and ns.ShowItemMenu then
 				HideTips(this)
 				ns.ShowItemMenu(d.itemID, this)

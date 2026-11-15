@@ -789,6 +789,175 @@ function M.SellerLines(itemID, now)
 	return lines
 end
 
+-- Where to buy an item (#276), from the recorded merchants only: the vendors of the player's faction group
+-- (a vendor with no group sells to both), nearest first, never a location that was not recorded.
+-- M.BuyAtAll(itemID) -> { entries = { { npcID, text, merchant, item, scope } }, nearest = entry | nil,
+-- bundled = true } or nil. `scope` is how the vendor relates to where the player stands, the only
+-- distances claimed:
+--   "map"        the same map as the player: ranked by the distance between the recorded and the current
+--                position (map coordinates; the figure is not shown, only the order)
+--   "zone"       the same zone name, another map or no position
+--   "continent"  another zone on the same continent (the maps' parents up to the continent)
+--   nil          anywhere else, or when the vendor's map wasn't recorded: not compared
+-- Order: map by distance, zone, continent, then the cheapest, then the most recently seen. `nearest` is the
+-- first entry that has a scope. bundled = true (no entries) when no merchant is recorded but the bundled
+-- vendor data says a vendor sells it.
+M.MAX_BUY_AT = 2
+local SCOPE_RANK = { map = 1, zone = 2, continent = 3 }
+
+local function Rounded(v)
+	return math.floor(v + 0.5)
+end
+
+-- "Barkeep Morag, Orgrimmar · Valley of Strength 54, 68 · 50c" (+ " · limited stock, 3 seen").
+function M.BuyAtText(m, item, npcID)
+	local text = m.name or ("NPC " .. tostring(npcID))
+	if m.zone then
+		text = text .. ", " .. m.zone
+	end
+	local place = (m.sub and m.sub ~= m.zone) and m.sub or nil
+	if m.x and m.y then
+		place = (place and (place .. " ") or "") .. ("%d, %d"):format(Rounded(m.x), Rounded(m.y))
+	end
+	if place then
+		text = text .. " · " .. place
+	end
+	text = text .. " · " .. M.PriceText(item, true)
+	if item.n and item.n >= 0 then
+		text = text .. (" · limited stock, %d seen"):format(item.n)
+	end
+	return text
+end
+
+-- The continent a map belongs to (parents up to the map the client types as a continent), nil when unknown.
+local continents = {}
+local function ContinentOf(mapID)
+	if not (mapID and C_Map and C_Map.GetMapInfo and Enum and Enum.UIMapType) then
+		return nil
+	end
+	if continents[mapID] ~= nil then
+		return continents[mapID] or nil
+	end
+	local found
+	local id = mapID
+	for _ = 1, 10 do
+		local info = id and C_Map.GetMapInfo(id)
+		if not info then
+			break
+		end
+		if info.mapType == Enum.UIMapType.Continent then
+			found = id
+			break
+		end
+		id = info.parentMapID
+		if not id or id == 0 then
+			break
+		end
+	end
+	continents[mapID] = found or false
+	return found
+end
+
+-- How a vendor relates to the player's place, and the squared distance on the same map.
+-- here = { map, x, y, zone }.
+local function ScopeOf(m, here)
+	if m.map and here.map and m.map == here.map and m.x and m.y and here.x and here.y then
+		return "map", (m.x - here.x) ^ 2 + (m.y - here.y) ^ 2
+	end
+	if here.zone and m.zone == here.zone then
+		return "zone"
+	end
+	local mine, theirs = ContinentOf(here.map), ContinentOf(m.map)
+	if mine and theirs and mine == theirs then
+		return "continent"
+	end
+	return nil
+end
+
+function M.BuyAtAll(itemID)
+	local mine = UnitFactionGroup and UnitFactionGroup("player")
+	mine = mine == "Horde" and "H" or mine == "Alliance" and "A" or nil
+	local map, x, y = Position()
+	local here = { map = map, x = x, y = y, zone = GetRealZoneText and GetRealZoneText() or nil }
+	local sellers = M.Sellers(itemID)
+	local entries = {}
+	for _, s in ipairs(sellers) do
+		local m = s.merchant
+		if (m.group == nil or mine == nil or m.group == mine) and (m.name or m.zone) then
+			local scope, distance = ScopeOf(m, here)
+			entries[#entries + 1] = { npcID = s.npcID, merchant = m, item = s.item, unit = s.unit, scope = scope,
+				distance = distance, text = M.BuyAtText(m, s.item, s.npcID) }
+		end
+	end
+	if #entries == 0 then
+		if #sellers == 0 and ns.GetVendorBuyPrice and ns.GetVendorBuyPrice(itemID) then
+			return { entries = {}, bundled = true }
+		end
+		return nil
+	end
+	table.sort(entries, function(a, b)
+		local ra, rb = SCOPE_RANK[a.scope] or 9, SCOPE_RANK[b.scope] or 9
+		if ra ~= rb then
+			return ra < rb
+		end
+		if a.distance and b.distance and a.distance ~= b.distance then
+			return a.distance < b.distance
+		end
+		if (a.unit ~= nil) ~= (b.unit ~= nil) then
+			return a.unit ~= nil
+		end
+		if a.unit and a.unit ~= b.unit then
+			return a.unit < b.unit
+		end
+		if (a.item.t or 0) ~= (b.item.t or 0) then
+			return (a.item.t or 0) > (b.item.t or 0)
+		end
+		return tostring(a.npcID) < tostring(b.npcID)
+	end)
+	return { entries = entries, nearest = entries[1].scope and entries[1] or nil }
+end
+
+-- The tooltip's short form: at most M.MAX_BUY_AT lines and how many more.
+function M.BuyAt(itemID)
+	local all = M.BuyAtAll(itemID)
+	if not all then
+		return nil
+	end
+	if all.bundled then
+		return { lines = {}, more = 0, bundled = true }
+	end
+	local out = { lines = {}, more = math.max(0, #all.entries - M.MAX_BUY_AT) }
+	for i = 1, math.min(#all.entries, M.MAX_BUY_AT) do
+		local e = all.entries[i]
+		out.lines[i] = { npcID = e.npcID, text = e.text, merchant = e.merchant, scope = e.scope }
+	end
+	return out
+end
+
+-- Sets the map waypoint at a vendor (only ever called from a button's click). Returns true, or false and
+-- why. TomTom gets the waypoint too when it is loaded.
+function M.Waypoint(entry)
+	local m = entry and entry.merchant
+	if not (m and m.map and m.x and m.y) then
+		return false, ns.L["No location was recorded for this vendor"]
+	end
+	if not (C_Map and C_Map.CanSetUserWaypointOnMap and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates) then
+		return false, ns.L["Waypoints aren't available"]
+	end
+	if not C_Map.CanSetUserWaypointOnMap(m.map) then
+		return false, ns.L["A waypoint can't be set on that map"]
+	end
+	C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(m.map, m.x / 100, m.y / 100))
+	if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+		C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+	end
+	local tomtom = _G["TomTom"]
+	if tomtom and tomtom.AddWaypoint then
+		tomtom:AddWaypoint(m.map, m.x / 100, m.y / 100, { title = m.name or "CraftWise", from = "CraftWise" })
+	end
+	return true
+end
+
 -- Tooltip: "Sold by" with the cheapest merchants (at most 2) and how many more.
 function M.TooltipLines(itemID, now)
 	now = now or time()
