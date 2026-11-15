@@ -342,6 +342,9 @@ function MK.AddProfitLines(log)
 		GameTooltip:AddDoubleLine("  " .. L["Profit at craft time (est.)"], MK.Signed(p.total) .. Muted(" (" .. L["approx."] .. ")"),
 			0.8, 0.8, 0.8, 1, 1, 1)
 		Note("  " .. (L["profit known for %d of %d crafts"]):format(p.known, log.dated))
+		GameTooltip:AddDoubleLine("    " .. L["today"] .. " \194\183 " .. L["7 days"],
+			(p.knownToday > 0 and (MK.Signed(p.today)) or M.DASH) .. " \194\183 " .. (p.knownWeek > 0 and (MK.Signed(p.week)) or M.DASH),
+			0.7, 0.7, 0.7, 1, 1, 1)
 		if #log.chars > 1 then
 			for _, ch in ipairs(log.chars) do
 				if ch.profit.known > 0 then
