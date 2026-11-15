@@ -73,8 +73,16 @@ local AUCTIONATOR_REFRESH = 3600 -- an unchanged Auctionator price is written ag
 local AUCTIONATOR_LOGIN_DELAY = 5 -- Auctionator sets up its price database during login
 local PRUNE_ALL_SECONDS = 3600 -- packed entries are revisited this often; entries in use on every prune
 local SEARCH_SETTLE_SECONDS = 0.3
-local LINK_RETRIES = 10
-local LINK_RETRY_SECONDS = 0.5
+-- Item data for the rows whose link the client couldn't give yet (#286), loaded in batches while the list is
+-- kept: at most LOAD_WINDOW requests wait for an answer at a time, the rows are looked at again item by item
+-- as the data arrives, every LOAD_TICK seconds. Nobody has measured how fast Forever answers, so the limits are
+-- placeholders: the scan gives up when nothing new arrived for LOAD_STALL_SECONDS, or after LOAD_MAX_SECONDS.
+M.LOAD_WINDOW = 300
+M.LOAD_TICK = 0.2
+M.LOAD_STALL_SECONDS = 20
+M.LOAD_MAX_SECONDS = 180
+local LOAD_REREQUEST_SECONDS = 10 -- an item still missing after this long is asked for again
+local LOAD_LINK_TRIES = 3 -- an item the client has but whose link is still nil is given up after this many looks
 local INFO_PER_FRAME = 500 -- item info (#92): items checked per frame
 local INFO_LOAD_BATCH = 100 -- load requests per batch, as the sell prices of #83
 local INFO_LOAD_SECONDS = 0.2
@@ -1064,6 +1072,11 @@ function M.ScanProgress()
 	if not scan or scan.aborted then
 		return nil
 	end
+	if scan.phase == "load" then
+		local total = scan.loadTotal or 0
+		return { house = scan.house, label = M.HouseLabel(scan.house), done = math.min((scan.loadDone or 0) + (scan.loadGivenUp or 0), total),
+			total = total, phase = "load", rows = scan.count }
+	end
 	if scan.phase == "commit" then
 		local total = scan.toStore or scan.count
 		return { house = scan.house, label = M.HouseLabel(scan.house), done = math.min(scan.stored or 0, total),
@@ -1096,6 +1109,8 @@ end
 --   requested   the request is being sent (momentary)
 --   waiting     the request is out, no list yet (timeout: M.OWN_WAIT_SECONDS)
 --   reading     the list is being read (OnReplicateList, a time budget per frame)
+--   loading     item data for the rows whose link wasn't there is loaded in batches (#286), then those rows
+--               are read again; skipped when every link was there
 --   storing     every row was read, the entries are being stored (CommitScan)
 --   done | failed (own.error: "timeout", "closed", "changed", "error")
 -- Nothing here is sent without a click. What the server does is not assumed: the 15 minutes are the
@@ -1111,7 +1126,7 @@ M.OWN_WAIT_SECONDS = 120 -- how long we wait for a list before saying none came:
 local own = { state = "idle" } -- this session's own scan; saved: db.ownScan
 local ownTimer
 
-local OWN_ACTIVE = { requested = true, waiting = true, reading = true, storing = true }
+local OWN_ACTIVE = { requested = true, waiting = true, reading = true, loading = true, storing = true }
 
 local function SetOwn(state, fields)
 	own.state = state
@@ -1251,8 +1266,7 @@ local function CollectRow(scan, index)
 	if CanHaveSuffix(itemID) then
 		local link = C_AuctionHouse.GetReplicateItemLink(index)
 		if not link then
-			ns.RequestItemData(itemID, "Market.lua scan row")
-			return false
+			return false, itemID -- the load phase asks for the item's data, once per item (#286)
 		end
 		suffix = SuffixFromLink(link)
 	end
@@ -1298,10 +1312,18 @@ local function FinishScan(scan)
 		for _ in pairs(scan.unread) do
 			unread = unread + 1
 		end
+		local loadMs, loadFrames, loadWorst = Slice(scan.loadSlice)
+		local by = scan.unreadBy or {}
 		local last = {
 			t = scan.t, house = scan.house, rows = scan.count, items = scan.recorded, lastOnly = scan.lastOnly,
 			unread = unread, waited = scan.waited, readMs = readMs, readFrames = readFrames, readWorstMs = readWorst,
 			storeMs = storeMs, storeFrames = storeFrames, storeWorstMs = storeWorst,
+			-- item data for rows without a link (#286): items that needed it, how many arrived, how long it took
+			-- (seconds, and our own time in the slices), and why the others stayed unread
+			needed = scan.loadTotal or 0, loaded = scan.loadDone or 0, loadSeconds = scan.loadSeconds or 0,
+			loadMs = loadMs, loadFrames = loadFrames, loadWorstMs = loadWorst, stalled = scan.loadStalled or nil,
+			unreadFailed = by.failed or 0, unreadTimeout = by.timeout or 0, unreadNoLink = by.nolink or 0,
+			unreadWeapon = by.weapon or 0, unreadArmor = by.armor or 0, unreadOther = by.other or 0,
 		}
 		db.ownScan.last = last
 		if own.token == scan.ownToken then
@@ -1327,7 +1349,7 @@ local function CommitScan(scan)
 	scan.phase = "commit"
 	scan.commitSlice = {}
 	scan.stored = 0
-	if scan.own and own.token == scan.ownToken and own.state == "reading" then
+	if scan.own and own.token == scan.ownToken and (own.state == "reading" or own.state == "loading") then
 		SetOwn("storing", { phaseAt = time() })
 	end
 	local keys, seen = {}, {}
@@ -1404,36 +1426,133 @@ local function ReadStopped(scan)
 	return scan.aborted
 end
 
-local function RetryLinks(scan, attempt)
-	if ReadStopped(scan) then
-		return
+-- Gives up the rows of an item for good: it stays unread (nothing is stored for it, and it isn't marked as
+-- gone either) and the reason is counted by category for the saved scan summary (#286).
+local function GiveUp(scan, itemID, reason)
+	scan.unread[itemID] = true
+	scan.loadGivenUp = (scan.loadGivenUp or 0) + 1
+	local by = scan.unreadBy
+	by[reason] = (by[reason] or 0) + 1
+	local classID = select(6, C_Item.GetItemInfoInstant(itemID))
+	local kind = classID == 2 and "weapon" or classID == 4 and "armor" or "other"
+	by[kind] = (by[kind] or 0) + 1
+end
+
+-- Loads the item data of the rows that had no link (#286), then reads those rows again, item by item.
+-- Before, every such row was tried again every half second for 5 s, which gave up on thousands of items on a
+-- big realm (3,901 of 5,000 on Realm 8) and re-read every one of their rows each time. Now:
+--   * the distinct items are asked for in a window of M.LOAD_WINDOW outstanding requests, an item again after
+--     LOAD_REREQUEST_SECONDS;
+--   * each tick (M.LOAD_TICK) looks at the items still pending in a time-budgeted pass: one whose data is cached
+--     has its rows read now, one the client said doesn't exist is given up ("failed"), one whose data is cached
+--     but whose link is still nil is given up after LOAD_LINK_TRIES looks ("nolink");
+--   * it ends when none is pending, when nothing new arrived for M.LOAD_STALL_SECONDS, or after M.LOAD_MAX_SECONDS
+--     ("timeout"); what is given up stays unread, and the list must stay the one that was read (ReadStopped).
+local function LoadMissing(scan)
+	scan.phase = "load"
+	local pending, list = {}, {}
+	for itemID in pairs(scan.missing) do
+		pending[itemID] = true
+		list[#list + 1] = itemID
 	end
-	local missing = {}
-	Chunked(#scan.waiting, ROWS_PER_FRAME, function(i)
-		local index = scan.waiting[i]
-		if not CollectRow(scan, index) then
-			missing[#missing + 1] = index
+	table.sort(list)
+	scan.pending, scan.failedLoad, scan.sent, scan.tries = pending, {}, {}, {}
+	scan.loadTotal, scan.loadDone, scan.loadGivenUp = #list, 0, 0
+	scan.loadSlice = {}
+	local startedAt = GetTime()
+	local lastNew, ticks = startedAt, 0
+	local maxTicks = math.ceil(M.LOAD_MAX_SECONDS / M.LOAD_TICK)
+	if scan.own and own.token == scan.ownToken then
+		SetOwn("loading", { phaseAt = time() })
+	end
+
+	local function Finish()
+		scan.loadSeconds = math.floor((GetTime() - startedAt) * 10 + 0.5) / 10
+		scan.pending = nil
+		CommitScan(scan)
+	end
+
+	local function Tick()
+		if ReadStopped(scan) then
+			return
 		end
-	end, function()
-		scan.waiting = missing
-		if #missing == 0 then
-			CommitScan(scan)
-		elseif attempt >= LINK_RETRIES then
-			for _, index in ipairs(missing) do
-				local itemID = select(17, C_AuctionHouse.GetReplicateItemInfo(index))
-				if itemID then
-					scan.unread[itemID] = true
+		ticks = ticks + 1
+		local now = GetTime()
+		local still = {}
+		Chunked(#list, ROWS_PER_FRAME, function(i)
+			local itemID = list[i]
+			if not pending[itemID] then
+				return 1
+			end
+			if scan.failedLoad[itemID] then
+				pending[itemID] = nil
+				GiveUp(scan, itemID, "failed")
+				return 1
+			end
+			if C_Item.IsItemDataCachedByID and C_Item.IsItemDataCachedByID(itemID) then
+				local rows, done = scan.missing[itemID], true
+				for _, index in ipairs(rows) do
+					if not CollectRow(scan, index) then
+						done = false
+						break
+					end
+				end
+				if done then
+					pending[itemID] = nil
+					scan.missing[itemID] = nil
+					scan.loadDone = scan.loadDone + 1
+					lastNew = now
+				else
+					scan.tries[itemID] = (scan.tries[itemID] or 0) + 1
+					if scan.tries[itemID] >= LOAD_LINK_TRIES then
+						pending[itemID] = nil
+						GiveUp(scan, itemID, "nolink")
+					else
+						still[#still + 1] = itemID
+					end
+				end
+				return 1
+			end
+			still[#still + 1] = itemID
+			return 1
+		end, function()
+			-- ask for more: up to the window of requests that wait for an answer
+			local outstanding = 0
+			for _, itemID in ipairs(still) do
+				local sentAt = scan.sent[itemID]
+				if sentAt and now - sentAt < LOAD_REREQUEST_SECONDS then
+					outstanding = outstanding + 1
 				end
 			end
-			CommitScan(scan)
-		else
-			C_Timer.After(LINK_RETRY_SECONDS, function()
-				RetryLinks(scan, attempt + 1)
-			end)
-		end
-	end, function()
-		return ReadStopped(scan)
-	end, scan.readSlice)
+			for _, itemID in ipairs(still) do
+				if outstanding >= M.LOAD_WINDOW then
+					break
+				end
+				local sentAt = scan.sent[itemID]
+				if not sentAt or now - sentAt >= LOAD_REREQUEST_SECONDS then
+					scan.sent[itemID] = now
+					ns.RequestItemData(itemID, "Market.lua scan load", true)
+					outstanding = outstanding + 1
+				end
+			end
+			if #still == 0 then
+				return Finish()
+			end
+			local stalled = now - lastNew >= M.LOAD_STALL_SECONDS
+			if stalled or now - startedAt >= M.LOAD_MAX_SECONDS or ticks >= maxTicks then
+				scan.loadStalled = true
+				for _, itemID in ipairs(still) do
+					pending[itemID] = nil
+					GiveUp(scan, itemID, "timeout")
+				end
+				return Finish()
+			end
+			C_Timer.After(M.LOAD_TICK, Tick)
+		end, function()
+			return ReadStopped(scan)
+		end, scan.loadSlice)
+	end
+	Tick()
 end
 
 local function OnReplicateList()
@@ -1469,8 +1588,9 @@ local function OnReplicateList()
 		scope = {},
 		names = {},
 		info = {},
-		waiting = {},
+		missing = {}, -- [itemID] = { row indices } whose link wasn't there yet (#286)
 		unread = {},
+		unreadBy = {},
 		recorded = 0,
 		lastOnly = 0,
 		source = mine and "own" or ns.HasAuctionator() and "auctionator" or "ui",
@@ -1487,14 +1607,18 @@ local function OnReplicateList()
 	Chunked(count, ROWS_PER_FRAME, function(i)
 		local index = i - 1 -- the list is 0-based, as Auctionator reads it
 		scan.read = i
-		if not CollectRow(scan, index) then
-			scan.waiting[#scan.waiting + 1] = index
+		local ok, missingID = CollectRow(scan, index)
+		if not ok then
+			local rows = scan.missing[missingID]
+			if not rows then
+				rows = {}
+				scan.missing[missingID] = rows
+			end
+			rows[#rows + 1] = index
 		end
 	end, function()
-		if #scan.waiting > 0 then
-			C_Timer.After(LINK_RETRY_SECONDS, function()
-				RetryLinks(scan, 1)
-			end)
+		if next(scan.missing) then
+			LoadMissing(scan)
 		else
 			CommitScan(scan)
 		end
@@ -1857,6 +1981,9 @@ local function RunInfoQueue()
 end
 
 function M.OnItemInfoReceived(itemID, success)
+	if job and job.pending and job.pending[itemID] and success == false then
+		job.failedLoad[itemID] = true -- no such item: the load phase gives its rows up (#286)
+	end
 	if not (db and itemID and infoWaiting[itemID]) then
 		return
 	end
@@ -3243,11 +3370,11 @@ ns.On("AUCTION_HOUSE_CLOSED", function()
 	end
 	FlushSearches()
 	currentHouse = nil
-	if own.state == "requested" or own.state == "waiting" or own.state == "reading" then
+	if own.state == "requested" or own.state == "waiting" or own.state == "reading" or own.state == "loading" then
 		OwnFail("closed") -- a scan being stored goes on: the rows were all read
 	end
 	ns.Notify("AH_STATE_CHANGED", false)
-	if job and job.phase == "read" then
+	if job and (job.phase == "read" or job.phase == "load") then
 		job.aborted = true
 		job = nil
 	end
@@ -3259,6 +3386,11 @@ ns.On("AUCTION_HOUSE_CLOSED", function()
 end)
 ns.On("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
 	M.OnItemInfoReceived(itemID, success)
+end)
+ns.On("ITEM_DATA_LOAD_RESULT", function(_, itemID, success)
+	if job and job.pending and job.pending[itemID] and success == false then
+		job.failedLoad[itemID] = true
+	end
 end)
 
 ns.On("REPLICATE_ITEM_LIST_UPDATE", OnReplicateList)

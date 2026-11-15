@@ -220,6 +220,11 @@ function GetItemInfo(id)
 		item.equipLoc or "", nil, item.sellPrice, item.classID, item.subClassID, item.bindType
 end
 C_Item = { GetItemInfo = GetItemInfo, RequestLoadItemDataByID = noop }
+-- Item data loading (#286): an item in stub.uncached has no data (a replicate row of it has no link) until
+-- stub.ArriveItem(id[, false]) is called; requests are recorded in stub.loadRequests.
+stub.uncached, stub.loadRequests = {}, {}
+C_Item.RequestLoadItemDataByID = function(id) stub.loadRequests[#stub.loadRequests + 1] = id end
+C_Item.IsItemDataCachedByID = function(id) return not stub.uncached[id] end
 GetItemInfo = nil -- like the Forever client: only C_Item.GetItemInfo
 
 -- Auctionator: stub.ah[itemID] = copper, stub.ahAge[itemID] = days
@@ -449,6 +454,18 @@ function stub.RunTimers()
 	local list = stub.timers
 	stub.timers = {}
 	for _, t in ipairs(list) do if not t.cancelled then t.fn() end end
+end
+-- The data of an item arrives (success = false: the client says there is no such item): the link of its
+-- replicate rows is there from now on, and the two item events fire.
+function stub.ArriveItem(id, success)
+	stub.uncached[id] = nil
+	if success ~= false then
+		for _, r in ipairs(stub.replicate or {}) do
+			if r.itemID == id and r.link == nil then r.link = r.linkAfter or ("item:" .. id) end
+		end
+	end
+	stub.Fire("GET_ITEM_INFO_RECEIVED", id, success ~= false)
+	stub.Fire("ITEM_DATA_LOAD_RESULT", id, success ~= false)
 end
 stub.spells = {}
 C_Spell = { GetSpellInfo = function(id) return stub.spells[id] and { name = stub.spells[id] } end }
