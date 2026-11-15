@@ -549,3 +549,63 @@ it("auctions are kept per character", function()
 	eq(#ns.Auctions.List(), 0)
 	eq(#ns.Auctions.List("PvP-Veli Tanner"), 1)
 end)
+
+-- "Sell to vendor" mark dropped by a recorded AH sale (#222)
+local function SaleMail(ns, stub, name, item, money)
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	stub.inbox = { { subject = "Auction successful: " .. name, money = money,
+		invoice = { type = "seller", itemName = name, buyer = "Someone Else", bid = money + 450, buyout = money + 450, deposit = 100, consignment = 450, count = 1 } } }
+	TakeInboxMoney(1)
+	stub.clock = NOW + 4000
+	stub.money = stub.money + money
+	stub.Fire("PLAYER_MONEY")
+end
+
+it("a recorded AH sale removes the Sell to vendor mark, prints one line and refreshes", function()
+	local ns, stub = Load()
+	local lines, refreshed = {}, 0
+	ns.Print = function(msg) lines[#lines + 1] = tostring(msg) end
+	ns.Listen("BAGS_CHANGED", function() refreshed = refreshed + 1 end)
+	ns.db.sellVendor[PANTS] = true
+	ns.db.sellVendor[LEATHER] = true -- another marked item: untouched
+	AtHouse(stub)
+	local id = Post(stub, PANTS, 1, 9000, { item = true })
+	Sold(stub, "Rugged Leather Pants", id)
+	eq(ns.db.sellVendor[PANTS], true, "a sold message alone is not the recorded sale")
+	SaleMail(ns, stub, "Rugged Leather Pants", PANTS, 8650)
+	eq(Find(ns, function(r) return r.id == id end).st, "settled")
+	eq(ns.db.sellVendor[PANTS], nil); eq(ns.db.sellVendor[LEATHER], true)
+	eq(#lines, 1)
+	assert(lines[1]:find("sold on the AH: 'Sell to vendor' mark removed", 1, true), lines[1])
+	assert(refreshed > 0, "pages refresh")
+	-- a second sale of the now unmarked item prints nothing
+	eq(ns.Auctions.DropVendorMark(PANTS), false)
+	eq(#lines, 1)
+end)
+
+it("an unmarked item's sale changes nothing and prints nothing", function()
+	local ns, stub = Load()
+	local lines = {}
+	ns.Print = function(msg) lines[#lines + 1] = tostring(msg) end
+	AtHouse(stub)
+	local id = Post(stub, PANTS, 1, 9000, { item = true })
+	Sold(stub, "Rugged Leather Pants", id)
+	SaleMail(ns, stub, "Rugged Leather Pants", PANTS, 8650)
+	eq(next(ns.db.sellVendor), nil); eq(#lines, 0)
+end)
+
+it("listing, cancelling and expiring keep the Sell to vendor mark", function()
+	local ns, stub = Load()
+	ns.Print = function() error("no chat line expected") end
+	ns.db.sellVendor[PANTS] = true
+	ns.db.sellVendor[LEATHER] = true
+	AtHouse(stub)
+	local posted = Post(stub, PANTS, 1, 9000, { item = true })
+	local listed = Post(stub, LEATHER, 20, 150)
+	eq(ns.db.sellVendor[PANTS], true, "listed")
+	stub.Fire("AUCTION_CANCELED", posted)
+	eq(Find(ns, function(r) return r.id == posted end).st, "cancelled")
+	stub.Fire("CHAT_MSG_SYSTEM", "Your auction of Light Leather has expired.")
+	eq(Find(ns, function(r) return r.id == listed end).st, "expired")
+	eq(ns.db.sellVendor[PANTS], true); eq(ns.db.sellVendor[LEATHER], true)
+end)
