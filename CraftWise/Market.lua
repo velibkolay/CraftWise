@@ -1106,6 +1106,8 @@ end
 ----------------------------------------------------------------------------------------------------
 -- Own scan (#6, step 1 of #253): a click asks the server for the whole list (C_AuctionHouse.
 -- ReplicateItems) and the reader below does the rest, marking the scan source = "own". States:
+--   ready       the click waits until C_AuctionHouse.IsThrottledMessageSystemReady() (other addons query when
+--               the house opens, #291); nothing has been sent, so no cooldown is used
 --   requested   the request is being sent (momentary)
 --   waiting     the request is out, no list yet (timeout: M.OWN_WAIT_SECONDS)
 --   reading     the list is being read (OnReplicateList, a time budget per frame)
@@ -1122,11 +1124,12 @@ end
 
 M.OWN_COOLDOWN = 15 * 60 -- seconds between full scans, per account (#6)
 M.OWN_WAIT_SECONDS = 120 -- how long we wait for a list before saying none came: a placeholder until measured
+M.OWN_READY_SECONDS = 30 -- how long the click waits for the client's request throttle to be ready (#291): a placeholder
 
 local own = { state = "idle" } -- this session's own scan; saved: db.ownScan
-local ownTimer
+local ownTimer, readyPoll
 
-local OWN_ACTIVE = { requested = true, waiting = true, reading = true, loading = true, storing = true }
+local OWN_ACTIVE = { ready = true, requested = true, waiting = true, reading = true, loading = true, storing = true }
 
 local function SetOwn(state, fields)
 	own.state = state
@@ -1143,11 +1146,31 @@ local function CancelOwnTimer()
 	end
 end
 
+local function CancelReadyPoll()
+	if readyPoll then
+		readyPoll:Cancel()
+		readyPoll = nil
+	end
+end
+
+-- What the request's throttle events were (#291), for the saved file: which of the client's throttle events fired
+-- between our call and the end, whether the system was ready at the click and how long the click waited for it.
+local function SaveRequest(outcome)
+	local ev = own.events or {}
+	db.ownScan.lastRequest = {
+		t = own.requestedAt or own.clickedAt, house = own.house, outcome = outcome,
+		readyAtClick = own.readyAtClick, readyWait = own.readyWait,
+		sent = ev.sent or 0, queued = ev.queued or 0, dropped = ev.dropped or 0, response = ev.response or 0,
+	}
+end
+
 local function OwnFail(reason, detail)
 	if not OWN_ACTIVE[own.state] then
 		return
 	end
 	CancelOwnTimer()
+	CancelReadyPoll()
+	SaveRequest(reason)
 	SetOwn("failed", { error = reason, detail = detail, finishedAt = time() })
 end
 
@@ -1190,24 +1213,47 @@ function M.OwnScan(now)
 	now = now or time()
 	return {
 		state = own.state, house = own.house, requestedAt = own.requestedAt, listAt = own.listAt, phaseAt = own.phaseAt,
-		rows = own.rows, timeout = M.OWN_WAIT_SECONDS,
-		elapsed = own.requestedAt and OWN_ACTIVE[own.state] and math.max(0, now - own.requestedAt) or nil,
+		rows = own.rows, timeout = M.OWN_WAIT_SECONDS, readyTimeout = M.OWN_READY_SECONDS, queued = own.queued,
+		events = own.events,
+		elapsed = (own.requestedAt or own.clickedAt) and OWN_ACTIVE[own.state]
+			and math.max(0, now - (own.requestedAt or own.clickedAt)) or nil,
 		error = own.error, detail = own.detail, finishedAt = own.finishedAt,
 		cooldown = M.ScanCooldown(now), block = M.ScanBlock(now),
 		last = db and db.ownScan and db.ownScan.last or nil,
 	}
 end
 
--- The click. Returns true, or false and the reason (see ScanBlock, or "error" when the client refused).
-function M.RequestScan()
-	local block = M.ScanBlock()
-	if block then
-		return false, block
-	end
+-- The client's request throttle (#291): other addons query the auction house the moment it opens, and the game
+-- sends or queues or drops what it is given. Four events say what happened to a message, none says which message.
+-- So: the click waits until the system is ready (nothing is sent, no cooldown used); after our call the events
+-- are counted. A "dropped" before anything was "sent" is taken as ours: the request counts as not made (no
+-- cooldown, an immediate retry); one after "sent" belongs to somebody else. "queued" shows as such, "sent"
+-- restarts the timeout (the time in the game's queue isn't the server's). Which events really fire for
+-- ReplicateItems on Forever is unknown: they are recorded in ownScan.lastRequest and ownScan.last.
+local function ThrottleReady()
+	return not C_AuctionHouse.IsThrottledMessageSystemReady or C_AuctionHouse.IsThrottledMessageSystemReady()
+end
+
+local function StartWaitTimer(token)
+	CancelOwnTimer()
+	ownTimer = C_Timer.NewTimer(M.OWN_WAIT_SECONDS, function()
+		if own.token == token and own.state == "waiting" then
+			ownTimer = nil
+			local ev = own.events or {}
+			OwnFail("timeout", { sent = ev.sent, queued = ev.queued, dropped = ev.dropped, response = ev.response })
+		end
+	end)
+end
+
+-- Sends the request now (the throttle is ready, or the click found it so).
+local function SendRequest()
+	CancelReadyPoll()
+	CancelOwnTimer()
 	local now = time()
-	local token = (own.token or 0) + 1
-	own = { state = "idle", token = token }
+	local token = own.token
 	local before = db.ownScan.requested
+	own.before, own.events, own.queued = before, { sent = 0, queued = 0, dropped = 0, response = 0 }, false
+	own.readyWait = math.max(0, now - (own.clickedAt or now))
 	db.ownScan.requested, db.ownScan.house = now, currentHouse -- before the call: a crash still counts as asked
 	SetOwn("requested", { house = currentHouse, requestedAt = now })
 	local ok, err = pcall(C_AuctionHouse.ReplicateItems)
@@ -1217,13 +1263,74 @@ function M.RequestScan()
 		return false, "error"
 	end
 	SetOwn("waiting")
-	ownTimer = C_Timer.NewTimer(M.OWN_WAIT_SECONDS, function()
-		if own.token == token and own.state == "waiting" then
+	StartWaitTimer(token)
+	return true
+end
+
+local function PollReady(token)
+	readyPoll = nil
+	if own.token ~= token or own.state ~= "ready" then
+		return
+	end
+	if ThrottleReady() then
+		SendRequest()
+	else
+		readyPoll = C_Timer.NewTimer(0.5, function()
+			PollReady(token)
+		end)
+	end
+end
+
+-- AUCTION_HOUSE_THROTTLED_SYSTEM_READY while the click waits.
+function M.SendWhenReady()
+	if own.state == "ready" then
+		return SendRequest()
+	end
+end
+
+-- The click. Returns true (the request is out, or waiting for the throttle), or false and the reason (see
+-- ScanBlock, or "error" when the client refused).
+function M.RequestScan()
+	local block = M.ScanBlock()
+	if block then
+		return false, block
+	end
+	local now = time()
+	local token = (own.token or 0) + 1
+	own = { state = "idle", token = token, clickedAt = now, house = currentHouse, readyAtClick = ThrottleReady() }
+	if own.readyAtClick then
+		return SendRequest()
+	end
+	SetOwn("ready", { house = currentHouse })
+	readyPoll = C_Timer.NewTimer(0.5, function()
+		PollReady(token)
+	end)
+	ownTimer = C_Timer.NewTimer(M.OWN_READY_SECONDS, function()
+		if own.token == token and own.state == "ready" then
 			ownTimer = nil
-			OwnFail("timeout")
+			OwnFail("notready") -- nothing was sent: the cooldown is untouched
 		end
 	end)
 	return true
+end
+
+-- A throttle event while the request is out (#291).
+local function OnThrottleEvent(kind)
+	if own.state ~= "waiting" or not own.events then
+		return
+	end
+	own.events[kind] = (own.events[kind] or 0) + 1
+	if kind == "queued" then
+		SetOwn("waiting", { queued = true })
+	elseif kind == "sent" then
+		if own.queued then
+			SetOwn("waiting", { queued = false })
+		end
+		StartWaitTimer(own.token) -- the wait for the server starts when the game sent it
+	elseif kind == "dropped" and own.events.sent == 0 then
+		db.ownScan.requested = own.before -- the server never got it: the cooldown isn't used
+		OwnFail("dropped")
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -1325,6 +1432,12 @@ local function FinishScan(scan)
 			unreadFailed = by.failed or 0, unreadTimeout = by.timeout or 0, unreadNoLink = by.nolink or 0,
 			unreadWeapon = by.weapon or 0, unreadArmor = by.armor or 0, unreadOther = by.other or 0,
 		}
+		if own.token == scan.ownToken then
+			SaveRequest("list")
+			local req = db.ownScan.lastRequest
+			last.readyAtClick, last.readyWait = req.readyAtClick, req.readyWait
+			last.thrSent, last.thrQueued, last.thrDropped, last.thrResponse = req.sent, req.queued, req.dropped, req.response
+		end
 		db.ownScan.last = last
 		if own.token == scan.ownToken then
 			CancelOwnTimer()
@@ -3370,7 +3483,8 @@ ns.On("AUCTION_HOUSE_CLOSED", function()
 	end
 	FlushSearches()
 	currentHouse = nil
-	if own.state == "requested" or own.state == "waiting" or own.state == "reading" or own.state == "loading" then
+	if own.state == "ready" or own.state == "requested" or own.state == "waiting" or own.state == "reading"
+		or own.state == "loading" then
 		OwnFail("closed") -- a scan being stored goes on: the rows were all read
 	end
 	ns.Notify("AH_STATE_CHANGED", false)
@@ -3394,6 +3508,15 @@ ns.On("ITEM_DATA_LOAD_RESULT", function(_, itemID, success)
 end)
 
 ns.On("REPLICATE_ITEM_LIST_UPDATE", OnReplicateList)
+ns.On("AUCTION_HOUSE_THROTTLED_MESSAGE_SENT", function() OnThrottleEvent("sent") end)
+ns.On("AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED", function() OnThrottleEvent("queued") end)
+ns.On("AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED", function() OnThrottleEvent("dropped") end)
+ns.On("AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED", function() OnThrottleEvent("response") end)
+ns.On("AUCTION_HOUSE_THROTTLED_SYSTEM_READY", function()
+	if own.state == "ready" then
+		M.SendWhenReady()
+	end
+end)
 ns.On("COMMODITY_SEARCH_RESULTS_UPDATED", OnCommoditySearch)
 ns.On("COMMODITY_SEARCH_RESULTS_ADDED", OnCommoditySearch)
 ns.On("ITEM_SEARCH_RESULTS_UPDATED", OnItemSearch)
