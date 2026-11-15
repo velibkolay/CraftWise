@@ -941,3 +941,8 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Hover a Profit/h cell: the tooltip ends with "One craft now: sale X (AH after the 5% cut | vendor price, no AH cut | vendor price (Junk mark), no AH cut) - reagents Y = +Z". Compare Z with Make › Craft's profit for the same recipe: they are the same figure.
 - A Junk-marked product (Cooked Crab Claw sold to a vendor): the sale is the vendor price with no cut. The footer says "vendor/Junk sales: no cut".
 - If Profit/h is negative while Profit today is positive, the line shows why (prices or the paid-cost basis now against craft time).
+
+## Sell › Auctions: click a card (#269)
+
+- No TOC change; `/reload` is enough. Open Sell › Auctions. Click "On its way · in the mail": the list shows only the sold auctions waiting in the mail, newest first, each with item, quantity, how long ago it sold, buyout and "You get" (after the cut, deposit back included); the card gets a white outline, the list bar says "N sold, waiting in the mail". The figure on the card equals the sum of the "You get" column (rows with a dash have no counted payout, as the card says). Click it again, or the All chip in the list bar: the whole list is back.
+- "If all listed sell" shows the listings (time left, buyout); "Returning" shows expired and cancelled auctions coming back by mail. Auctions marked Uncertain stay in the list under every filter. The cards keep their totals while a filter is on. Hover a card: "Click to show these". Dock the window: the cards stack as before; the All chip still clears the filter.

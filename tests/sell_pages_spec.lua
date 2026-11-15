@@ -367,6 +367,48 @@ it("Auctions: a sale moves the open page live: the row goes from Listed to Sold 
 	eq(Statuses(), "Sold,Sold,Sold,Listed,Returning", "the row followed the notification")
 end)
 
+it("Auctions: a click on a card lists that group; the card's total is the rows' sum; again or All clears it (#269)", function()
+	local ns, _, M = Auctions()
+	local list = ns.Auctions.List()
+	list[#list + 1] = { id = 7, i = HIDE, n = "Test Hide", q = 2, unit = 100, st = "gone", goneT = NOW - 30, h = HORDE } -- uncertain
+	M.Open("auctions")
+	local P = M.Page("auctions").P
+	P.filter = nil
+	local function Names()
+		local out = {}
+		for _, fr in ipairs(Rows(M, "auctions")) do out[#out + 1] = fr.cells[2].text .. "/" .. fr.cells[4].text end
+		return table.concat(out, ",")
+	end
+	local function Click(i)
+		local c = M.SlotsOf("auctions").hero.cards[i]
+		c.scripts.OnClick(c)
+	end
+	eq(#Rows(M, "auctions"), 6)
+	Click(1) -- On its way
+	eq(Names(), "Test Cloak/Sold,Test Pants/Sold,Test Hide/Uncertain", "sold newest first, uncertain stays")
+	local cards = M.SlotsOf("auctions").hero.cards
+	eq(cards[1].selectedBorder.top.shown, true); eq(cards[2].selectedBorder.top.shown, false)
+	local sum = 0
+	for _, r in ipairs(M.Page("auctions").Model({}).rows) do sum = sum + (r.youGet or 0) end
+	eq(cards[1].stat.figure.text, ns.FormatCoins(sum), "the card's total equals what its rows pay")
+	Click(2) -- If all listed sell
+	eq(Names(), "Test Hide/Listed,Test Leather/Listed,Test Hide/Uncertain")
+	sum = 0
+	for _, r in ipairs(M.Page("auctions").Model({}).rows) do sum = sum + (r.youGet or 0) end
+	eq(M.SlotsOf("auctions").hero.cards[2].stat.figure.text, ns.FormatCoins(sum))
+	Click(3) -- Returning
+	eq(Names(), "Test Hide/Uncertain,Test Bracers/Returning", "uncertain sits before returning, as in the full list")
+	Click(3) -- the same card again
+	eq(#Rows(M, "auctions"), 6); eq(P.filter, nil)
+	Click(1)
+	M.SlotsOf("auctions").listTools.all.scripts.OnClick(M.SlotsOf("auctions").listTools.all) -- the All chip
+	eq(#Rows(M, "auctions"), 6); eq(P.filter, nil)
+	-- the cards keep their totals while a filter is on
+	Click(2)
+	eq(M.SlotsOf("auctions").hero.cards[1].stat.figure.text, ns.FormatCoins(27575 + 18620))
+	P.filter = nil
+end)
+
 it("Auctions: nothing recorded: no cards, the empty line", function()
 	local _, _, M = Load()
 	M.Open("auctions")
