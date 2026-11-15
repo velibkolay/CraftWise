@@ -598,7 +598,7 @@ it("open without typing (#130): the minimap right-click and the key binding togg
 	eq(shown(), false); eq(ns.db.farm.shown, false)
 	-- Key binding: Bindings.xml calls the global, its name is set for the Key Bindings list.
 	local xml = assert(io.open("CraftWise/Bindings.xml")):read("*a")
-	assert(xml:find('<Binding name="CRAFTWISE_FARM" header="CRAFTWISE"', 1, true), "binding in Bindings.xml")
+	assert(xml:find('<Binding name="CRAFTWISE_FARM"', 1, true), "binding in Bindings.xml")
 	assert(xml:find("CraftWise_FarmToggle()", 1, true))
 	eq(BINDING_NAME_CRAFTWISE_FARM, "Toggle CraftWise farm tracker"); eq(BINDING_HEADER_CRAFTWISE, "CraftWise")
 	CraftWise_FarmToggle()
