@@ -499,6 +499,11 @@ local function SearchOf(key)
 	return stub.itemSearch[(suffix and suffix ~= 0) and (key.itemID .. ":" .. suffix) or key.itemID] or { rows = {} }
 end
 C_AuctionHouse = {
+	-- The request for the whole list (#6): counted; stub.replicateError makes the client refuse it.
+	ReplicateItems = function()
+		stub.replicateRequests = (stub.replicateRequests or 0) + 1
+		if stub.replicateError then error(stub.replicateError) end
+	end,
 	GetNumReplicateItems = function() return #stub.replicate end,
 	GetReplicateItemInfo = function(i)
 		local r = stub.replicate[i + 1]

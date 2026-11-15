@@ -136,6 +136,24 @@ local function BuildHeader()
 	head.statusHit:Hide()
 	head.live = Style.Nokta(head, C.live)
 	head.live:Hide()
+	-- "Scan AH" (#6): shown while an auction house is open; a click asks for the whole list.
+	head.scan = Style.LineButton(head, L["Scan AH"], nil, 26)
+	head.scan:SetScript("OnClick", function()
+		if ns.Market and ns.Market.RequestScan then
+			ns.Market.RequestScan()
+		end
+		M.Refresh()
+	end)
+	head.scan:HookScript("OnEnter", function(self)
+		local model = M.ScanButton()
+		if model.show then
+			Style.ShowTip(self, unpack(model.tip))
+		end
+	end)
+	head.scan:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	head.scan:Hide()
 
 	-- Scanning: a 2 unit orange progress line under the header.
 	f.progress = CreateFrame("Frame", nil, f)
@@ -153,6 +171,7 @@ end
 -- Header arrangement of the window layout: key block, tabs from x 198 (gap 24), buttons 30 from the edge.
 local function ArrangeHeader(m)
 	local head = f.head
+	head.scanPlaced = nil -- the status is anchored to the gear again: the scan button places itself anew
 	head:ClearAllPoints()
 	head:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 	head:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
@@ -235,6 +254,50 @@ local function UpdateStatus(page)
 		f.progress:Hide()
 	end
 	return kind, status
+end
+
+-- The scan button's text, state and place (#6; the model is M.ScanButton). In the window layout it sits left
+-- of the AH status, which follows it; docked, in the header's bottom right corner under the buttons.
+local function UpdateScanButton()
+	local head, layout = f.head, M.Layout()
+	local m = layout.metrics
+	local model = M.ScanButton()
+	local btn = head.scan
+	local key = model.show and (m.docked and "docked" or "window") or "hidden"
+	if head.scanPlaced ~= key then
+		local was = head.scanPlaced
+		if key == "hidden" then
+			btn:Hide()
+			if was and was ~= "hidden" then
+				ArrangeHeader(m) -- the status is anchored to the gear again
+				if layout.Arrange then
+					layout.Arrange(f, m)
+				end
+			end
+		else
+			btn:ClearAllPoints()
+			if m.docked then
+				btn:SetHeight(20)
+				btn:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", -m.rightPad, 2)
+				head.status:SetWidth(math.max(m.width - m.titleX - m.rightPad - 3 * m.buttonSize - 2 * m.buttonGap - 6 - 120, 60))
+			else
+				btn:SetHeight(26)
+				btn:SetPoint("RIGHT", head.gear, "LEFT", -(m.buttonGap + m.statusGap), 0)
+				head.status:ClearAllPoints()
+				head.status:SetPoint("RIGHT", btn, "LEFT", -(m.buttonGap + m.statusGap), 0)
+			end
+			btn:Show()
+		end
+		head.scanPlaced = key
+	end
+	if model.show then
+		if btn.cwText ~= model.label then
+			btn.cwText = model.label
+			btn:SetLabel(model.label)
+		end
+		btn:SetEnabled(model.enabled)
+		btn:SetAlpha(model.enabled and 1 or 0.6)
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -853,6 +916,7 @@ function M.Refresh()
 	end
 	f.head.gear:SetOn(section == M.SETTINGS)
 	f.head.dock:SetShown(M.CanDock())
+	UpdateScanButton()
 	M.shown = { section = section, page = page and page.key, layout = layout.key }
 	if not page then
 		HideBody()
@@ -1133,6 +1197,7 @@ local function Build()
 			return
 		end
 		elapsed = 0
+		UpdateScanButton() -- the countdown and the waiting seconds tick here
 		local page = M.CurrentPage()
 		if not (page and page.prices) then
 			return
@@ -1193,3 +1258,17 @@ end
 ns.Listen("RECIPES_CHANGED", M.Refresh)
 ns.Listen("PROFESSIONS_CHANGED", M.Refresh)
 ns.Listen("PRICES_CHANGED", M.Refresh)
+ns.Listen("AH_STATE_CHANGED", M.Refresh)
+-- The own scan (#6): a failure says why in the chat (the click may have been minutes ago), a finished one
+-- what it brought; the header follows each state.
+ns.Listen("OWN_SCAN_CHANGED", function(state)
+	local market = ns.Market
+	local s = market and market.OwnScan and market.OwnScan()
+	if state == "failed" and s then
+		ns.Print(M.ScanFailText(s.error, s.detail))
+	elseif state == "done" and s and s.last then
+		ns.Print((L["Scan finished: %s rows, %s items priced."]):format(M.Thousands(s.last.rows),
+			M.Thousands((s.last.items or 0) + (s.last.lastOnly or 0))))
+	end
+	M.Refresh()
+end)
