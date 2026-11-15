@@ -154,6 +154,24 @@ local function BuildHeader()
 		Style.HideTip(self)
 	end)
 	head.scan:Hide()
+	-- After a timeout (#291): ask again without waiting out the 15 minutes.
+	head.retry = Style.LineButton(head, L["Try again anyway"], nil, 26)
+	head.retry:SetScript("OnClick", function()
+		if ns.Market and ns.Market.RequestScan then
+			ns.Market.RequestScan(true)
+		end
+		M.Refresh()
+	end)
+	head.retry:HookScript("OnEnter", function(self)
+		local model = M.ScanButton()
+		if model.retry then
+			Style.ShowTip(self, unpack(model.retry.tip))
+		end
+	end)
+	head.retry:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	head.retry:Hide()
 
 	-- Scanning: a 2 unit orange progress line under the header.
 	f.progress = CreateFrame("Frame", nil, f)
@@ -264,9 +282,10 @@ local function UpdateScanButton()
 	local m = layout.metrics
 	local model = M.ScanButton()
 	local btn = head.scan
-	local key = model.show and (m.docked and "docked" or "window") or "hidden"
+	local key = model.show and ((m.docked and "docked" or "window") .. (model.retry and "+retry" or "")) or "hidden"
 	if head.scanPlaced ~= key then
 		local was = head.scanPlaced
+		head.retry:SetShown(model.show and model.retry ~= nil)
 		if key == "hidden" then
 			btn:Hide()
 			if was and was ~= "hidden" then
@@ -281,11 +300,17 @@ local function UpdateScanButton()
 				btn:SetHeight(20)
 				btn:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", -m.rightPad, 2)
 				head.status:SetWidth(math.max(m.width - m.titleX - m.rightPad - 3 * m.buttonSize - 2 * m.buttonGap - 6 - 120, 60))
+				head.retry:SetHeight(20)
+				head.retry:ClearAllPoints()
+				head.retry:SetPoint("RIGHT", btn, "LEFT", -6, 0)
 			else
 				btn:SetHeight(26)
 				btn:SetPoint("RIGHT", head.gear, "LEFT", -(m.buttonGap + m.statusGap), 0)
+				head.retry:SetHeight(26)
+				head.retry:ClearAllPoints()
+				head.retry:SetPoint("RIGHT", btn, "LEFT", -6, 0)
 				head.status:ClearAllPoints()
-				head.status:SetPoint("RIGHT", btn, "LEFT", -(m.buttonGap + m.statusGap), 0)
+				head.status:SetPoint("RIGHT", model.retry and head.retry or btn, "LEFT", -(m.buttonGap + m.statusGap), 0)
 			end
 			btn:Show()
 		end

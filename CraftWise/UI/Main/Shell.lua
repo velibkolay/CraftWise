@@ -617,7 +617,7 @@ end
 function M.ScanFailText(reason, detail)
 	local market = ns.Market
 	if reason == "timeout" then
-		local text = (L["No list arrived within %d s. Another addon may have scanned in the last 15 minutes (the server then sends nothing), or the game's auction house throttle held the request back. Nothing was stored; try again after the countdown."])
+		local text = (L["No list arrived within %d s. Another addon may have scanned in the last 15 minutes (the server then sends nothing), the game's auction house throttle held the request back, or a slow or busy connection delayed the list (a list that still arrives within 15 minutes of the request is read and stored). Nothing has been stored yet; try again after the countdown, or use Try again anyway."])
 			:format(market and market.OWN_WAIT_SECONDS or 0)
 		if type(detail) == "table" then
 			text = text .. " " .. (L["Throttle events after the request: sent %d, queued %d, dropped %d."])
@@ -776,6 +776,13 @@ function M.ScanButton(now)
 		if scan and scan.kind == "failed" then
 			tip[#tip + 1] = ns.Style.Hex("danger") .. scan.hint .. "|r"
 		end
+	end
+	if s.retryable and s.cooldown > 0 then
+		model.retry = {
+			label = L["Try again anyway"],
+			tip = { L["Try again anyway"],
+				L["Asks for the list again without waiting for the countdown. The server may send nothing if it counted the first request. If the first list still arrives, it is stored."] },
+		}
 	end
 	local last = s.last
 	if last then

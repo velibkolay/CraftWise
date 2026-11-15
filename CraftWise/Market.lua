@@ -1188,7 +1188,7 @@ end
 
 -- Why a scan can't be asked for now (nil when it can): "nodata", "unsupported", "closed" (no auction house
 -- open), "busy" (one is running), "cooldown".
-function M.ScanBlock(now)
+function M.ScanBlock(now, force)
 	if not db then
 		return "nodata"
 	end
@@ -1201,8 +1201,8 @@ function M.ScanBlock(now)
 	if OWN_ACTIVE[own.state] or job then
 		return "busy"
 	end
-	if M.ScanCooldown(now) > 0 then
-		return "cooldown"
+	if M.ScanCooldown(now) > 0 and not (force and own.state == "failed" and own.error == "timeout") then
+		return "cooldown" -- a timed out request may be tried again anyway (force, #291)
 	end
 	return nil
 end
@@ -1218,6 +1218,7 @@ function M.OwnScan(now)
 		elapsed = (own.requestedAt or own.clickedAt) and OWN_ACTIVE[own.state]
 			and math.max(0, now - (own.requestedAt or own.clickedAt)) or nil,
 		error = own.error, detail = own.detail, finishedAt = own.finishedAt,
+		retryable = own.state == "failed" and own.error == "timeout" or nil,
 		cooldown = M.ScanCooldown(now), block = M.ScanBlock(now),
 		last = db and db.ownScan and db.ownScan.last or nil,
 	}
@@ -1290,8 +1291,8 @@ end
 
 -- The click. Returns true (the request is out, or waiting for the throttle), or false and the reason (see
 -- ScanBlock, or "error" when the client refused).
-function M.RequestScan()
-	local block = M.ScanBlock()
+function M.RequestScan(force)
+	local block = M.ScanBlock(nil, force)
 	if block then
 		return false, block
 	end
@@ -1423,7 +1424,7 @@ local function FinishScan(scan)
 		local by = scan.unreadBy or {}
 		local last = {
 			t = scan.t, house = scan.house, rows = scan.count, items = scan.recorded, lastOnly = scan.lastOnly,
-			unread = unread, waited = scan.waited, readMs = readMs, readFrames = readFrames, readWorstMs = readWorst,
+			late = scan.late, unread = unread, waited = scan.waited, readMs = readMs, readFrames = readFrames, readWorstMs = readWorst,
 			storeMs = storeMs, storeFrames = storeFrames, storeWorstMs = storeWorst,
 			-- item data for rows without a link (#286): items that needed it, how many arrived, how long it took
 			-- (seconds, and our own time in the slices), and why the others stayed unread
@@ -1690,7 +1691,11 @@ local function OnReplicateList()
 			OwnFail("changed")
 		end
 	end
-	local mine = own.state == "waiting" and own.house == currentHouse
+	-- Ours: the request we are waiting for, or one that timed out and whose list comes late (a slow connection, a
+	-- busy server) while the house is still open and inside the cooldown window of that request (#291).
+	local late = own.state == "failed" and own.error == "timeout" and own.house == currentHouse
+		and own.requestedAt ~= nil and time() - own.requestedAt < M.OWN_COOLDOWN
+	local mine = (own.state == "waiting" and own.house == currentHouse) or late
 	local scan = {
 		phase = "read",
 		house = currentHouse,
@@ -1709,12 +1714,14 @@ local function OnReplicateList()
 		source = mine and "own" or ns.HasAuctionator() and "auctionator" or "ui",
 		readSlice = {},
 		own = mine or nil,
+		late = late or nil,
 		ownToken = mine and own.token or nil,
 		waited = mine and math.max(0, time() - (own.requestedAt or time())) or nil,
 	}
 	job = scan
 	if mine then
 		CancelOwnTimer()
+		own.error, own.detail, own.finishedAt = nil, nil, nil
 		SetOwn("reading", { listAt = time(), phaseAt = time(), rows = count })
 	end
 	Chunked(count, ROWS_PER_FRAME, function(i)

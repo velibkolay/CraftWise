@@ -226,3 +226,118 @@ it("#291 throttle events with no request out change nothing", function()
 	eq(M.OwnScan().state, "idle")
 	eq(CraftWiseMarketDB.ownScan.lastRequest, nil)
 end)
+
+----------------------------------------------------------------------------------------------------
+-- After a timeout: a late list, Try again anyway, the slow connection in the message (#291, Veli's addition)
+----------------------------------------------------------------------------------------------------
+
+it("#291 a list that comes after the timeout, inside the 15 minutes of the request, is stored as ours", function()
+	local _, stub, M, Main = Load()
+	OpenAH(stub)
+	M.RequestScan()
+	stub.RunTimers()
+	eq(M.OwnScan().state, "failed"); eq(M.OwnScan().error, "timeout")
+	stub.clock = NOW + 200
+	stub.replicate = Rows(40)
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	eq(M.OwnScan().state, "done")
+	eq(M.OwnScan().error, nil)
+	local log = CraftWiseMarketDB.scans[HORDE]
+	eq(log[#log].source, "own"); eq(log[#log].kind, "full")
+	local last = CraftWiseMarketDB.ownScan.last
+	eq(last.late, true); eq(last.waited, 200); eq(last.rows, 40)
+	eq(CraftWiseMarketDB.ownScan.lastRequest.outcome, "list")
+	eq(Main.ScanModel().kind, "done")
+	assert(stub.printed[#stub.printed]:find("Scan finished: 40 rows", 1, true))
+	eq(Main.ScanButton().retry, nil, "nothing to retry any more")
+end)
+
+it("#291 a list after the 15 minutes, with the house closed meanwhile, or for another failure is not claimed", function()
+	local _, stub, M = Load()
+	OpenAH(stub)
+	M.RequestScan()
+	stub.RunTimers()
+	stub.clock = NOW + 901
+	stub.replicate = Rows(10)
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	eq(CraftWiseMarketDB.scans[HORDE][1].source, "ui", "outside the window of the request")
+	eq(M.OwnScan().state, "failed")
+	-- a drop is no timeout: the server never got it, a list is somebody else's
+	stub.clock = NOW + 5000
+	OpenAH(stub)
+	M.RequestScan()
+	Throttle(stub, "dropped")
+	stub.replicate = Rows(11)
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	local log = CraftWiseMarketDB.scans[HORDE]
+	eq(log[#log].source, "ui")
+	eq(M.OwnScan().error, "dropped")
+end)
+
+it("#291 Try again anyway: only after a timeout, bypasses the countdown once, sends again", function()
+	local _, stub, M, Main = Load()
+	OpenAH(stub)
+	M.RequestScan()
+	eq(Main.ScanButton().retry, nil, "not while the request is out")
+	stub.RunTimers()
+	stub.clock = NOW + 130
+	local b = Main.ScanButton()
+	eq(b.label, "Next scan in 12:50"); eq(b.enabled, false)
+	assert(b.retry, "offered after a timeout")
+	eq(b.retry.label, "Try again anyway")
+	assert(table.concat(b.retry.tip, "\n"):find("The server may send nothing if it counted the first request", 1, true))
+	eq(select(2, M.RequestScan()), "cooldown", "the plain click is still blocked")
+	eq(M.RequestScan(true), true)
+	eq(stub.replicateRequests, 2)
+	eq(M.OwnScan().state, "waiting")
+	eq(CraftWiseMarketDB.ownScan.requested, NOW + 130, "the cooldown counts from the new request")
+	-- the first request's list arrives now: it is ours too
+	stub.replicate = Rows(8)
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	eq(M.OwnScan().state, "done")
+	-- other failures, and a cooldown that has run out, offer nothing
+	stub.clock = NOW + 5000
+	eq(Main.ScanButton().retry, nil)
+	local _, stub2, M2, Main2 = Load()
+	OpenAH(stub2)
+	M2.RequestScan()
+	stub2.Fire("AUCTION_HOUSE_CLOSED")
+	OpenAH(stub2)
+	eq(Main2.ScanButton().retry, nil, "closed is not a timeout")
+	eq(M2.RequestScan(true), false, "force only works after a timeout")
+end)
+
+it("#291 the header shows Try again anyway next to Scan AH after a timeout, and the click sends", function()
+	local _, stub, M, Main = Load()
+	Main.Open("craft")
+	local f = Main.Frame()
+	OpenAH(stub)
+	eq(f.head.retry:IsShown(), false)
+	M.RequestScan()
+	stub.RunTimers()
+	Main.Refresh()
+	eq(f.head.scan.label.text, "Next scan in 15:00")
+	eq(f.head.retry:IsShown(), true)
+	eq(f.head.retry.label.text, "Try again anyway")
+	local pts = f.head.retry.points
+	eq(pts[#pts][2], f.head.scan); eq(pts[#pts][1], "RIGHT")
+	local sp = f.head.status.points
+	eq(sp[#sp][2], f.head.retry, "the status makes room")
+	f.head.retry.scripts.OnClick(f.head.retry)
+	eq(stub.replicateRequests, 2)
+	Main.Refresh()
+	eq(f.head.retry:IsShown(), false)
+	sp = f.head.status.points
+	eq(sp[#sp][2], f.head.scan)
+end)
+
+it("#291 the timeout message names a slow connection and that a late list is stored", function()
+	local _, stub, M = Load()
+	OpenAH(stub)
+	M.RequestScan()
+	stub.RunTimers()
+	local msg = stub.printed[#stub.printed]
+	assert(msg:find("a slow or busy connection delayed the list", 1, true), msg)
+	assert(msg:find("a list that still arrives within 15 minutes of the request is read and stored", 1, true), msg)
+	assert(msg:find("Try again anyway", 1, true), msg)
+end)

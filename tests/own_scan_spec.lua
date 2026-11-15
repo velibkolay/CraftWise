@@ -122,11 +122,14 @@ it("#6 no list arrives: the timeout says so, nothing is stored, the cooldown sta
 	assert(stub.printed[#stub.printed]:find("Another addon may have scanned", 1, true))
 	eq(CraftWiseMarketDB.scans[HORDE], nil, "nothing logged")
 	eq(M.ScanCooldown(), 900)
-	-- a late list after the timeout is read like any list, not claimed as ours
+	-- a late list (slow connection) within the cooldown window of the request is ours after all (#291)
+	stub.clock = NOW + 300
 	stub.replicate = Rows(LIST)
 	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
-	eq(CraftWiseMarketDB.scans[HORDE][1].source, "ui")
-	eq(M.OwnScan().state, "failed")
+	eq(CraftWiseMarketDB.scans[HORDE][1].source, "own")
+	eq(M.OwnScan().state, "done"); eq(M.OwnScan().error, nil)
+	eq(CraftWiseMarketDB.ownScan.last.late, true)
+	eq(CraftWiseMarketDB.ownScan.last.waited, 300)
 end)
 
 it("#6 the timeout does not fire for a scan that got its list", function()
