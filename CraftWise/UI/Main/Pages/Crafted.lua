@@ -16,18 +16,21 @@ M.CraftedPage = P
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
-	MK.Column("name", L["Recipe"], 300, "LEFT", "Body", true),
-	MK.Column("today", L["Today"], 90, "RIGHT", "Figure", true),
-	MK.Column("week", L["7 days"], 90, "RIGHT", "Figure", true),
-	MK.Column("total", L["Total"], 110, "RIGHT", "FigureBold", true),
+	MK.Column("name", L["Recipe"], 210, "LEFT", "Body", true),
+	MK.Column("today", L["Today"], 62, "RIGHT", "Figure", true),
+	MK.Column("week", L["7 days"], 62, "RIGHT", "Figure", true),
+	MK.Column("total", L["Total"], 80, "RIGHT", "FigureBold", true),
+	MK.Column("sec", L["Sec/craft"], 76, "RIGHT", "Figure", true),
+	MK.Column("perHour", L["Crafts/h"], 70, "RIGHT", "Figure", true),
+	MK.Column("profitHour", L["Profit/h"], 96, "RIGHT", "Figure", true),
 }
 P.COLUMNS = COLUMNS
 
 -- The filters of this session: line = a profession's skill line (nil = all), char = a character key (nil = all).
 P.state = { line = nil, char = nil }
 
--- Sort (pure): the chosen column, then today, 7 days and total (largest first), then the name. desc as the
--- shell passes it (a click on the chosen column again flips it).
+-- Sort (pure): the chosen column (rows without a figure last), then today, 7 days and total (largest first),
+-- then the name. desc as the shell passes it (a click on the chosen column again flips it).
 local FALLBACK = { "today", "week", "total" }
 
 local function ByName(a, b)
@@ -48,7 +51,11 @@ function P.Compare(key, desc)
 				return na < nb
 			end
 		else
-			local va, vb = a[key] or 0, b[key] or 0
+			local va, vb = a[key], b[key]
+			if (va == nil) ~= (vb == nil) then
+				return va ~= nil -- a missing figure (no speed measured yet) sorts last either way
+			end
+			va, vb = va or 0, vb or 0
 			if va ~= vb then
 				if desc then
 					return va > vb
@@ -112,12 +119,35 @@ local function Identify(recipeID)
 	return name or ("Recipe #" .. recipeID), icon, itemID
 end
 
+-- Profit per craft at today's prices of the recipes in `ids` (the same figure as Make › Craft's row): the
+-- rows of the profession of this character that knows each recipe, built once per profession.
+local function Profits(ids)
+	local byProfession, profit = {}, {}
+	for _, recipeID in ipairs(ids) do
+		for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+			if prof.recipes and prof.recipes[recipeID] then
+				if not byProfession[professionID] then
+					byProfession[professionID] = {}
+					for _, row in ipairs(ns.BuildRows(professionID, false, "profit")) do
+						byProfession[professionID][row.recipeID] = row.profit
+					end
+				end
+				profit[recipeID] = byProfession[professionID][recipeID]
+				break
+			end
+		end
+	end
+	return profit
+end
+P.Profits = Profits
+
 -- Rows of the log behind the filters (filters = { line, char }, default the page's; the query is Make's):
 -- cells in the window layout, view fields for the docked one. Unsorted: the shell sorts.
 function P.Rows(now, filters)
 	filters = filters or P.state
 	local rows = {}
 	local query = (MK.state.query or ""):lower()
+	local speeds, measured = {}, {}
 	for _, e in ipairs(CL.List(now, filters.char)) do
 		local name, icon, itemID = Identify(e.recipeID)
 		local line = ns.RecipeLine and ns.RecipeLine(e.recipeID)
@@ -131,8 +161,34 @@ function P.Rows(now, filters)
 			view.cells.total, view.colors.total = CL.Format(e.total), "text"
 			view.result, view.resultColor = CL.Format(e.total), "text"
 			view.sub = (L["today %s"]):format(CL.Format(e.today)) .. " · " .. (L["7 days %s"]):format(CL.Format(e.week))
+			local speed = CL.Speed(e.recipeID)
+			if speed then
+				r.speed, r.sec, r.perHour = speed, speed.sec, speed.perHour
+				measured[#measured + 1] = e.recipeID
+			end
+			speeds[e.recipeID] = r
 			rows[#rows + 1] = r
 		end
+	end
+	-- Profit per hour needs the prices: only for the recipes with a measured speed.
+	if #measured > 0 then
+		local profits = Profits(measured)
+		for _, recipeID in ipairs(measured) do
+			local r = speeds[recipeID]
+			r.profit = profits[recipeID]
+			r.profitHour = CL.ProfitPerHour(r.speed, r.profit)
+		end
+	end
+	for _, r in ipairs(rows) do
+		local v = r.view
+		v.cells.sec = r.speed and CL.FormatSeconds(r.sec) or M.DASH
+		v.cells.perHour = r.speed and CL.Format(r.perHour) or M.DASH
+		v.cells.profitHour = r.profitHour and (MK.Signed(r.profitHour)) or M.DASH
+		v.colors.sec, v.colors.perHour = r.speed and "text" or "text3", r.speed and "text" or "text3"
+		v.colors.profitHour = r.profitHour and select(2, MK.Signed(r.profitHour)) or "text3"
+		v.tips.sec = r.speed and { L["Sec/craft"], (L["Median of the measured gaps between two crafts, measured over %d crafts."]):format(r.speed.n) }
+			or { L["Sec/craft"], (L["Shown after %d measured crafts in a row (gaps over %d s are breaks)."]):format(CL.MIN_GAPS, CL.BREAK_SECONDS) }
+		v.tips.profitHour = { L["Profit/h"], L["Crafts per hour times the profit per craft at today's prices (approx.): not what was earned."] }
 	end
 	return rows
 end
@@ -171,7 +227,8 @@ local function FilterNote()
 	return table.concat(parts, " · ")
 end
 
-local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L["by crafts in 7 days"], total = L["by total crafts"] }
+local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L["by crafts in 7 days"], total = L["by total crafts"],
+	sec = L["by seconds per craft"], perHour = L["by crafts per hour"], profitHour = L["by profit per hour"] }
 
 function P.Model()
 	local rows = P.Rows()
@@ -223,6 +280,7 @@ function P.RowTooltip(owner, r)
 		if lines.before then
 			GameTooltip:AddLine("  " .. lines.before .. " - " .. L["counted before the log, no date, no character"], 0.6, 0.6, 0.6, true)
 		end
+		MK.AddSpeedLines(lines.speed, r.profit)
 	end
 	GameTooltip:Show()
 end

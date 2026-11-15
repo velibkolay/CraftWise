@@ -292,6 +292,21 @@ local function CraftWiseHeader()
 	GameTooltip:AddLine(("|T%s:12|t %sCraftWise|r"):format(Style.Media.keyW, Style.Hex("keyGold")))
 end
 
+-- Craft speed (#209): seconds per craft (median of measured gaps), crafts per hour and profit per hour at
+-- today's prices (a dash without a profit), and how many crafts it was measured over.
+function MK.AddSpeedLines(speed, profit)
+	local L = ns.L
+	if not speed then
+		return
+	end
+	GameTooltip:AddDoubleLine("  " .. L["Speed"], (L["%s sec per craft \194\183 %s per hour"]):format(
+		ns.CraftLog.FormatSeconds(speed.sec), ns.CraftLog.Format(speed.perHour)), 0.8, 0.8, 0.8, 1, 1, 1)
+	local perHour = ns.CraftLog.ProfitPerHour(speed, profit)
+	GameTooltip:AddDoubleLine("  " .. L["Profit per hour at today's prices"], perHour and (MK.Signed(perHour) .. Muted(" (" .. L["approx."] .. ")")) or M.DASH,
+		0.8, 0.8, 0.8, 1, 1, 1)
+	Note("  " .. (L["measured over %d crafts"]):format(speed.n))
+end
+
 -- Craft log (#205): "Crafted N . today M", per character today / 7 days / total, the undated part, and the
 -- profit of those crafts at today's prices (past prices are not stored per craft).
 function MK.AddCraftLog(r)
@@ -314,6 +329,7 @@ function MK.AddCraftLog(r)
 		GameTooltip:AddDoubleLine("  " .. ns.L["Profit of all crafts at today's prices"], MK.Signed(r.profit * log.total) .. Muted(" (" .. ns.L["approx."] .. ")"),
 			0.8, 0.8, 0.8, 1, 1, 1)
 	end
+	MK.AddSpeedLines(log.speed, r.profit)
 end
 
 -- Craft and Learn: the crafted item's own tooltip first (item level, stats, requirements, other addons'
