@@ -327,3 +327,73 @@ it("the sell-price queue asks the client for a few items per tick, not a hundred
 	end
 	eq(requested, 95)
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Items sold in lots (#217). Blizzard's merchant frame (wow-ui-source, forever branch,
+-- Blizzard_UIPanels_Game/Mainline/MerchantFrame.lua and Blizzard_FrameXML/Mainline/StackSplitFrame.lua):
+-- BuyMerchantItem(index, split) takes items; the split frame opens with minSplit = stackCount and steps
+-- by it, the price is per lot (price / stackCount per item).
+----------------------------------------------------------------------------------------------------
+
+local function Lots(stack, price)
+	local ns, stub, calls, said = Setup()
+	stub.merchant[2].stack = stack
+	stub.merchant[2].price = price or 20
+	stub.Fire("MERCHANT_SHOW")
+	return ns, stub, calls, said
+end
+
+it("lots: a typed quantity must be a multiple of the lot, else the panel says so and nothing is bought", function()
+	local ns, stub, calls = Lots(5)
+	local B = ns.Basket
+	local ok, why = B.Check({ itemID = THREAD, quantity = 12 }, true)
+	eq(ok, false); eq(why, "Type a multiple of 5")
+	eq(B.Purchase({ itemID = THREAD, quantity = 12 }, true), nil); eq(#calls, 0)
+	ok, why = ns.MerchantBuy.Describe({ itemID = THREAD, quantity = 12 })
+	eq(ok, false)
+end)
+
+it("lots: the total is price per lot x lots, and the calls are whole lots within the per-call maximum", function()
+	local ns, stub, calls = Lots(5, 20)
+	local B = ns.Basket
+	local ok, _, _, q, total = B.Check({ itemID = THREAD, quantity = 10 }, true)
+	eq(ok, true); eq(q, 10); eq(total, 40, "two lots of 20, not ten times 20")
+	GetMerchantItemMaxStack = function() return 18 end
+	eq(B.Purchase({ itemID = THREAD, quantity = 40 }, true), 40)
+	eq(table.concat(calls, ","), "2:15,2:15,2:10", "18 per call rounds down to 15, three lots")
+	for i = #calls, 1, -1 do calls[i] = nil end
+	GetMerchantItemMaxStack = function() return 3 end
+	eq(B.Purchase({ itemID = THREAD, quantity = 10 }, true), 10)
+	eq(table.concat(calls, ","), "2:5,2:5", "a maximum below one lot still buys a lot per call")
+end)
+
+it("lots: gold and bag room use the real quantity and price; stock counts lots", function()
+	local ns, stub, calls = Lots(5, 20)
+	local B = ns.Basket
+	stub.money = 79
+	local ok, why = B.Check({ itemID = THREAD, quantity = 20 }, true)
+	eq(ok, false); eq(why, "Not enough gold")
+	stub.money = 80
+	eq(B.Check({ itemID = THREAD, quantity = 20 }, true), true, "four lots cost 80")
+	stub.money = 100000
+	stub.free[0] = 1 -- room for 20 (stack size 20)
+	eq(B.Check({ itemID = THREAD, quantity = 20 }, true), true)
+	eq(select(2, B.Check({ itemID = THREAD, quantity = 25 }, true)), "Bags have room for 20")
+	stub.free[0] = 30
+	stub.merchant[2].available = 2 -- two lots left
+	eq(select(2, B.Check({ itemID = THREAD, quantity = 15 }, true)), "Only 10 left at this merchant")
+	eq(B.Check({ itemID = THREAD, quantity = 10 }, true), true)
+end)
+
+it("lots: a basket line is rounded up to whole lots and the panel shows the lots", function()
+	local ns, stub, calls = Lots(5, 20)
+	local B = ns.Basket
+	local ok, _, _, q = B.CanBuy({ itemID = THREAD, quantity = 7 })
+	eq(ok, true); eq(q, 10)
+	eq(B.Buy({ itemID = THREAD, quantity = 7 }), 10); eq(table.concat(calls, ","), "2:10")
+	ns.Basket.Entries = function() return { {} } end
+	ns.Basket.Plan = function() return { split = { vendor = { { itemID = THREAD, quantity = 7 } } } } end
+	local MB = ns.MerchantBuy
+	MB.Stale()
+	eq(MB.Rows()[1].text:GetText(), "10 \195\151 Testthread (2 lots of 5)")
+end)

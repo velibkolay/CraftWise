@@ -168,8 +168,13 @@ local function DrawLines()
 			r.line = l
 			r:SetShown(l ~= nil)
 			if l then
-				local can = ns.Basket.CanBuy(l)
-				r.text:SetText((L["%d × %s"]):format(l.quantity, ItemName(l.itemID)))
+				local can, _, slot, quantity = ns.Basket.CanBuy(l)
+				local lot = slot and slot.stack or 1
+				if lot > 1 and quantity then
+					r.text:SetText((L["%d × %s (%d lots of %d)"]):format(quantity, ItemName(l.itemID), quantity / lot, lot))
+				else
+					r.text:SetText((L["%d × %s"]):format(l.quantity, ItemName(l.itemID)))
+				end
 				r.buy:SetEnabled(can)
 				r:ClearAllPoints()
 				r:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y - 20)

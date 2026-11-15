@@ -232,8 +232,10 @@ function B.Open(content, r, ctx)
 			end
 		end
 	elseif r.kind == "vendor" then
-		local ok, why, _, quantity = Bk.CanBuy(r.line)
-		local label = ok and (L["Buy %d"]):format(quantity) or L["Buy"]
+		local ok, why, slot, quantity = Bk.CanBuy(r.line)
+		local lot = slot and slot.stack or 1
+		local label = ok and (lot > 1 and (L["Buy %d (%d lots of %d)"]):format(quantity, quantity / lot, lot)
+			or (L["Buy %d"]):format(quantity)) or L["Buy"]
 		local buy = pool:Button(label, function()
 			local bought, err = Bk.Buy(r.line)
 			if bought then
