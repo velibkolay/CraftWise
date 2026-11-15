@@ -149,6 +149,30 @@ and the add-on file stay as they were. Turn it off with `"sync": false`.
 The machine name goes into the file and every request (header `X-CraftWise-Machine`) so the site can label
 data later (#237 phase 2).
 
+## Update on the Mac
+
+After a merge, quit WoW and run, in the repo checkout on the Mac (on `main`, no local changes):
+
+```sh
+tools/update-mac.sh
+```
+
+`-n` only prints what it would do. It stops at the first failure and:
+
+1. refuses while World of Warcraft is running;
+2. `git pull --ff-only` (refuses on another branch or with local changes);
+3. moves `AddOns/CraftWise` to `AddOns/_to_delete/CraftWise-old-<date-time>` (nothing is deleted),
+   copies the repo's `CraftWise/` there and checks it with `diff -rq`;
+4. builds the companion to `~/Applications/CraftWise/craftwise-companion` (temp name first, then
+   moved over the old binary), stops a companion you started by hand (`nohup ...`; TERM, waits a
+   few seconds) and restarts it through its LaunchAgent (`launchctl kickstart`, or `bootstrap` if
+   it isn't loaded). Without the plist it says to run `-autostart on` once and
+   skips the restart;
+5. prints the commit, the old addon folder's new name and whether the companion was restarted and whether a manually started one was stopped.
+
+It never touches `WTF/` (SavedVariables), `AddOns/CraftWise_Sync` or the companion's `config.json`.
+Other places: `CRAFTWISE_WOW` (the `_forever_` folder) and `CRAFTWISE_BIN` (the binary). Needs Go.
+
 ## Files
 
 In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/CraftWise Companion`
