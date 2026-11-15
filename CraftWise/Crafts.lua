@@ -8,7 +8,11 @@ local _, ns = ...
 -- skill-up and at any skill, from the same craft detection below (OnCraft). CraftWiseDB.crafted:
 --   { seeded = true,
 --     before = { [recipeID] = crafts }  crafts counted in skillups before the log existed (undated, no character),
---     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items } }, earlier = { crafts, items } } } } }
+--     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit, known } },
+--                                                  earlier = { crafts, items, profit, known }, speed = ... } } } }
+-- profit = copper, the profit per craft as computed at craft time (profit view's cost basis, the sale with the
+-- "Sell to vendor" mark respected), summed over the crafts that had one; known = how many crafts that is. A
+-- craft without a price adds to crafts only. Days from before profit was recorded have neither.
 -- Days older than KEEP_DAYS fold into `earlier` (once per session, never on a craft). items = crafts times the
 -- recipe's yield when that is one exact number; recipes with a yield range add crafts only (the client's
 -- received quantity is not read, see docs/ingame-checks.md).
@@ -181,6 +185,13 @@ function CL.Lines(recipeID, now)
 		out.earlier = (L["Older than %d days: %s"]):format(CL.KEEP_DAYS, CL.Format(c.earlier))
 	end
 	out.speed = CL.Speed(recipeID)
+	out.profit = c.profit
+	out.dated = c.total
+	for i, ch in ipairs(c.chars) do
+		out.chars[i].profit = ch.profit
+		out.chars[i].crafts = ch.total
+	end
+	out.payback = CL.Payback(recipeID, c.profit.total, c.profit.known)
 	return out
 end
 
@@ -190,6 +201,30 @@ local function Yield(recipe)
 	if q and q >= 1 and q == math.floor(q) then
 		return q
 	end
+end
+
+-- The profit per craft of a recipe right now, in copper, as Make > Craft computes it (the profit view's cost
+-- basis, #47; the sale value with the vendor mark, #214): nil when the recipe, a reagent or the sale has no price.
+-- Kept for PROFIT_TTL seconds of the game clock per recipe, so Create All evaluates it once.
+CL.PROFIT_TTL = 60
+local profitMemo = {} -- [recipeID] = { clock, profit or false }
+
+function CL.ProfitNow(recipeID, recipe, clock)
+	local memo = profitMemo[recipeID]
+	if memo and clock and memo[1] and clock - memo[1] < CL.PROFIT_TTL then
+		return memo[2] or nil
+	end
+	local reagents, output = recipe and recipe.reagents, recipe and recipe.output
+	if not reagents and ns.RecipeFallback then
+		reagents, output = ns.RecipeFallback(recipeID)
+	end
+	local profit
+	if reagents and ns.Profit and ns.ReagentPrices then
+		local result = ns.Profit.Evaluate({ reagents = reagents, output = output, learned = true }, ns.ReagentPrices("profit"))
+		profit = result and result.profit
+	end
+	profitMemo[recipeID] = { clock, profit or false }
+	return profit
 end
 
 -- One craft: one write into today's bucket.
@@ -212,11 +247,16 @@ function CL.Record(recipeID, recipe, now, clock)
 	local day = CL.Today(now)
 	local bucket = entry.days[day]
 	if not bucket then
-		bucket = { 0, 0 }
+		bucket = { 0, 0, 0, 0 }
 		entry.days[day] = bucket
 	end
 	bucket[1] = bucket[1] + 1
 	bucket[2] = bucket[2] + (Yield(recipe) or 0)
+	local profit = CL.ProfitNow(recipeID, recipe, clock)
+	if profit then
+		bucket[3] = (bucket[3] or 0) + math.floor(profit + 0.5)
+		bucket[4] = (bucket[4] or 0) + 1
+	end
 	AddGap(entry, recipeID, clock)
 	ns.Notify("CRAFTLOG_CHANGED", recipeID)
 end
@@ -233,9 +273,10 @@ function CL.Fold(now)
 		for _, entry in pairs(char) do
 			for day, bucket in pairs(entry.days) do
 				if today - CL.DayNumber(day) >= CL.KEEP_DAYS then
-					local earlier = entry.earlier or { 0, 0 }
+					local earlier = entry.earlier or { 0, 0, 0, 0 }
 					entry.earlier = earlier
 					earlier[1], earlier[2] = earlier[1] + bucket[1], earlier[2] + bucket[2]
+					earlier[3], earlier[4] = (earlier[3] or 0) + (bucket[3] or 0), (earlier[4] or 0) + (bucket[4] or 0)
 					entry.days[day] = nil
 					folded = folded + 1
 				end
@@ -245,12 +286,41 @@ function CL.Fold(now)
 	return folded
 end
 
+-- Sums of one recipe entry of one character: { crafts, profit, known } for today, the last 7 days (today and the
+-- 6 days before) and in total (days plus the folded `earlier`), items and the folded crafts. profit is in
+-- copper, as recorded at craft time; known = crafts that had a profit.
+local function Windows(entry, todayNumber)
+	local w = { today = { 0, 0, 0 }, week = { 0, 0, 0 }, total = { 0, 0, 0 }, items = 0, earlier = 0 }
+	local function Add(window, b)
+		window[1], window[2], window[3] = window[1] + b[1], window[2] + (b[3] or 0), window[3] + (b[4] or 0)
+	end
+	for day, b in pairs(entry.days) do
+		local age = todayNumber - CL.DayNumber(day)
+		if age == 0 then
+			Add(w.today, b)
+		end
+		if age >= 0 and age < 7 then
+			Add(w.week, b)
+		end
+		Add(w.total, b)
+		w.items = w.items + b[2]
+	end
+	if entry.earlier then
+		Add(w.total, entry.earlier)
+		w.items, w.earlier = w.items + entry.earlier[2], entry.earlier[1]
+	end
+	return w
+end
+
 -- Counts of one recipe (reads that recipe only): today, week (today and the 6 days before), total and items
--- over all characters, earlier (folded part), before (undated crafts from skillups, not in total), and chars =
--- { { key, today, week, total, items } } sorted by total.
+-- over all characters, earlier (folded part), before (undated crafts from skillups, not in total), profit =
+-- { today, week, total, known } (copper recorded at craft time; known = crafts of the total with a profit),
+-- and chars = { { key, today, week, total, items, profit = { today, week, total, known, knownToday, knownWeek } } }
+-- sorted by total.
 function CL.Counts(recipeID, now)
 	local log = ns.db and ns.db.crafted
-	local out = { today = 0, week = 0, total = 0, items = 0, earlier = 0, before = 0, chars = {} }
+	local out = { today = 0, week = 0, total = 0, items = 0, earlier = 0, before = 0, chars = {},
+		profit = { today = 0, week = 0, total = 0, known = 0, knownToday = 0, knownWeek = 0 } }
 	if not log then
 		return out
 	end
@@ -259,22 +329,15 @@ function CL.Counts(recipeID, now)
 	for key, char in pairs(log.chars or {}) do
 		local entry = char[recipeID]
 		if entry then
-			local c = { key = key, today = 0, week = 0, total = 0, items = 0 }
-			for day, b in pairs(entry.days) do
-				local age = today - CL.DayNumber(day)
-				if age == 0 then
-					c.today = c.today + b[1]
-				end
-				if age >= 0 and age < 7 then
-					c.week = c.week + b[1]
-				end
-				c.total, c.items = c.total + b[1], c.items + b[2]
-			end
-			if entry.earlier then
-				c.total, c.items = c.total + entry.earlier[1], c.items + entry.earlier[2]
-				out.earlier = out.earlier + entry.earlier[1]
-			end
+			local w = Windows(entry, today)
+			local c = { key = key, today = w.today[1], week = w.week[1], total = w.total[1], items = w.items,
+				profit = { today = w.today[2], week = w.week[2], total = w.total[2], known = w.total[3],
+					knownToday = w.today[3], knownWeek = w.week[3] } }
+			out.earlier = out.earlier + w.earlier
 			out.today, out.week, out.total, out.items = out.today + c.today, out.week + c.week, out.total + c.total, out.items + c.items
+			for k, v in pairs(c.profit) do
+				out.profit[k] = out.profit[k] + v
+			end
 			out.chars[#out.chars + 1] = c
 		end
 	end
@@ -297,9 +360,10 @@ function CL.Characters()
 	return out
 end
 
--- Every logged recipe for the Crafted page: { recipeID, today, week, total, before } with total = dated plus
--- undated, sorted by today, then week, then total. charKey = only that character's dated crafts (the undated
--- crafts have no character and drop out).
+-- Every logged recipe for the Crafted page: { recipeID, today, week, total, before, profitToday, profitWeek,
+-- profitTotal, knownToday, knownWeek, known, dated } with total = dated plus undated crafts, dated = the dated
+-- ones, known = dated crafts with a recorded profit; sorted by today, then week, then total. charKey = only that
+-- character's dated crafts (the undated crafts have no character and drop out).
 function CL.List(now, charKey)
 	local log = CL.Store()
 	local list, byRecipe = {}, {}
@@ -310,30 +374,20 @@ function CL.List(now, charKey)
 	local function Row(recipeID)
 		local r = byRecipe[recipeID]
 		if not r then
-			r = { recipeID = recipeID, today = 0, week = 0, total = 0, before = 0 }
+			r = { recipeID = recipeID, today = 0, week = 0, total = 0, before = 0, dated = 0,
+				profitToday = 0, profitWeek = 0, profitTotal = 0, knownToday = 0, knownWeek = 0, known = 0 }
 			byRecipe[recipeID] = r
 			list[#list + 1] = r
 		end
 		return r
 	end
 	for key, char in pairs(log.chars) do
-		for recipeID, entry in pairs(char) do
-			if charKey and key ~= charKey then
-				break
-			end
-			local r = Row(recipeID)
-			for day, b in pairs(entry.days) do
-				local age = todayNumber - CL.DayNumber(day)
-				if age == 0 then
-					r.today = r.today + b[1]
-				end
-				if age >= 0 and age < 7 then
-					r.week = r.week + b[1]
-				end
-				r.total = r.total + b[1]
-			end
-			if entry.earlier then
-				r.total = r.total + entry.earlier[1]
+		if not charKey or key == charKey then
+			for recipeID, entry in pairs(char) do
+				local r, w = Row(recipeID), Windows(entry, todayNumber)
+				r.today, r.week, r.total, r.dated = r.today + w.today[1], r.week + w.week[1], r.total + w.total[1], r.dated + w.total[1]
+				r.profitToday, r.profitWeek, r.profitTotal = r.profitToday + w.today[2], r.profitWeek + w.week[2], r.profitTotal + w.total[2]
+				r.knownToday, r.knownWeek, r.known = r.knownToday + w.today[3], r.knownWeek + w.week[3], r.known + w.total[3]
 			end
 		end
 	end
@@ -354,6 +408,48 @@ function CL.List(now, charKey)
 		return a.recipeID < b.recipeID
 	end)
 	return list
+end
+
+----------------------------------------------------------------------------------------------------
+-- Recipe payback (#215): what the recipe cost, against the profit logged for it
+----------------------------------------------------------------------------------------------------
+
+-- What the recipe cost to learn, in copper: the latest AH or vendor purchase of the recipe item in the ledger,
+-- else the recipe item's recorded vendor price. The item comes from the bundled data (ns.SourceData, client DB2);
+-- nil without a mapping or a price: nothing is guessed. Returns copper, "ledger" | "vendor", itemID.
+function CL.RecipeCost(recipeID)
+	local data = ns.SourceData and ns.SourceData[recipeID]
+	local itemID = data and data.item
+	if not itemID then
+		return nil
+	end
+	local latest
+	for _, e in ipairs(ns.Ledger and ns.Ledger.Entries() or {}) do
+		if e.i == itemID and (e.k == "ahbuy" or e.k == "vbuy") and e.q and e.q > 0 and (not latest or e.t >= latest.t) then
+			latest = e
+		end
+	end
+	if latest then
+		return latest.m / latest.q, "ledger", itemID
+	end
+	local unit = ns.db and ns.db.vendor and ns.db.vendor[itemID]
+	if unit and unit > 0 then
+		return unit, "vendor", itemID
+	end
+	return nil
+end
+
+-- Payback of a recipe from the logged profit (copper, estimated at craft time): nil without a known recipe
+-- cost; { cost, source, paidBack = profit >= cost, togo = what is left (0 once paid back), known = false when
+-- no craft has a recorded profit yet }.
+function CL.Payback(recipeID, profit, known)
+	local cost, source = CL.RecipeCost(recipeID)
+	if not cost then
+		return nil
+	end
+	local made = (known or 0) > 0 and profit or 0
+	return { cost = cost, source = source, paidBack = (known or 0) > 0 and made >= cost, togo = math.max(0, cost - made),
+		known = (known or 0) > 0 }
 end
 
 local SETTLE = 2.5 -- seconds a craft waits for its skill update before it counts as no skill-up

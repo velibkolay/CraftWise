@@ -16,13 +16,16 @@ M.CraftedPage = P
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
-	MK.Column("name", L["Recipe"], 210, "LEFT", "Body", true),
-	MK.Column("today", L["Today"], 62, "RIGHT", "Figure", true),
-	MK.Column("week", L["7 days"], 62, "RIGHT", "Figure", true),
-	MK.Column("total", L["Total"], 80, "RIGHT", "FigureBold", true),
-	MK.Column("sec", L["Sec/craft"], 76, "RIGHT", "Figure", true),
-	MK.Column("perHour", L["Crafts/h"], 70, "RIGHT", "Figure", true),
-	MK.Column("profitHour", L["Profit/h"], 96, "RIGHT", "Figure", true),
+	MK.Column("name", L["Recipe"], 170, "LEFT", "Body", true),
+	MK.Column("today", L["Today"], 52, "RIGHT", "Figure", true),
+	MK.Column("week", L["7 days"], 52, "RIGHT", "Figure", true),
+	MK.Column("total", L["Total"], 66, "RIGHT", "FigureBold", true),
+	MK.Column("sec", L["Sec/craft"], 60, "RIGHT", "Figure", true),
+	MK.Column("perHour", L["Crafts/h"], 56, "RIGHT", "Figure", true),
+	MK.Column("profitHour", L["Profit/h"], 76, "RIGHT", "Figure", true),
+	MK.Column("profitToday", L["Profit today"], 78, "RIGHT", "Figure", true),
+	MK.Column("profitWeek", L["Profit 7 days"], 78, "RIGHT", "Figure", true),
+	MK.Column("profitTotal", L["Profit total"], 88, "RIGHT", "FigureBold", true),
 }
 P.COLUMNS = COLUMNS
 
@@ -156,7 +159,12 @@ function P.Rows(now, filters)
 		if (not filters.line or line == filters.line) and MK.Matches({ name = name }, query) then
 			local view = { name = name, nameColor = "text", icon = icon, itemID = itemID, cells = {}, colors = {}, tips = {} }
 			local r = { recipeID = e.recipeID, key = e.recipeID, name = name, icon = icon, itemID = itemID, view = view,
-				today = e.today, week = e.week, total = e.total, before = e.before, line = line }
+				today = e.today, week = e.week, total = e.total, before = e.before, line = line, dated = e.dated, known = e.known }
+			-- Profit recorded at craft time (#215): a window shows a figure only when some craft in it had one.
+			r.profitToday = e.knownToday > 0 and e.profitToday or nil
+			r.profitWeek = e.knownWeek > 0 and e.profitWeek or nil
+			r.profitTotal = e.known > 0 and e.profitTotal or nil
+			r.knownToday, r.knownWeek = e.knownToday, e.knownWeek
 			view.cells.name, view.colors.name = name, "text"
 			view.cells.today, view.colors.today = CL.Format(e.today), e.today > 0 and "text" or "text3"
 			view.cells.week, view.colors.week = CL.Format(e.week), e.week > 0 and "text" or "text3"
@@ -181,8 +189,21 @@ function P.Rows(now, filters)
 			r.profitHour = CL.ProfitPerHour(r.speed, r.profit)
 		end
 	end
+	local note = L["Estimated profit at craft time: reagents at the Profit view's cost basis then, the sale at the price then. Not money received."]
 	for _, r in ipairs(rows) do
 		local v = r.view
+		for _, w in ipairs({ { "profitToday", r.today, r.knownToday }, { "profitWeek", r.week, r.knownWeek }, { "profitTotal", r.dated, r.known } }) do
+			local key, crafts, known = w[1], w[2], w[3]
+			local value = r[key]
+			if value ~= nil then
+				local text, color = MK.Signed(value)
+				v.cells[key], v.colors[key] = text .. (known < crafts and "*" or ""), color
+				v.tips[key] = { L["Profit"] .. " (" .. L["est."] .. ")", note .. " " .. (L["Profit known for %d of %d crafts."]):format(known, crafts) }
+			else
+				v.cells[key], v.colors[key] = M.DASH, "text3"
+				v.tips[key] = { L["Profit"] .. " (" .. L["est."] .. ")", note }
+			end
+		end
 		v.cells.sec = r.speed and CL.FormatSeconds(r.sec) or M.DASH
 		v.cells.perHour = r.speed and CL.Format(r.perHour) or M.DASH
 		local incomplete = r.profitHour and r.basis and (r.basis.partial or r.basis.fallback)
@@ -233,13 +254,21 @@ local function FilterNote()
 end
 
 local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L["by crafts in 7 days"], total = L["by total crafts"],
-	sec = L["by seconds per craft"], perHour = L["by crafts per hour"], profitHour = L["by profit per hour"] }
+	sec = L["by seconds per craft"], perHour = L["by crafts per hour"], profitHour = L["by profit per hour"],
+	profitToday = L["by profit today"], profitWeek = L["by profit in 7 days"], profitTotal = L["by total profit"] }
 
 function P.Model()
 	local rows = P.Rows()
 	local today, week, total = 0, 0, 0
+	local profitToday, profitWeek, anyToday, anyWeek = 0, 0, false, false
 	for _, r in ipairs(rows) do
 		today, week, total = today + r.today, week + r.week, total + r.total
+		if r.profitToday then
+			profitToday, anyToday = profitToday + r.profitToday, true
+		end
+		if r.profitWeek then
+			profitWeek, anyWeek = profitWeek + r.profitWeek, true
+		end
 	end
 	local hero
 	if #rows == 0 then
@@ -248,8 +277,15 @@ function P.Model()
 	else
 		hero = {
 			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today)), nameColor = "text",
-			sub = (L["7 days %s"]):format(CL.Format(week)) .. " · " .. (L["%s crafts in total"]):format(CL.Format(total)),
+			sub = (L["7 days %s"]):format(CL.Format(week)) .. " · " .. (L["%s crafts in total"]):format(CL.Format(total))
+				.. (anyWeek and (" · " .. (L["profit 7 days %s"]):format(MK.PlainMoney(math.abs(profitWeek)) .. (profitWeek < 0 and " " .. L["loss"] or ""))) or ""),
+			figureLabel = L["Estimated profit today"],
 		}
+		if anyToday then
+			hero.figure, hero.figureColor = MK.Signed(profitToday)
+		else
+			hero.figure, hero.figureColor = M.DASH, "text3"
+		end
 	end
 	return {
 		rows = rows,
@@ -286,6 +322,7 @@ function P.RowTooltip(owner, r)
 		if lines.before then
 			GameTooltip:AddLine("  " .. lines.before .. " - " .. L["counted before the log, no date, no character"], 0.6, 0.6, 0.6, true)
 		end
+		MK.AddProfitLines(lines)
 		MK.AddSpeedLines(lines.speed, r.profit, r.basis)
 	end
 	GameTooltip:Show()

@@ -489,3 +489,161 @@ it("profit per hour follows the Profit view's cost basis: paid cost or today's A
 	assert(paid.view.tips.profitHour[1]:find("at paid cost", 1, true))
 	eq(ns.Main.Make.ProfitBasis().label, "at paid cost")
 end)
+
+-- Profit at craft time and payback (#215)
+local function profitSetup(profit)
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	local calls = 0
+	ns.CraftLog.ProfitNow = function() calls = calls + 1; return profit end
+	return ns, stub, function() return calls end
+end
+
+it("profit is recorded per craft at craft time, in copper, with how many crafts had one", function()
+	local ns, stub = profitSetup(150.4)
+	craft(stub, R_BOOTS); craft(stub, R_BOOTS)
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[1], 2); eq(b[3], 300); eq(b[4], 2)
+	ns.CraftLog.ProfitNow = function() return 999 end -- later prices don't rewrite the past
+	eq(entryOf(ns, R_BOOTS).days[20261115][3], 300)
+	craft(stub, R_BOOTS)
+	b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[1], 3); eq(b[3], 1299); eq(b[4], 3)
+end)
+
+it("a craft without a known profit adds to the crafts only; losses count", function()
+	local ns, stub = profitSetup(nil)
+	craft(stub, R_BOOTS)
+	ns.CraftLog.ProfitNow = function() return -40 end
+	craft(stub, R_BOOTS)
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[1], 2); eq(b[3], -40); eq(b[4], 1)
+	local c = ns.CraftLog.Counts(R_BOOTS, T(2026, 11, 15))
+	eq(c.profit.total, -40); eq(c.profit.known, 1); eq(c.total, 2)
+end)
+
+it("ProfitNow is Make's profit: it follows the prices at the time, and is looked up once a minute", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	stub.now = 1000
+	ns.db.vendor[2318] = 5
+	local sale = 100
+	local lookups = 0
+	ns.GetSellValue = function() lookups = lookups + 1; return { copper = sale, source = "auction", label = "AH" } end
+	local recipe = ns.charDB.professions[165].recipes[R_BOOTS]
+	eq(ns.CraftLog.ProfitNow(R_BOOTS, recipe, 1000), 90) -- 100 sale minus 2 x 5 reagents
+	sale = 500
+	eq(ns.CraftLog.ProfitNow(R_BOOTS, recipe, 1010), 90, "within the minute: the same lookup")
+	eq(lookups, 1)
+	eq(ns.CraftLog.ProfitNow(R_BOOTS, recipe, 1061), 490)
+	-- a craft through the real detection writes it
+	craftAt(stub, R_BOOTS, 1200)
+	eq(entryOf(ns, R_BOOTS).days[20261115][3], 490); eq(entryOf(ns, R_BOOTS).days[20261115][4], 1)
+	-- no price: nothing
+	ns.GetSellValue = function() return nil end
+	eq(ns.CraftLog.ProfitNow(R_BOOTS, recipe, 2000), nil)
+end)
+
+it("the 90-day fold carries profit and known into earlier", function()
+	local ns = setup()
+	ns.db.crafted = { seeded = true, before = {}, chars = { [ns.CharKey()] = { [R_BOOTS] = { days = {
+		[20261115] = { 1, 1, 10, 1 }, [20260101] = { 4, 4, 100, 3 }, [20260102] = { 2, 2 } } } } } }
+	eq(ns.CraftLog.Fold(T(2026, 11, 15)), 2)
+	local e = entryOf(ns, R_BOOTS)
+	eq(e.earlier[1], 6); eq(e.earlier[3], 100); eq(e.earlier[4], 3)
+	local c = ns.CraftLog.Counts(R_BOOTS, T(2026, 11, 15))
+	eq(c.profit.total, 110); eq(c.profit.known, 4); eq(c.total, 7)
+end)
+
+it("profit today, 7 days and total per character; older buckets without profit count as unknown", function()
+	local ns = setup()
+	ns.db.crafted = { seeded = true, before = { [R_BOOTS] = 50 }, chars = {
+		["R-Main Tanner"] = { [R_BOOTS] = { days = { [20261115] = { 3, 3, 300, 3 }, [20261110] = { 2, 2, 100, 2 }, [20261001] = { 5, 5, 500, 4 }, [20260901] = { 7, 7 } } } },
+		["R-Alt Mage"] = { [R_BOOTS] = { days = { [20261115] = { 1, 1, -20, 1 } } } } } }
+	local now = T(2026, 11, 15)
+	local c = ns.CraftLog.Counts(R_BOOTS, now)
+	eq(c.profit.today, 280); eq(c.profit.week, 380); eq(c.profit.total, 880)
+	eq(c.profit.known, 10); eq(c.profit.knownToday, 4); eq(c.profit.knownWeek, 6)
+	eq(c.chars[1].key, "R-Main Tanner"); eq(c.chars[1].profit.total, 900); eq(c.chars[2].profit.total, -20)
+	local rows = ns.CraftLog.List(now)
+	eq(rows[1].profitTotal, 880); eq(rows[1].known, 10); eq(rows[1].dated, 18); eq(rows[1].total, 68)
+	local one = ns.CraftLog.List(now, "R-Alt Mage")
+	eq(one[1].profitTotal, -20)
+	local lines = ns.CraftLog.Lines(R_BOOTS, now)
+	eq(lines.profit.total, 880); eq(lines.dated, 18); eq(lines.chars[1].profit.known, 9)
+end)
+
+it("Crafted columns: profit today / 7 days / total, estimated, starred when partial, a dash when unknown", function()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, before = { [R_CLAMS] = 100 }, chars = { [ns.CharKey()] = {
+		[R_BOOTS] = { days = { [20261115] = { 4, 4, 400, 4 }, [20261105] = { 5, 5, 250, 2 } } },
+		[R_CLAMS] = { days = { [20261115] = { 2, 2 } } } } } }
+	ns.Main.Make.state.query = ""
+	local P = ns.Main.CraftedPage
+	local rows = P.Rows(T(2026, 11, 15), {})
+	local by = {}
+	for _, r in ipairs(rows) do by[r.recipeID] = r end
+	eq(by[R_BOOTS].profitToday, 400); eq(by[R_BOOTS].profitWeek, 400); eq(by[R_BOOTS].profitTotal, 650)
+	assert(not by[R_BOOTS].view.cells.profitToday:find("*", 1, true), "all of today's crafts are priced")
+	assert(by[R_BOOTS].view.cells.profitTotal:find("*", 1, true), "6 of 9 crafts have a profit: starred")
+	assert(by[R_BOOTS].view.tips.profitTotal[2]:find("known for 6 of 9 crafts", 1, true), by[R_BOOTS].view.tips.profitTotal[2])
+	assert(by[R_BOOTS].view.tips.profitTotal[2]:find("Not money received", 1, true))
+	eq(by[R_CLAMS].profitTotal, nil); eq(by[R_CLAMS].view.cells.profitTotal, ns.Main.DASH, "undated seed and unpriced: a dash")
+	for _, key in ipairs({ "profitToday", "profitWeek", "profitTotal" }) do
+		local found
+		for _, col in ipairs(P.COLUMNS) do if col.key == key then found = col.sort end end
+		eq(found, true, key)
+	end
+	local sorted = P.SortRows({ by[R_CLAMS], by[R_BOOTS] }, "profitTotal", false)
+	eq(sorted[1].recipeID, R_BOOTS, "no profit sorts last either way")
+	local model = P.Model()
+	eq(model.hero.figureLabel, "Estimated profit today")
+	assert(model.hero.sub:find("profit 7 days", 1, true), model.hero.sub)
+end)
+
+it("recipe payback: from the ledger's latest purchase, else the recipe item's vendor price; nothing without a cost", function()
+	local ns = setup()
+	ns.SourceData = { [R_BOOTS] = { skill = 10, item = 7777 } }
+	eq(ns.CraftLog.RecipeCost(R_BOOTS), nil)
+	eq(ns.CraftLog.RecipeCost(R_CLAMS), nil, "no mapping, no guess")
+	eq(ns.CraftLog.Payback(R_BOOTS, 100, 1), nil)
+	ns.db.vendor[7777] = 500
+	local cost, source = ns.CraftLog.RecipeCost(R_BOOTS)
+	eq(cost, 500); eq(source, "vendor")
+	ns.Ledger.Entries = function() return { { i = 7777, k = "vbuy", q = 1, m = 450, t = 100 }, { i = 7777, k = "ahbuy", q = 2, m = 1000, t = 200 },
+		{ i = 7777, k = "vsell", q = 1, m = 9999, t = 300 } } end
+	cost, source = ns.CraftLog.RecipeCost(R_BOOTS)
+	eq(cost, 500); eq(source, "ledger", "the latest purchase, per unit: 1000 / 2")
+	local p = ns.CraftLog.Payback(R_BOOTS, 320, 4)
+	eq(p.paidBack, false); eq(p.togo, 180)
+	p = ns.CraftLog.Payback(R_BOOTS, 500, 4)
+	eq(p.paidBack, true); eq(p.togo, 0)
+	p = ns.CraftLog.Payback(R_BOOTS, 0, 0)
+	eq(p.known, false); eq(p.paidBack, false)
+	local M = ns.Main.Make
+	eq(M.PaybackText(ns.CraftLog.Payback(R_BOOTS, 320, 4)), "Recipe cost 5s: 1s 80c to go")
+	eq(M.PaybackText(ns.CraftLog.Payback(R_BOOTS, 900, 4)), "Recipe cost 5s: paid back")
+	eq(M.PaybackText(ns.CraftLog.Payback(R_BOOTS, 0, 0)), "Recipe cost 5s: no profit logged yet")
+	eq(M.PaybackText(nil), nil)
+end)
+
+it("the tooltip shows the logged profit, the per-character split and the payback", function()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.SourceData = { [R_BOOTS] = { skill = 10, item = 7777 } }
+	ns.db.vendor[7777] = 500
+	ns.db.crafted = { seeded = true, before = {}, chars = {
+		["R-Main Tanner"] = { [R_BOOTS] = { days = { [20261115] = { 3, 3, 300, 3 } } } },
+		["R-Alt Mage"] = { [R_BOOTS] = { days = { [20261115] = { 1, 1, 50, 1 } } } } } }
+	local shown = {}
+	GameTooltip = GameTooltip or {}
+	GameTooltip.AddLine = function(_, text) shown[#shown + 1] = tostring(text) end
+	GameTooltip.AddDoubleLine = function(_, l, r) shown[#shown + 1] = tostring(l) .. " | " .. tostring(r) end
+	ns.Main.Make.AddProfitLines(ns.CraftLog.Lines(R_BOOTS))
+	local text = table.concat(shown, "\n")
+	assert(text:find("Profit at craft time (est.)", 1, true), text)
+	assert(text:find("profit known for 4 of 4 crafts", 1, true), text)
+	assert(text:find("Main Tanner", 1, true) and text:find("Alt Mage", 1, true), text)
+	assert(text:find("Recipe cost 5s: 1s 50c to go", 1, true), text)
+end)

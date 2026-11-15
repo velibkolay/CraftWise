@@ -317,6 +317,48 @@ function MK.ProfitBasis(row)
 	return { label = label, paid = paid, partial = partial, fallback = fallback, note = note }
 end
 
+-- "Recipe cost 50s: paid back" / "Recipe cost 50s: 32s to go" / "...: no profit logged yet" (pure; nil without a
+-- known recipe cost).
+function MK.PaybackText(p)
+	if not p then
+		return nil
+	end
+	local L = ns.L
+	local cost = MK.PlainMoney(math.floor(p.cost + 0.5))
+	if not p.known then
+		return (L["Recipe cost %s: no profit logged yet"]):format(cost)
+	elseif p.paidBack then
+		return (L["Recipe cost %s: paid back"]):format(cost)
+	end
+	return (L["Recipe cost %s: %s to go"]):format(cost, MK.PlainMoney(math.ceil(p.togo)))
+end
+
+-- Profit recorded at craft time (#215): the total with how many crafts it covers, the split per character, the
+-- recipe payback. log = ns.CraftLog.Lines(recipeID). Estimated, never money received.
+function MK.AddProfitLines(log)
+	local L = ns.L
+	local p = log.profit
+	if p and p.known > 0 then
+		GameTooltip:AddDoubleLine("  " .. L["Profit at craft time (est.)"], MK.Signed(p.total) .. Muted(" (" .. L["approx."] .. ")"),
+			0.8, 0.8, 0.8, 1, 1, 1)
+		Note("  " .. (L["profit known for %d of %d crafts"]):format(p.known, log.dated))
+		if #log.chars > 1 then
+			for _, ch in ipairs(log.chars) do
+				if ch.profit.known > 0 then
+					GameTooltip:AddDoubleLine("    " .. ch.name, (L["today %s \194\183 7 days %s \194\183 total %s"]):format(
+						ch.profit.knownToday > 0 and (MK.Signed(ch.profit.today)) or M.DASH,
+						ch.profit.knownWeek > 0 and (MK.Signed(ch.profit.week)) or M.DASH, (MK.Signed(ch.profit.total))),
+						0.7, 0.7, 0.7, 1, 1, 1)
+				end
+			end
+		end
+	end
+	local payback = MK.PaybackText(log.payback)
+	if payback then
+		Note("  " .. payback)
+	end
+end
+
 function MK.AddSpeedLines(speed, profit, basis)
 	local L = ns.L
 	if not speed then
@@ -357,6 +399,7 @@ function MK.AddCraftLog(r)
 		GameTooltip:AddDoubleLine("  " .. ns.L["Profit of all crafts"] .. " " .. basis.label, MK.Signed(r.profit * log.total) .. Muted(" (" .. ns.L["approx."] .. ")"),
 			0.8, 0.8, 0.8, 1, 1, 1)
 	end
+	MK.AddProfitLines(log)
 	MK.AddSpeedLines(log.speed, r.profit, MK.ProfitBasis(r))
 end
 
