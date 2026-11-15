@@ -371,7 +371,7 @@ end
 
 M.RegisterPage({
 	key = "crafted", section = "make", label = L["Crafted"], order = 5, title = L["Crafted"],
-	events = { "CRAFTLOG_CHANGED" },
+	events = { "CRAFTLOG_CHANGED", "BAGS_CHANGED" }, -- BAGS_CHANGED: an item mark changed (#214)
 	columns = COLUMNS,
 	rowHeight = 34,
 	sort = { key = "today", desc = true },

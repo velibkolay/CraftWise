@@ -114,6 +114,8 @@ function ns.BagRows()
 		row.kept = not row.junk and (row.questItem or (ns.db and ns.db.keep[id])) or false
 		-- Sell on AH: marked by the player; shown as Auction whatever the AH rule says.
 		row.markedAH = not row.junk and not row.kept and ns.db and ns.db.sellAH and ns.db.sellAH[id] or false
+		-- Sell to vendor (#214): valued and advised at the vendor price; the AH value stays shown.
+		row.markedVendor = not row.junk and not row.kept and ns.db and ns.db.sellVendor and ns.db.sellVendor[id] or false
 		if row.kept then
 			row.best, row.bestValue, row.margin = nil, nil, nil
 		end
@@ -137,6 +139,8 @@ function ns.BagRows()
 			row.best, row.bestValue, row.margin = "junk", row.vendorValue, nil
 		elseif row.markedAH then
 			row.best, row.bestValue, row.margin = "auction", row.ahValue, nil
+		elseif row.markedVendor then
+			row.best, row.bestValue, row.margin = "vendor", row.vendorValue, nil
 		elseif options[1] and not row.kept then
 			row.best, row.bestValue = options[1][1], options[1][2]
 			row.margin = options[2] and (options[1][2] - options[2][2]) or nil
@@ -161,6 +165,7 @@ function ns.ToggleKeep(itemID)
 	if ns.db.keep[itemID] then
 		if ns.db.junk then ns.db.junk[itemID] = nil end
 		if ns.db.sellAH then ns.db.sellAH[itemID] = nil end
+		if ns.db.sellVendor then ns.db.sellVendor[itemID] = nil end
 	end
 	ns.Notify("BAGS_CHANGED")
 	ns.Notify("JUNK_CHANGED")
@@ -176,6 +181,7 @@ function ns.ToggleJunk(itemID)
 	if ns.db.junk[itemID] then
 		ns.db.keep[itemID] = nil
 		if ns.db.sellAH then ns.db.sellAH[itemID] = nil end
+		if ns.db.sellVendor then ns.db.sellVendor[itemID] = nil end
 	end
 	ns.Notify("BAGS_CHANGED")
 	ns.Notify("JUNK_CHANGED")

@@ -179,7 +179,9 @@ function ns.ItemAdvice(itemID, count)
 	local sale = ns.AuctionSale(itemID, count)
 	local ahNet = sale and sale.net or nil
 	local best
-	if ahNet and (not vendor or ns.AuctionWorthIt(ahNet, vendor)) then
+	if ns.db and ns.db.sellVendor and ns.db.sellVendor[itemID] then
+		best = vendor and "vendor" or nil -- marked "Sell to vendor" (#214): the AH price stays shown, never advised
+	elseif ahNet and (not vendor or ns.AuctionWorthIt(ahNet, vendor)) then
 		best = "auction"
 	elseif vendor then
 		best = "vendor"
@@ -270,6 +272,8 @@ function ns.AddTooltipLines(tooltip, itemID)
 			lines[#lines + 1] = { "Marked", "|cffff5555Junk|r" }
 		elseif ns.db.sellAH and ns.db.sellAH[itemID] then
 			lines[#lines + 1] = { "Marked", "|cffffd100Sell on AH|r" }
+		elseif ns.db.sellVendor and ns.db.sellVendor[itemID] then
+			lines[#lines + 1] = { "Marked", "|cffffd100Sell to vendor|r" }
 		elseif ns.db.keep[itemID] then
 			lines[#lines + 1] = { "Marked", "|cff8ab4ffKeep|r" }
 		end

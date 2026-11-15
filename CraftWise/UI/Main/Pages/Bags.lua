@@ -120,6 +120,8 @@ local function Mark(r)
 		return L["Junk"]
 	elseif r.markedAH then
 		return L["AH"]
+	elseif r.markedVendor then
+		return L["Vendor"]
 	elseif r.kept and not r.questItem then
 		return L["Keep"]
 	end

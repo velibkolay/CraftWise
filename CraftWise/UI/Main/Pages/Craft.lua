@@ -46,7 +46,7 @@ function CraftPage.Caption(r, ctx)
 	if r.noItemOutput then
 		sells = L["no item"]
 	elseif r.sellsFor then
-		local tag = MK.SaleTag(r.sellSource, r.cutUnverified)
+		local tag = MK.SaleTag(r.sellSource, r.cutUnverified, r.sellMarked)
 		sells = MK.PlainMoney(r.sellsFor) .. (tag and (" " .. tag) or "")
 		if r.disenchantView and r.deShort then
 			sells = sells .. " · " .. r.deShort
@@ -177,7 +177,7 @@ local function DrawHero(_, hero, ctx, slot)
 	frame.left:SetText(L["cost"] .. " " .. ns.FormatCoins(h.cost))
 	frame.right:ClearAllPoints()
 	frame.right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -20)
-	local tag = MK.SaleTag(h.sellSource)
+	local tag = MK.SaleTag(h.sellSource, nil, h.sellMarked)
 	frame.right:SetText(L["sells"] .. " " .. ns.FormatCoins(h.sale) .. (tag and (" · " .. tag) or ""))
 end
 
