@@ -634,6 +634,7 @@ func (d *delta) private(f *savedvars.File) []unit[PrivatePayload] {
 		units = append(units, d.ledger(f.Market.Ledger.Entries)...)
 	}
 	if f.DB != nil {
+		units = append(units, d.crafted(f.DB.Crafted)...)
 		units = append(units, d.watch(f.DB.Watch)...)
 	}
 	return units

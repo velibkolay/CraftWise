@@ -23,7 +23,7 @@ func (b *Batch[T]) Commit(st *State) {
 // Summary is a short description for the log, e.g. "12 prices, 3 scans".
 func (b *Batch[T]) Summary() string {
 	out := ""
-	for _, k := range []string{"scans", "classes", "items", "prices", "snapshots", "auctions", "fishing", "ledger", "watch"} {
+	for _, k := range []string{"scans", "classes", "items", "prices", "snapshots", "auctions", "fishing", "ledger", "crafted", "watch"} {
 		if n := b.Counts[k]; n > 0 {
 			if out != "" {
 				out += ", "
@@ -99,6 +99,8 @@ func packPrivate(units []unit[PrivatePayload], opt Options, skip func(string)) [
 		full := cur == nil || cur.Bytes+u.bytes > opt.MaxBytes
 		if !full && u.kind == "ledger" {
 			full = cur.Counts["ledger"]+u.count > MaxLedgerEntries
+		} else if !full && u.kind == "crafted" {
+			full = cur.Counts["crafted"]+u.count > MaxCraftedRows
 		} else if !full {
 			full = cur.Counts[u.kind] >= MaxCharacters
 		}

@@ -3,7 +3,7 @@
 import { hashToken, newToken, SCOPES, type AccessUser, type Scope } from "./auth";
 import type { Env } from "./env";
 import { HttpError, intParam, json, parseJson, readBody } from "./http";
-import { DAY, MAX_ACTIVE_TOKENS, parseWriteBudget, softBudget } from "./limits";
+import { CRAFTED_READ_ROWS, DAY, MAX_ACTIVE_TOKENS, parseWriteBudget, softBudget } from "./limits";
 
 const PRIVATE = { "cache-control": "private, no-store" };
 
@@ -65,6 +65,22 @@ export async function ledger(env: Env, url: URL): Promise<Response> {
 	const stmt = char ? env.DB.prepare(sql).bind(since, limit, char) : env.DB.prepare(sql).bind(since, limit);
 	const { results } = await stmt.all();
 	return json({ entries: results }, 200, PRIVATE);
+}
+
+// The craft log (#266): one row per character, recipe and day as [char, recipe, day, n, items, profit, known,
+// active] (null = not recorded), oldest day first. `since` = first day as YYYYMMDD (default 0 = all), `char`
+// = one character. At most CRAFTED_READ_ROWS rows; `more` is true when there are more (ask again with `since`
+// of the last day).
+export async function crafted(env: Env, url: URL): Promise<Response> {
+	const char = url.searchParams.get("char");
+	const since = intParam(url, "since", 0, 0, 99_991_231);
+	const sql = `SELECT char, recipe, day, n, items, profit, known, active FROM crafted WHERE day >= ?1 ${char ? "AND char = ?3" : ""}
+		ORDER BY day, char, recipe LIMIT ?2`;
+	const stmt = char ? env.DB.prepare(sql).bind(since, CRAFTED_READ_ROWS + 1, char) : env.DB.prepare(sql).bind(since, CRAFTED_READ_ROWS + 1);
+	const { results } = await stmt.all<{ char: string; recipe: number; day: number; n: number; items: number | null; profit: number | null; known: number | null; active: number | null }>();
+	const more = results.length > CRAFTED_READ_ROWS;
+	const rows = (more ? results.slice(0, CRAFTED_READ_ROWS) : results).map((r) => [r.char, r.recipe, r.day, r.n, r.items, r.profit, r.known, r.active]);
+	return json({ rows, more }, 200, PRIVATE);
 }
 
 // Today's rows written (uploads and the cron job) against the budget (the Worker var WRITE_BUDGET)

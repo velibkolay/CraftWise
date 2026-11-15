@@ -34,6 +34,8 @@ type State struct {
 	// recordings, so the upload leaves them out. Entries older than the addon keeps raw points are
 	// dropped.
 	Got map[string][]int64 `json:"got,omitempty"`
+	// Crafted: hash of each craft log day sent (#266), per "<character>\x1f<recipe>\x1f<day>".
+	Crafted map[string]uint64 `json:"crafted,omitempty"`
 	// Ledger: newest entry time sent and how many entries had that time.
 	LedgerT     int64 `json:"ledgerT,omitempty"`
 	LedgerAtT   int   `json:"ledgerAtT,omitempty"`
@@ -71,6 +73,9 @@ func (s *State) init() {
 	}
 	if s.Docs == nil {
 		s.Docs = map[string]uint64{}
+	}
+	if s.Crafted == nil {
+		s.Crafted = map[string]uint64{}
 	}
 	if s.Got == nil {
 		s.Got = map[string][]int64{}

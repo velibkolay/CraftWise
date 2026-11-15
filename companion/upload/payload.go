@@ -9,7 +9,7 @@
 //	                          and market types marshal it (houses, scans, names, itemInfo, items,
 //	                          classNames, subclassNames)
 //	POST /api/private/upload  private data: snapshots, auctions, fishing (documents per character),
-//	                          the ledger and the item watch list
+//	                          the ledger, the craft log (#266) and the item watch list
 //
 // A value the addon doesn't have is left out (omitempty / nil), never filled in. The Auctionator
 // fallback prices (#90) are never sent.
@@ -34,6 +34,7 @@ const (
 	MaxClassNameLen   = 64
 	MaxClassID        = 65535 // class and subclass IDs 0..MaxClassID
 	MaxLedgerEntries  = 5000
+	MaxCraftedRows    = 5000 // craft log days per private upload (#266)
 	MaxPrivateDocSize = 450_000
 	MaxCharacters     = 50 // per private section
 	// Times the server accepts: from MinTime to now + MaxFuture.
@@ -83,6 +84,8 @@ type PrivatePayload struct {
 	Auctions  map[string]Doc `json:"auctions,omitempty"`
 	Fishing   map[string]Doc `json:"fishing,omitempty"`
 	Ledger    []LedgerEntry  `json:"ledger,omitempty"`
+	// Crafted is the craft log (#266): one row per character, recipe and day that changed.
+	Crafted []CraftedRow `json:"crafted,omitempty"`
 	// Watch is the addon's whole watch list (#165): it replaces the stored one, so a pointer to a
 	// possibly empty list (omitted only when nil = not sent).
 	Watch *[]WatchItem `json:"watch,omitempty"`
@@ -92,6 +95,21 @@ type PrivatePayload struct {
 type WatchItem struct {
 	I int64 `json:"i"`
 	T int64 `json:"t"`
+}
+
+// CraftedRow is one day of the craft log: c = character, r = recipe spell ID, d = local day as
+// YYYYMMDD, n = crafts, i = items made, p = estimated profit in copper at craft time (may be
+// negative), k = crafts that had a profit, a = seconds of active crafting. i, p, k and a are left
+// out when the addon didn't record them.
+type CraftedRow struct {
+	C string   `json:"c"`
+	R int64    `json:"r"`
+	D int64    `json:"d"`
+	N int64    `json:"n"`
+	I *int64   `json:"i,omitempty"`
+	P *int64   `json:"p,omitempty"`
+	K *int64   `json:"k,omitempty"`
+	A *float64 `json:"a,omitempty"`
 }
 
 // Doc is one private document: its time and the data (a JSON object).

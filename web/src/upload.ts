@@ -325,13 +325,14 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 	const { today } = await uploadAuth(request, env, "private", now);
 	const data = validatePrivate(parseJson(await readBody(request, MAX_PRIVATE_BYTES)), now);
 	// private data is never low priority: it goes through up to the full budget
-	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length + 2 * (data.watch?.length ?? 0), false, now);
+	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length + data.crafted.length + 2 * (data.watch?.length ?? 0), false, now);
 	const db = env.DB;
 	const statements: D1PreparedStatement[] = [];
 
 	const chars = new Set<string>();
 	for (const table of DOC_TABLES) for (const d of data[table]) chars.add(d.char);
 	for (const e of data.ledger) chars.add(e.char);
+	for (const e of data.crafted) chars.add(e.char);
 	if (chars.size) {
 		statements.push(
 			db.prepare("INSERT OR IGNORE INTO characters (key, updated) SELECT value, 0 FROM json_each(?1)").bind(JSON.stringify([...chars])),
@@ -364,6 +365,19 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 			).bind(JSON.stringify(rows)),
 		);
 	}
+	if (data.crafted.length) {
+		// A day's craft count only grows, so a row is written only for a new day or more crafts: re-sending
+		// a day (the companion does after a lost answer) writes nothing (the WHERE).
+		const rows = data.crafted.map((e) => [e.char, e.recipe, e.day, e.n, e.items, e.profit, e.known, e.active]);
+		statements.push(
+			db.prepare(
+				`INSERT INTO crafted (char, recipe, day, n, items, profit, known, active)
+				SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5, value->>6, value->>7 FROM json_each(?1) WHERE true
+				ON CONFLICT (char, recipe, day) DO UPDATE SET n = excluded.n, items = excluded.items, profit = excluded.profit,
+					known = excluded.known, active = excluded.active WHERE excluded.n > crafted.n`,
+			).bind(JSON.stringify(rows)),
+		);
+	}
 	if (data.watch) {
 		// The list replaces the stored one: what is no longer in it goes, what changed is updated, an
 		// unchanged row is not written (the WHERE; D1 counts an update with equal values).
@@ -386,6 +400,7 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 			auctions: data.auctions.length,
 			fishing: data.fishing.length,
 			ledger: data.ledger.length,
+			crafted: data.crafted.length,
 			watch: data.watch?.length ?? 0,
 		},
 		rowsWritten: written,

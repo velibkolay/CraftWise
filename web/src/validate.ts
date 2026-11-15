@@ -102,7 +102,19 @@ export interface LedgerEntry {
 	place: string | null;
 	name: string | null;
 }
+// One day of the craft log (#266); null = not recorded.
+export interface CraftedRow {
+	char: string;
+	recipe: number;
+	day: number; // YYYYMMDD
+	n: number;
+	items: number | null;
+	profit: number | null; // copper, may be negative
+	known: number | null;
+	active: number | null; // seconds
+}
 export interface PrivateUpload {
+	crafted: CraftedRow[];
 	snapshots: PrivateDoc[];
 	auctions: PrivateDoc[];
 	fishing: PrivateDoc[];
@@ -120,6 +132,14 @@ const at = (path: Path, field: string): Path => () => `${typeof path === "string
 
 function fail(path: Path, message: string): never {
 	throw new HttpError(400, "bad_shape", `${typeof path === "string" ? path : path()}: ${message}`);
+}
+
+// A local day as the addon writes it: YYYYMMDD, 2020 to 2100 (the day of the month isn't checked per month).
+function validDay(d: number): boolean {
+	const y = Math.floor(d / 10000);
+	const m = Math.floor(d / 100) % 100;
+	const dd = d % 100;
+	return y >= 2020 && y <= 2100 && m >= 1 && m <= 12 && dd >= 1 && dd <= 31;
 }
 
 function isInt(v: unknown): v is number {
@@ -485,6 +505,32 @@ export function validatePrivate(body: unknown, now: number): PrivateUpload {
 		return { uid: `${base}#${n}`, ...e };
 	});
 
+	const crafted = arr(b.crafted, "crafted", L.MAX_CRAFTED_ROWS).map((v, i): CraftedRow => {
+		const path = `crafted[${i}]`;
+		const o = obj(v, path);
+		const char = charKey(str(o.c, `${path}.c`, 130), `${path}.c`);
+		const recipe = int(o.r, `${path}.r`);
+		if (recipe < 1) fail(`${path}.r`, "expected a recipe spell ID");
+		const day = int(o.d, `${path}.d`);
+		if (!validDay(day)) fail(`${path}.d`, "expected a day as YYYYMMDD");
+		const n = int(o.n, `${path}.n`);
+		if (n < 1 || n > 10_000_000) fail(`${path}.n`, "expected a craft count from 1");
+		const items = optInt(o.i, `${path}.i`);
+		const known = optInt(o.k, `${path}.k`);
+		if (known !== null && known > n) fail(`${path}.k`, "more priced crafts than crafts");
+		let profit: number | null = null;
+		if (o.p !== undefined && o.p !== null) {
+			if (typeof o.p !== "number" || !Number.isSafeInteger(o.p) || Math.abs(o.p) > 1e12) fail(`${path}.p`, "expected an integer");
+			profit = o.p;
+		}
+		let active: number | null = null;
+		if (o.a !== undefined && o.a !== null) {
+			if (typeof o.a !== "number" || !Number.isFinite(o.a) || o.a < 0 || o.a > 86_400) fail(`${path}.a`, "expected seconds from 0 to 86400");
+			active = o.a;
+		}
+		return { char, recipe, day, n, items, profit, known, active };
+	});
+
 	// `watch` present (even empty) = the whole list; absent = leave the stored one alone.
 	let watch: PrivateUpload["watch"] = null;
 	if (b.watch !== undefined && b.watch !== null) {
@@ -501,6 +547,6 @@ export function validatePrivate(body: unknown, now: number): PrivateUpload {
 		});
 	}
 
-	if (!snapshots.length && !auctions.length && !fishing.length && !ledger.length && watch === null) fail("body", "nothing to store");
-	return { snapshots, auctions, fishing, characters: snapshots.map(charInfo), ledger, watch };
+	if (!snapshots.length && !auctions.length && !fishing.length && !ledger.length && !crafted.length && watch === null) fail("body", "nothing to store");
+	return { snapshots, auctions, fishing, characters: snapshots.map(charInfo), ledger, crafted, watch };
 }
