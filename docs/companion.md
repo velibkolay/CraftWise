@@ -164,10 +164,11 @@ tools/update-mac.sh
 3. moves `AddOns/CraftWise` to `AddOns/_to_delete/CraftWise-old-<date-time>` (nothing is deleted),
    copies the repo's `CraftWise/` there and checks it with `diff -rq`;
 4. builds the companion to `~/Applications/CraftWise/craftwise-companion` (temp name first, then
-   moved over the old binary) and restarts it through its LaunchAgent (`launchctl kickstart`, or
-   `bootstrap` if it isn't loaded). Without the plist it says to run `-autostart on` once and
+   moved over the old binary), stops a companion you started by hand (`nohup ...`; TERM, waits a
+   few seconds) and restarts it through its LaunchAgent (`launchctl kickstart`, or `bootstrap` if
+   it isn't loaded). Without the plist it says to run `-autostart on` once and
    skips the restart;
-5. prints the commit, the old addon folder's new name and whether the companion was restarted.
+5. prints the commit, the old addon folder's new name and whether the companion was restarted and whether a manually started one was stopped.
 
 It never touches `WTF/` (SavedVariables), `AddOns/CraftWise_Sync` or the companion's `config.json`.
 Other places: `CRAFTWISE_WOW` (the `_forever_` folder) and `CRAFTWISE_BIN` (the binary). Needs Go.

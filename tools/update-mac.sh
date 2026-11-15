@@ -60,14 +60,40 @@ step mv "$tmpbin" "$bin"
 
 uid="$(id -u)"
 restarted="no"
+stopped="no"
 if [ ! -f "$plist" ]; then
   restarted="no: start at login is off, run '$bin -autostart on' once"
-elif launchctl print "gui/$uid/$label" >/dev/null 2>&1; then
-  step launchctl kickstart -k "gui/$uid/$label"
-  restarted="yes (kickstart)"
+  if pgrep -f "$bin" >/dev/null 2>&1; then
+    restarted="no: a manually started companion still runs the old binary; stop and start it by hand"
+  fi
 else
-  step launchctl bootstrap "gui/$uid" "$plist"
-  restarted="yes (bootstrap)"
+  # A companion started by hand (nohup ...) is not the launchd job: a second copy would not
+  # replace it, so stop it first. The launchd job's own pid is left to kickstart -k.
+  job="$(launchctl print "gui/$uid/$label" 2>/dev/null | awk '$1 == "pid" && $2 == "=" {print $3}' || true)"
+  manual=""
+  for pid in $(pgrep -f "$bin" 2>/dev/null || true); do
+    if [ "$pid" != "$$" ] && [ "$pid" != "$job" ]; then manual="$manual $pid"; fi
+  done
+  for pid in $manual; do step kill -TERM "$pid"; done
+  if [ -n "$manual" ]; then
+    stopped="yes (pid$manual)"
+    if [ "$dry" = 0 ]; then
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        alive=""
+        for pid in $manual; do if kill -0 "$pid" 2>/dev/null; then alive=1; fi; done
+        [ -z "$alive" ] && break
+        sleep 0.5
+      done
+      [ -z "$alive" ] || die "the manually started companion (pid$manual) did not stop; stop it, then run this again"
+    fi
+  fi
+  if [ -n "$job" ] || launchctl print "gui/$uid/$label" >/dev/null 2>&1; then
+    step launchctl kickstart -k "gui/$uid/$label"
+    restarted="yes (kickstart)"
+  else
+    step launchctl bootstrap "gui/$uid" "$plist"
+    restarted="yes (bootstrap)"
+  fi
 fi
 
 # 5. Summary.
@@ -75,3 +101,4 @@ echo
 echo "CraftWise updated to $commit$([ "$dry" = 1 ] && echo " (dry run, nothing changed)")"
 echo "  old addon folder: $old"
 echo "  companion restarted: $restarted"
+echo "  stopped a manually started companion: $stopped"
