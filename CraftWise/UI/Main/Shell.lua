@@ -670,15 +670,16 @@ function M.ScanModel(now)
 		model.text = (L["Waiting for the server · %s / %s"]):format(M.Clock(elapsed), M.Clock(timeout))
 		model.fraction = timeout > 0 and math.min(elapsed / timeout, 1) or 0
 		model.hint = L["Keep the auction house open."]
-	elseif st == "reading" or st == "storing" then
+	elseif st == "reading" or st == "loading" or st == "storing" then
 		local p = market.ScanProgress and market.ScanProgress()
 		local done, total = p and p.done or 0, p and p.total or s.rows or 0
-		local reading = st == "reading"
 		model.kind = "scanning"
 		model.fraction = total > 0 and math.min(done / total, 1) or 0
-		model.text = ((reading and L["Reading the list · %s of %s · %d %%"] or L["Storing prices · %s of %s · %d %%"]))
-			:format(M.Thousands(done), M.Thousands(total), math.floor(model.fraction * 100))
-		model.hint = reading and L["Keep the auction house open."] or L["Closing the auction house is safe now."]
+		local format = st == "reading" and L["Reading the list · %s of %s · %d %%"]
+			or st == "loading" and L["Loading item data · %s of %s · %d %%"]
+			or L["Storing prices · %s of %s · %d %%"]
+		model.text = format:format(M.Thousands(done), M.Thousands(total), math.floor(model.fraction * 100))
+		model.hint = st == "storing" and L["Closing the auction house is safe now."] or L["Keep the auction house open."]
 		model.eta = Eta(done, total, s.phaseAt, now)
 	elseif st == "done" and s.finishedAt and now - s.finishedAt <= M.SCAN_DONE_SECONDS then
 		local last = s.last or {}
@@ -686,6 +687,9 @@ function M.ScanModel(now)
 		model.fraction = 1
 		model.text = (L["Scan done · %s rows · %s items · %s"]):format(M.Thousands(last.rows or 0),
 			M.Thousands((last.items or 0) + (last.lastOnly or 0)), M.Clock(s.finishedAt - (s.requestedAt or s.finishedAt)))
+		if (last.unread or 0) > 0 then
+			model.text = model.text .. " · " .. (L["%s items not read"]):format(M.Thousands(last.unread))
+		end
 		model.hint = L["Everything is stored. The button now counts down to the next scan."]
 	elseif st == "failed" then
 		model.kind = "failed"
@@ -719,9 +723,10 @@ function M.ScanButton(now)
 	tip[1] = L["Scan the auction house"]
 	if s.state == "requested" or s.state == "waiting" then
 		model.label = (L["Waiting · %s / %s"]):format(M.Clock(s.elapsed or 0), M.Clock(s.timeout or 0))
-	elseif s.state == "reading" or s.state == "storing" then
+	elseif s.state == "reading" or s.state == "loading" or s.state == "storing" then
 		local pct = math.floor((scan and scan.fraction or 0) * 100)
-		model.label = ((s.state == "reading" and L["Reading · %d %%"] or L["Storing · %d %%"])):format(pct)
+		model.label = ((s.state == "reading" and L["Reading · %d %%"] or s.state == "loading" and L["Loading · %d %%"]
+			or L["Storing · %d %%"])):format(pct)
 	elseif s.cooldown > 0 then
 		model.label = (L["Next scan in %s"]):format(M.Countdown(s.cooldown))
 	else
