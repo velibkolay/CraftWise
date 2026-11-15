@@ -270,14 +270,14 @@ it("#6 the button model: hidden without an auction house, 'Scan AH' ready, waiti
 	M.RequestScan()
 	stub.clock = NOW + 8
 	b = Main.ScanButton()
-	eq(b.label, "Waiting for the list · 8 s"); eq(b.enabled, false)
+	eq(b.label, "Waiting · 0:08 / 2:00"); eq(b.enabled, false)
 	stub.RunTimers()
 	stub.clock = NOW + 100
 	stub.RunTimers()
 	-- failed: the button counts down
 	b = Main.ScanButton()
-	eq(b.label, "Scan AH · 13:20"); eq(b.enabled, false)
-	assert(b.tip[2]:find("next scan in 13:20", 1, true), b.tip[2])
+	eq(b.label, "Next scan in 13:20"); eq(b.enabled, false)
+	assert(b.tip[2]:find("Next scan in 13:20", 1, true), b.tip[2])
 	eq(Main.Countdown(754), "12:34"); eq(Main.Countdown(0), "0:00"); eq(Main.Countdown(59.2), "1:00")
 	eq(Main.ScanFailText("closed"), "The auction house closed before the list was read. Nothing was stored.")
 	assert(Main.ScanFailText("error", "boom"):find("boom", 1, true))
@@ -294,13 +294,13 @@ it("#6 the header button: shown while an auction house is open, a click requests
 	eq(f.head.scan.label.text, "Scan AH"); eq(f.head.scan.enabled, true)
 	f.head.scan.scripts.OnClick(f.head.scan)
 	eq(stub.replicateRequests, 1)
-	eq(f.head.scan.label.text, "Waiting for the list · 0 s"); eq(f.head.scan.enabled, false)
+	eq(f.head.scan.label.text, "Waiting · 0:00 / 2:00"); eq(f.head.scan.enabled, false)
 	stub.clock = NOW + 5
 	f.scripts.OnUpdate(f, 0.3)
-	eq(f.head.scan.label.text, "Waiting for the list · 5 s", "the poll ticks it")
+	eq(f.head.scan.label.text, "Waiting · 0:05 / 2:00", "the poll ticks it")
 	stub.replicate = Rows(LIST)
 	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
-	eq(f.head.scan.label.text, "Scan AH · 15:00", "done: the cooldown")
+	eq(f.head.scan.label.text, "Next scan in 15:00", "done: the cooldown")
 	eq(f.head.scan.enabled, false)
 	stub.clock = NOW + 905
 	f.scripts.OnUpdate(f, 0.3)
