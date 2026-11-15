@@ -264,13 +264,18 @@ local STATUS_COLUMN = 4
 function P.InitRow(b, data)
 	local cell = b.cells[STATUS_COLUMN]
 	b.cwLive = b.cwLive or Style.Nokta(b, C.live)
+	-- The list has just put the cell at its column (List:InitRow clears and anchors it on every init, so a
+	-- recycled row starts clean). The diamond goes to the row at the column's x, never to the cell: the cell
+	-- is then anchored after it, and each hangs on the row, not on the other (#224: a circular anchor).
+	local _, _, _, x = cell:GetPoint(1)
+	x = x or 0
+	b.cwLive:ClearAllPoints()
 	if data.live then
 		b.cwLive:SetSize(8, 8)
-		b.cwLive:ClearAllPoints()
-		b.cwLive:SetPoint("CENTER", cell, "LEFT", 4, 0)
+		b.cwLive:SetPoint("CENTER", b, "LEFT", x + 4, 0)
 		b.cwLive:Show()
 		cell:ClearAllPoints()
-		cell:SetPoint("LEFT", b.cwLive, "CENTER", 10, 0)
+		cell:SetPoint("LEFT", b, "LEFT", x + 14, 0)
 	else
 		b.cwLive:Hide()
 	end

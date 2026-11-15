@@ -268,6 +268,42 @@ it("Auctions: three cards: on its way after cut and deposit back, if all listed 
 	has(f.foot.left.text, "You get: buyout minus the 5% cut (confirmed), plus the deposit back.")
 end)
 
+it("Auctions: a recycled row goes live, not live and live again without a circular anchor (#224)", function()
+	local ns, _, M = Auctions()
+	M.Open("auctions")
+	local list = M.ListOf("auctions")
+	local errors = {}
+	list.onError = function(err) errors[#errors + 1] = err end
+	local frames = Rows(M, "auctions")
+	local live, sold = frames[3].elementData, frames[1].elementData
+	local fr = frames[3]
+	local x
+	for round = 1, 3 do
+		list:InitRow(fr, sold)
+		eq(fr.cwLive.shown, false)
+		local p = fr.cells[4].points[1]
+		eq(p[2], fr, "not live: the cell is at its column on the row")
+		x = x or p[4]
+		eq(p[4], x, "and at the same place every round")
+		list:InitRow(fr, live)
+		eq(fr.cwLive.shown, true)
+		eq(fr.cwLive.points[1][2], fr, "the diamond hangs on the row")
+		eq(fr.cells[4].points[1][2], fr, "the cell hangs on the row, not on the diamond")
+		eq(fr.cells[4].points[1][4], x + 14)
+	end
+	eq(#errors, 0, table.concat(errors, "; "))
+end)
+
+it("the stub refuses a circular anchor like the client", function()
+	LoadAddon()
+	local a, b = CreateFrame("Frame"), CreateFrame("Frame")
+	a:SetPoint("LEFT", b, "RIGHT", 0, 0)
+	local ok, err = pcall(b.SetPoint, b, "LEFT", a, "RIGHT", 0, 0)
+	eq(ok, false); assert(tostring(err):find("dependent on it"), err)
+	ok = pcall(a.SetPoint, a, "LEFT", a, "RIGHT", 0, 0)
+	eq(ok, false, "a region cannot anchor to itself")
+end)
+
 it("Auctions: one list: Item, Qty, Status, When, Buyout, You get; sold, listed, returning; Listed is live", function()
 	local ns, _, M = Auctions()
 	M.Open("auctions")
