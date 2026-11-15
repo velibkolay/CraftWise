@@ -376,6 +376,13 @@ local function Groups()
 		} },
 	} }
 
+	groups[#groups + 1] = { key = "trainer", label = L["Class trainer"], rows = {
+		{ key = "trainAll", kind = "check", label = L["Train all"], text = L["Show the button"],
+			sub = L["At a class trainer: a button that lists every spell you can learn and afford, and buys them after one confirmation."],
+			get = function() return ns.TrainAll.Enabled() end,
+			set = function(v) S().trainAll = v and true or false; ns.TrainAll.Update() end },
+	} }
+
 	groups[#groups + 1] = { key = "sales", label = L["Sale alert"], rows = {
 		{ key = "toast", kind = "check", label = L["Auction sold"], text = L["Show a line"],
 			sub = L["One line on screen when one of your auctions sells, with what you get after the cut. Click opens Sell › Auctions."],

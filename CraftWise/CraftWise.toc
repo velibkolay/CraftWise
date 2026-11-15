@@ -29,6 +29,7 @@ Auctions.lua
 Profit.lua
 Recipes.lua
 Trainer.lua
+ClassSpells.lua
 SourceRecorder.lua
 Merchant.lua
 Loot.lua
@@ -64,6 +65,7 @@ UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua
 UI\MerchantBuy.lua
+UI\TrainAll.lua
 UI\FarmFrame.lua
 UI\FarmHistory.lua
 UI\Main\Shell.lua
@@ -89,4 +91,5 @@ UI\Main\Pages\Learn.lua
 UI\Main\Pages\LevelUp.lua
 UI\Main\Pages\Basket.lua
 UI\Main\Pages\Crafted.lua
+UI\Main\Pages\Train.lua
 UI\MinimapButton.lua
