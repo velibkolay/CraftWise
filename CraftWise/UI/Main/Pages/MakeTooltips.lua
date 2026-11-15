@@ -294,16 +294,43 @@ end
 
 -- Craft speed (#209): seconds per craft (median of measured gaps), crafts per hour and profit per hour at
 -- today's prices (a dash without a profit), and how many crafts it was measured over.
-function MK.AddSpeedLines(speed, profit)
+-- Which reagent cost basis a profit figure of the Profit view uses (#47) and whether it is complete: the label
+-- "at paid cost" / "at today's AH prices", partial = some reagent's paid price covers only part of the units
+-- you hold, fallback = some reagent has no paid cost and is at AH. row = a Make row (nil: the label only).
+function MK.ProfitBasis(row)
+	local L = ns.L
+	local paid = ns.CostBasis("profit") == "paid"
+	local label = paid and L["at paid cost"] or L["at today's AH prices"]
+	local partial, fallback = false, false
+	if paid and row then
+		for _, line in ipairs(row.reagents or {}) do
+			partial = partial or line.paidPartial and true or false
+		end
+		fallback = (row.paidFallbacks or 0) > 0
+	end
+	local note
+	if partial then
+		note = L["some reagents: only part of the units have a paid price"]
+	elseif fallback then
+		note = L["some reagents have no paid cost: at AH"]
+	end
+	return { label = label, paid = paid, partial = partial, fallback = fallback, note = note }
+end
+
+function MK.AddSpeedLines(speed, profit, basis)
 	local L = ns.L
 	if not speed then
 		return
 	end
+	basis = basis or MK.ProfitBasis()
 	GameTooltip:AddDoubleLine("  " .. L["Speed"], (L["%s sec per craft \194\183 %s per hour"]):format(
 		ns.CraftLog.FormatSeconds(speed.sec), ns.CraftLog.Format(speed.perHour)), 0.8, 0.8, 0.8, 1, 1, 1)
 	local perHour = ns.CraftLog.ProfitPerHour(speed, profit)
-	GameTooltip:AddDoubleLine("  " .. L["Profit per hour at today's prices"], perHour and (MK.Signed(perHour) .. Muted(" (" .. L["approx."] .. ")")) or M.DASH,
+	GameTooltip:AddDoubleLine("  " .. L["Profit per hour"] .. " " .. basis.label, perHour and (MK.Signed(perHour) .. Muted(" (" .. L["approx."] .. ")")) or M.DASH,
 		0.8, 0.8, 0.8, 1, 1, 1)
+	if perHour and basis.note then
+		Note("  " .. basis.note)
+	end
 	Note("  " .. (L["measured over %d crafts"]):format(speed.n))
 end
 
@@ -326,10 +353,11 @@ function MK.AddCraftLog(r)
 		Note("  " .. log.before .. " - " .. ns.L["counted before the log, no date, no character"])
 	end
 	if r.profit and log.total > 0 then
-		GameTooltip:AddDoubleLine("  " .. ns.L["Profit of all crafts at today's prices"], MK.Signed(r.profit * log.total) .. Muted(" (" .. ns.L["approx."] .. ")"),
+		local basis = MK.ProfitBasis(r)
+		GameTooltip:AddDoubleLine("  " .. ns.L["Profit of all crafts"] .. " " .. basis.label, MK.Signed(r.profit * log.total) .. Muted(" (" .. ns.L["approx."] .. ")"),
 			0.8, 0.8, 0.8, 1, 1, 1)
 	end
-	MK.AddSpeedLines(log.speed, r.profit)
+	MK.AddSpeedLines(log.speed, r.profit, MK.ProfitBasis(r))
 end
 
 -- Craft and Learn: the crafted item's own tooltip first (item level, stats, requirements, other addons'

@@ -155,7 +155,7 @@ it("Make tooltip: Crafted lines and the profit at today's prices, labelled appro
 	assert(text:find("Crafted", 1, true), text)
 	assert(text:find("today 2", 1, true), text)
 	assert(text:find("counted before the log", 1, true), text)
-	assert(text:find("at today's prices", 1, true), text)
+	assert(text:find("Profit of all crafts at today's AH prices", 1, true), text)
 	assert(text:find("(approx.)", 1, true), text)
 end)
 
@@ -456,5 +456,36 @@ it("speed: the Make tooltip shows the figures and 'measured over N crafts', a da
 	local text = table.concat(shown, "\n")
 	assert(text:find("2 sec per craft", 1, true) and text:find("1,800 per hour", 1, true), text)
 	assert(text:find("measured over 7 crafts", 1, true), text)
-	assert(text:find("at today's prices | " .. ns.Main.DASH, 1, true), text)
+	assert(text:find("Profit per hour at today's AH prices | " .. ns.Main.DASH, 1, true), text)
+end)
+
+it("profit per hour follows the Profit view's cost basis: paid cost or today's AH, labelled, partial flagged", function()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.GetBuyPrice = function() return { copper = 100, source = "auction", label = "AH" } end
+	ns.GetPaidBuyPrice = function() return { copper = 40, source = "paid", label = "paid cost, 1 of 2 units", paidPartial = true, paidNote = "x", noCraft = true } end
+	ns.GetSellValue = function() return { copper = 1000, source = "auction", label = "AH" } end
+	ns.db.crafted = { seeded = true, before = {}, chars = { [ns.CharKey()] = {
+		[R_BOOTS] = { days = { [20261115] = { 6, 6 } }, speed = { n = 5, sum = 10, gaps = { 2, 2, 2, 2, 2 } } } } } }
+	ns.Main.Make.state.query = ""
+	local P = ns.Main.CraftedPage
+	local function row()
+		for _, r in ipairs(P.Rows(T(2026, 11, 15), {})) do
+			if r.recipeID == R_BOOTS then return r end
+		end
+	end
+	ns.db.settings.costBasis.profit = "ah"
+	local ah = row()
+	assert(ah.profit, "the row has a profit at AH prices")
+	eq(ah.profitHour, 1800 * ah.profit)
+	eq(ah.basis.label, "at today's AH prices"); eq(ah.basis.partial, false)
+	ns.db.settings.costBasis.profit = "paid"
+	local paid = row()
+	assert(paid.profit > ah.profit, "cheaper paid reagents: more profit per craft")
+	eq(paid.profitHour, 1800 * paid.profit)
+	assert(paid.profitHour > ah.profitHour, "profit per hour changes with the basis")
+	eq(paid.basis.label, "at paid cost"); eq(paid.basis.partial, true)
+	assert(paid.view.cells.profitHour:find("*", 1, true), "partial paid cost is starred")
+	assert(paid.view.tips.profitHour[1]:find("at paid cost", 1, true))
+	eq(ns.Main.Make.ProfitBasis().label, "at paid cost")
 end)

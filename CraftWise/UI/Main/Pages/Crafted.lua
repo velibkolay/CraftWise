@@ -119,25 +119,27 @@ local function Identify(recipeID)
 	return name or ("Recipe #" .. recipeID), icon, itemID
 end
 
--- Profit per craft at today's prices of the recipes in `ids` (the same figure as Make › Craft's row): the
--- rows of the profession of this character that knows each recipe, built once per profession.
+-- Profit per craft of the recipes in `ids`: the same figure as Make › Craft's row, so it follows the Profit
+-- view's reagent cost basis (paid cost or AH, #47). Built from the rows of the profession of this character that
+-- knows each recipe, once per profession. Returns profit[recipeID] and basis[recipeID] (MK.ProfitBasis of the row).
 local function Profits(ids)
-	local byProfession, profit = {}, {}
+	local byProfession, profit, basis = {}, {}, {}
 	for _, recipeID in ipairs(ids) do
 		for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
 			if prof.recipes and prof.recipes[recipeID] then
 				if not byProfession[professionID] then
 					byProfession[professionID] = {}
 					for _, row in ipairs(ns.BuildRows(professionID, false, "profit")) do
-						byProfession[professionID][row.recipeID] = row.profit
+						byProfession[professionID][row.recipeID] = { row.profit, MK.ProfitBasis(row) }
 					end
 				end
-				profit[recipeID] = byProfession[professionID][recipeID]
+				local found = byProfession[professionID][recipeID]
+				profit[recipeID], basis[recipeID] = found and found[1], found and found[2]
 				break
 			end
 		end
 	end
-	return profit
+	return profit, basis
 end
 P.Profits = Profits
 
@@ -172,10 +174,10 @@ function P.Rows(now, filters)
 	end
 	-- Profit per hour needs the prices: only for the recipes with a measured speed.
 	if #measured > 0 then
-		local profits = Profits(measured)
+		local profits, bases = Profits(measured)
 		for _, recipeID in ipairs(measured) do
 			local r = speeds[recipeID]
-			r.profit = profits[recipeID]
+			r.profit, r.basis = profits[recipeID], bases[recipeID]
 			r.profitHour = CL.ProfitPerHour(r.speed, r.profit)
 		end
 	end
@@ -183,12 +185,15 @@ function P.Rows(now, filters)
 		local v = r.view
 		v.cells.sec = r.speed and CL.FormatSeconds(r.sec) or M.DASH
 		v.cells.perHour = r.speed and CL.Format(r.perHour) or M.DASH
-		v.cells.profitHour = r.profitHour and (MK.Signed(r.profitHour)) or M.DASH
+		local incomplete = r.profitHour and r.basis and (r.basis.partial or r.basis.fallback)
+		v.cells.profitHour = r.profitHour and ((MK.Signed(r.profitHour)) .. (incomplete and "*" or "")) or M.DASH
 		v.colors.sec, v.colors.perHour = r.speed and "text" or "text3", r.speed and "text" or "text3"
 		v.colors.profitHour = r.profitHour and select(2, MK.Signed(r.profitHour)) or "text3"
 		v.tips.sec = r.speed and { L["Sec/craft"], (L["Median of the measured gaps between two crafts, measured over %d crafts."]):format(r.speed.n) }
 			or { L["Sec/craft"], (L["Shown after %d measured crafts in a row (gaps over %d s are breaks)."]):format(CL.MIN_GAPS, CL.BREAK_SECONDS) }
-		v.tips.profitHour = { L["Profit/h"], L["Crafts per hour times the profit per craft at today's prices (approx.): not what was earned."] }
+		local basis = r.basis or MK.ProfitBasis()
+		v.tips.profitHour = { L["Profit/h"] .. " " .. basis.label, L["Crafts per hour times the profit per craft (approx.): not what was earned."]
+			.. (r.profitHour and basis.note and (" " .. basis.note .. " (*)") or "") }
 	end
 	return rows
 end
@@ -254,6 +259,7 @@ function P.Model()
 		empty = Filtered() and L["No logged recipe matches. Clear the filter box, the profession or the character."]
 			or L["No crafts logged yet. Every craft you make is counted here, per day and character."],
 		footer = L["Counts come from craft events. Crafts counted before the log existed have no date and show in the total only."]
+			.. " · " .. L["Profit/h"] .. " " .. MK.ProfitBasis().label
 			.. (P.state.char and (" · " .. L["The undated crafts have no character: they are left out while one character is chosen."]) or ""),
 		footerRight = FilterNote(),
 	}
@@ -280,7 +286,7 @@ function P.RowTooltip(owner, r)
 		if lines.before then
 			GameTooltip:AddLine("  " .. lines.before .. " - " .. L["counted before the log, no date, no character"], 0.6, 0.6, 0.6, true)
 		end
-		MK.AddSpeedLines(lines.speed, r.profit)
+		MK.AddSpeedLines(lines.speed, r.profit, r.basis)
 	end
 	GameTooltip:Show()
 end
