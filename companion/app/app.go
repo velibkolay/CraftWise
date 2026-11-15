@@ -26,8 +26,10 @@ type App struct {
 	Log     *log.Logger
 
 	mu      sync.Mutex
+	work    sync.Mutex // one upload or download at a time: both change state.json
 	status  Status
 	trigger chan struct{}
+	clock func() time.Time // replaced in tests; nil = time.Now
 	// newClient is replaced in tests.
 	newClient func(cfg Config) *upload.Client
 }
@@ -40,6 +42,7 @@ type Status struct {
 	Text    string // one line: what was sent, or the error
 	RetryAt time.Time
 	File    string // the SavedVariables file
+	Download string // the last download: what came, or the error (#239)
 }
 
 // ConfigPath, StatePath and LogPath are the files in Dir.
@@ -63,7 +66,9 @@ func New(dir, version string, extra io.Writer) (*App, error) {
 	}
 	a.Log = log.New(w, "", log.LstdFlags)
 	a.newClient = func(cfg Config) *upload.Client {
-		return upload.NewClient(cfg.Site, cfg.Token, "CraftWise-Companion/"+version)
+		c := upload.NewClient(cfg.Site, cfg.Token, "CraftWise-Companion/"+version)
+		c.Machine = cfg.MachineName()
+		return c
 	}
 	if data, err := os.ReadFile(a.StatePath()); err == nil {
 		var raw struct {
@@ -190,6 +195,8 @@ func countsText(c map[string]int) string {
 }
 
 func (a *App) runOnce(ctx context.Context, opt RunOptions) (upload.Result, string, error) {
+	a.work.Lock()
+	defer a.work.Unlock()
 	var none upload.Result
 	cfg, err := a.Config()
 	if err != nil {
@@ -358,8 +365,18 @@ func (a *App) Loop(ctx context.Context) {
 			retry.Stop()
 			retry = nil
 		}
-		if !res.RetryAt.IsZero() {
-			retry = time.NewTimer(time.Until(res.RetryAt))
+		at := res.RetryAt
+		// The merged market comes down after each successful upload and at start (#239).
+		if why == "start" || (err == nil && res.OK()) {
+			if dres, derr := a.Download(ctx); derr != nil {
+				a.Log.Printf("download: %v", derr)
+				if dres.RetryAt.After(at) {
+					at = dres.RetryAt
+				}
+			}
+		}
+		if !at.IsZero() {
+			retry = time.NewTimer(time.Until(at))
 		}
 	}
 

@@ -25,6 +25,7 @@ type Client struct {
 	Site      string // e.g. https://wow.velikopter.com
 	Token     string
 	UserAgent string
+	Machine   string // sent as X-CraftWise-Machine, so the site can label the data (#237)
 	HTTP      *http.Client
 
 	// Retries: up to Attempts tries, waiting Backoff, 2x, 4x ... (at most MaxBackoff, with up to
@@ -99,6 +100,35 @@ func (c *Client) Post(ctx context.Context, path string, body any) (*Response, er
 	if len(data) > MaxBodyBytes {
 		return nil, fmt.Errorf("request body %d bytes, over the server's %d", len(data), MaxBodyBytes)
 	}
+	var out Response
+	err = c.do(ctx, http.MethodPost, path, data, 1<<20, func(raw []byte, status int) error {
+		if err := json.Unmarshal(raw, &out); err != nil || !out.OK {
+			return &HTTPError{Status: status, Message: "unexpected answer: " + snippet(raw)}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetJSON fetches path (with the bearer token and the retries of Post) and decodes the answer into
+// out. Used for the market download (#239).
+func (c *Client) GetJSON(ctx context.Context, path string, out any) error {
+	return c.do(ctx, http.MethodGet, path, nil, MaxDownloadBytes, func(raw []byte, status int) error {
+		if err := json.Unmarshal(raw, out); err != nil {
+			return &HTTPError{Status: status, Message: "unexpected answer: " + snippet(raw)}
+		}
+		return nil
+	})
+}
+
+// MaxDownloadBytes is the most a download answer may hold.
+const MaxDownloadBytes = 64 << 20
+
+// do sends one request with the retries; decode reads a success answer (an error from it is permanent).
+func (c *Client) do(ctx context.Context, method, path string, data []byte, maxRead int64, decode func(raw []byte, status int) error) error {
 	sleep := c.Sleep
 	if sleep == nil {
 		sleep = sleepCtx
@@ -106,23 +136,23 @@ func (c *Client) Post(ctx context.Context, path string, body any) (*Response, er
 	backoff := c.Backoff
 	var lastErr error
 	for attempt := 1; ; attempt++ {
-		resp, wait, err := c.once(ctx, path, data)
+		wait, err := c.once(ctx, method, path, data, maxRead, decode)
 		if err == nil {
-			return resp, nil
+			return nil
 		}
 		var herr *HTTPError
 		if errors.As(err, &herr) && wait < 0 {
-			return nil, err // permanent
+			return err // permanent
 		}
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
 		lastErr = err
 		if wait > c.MaxWait {
-			return nil, &RetryLater{At: time.Now().Add(wait), Err: err}
+			return &RetryLater{At: time.Now().Add(wait), Err: err}
 		}
 		if attempt >= c.Attempts {
-			return nil, &RetryLater{At: time.Now().Add(c.MaxBackoff), Err: fmt.Errorf("%d attempts: %w", attempt, lastErr)}
+			return &RetryLater{At: time.Now().Add(c.MaxBackoff), Err: fmt.Errorf("%d attempts: %w", attempt, lastErr)}
 		}
 		if wait <= 0 {
 			wait = backoff + time.Duration(rand.Int63n(int64(backoff)/5+1))
@@ -132,37 +162,45 @@ func (c *Client) Post(ctx context.Context, path string, body any) (*Response, er
 			}
 		}
 		if err := sleep(ctx, wait); err != nil {
-			return nil, err
+			return err
 		}
 	}
 }
 
 // once sends one request. wait < 0: permanent failure; 0: retry with backoff; > 0: Retry-After.
-func (c *Client) once(ctx context.Context, path string, data []byte) (*Response, time.Duration, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Site+path, bytes.NewReader(data))
+func (c *Client) once(ctx context.Context, method, path string, data []byte, maxRead int64, decode func([]byte, int) error) (time.Duration, error) {
+	var rd io.Reader
+	if data != nil {
+		rd = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.Site+path, rd)
 	if err != nil {
-		return nil, -1, &HTTPError{Message: err.Error()}
+		return -1, &HTTPError{Message: err.Error()}
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("Content-Type", "application/json")
+	if data != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if c.UserAgent != "" {
 		req.Header.Set("User-Agent", c.UserAgent)
 	}
+	if c.Machine != "" {
+		req.Header.Set("X-CraftWise-Machine", c.Machine)
+	}
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, 0, err // network: retry
+		return 0, err // network: retry
 	}
 	defer res.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(res.Body, maxRead))
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if res.StatusCode >= 200 && res.StatusCode < 300 {
-		var out Response
-		if err := json.Unmarshal(raw, &out); err != nil || !out.OK {
-			return nil, -1, &HTTPError{Status: res.StatusCode, Message: "unexpected answer: " + snippet(raw)}
+		if err := decode(raw, res.StatusCode); err != nil {
+			return -1, err
 		}
-		return &out, 0, nil
+		return 0, nil
 	}
 	var eb ErrorBody
 	_ = json.Unmarshal(raw, &eb)
@@ -172,11 +210,11 @@ func (c *Client) once(ctx context.Context, path string, data []byte) (*Response,
 	}
 	switch {
 	case res.StatusCode == http.StatusTooManyRequests || res.StatusCode == http.StatusServiceUnavailable:
-		return nil, retryAfter(res.Header.Get("Retry-After")), herr
+		return retryAfter(res.Header.Get("Retry-After")), herr
 	case res.StatusCode == http.StatusRequestTimeout || res.StatusCode >= 500:
-		return nil, 0, herr
+		return 0, herr
 	}
-	return nil, -1, herr
+	return -1, herr
 }
 
 // retryAfter reads Retry-After in seconds (or an HTTP date); 0 when absent or unreadable.

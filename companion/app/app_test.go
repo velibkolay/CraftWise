@@ -267,7 +267,7 @@ func TestLoopUploadsAtStartAndAfterAChange(t *testing.T) {
 	ts := rec.server(t, 200)
 	cfg := DefaultConfig()
 	cfg.Site, cfg.Token, cfg.WoWPath, cfg.Private = ts.URL, "cw_x", wow, false
-	cfg.PollSeconds, cfg.SettleSeconds = 1, 1
+	cfg.PollSeconds, cfg.SettleSeconds, cfg.Sync = 1, 1, false
 	a := newTestApp(t, cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

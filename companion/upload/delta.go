@@ -225,13 +225,7 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 		}
 		// The time the addon read the info is left out of the comparison: it changes without the
 		// info changing.
-		cmp := info
-		cmp.T = nil
-		h := hashJSON(struct {
-			N    string
-			Info market.ItemInfo
-			Has  bool
-		}{name, cmp, hasInfo})
+		h := itemHash(name, info, hasInfo)
 		if d.st.Items[id] == h {
 			continue
 		}
@@ -437,14 +431,18 @@ func (d *delta) price(house, item string, e market.Entry) []unit[PublicPayload] 
 		}
 	}
 
+	got := map[int64]bool{}
+	for _, t := range d.st.Got[key] {
+		got[t] = true
+	}
 	var raw []market.Point
 	oldest := int64(-1)
 	for _, p := range e.Raw {
 		if oldest < 0 || p.T < oldest {
 			oldest = p.T
 		}
-		if p.T <= old.RawT {
-			continue
+		if p.T <= old.RawT || got[p.T] {
+			continue // already sent, or came from a download (no echo, #239)
 		}
 		if p.T > next.RawT {
 			next.RawT = p.T

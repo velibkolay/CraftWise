@@ -29,6 +29,11 @@ type State struct {
 	// Watch: hash of the watch list sent (#165); nil = never sent. The list is sent whole, only when it
 	// differs.
 	Watch *uint64 `json:"watch,omitempty"`
+	// Got: times of raw points that came from a download of the merged market (#239) and were
+	// merged into the local file by the addon, per "<house><itemKey>". They are not new
+	// recordings, so the upload leaves them out. Entries older than the addon keeps raw points are
+	// dropped.
+	Got map[string][]int64 `json:"got,omitempty"`
 	// Ledger: newest entry time sent and how many entries had that time.
 	LedgerT     int64 `json:"ledgerT,omitempty"`
 	LedgerAtT   int   `json:"ledgerAtT,omitempty"`
@@ -66,6 +71,9 @@ func (s *State) init() {
 	}
 	if s.Docs == nil {
 		s.Docs = map[string]uint64{}
+	}
+	if s.Got == nil {
+		s.Got = map[string][]int64{}
 	}
 }
 
