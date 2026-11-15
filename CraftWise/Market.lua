@@ -2383,8 +2383,8 @@ end
 --   CraftWiseSync = { v = 1, written = <unix>, machine = "<name>",
 --     market = { houses, scans, names, itemInfo, classNames, subclassNames,
 --                items = { [itemKey] = { [houseKey] = "<packed entry string>" } } } }
--- Entries are the packed strings of EncodeEntry. The file is read once after login and merged into
--- CraftWiseMarketDB in slices (SyncSlice: a few ms per frame, never a freeze). It only ever adds:
+-- Entries are the packed strings of EncodeEntry. The file is read at PLAYER_LOGIN (a /reload too) and merged
+-- into CraftWiseMarketDB while the loading screen is up, never in world (StartSync). It only ever adds:
 --   last   the newer `t` wins (own on a tie);
 --   raw    union by `t` (the same `t` is the same point), then the usual 48 h;
 --   days   union; the same day on both machines keeps the aggregate with more points (n), own on a tie,
@@ -2397,12 +2397,12 @@ end
 ----------------------------------------------------------------------------------------------------
 
 M.SYNC_VERSION = 1
-M.SYNC_DELAY = 10 -- seconds after login; the prebuilds and the Auctionator export have started by then
--- A background job next to the game, not a loading screen: it takes at most about 1 ms of a frame (#241; the
--- first version took 4 ms, looked at the clock every 4 entries and decoded every entry, which stuttered).
-M.SYNC_SLICE_MS = 1 -- time one slice may take
-M.SYNC_CHECK = 1 -- entries handled between two looks at the clock (one entry can cost a millisecond in game)
-M.SYNC_SLICE_MAX = 400 -- and at most this many in a slice, whatever the clock says
+-- The merge runs while the loading screen is up, never in world (Veli's decision on #241 after the stutter):
+-- synchronously at PLAYER_LOGIN, which a /reload fires too. It may take SYNC_LOGIN_MS; what is left after that
+-- (only a file with tens of thousands of entries we have never seen) is merged at PLAYER_LOGOUT, before the
+-- saved file is written. Entries that equal ours cost a few string reads (Unchanged), so it is mostly this.
+M.SYNC_LOGIN_MS = 2000
+M.SYNC_CHECK = 8 -- entries handled between two looks at the clock
 local MIN_TIME = 1600000000 -- 2020-09-13, as the site's upload checks
 local syncJob
 local syncStatus = { state = "none" }
@@ -2847,13 +2847,13 @@ local SYNC_STAGES = {
 local function FinishSync(job)
 	syncJob = nil
 	-- What it cost, kept in the saved file: same = identical text, skipped = nothing to take (read from the text),
-	-- decoded = entries that had to be built; ms and slices of work, worst = the longest slice (#241).
+	-- decoded = entries that had to be built; ms of work, atLogout = not finished in the loading screen (#241).
 	db.sync = { written = job.written, machine = job.machine, at = time(), entries = job.entries,
 		changed = job.changed, bad = job.bad, same = job.same, skipped = job.skipped, decoded = job.decoded,
-		ms = math.floor(job.ms + 0.5), slices = job.slices, worst = math.floor(job.worst + 0.5) }
+		ms = math.floor(job.ms + 0.5), atLogout = job.late or nil }
 	syncStatus = { state = "done", written = job.written, machine = job.machine, entries = job.entries,
 		changed = job.changed, bad = job.bad, same = job.same, skipped = job.skipped, decoded = job.decoded,
-		ms = db.sync.ms, slices = job.slices, worst = db.sync.worst }
+		ms = db.sync.ms, atLogout = job.late }
 	if job.changed > 0 then
 		syncVersion = syncVersion + 1
 		ns.Notify("PRICES_CHANGED", "sync")
@@ -2885,44 +2885,28 @@ local function SyncStep(job)
 	return true
 end
 
-local syncQueued = false
-local SyncSlice
-local function ScheduleSync()
-	if not syncQueued then
-		syncQueued = true
-		C_Timer.After(0, SyncSlice)
-	end
-end
-
-SyncSlice = ns.Timed("Market: sync merge slice", function()
-	syncQueued = false
-	local job = syncJob
-	if not job then
-		return
-	end
+-- Merges until the file is done or `budgetMs` of this call are used (no budget: all of it). true when done.
+local function RunSync(job, budgetMs)
 	local started, n = debugprofilestop(), 0
-	job.slices = job.slices + 1
 	while SyncStep(job) do
 		n = n + 1
-		if n >= M.SYNC_SLICE_MAX or (n % M.SYNC_CHECK == 0 and debugprofilestop() - started >= M.SYNC_SLICE_MS) then
-			syncStatus.entries, syncStatus.changed, syncStatus.bad = job.entries, job.changed, job.bad
-			local took = debugprofilestop() - started
-			job.ms, job.worst = job.ms + took, math.max(job.worst, took)
-			ScheduleSync()
-			return
+		if budgetMs and n % M.SYNC_CHECK == 0 and debugprofilestop() - started >= budgetMs then
+			job.ms = job.ms + (debugprofilestop() - started)
+			return false
 		end
 	end
-	local took = debugprofilestop() - started
-	job.ms, job.worst = job.ms + took, math.max(job.worst, took)
+	job.ms = job.ms + (debugprofilestop() - started)
 	FinishSync(job)
-end)
+	return true
+end
 
--- Reads CraftWiseSync (set by the CraftWise_Sync addon when it is installed) and starts the merge.
+-- Reads CraftWiseSync (set by the CraftWise_Sync addon when it is installed) and merges it, at login.
 -- Returns the state: "none" (no file or nothing usable), "unsupported" (another format version),
--- "unchanged" (this `written` was merged before), "merging" (running in slices).
+-- "unchanged" (this `written` was merged before), "done", or "partial" (the loading screen's time was used up:
+-- the rest is merged at logout).
 function M.StartSync()
 	if not db or syncJob then
-		return syncJob and "merging" or syncStatus.state
+		return syncJob and "partial" or syncStatus.state
 	end
 	local file = _G.CraftWiseSync
 	local market = type(file) == "table" and file.market
@@ -2947,15 +2931,28 @@ function M.StartSync()
 		return "unchanged"
 	end
 	file.market = nil -- the job holds it until it is merged
-	syncJob = { source = market, stage = 1, now = time(), written = written,
+	local job = { source = market, stage = 1, now = time(), written = written,
 		machine = type(file.machine) == "string" and #file.machine <= 64 and file.machine or nil,
-		entries = 0, changed = 0, bad = 0, same = 0, skipped = 0, decoded = 0, ms = 0, slices = 0, worst = 0 }
-	syncStatus = { state = "merging", written = written }
-	ScheduleSync()
-	return "merging"
+		entries = 0, changed = 0, bad = 0, same = 0, skipped = 0, decoded = 0, ms = 0 }
+	syncJob = job
+	syncStatus = { state = "partial", written = written }
+	if RunSync(job, M.SYNC_LOGIN_MS) then
+		return "done"
+	end
+	job.late = true -- the saved file says it was finished at logout
+	syncStatus.entries, syncStatus.changed, syncStatus.bad = job.entries, job.changed, job.bad
+	return "partial"
 end
 
--- Is a merge running? Other background jobs (the Look up prebuild) wait for it.
+-- At logout: what the loading screen's budget left (only with a very large first file). Runs before PackAll.
+local function FinishSyncAtLogout()
+	local job = syncJob
+	if job then
+		RunSync(job)
+	end
+end
+
+-- Is a merge waiting to be finished at logout?
 function M.SyncBusy()
 	return syncJob ~= nil
 end
@@ -3006,17 +3003,19 @@ ns.Listen("RECIPES_CHANGED", M.RefreshScope)
 
 ns.On("PLAYER_LOGIN", function()
 	M.RefreshScope()
+	-- The loading screen is up: merge the other machine's file now, not in world (#241).
+	pcall(ns.Timed("Market: sync merge (login)", M.StartSync))
 	ScanBags()
 	M.Prune()
 	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, M.ExportAuctionatorScope)
 	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, function()
 		M.FillItemInfo()
 	end)
-	C_Timer.NewTimer(M.SYNC_DELAY, ns.Timed("Market: sync start", M.StartSync))
 end)
 -- Names first, as a normal handler; packing last (#105): handlers loaded after Market read prices at
 -- logout (the snapshot values fishing catches), and a read unpacks the entry it touches.
 ns.On("PLAYER_LOGOUT", function()
+	pcall(ns.Timed("Market: sync merge (logout)", FinishSyncAtLogout))
 	pcall(FillNames)
 end)
 ns.OnLast("PLAYER_LOGOUT", PackAll)

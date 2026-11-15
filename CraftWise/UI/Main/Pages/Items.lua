@@ -387,21 +387,11 @@ local function Cache()
 end
 
 -- A short while after login the build starts by itself, so it is ready before the page is first opened.
--- It waits for a running sync merge (#241): the merge adds keys, which would restart the build again and again,
--- and both are background work that shares the frames.
-Items.PREBUILD_WAIT = 5 -- seconds before it looks again
-local function Prebuild()
-	if ns.Market.SyncBusy and ns.Market.SyncBusy() then
-		C_Timer.NewTimer(Items.PREBUILD_WAIT, Prebuild)
-		return
-	end
-	Items.Warm()
-	Items.WarmUsedIn()
-end
-Prebuild = ns.Timed("Look up › Items: prebuild", Prebuild)
-
 ns.On("PLAYER_LOGIN", function()
-	C_Timer.NewTimer(Items.PREBUILD_DELAY, Prebuild)
+	C_Timer.NewTimer(Items.PREBUILD_DELAY, ns.Timed("Look up › Items: prebuild", function()
+		Items.Warm()
+		Items.WarmUsedIn()
+	end))
 end)
 
 -- Recorded items whose lower-case stored name contains `lower`, then (up to Items.UNNAMED_MAX of the
