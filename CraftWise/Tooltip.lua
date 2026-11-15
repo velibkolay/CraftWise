@@ -11,6 +11,7 @@ ns.TOOLTIP_LINES = {
 	{ key = "market", label = "Auction prices per house" },
 	{ key = "tracked", label = "Tracked recipe: reagents you hold" },
 	{ key = "soldBy", label = "Sold by (merchants you opened)" },
+	{ key = "maxBuy", label = "Max price to pay for a reagent" },
 }
 
 local MUTED = "|cff8c95a6"
@@ -258,6 +259,100 @@ function ns.SaleAgeText(sale)
 	end
 end
 
+-- Max price to pay (#292): for an item that is a reagent of a recipe this character knows and is priced from the AH,
+-- the highest unit price that still breaks even, per recipe: Profit.MaxBuy with the same cost basis (the Profit
+-- view's) and sale value (vendor/Junk without a cut, else the AH after the cut) as Make > Craft's row (#262).
+-- Returns { { recipeID, name, maxBuy, loss, now, over } } best first (the highest maximum), or {} (vendor-only
+-- reagents, unknown values: nothing, never a guess). Cached per item until the prices, recipes or marks change.
+local maxBuyCache, reagentUse = {}, nil
+local function ReagentUse()
+	if not reagentUse then
+		reagentUse = {}
+		for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+			for recipeID, recipe in pairs(prof.recipes) do
+				if recipe.learned then
+					local reagents, output = recipe.reagents, recipe.output
+					if not reagents and ns.RecipeFallback then
+						reagents, output = ns.RecipeFallback(recipeID)
+					end
+					for _, r in ipairs(reagents or {}) do
+						local list = reagentUse[r.itemID]
+						if not list then
+							list = {}
+							reagentUse[r.itemID] = list
+						end
+						list[#list + 1] = { recipeID = recipeID, name = recipe.name or ("Recipe #" .. recipeID), reagents = reagents, output = output }
+					end
+				end
+			end
+		end
+	end
+	return reagentUse
+end
+
+function ns.MaxBuyFor(itemID)
+	local cached = maxBuyCache[itemID]
+	if cached then
+		return cached
+	end
+	local out = {}
+	local uses = ns.Profit and ns.ReagentPrices and ReagentUse()[itemID]
+	if uses then
+		local prices = ns.ReagentPrices("profit")
+		for _, use in ipairs(uses) do
+			local result = ns.Profit.Evaluate({ reagents = use.reagents, output = use.output, learned = true }, prices)
+			for _, line in ipairs(result.reagents) do
+				if line.itemID == itemID and (line.maxBuy or line.maxBuyLoss) then
+					out[#out + 1] = { recipeID = use.recipeID, name = use.name, maxBuy = line.maxBuy, loss = line.maxBuyLoss, now = line.unit,
+						over = line.overMax }
+					break
+				end
+			end
+		end
+		table.sort(out, function(a, b)
+			if (a.maxBuy ~= nil) ~= (b.maxBuy ~= nil) then
+				return a.maxBuy ~= nil
+			end
+			if a.maxBuy ~= b.maxBuy then
+				return (a.maxBuy or 0) > (b.maxBuy or 0)
+			end
+			return a.recipeID < b.recipeID
+		end)
+	end
+	maxBuyCache[itemID] = out
+	return out
+end
+for _, event in ipairs({ "PRICES_CHANGED", "RECIPES_CHANGED", "DB_READY", "JUNK_CHANGED", "LEDGER_CHANGED" }) do
+	ns.Listen(event, function()
+		maxBuyCache = {}
+		if event ~= "PRICES_CHANGED" and event ~= "JUNK_CHANGED" and event ~= "LEDGER_CHANGED" then
+			reagentUse = nil
+		end
+	end)
+end
+
+-- The tooltip lines of it: at most two recipes, "+N more" after them. A red figure when the price now is above it.
+local function MaxBuyLines(itemID)
+	local list = ns.MaxBuyFor(itemID)
+	local lines = {}
+	local basis = ns.CostBasis("profit") == "paid" and (MUTED .. " · paid cost|r") or ""
+	for i, e in ipairs(list) do
+		if i > 2 then
+			lines[#lines + 1] = { "", MUTED .. ("+%d more recipes|r"):format(#list - 2) }
+			break
+		end
+		local text
+		if e.loss then
+			text = "|cffff5555loses money at any price|r" .. MUTED .. " for " .. e.name .. "|r"
+		else
+			local now = e.now and (MUTED .. " (now " .. ns.FormatMoney(e.now) .. ")|r") or ""
+			text = (e.over and "|cffff5555" or "|cffffffff") .. ns.FormatMoney(e.maxBuy) .. "|r" .. MUTED .. " for " .. e.name .. "|r" .. now
+		end
+		lines[#lines + 1] = { i == 1 and "Max to pay" or "", text .. (i == 1 and basis or "") }
+	end
+	return lines
+end
+
 function ns.AddTooltipLines(tooltip, itemID)
 	local s = Settings()
 	if not (s and s.enabled and itemID and ns.db) then
@@ -335,6 +430,11 @@ function ns.AddTooltipLines(tooltip, itemID)
 	end
 	if s.lines.soldBy and ns.Merchant then
 		for _, line in ipairs(ns.Merchant.TooltipLines(itemID)) do
+			lines[#lines + 1] = line
+		end
+	end
+	if s.lines.maxBuy then
+		for _, line in ipairs(MaxBuyLines(itemID)) do
 			lines[#lines + 1] = line
 		end
 	end
