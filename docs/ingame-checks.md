@@ -1080,3 +1080,10 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Unmark the item: the fold and dim go, the coin returns on a grey item at a merchant. Mark a non-grey item (white): fold and dim, no coin.
 - Make > Bags: a junk row has its icon grey and dimmed like the slot; docked layout the same.
 - Baganator: the dim also shows on marked items (the corner widget no longer needs the button as its parent).
+
+## Companion: W key logo (#310)
+- [ ] Tray at 100 % and at 150 % display scale: the gold W key shows crisp (not blurry, not cut off); at 100 % the 16 px drawing with the blocky W, at 150 % the 24 px one.
+- [ ] Light and dark taskbar: the key is readable on both (the gold border holds it against either).
+- [ ] The exe (`craftwise-companion.exe`, built with `-H=windowsgui`) shows the key in Explorer (small, medium and large icons views), in the taskbar while the settings run and in Settings > Apps > Startup.
+- [ ] The tray icon still comes back after restarting Explorer.
+
