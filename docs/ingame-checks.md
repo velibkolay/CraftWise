@@ -1035,3 +1035,9 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Several recipes use it: the highest maximum first, a second line, then "+N more recipes".
 - A vendor-sold reagent (Mild Spices) shows no line. "loses money at any price" when the recipe's other reagents cost more than the sale.
 - Settings › Tooltips › "Max price to pay for a reagent" turns it off. Change the cost basis (Settings › Prices): the figure follows, and the line says "paid cost" with the Paid basis.
+
+## Make › Crafted: long casts are timed (#295)
+- Craft Barbaric Leggings (about a minute per cast) five times, one after another or with pauses: after the fifth the row shows Speed "≈ 60 s · 60/h" and a Profit/h. Before this, nothing showed.
+- A pause of several minutes between two crafts is still a break: it doesn't add to the active time beyond the craft's own cast.
+- Cancel a cast (move or press Esc) and craft again: the cancelled cast doesn't count.
+- Short recipes (3 s) show the same Speed as before.

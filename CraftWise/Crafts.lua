@@ -14,8 +14,8 @@ local _, ns = ...
 -- Junk mark respected, #227), summed over the crafts that had one; known = how many crafts that is. A
 -- craft without a price adds to crafts only. Days from before profit was recorded have neither.
 -- active (#251) = seconds of active crafting added to that day: the gap since the character's previous craft of
--- any recipe when it is at most BREAK_SECONDS, added to the day of the later craft. The first craft of a run (no
--- craft before it in this session, or a break before it) adds 0: its cast time isn't known, nothing is guessed.
+-- any recipe when it is within the limit (BREAK_SECONDS plus the measured cast, #295), added to the day of the later craft. The first craft of a run (no
+-- craft before it in this session, or a break before it) adds its own measured cast (UNIT_SPELLCAST_START to SUCCEEDED, #295), else 0: nothing is guessed.
 -- Days from before this was recorded have no `active` (nil): they show no time, never an estimate.
 -- timed (#273) = how many of that day's crafts were measured at all (every craft recorded while the clock was
 -- known, including the first of a run, which adds 0 s), timedProfit = the profit (copper) of the crafts whose gap
@@ -42,15 +42,42 @@ CL.MIN_GAPS = 5
 local lastCraft = {} -- [recipeID] = GetTime() of this session's previous craft of it (this character)
 local lastAny -- GetTime() of this session's previous craft of any recipe (this character), for the active time
 
--- The speed table of a log entry, after one craft at clock time `at` (seconds, nil = unknown).
-local function AddGap(entry, recipeID, at)
+-- Long casts (#295): a recipe whose cast is longer than BREAK_SECONDS (Barbaric Leggings, about a minute) is never
+-- within 30 s of its previous craft. The cast itself is measured: UNIT_SPELLCAST_START to UNIT_SPELLCAST_SUCCEEDED of
+-- the same spell (`cast`, seconds). A gap then counts up to BREAK_SECONDS + cast (a real pause is still a break), and a
+-- craft whose gap doesn't count still adds its own measured cast, as active time and as a speed sample. Without a
+-- measured cast (no START seen) everything is as before. MIN_GAPS stays 5 for every recipe.
+local castStart = {} -- [spellID] = GetTime() of this session's unfinished cast
+function CL.CastStarted(spellID, at)
+	castStart[spellID] = at
+end
+function CL.CastCancelled(spellID)
+	castStart[spellID] = nil
+end
+CL.MAX_CAST = 600
+-- The cast of the craft that just succeeded at clock time `at` (consumed), or nil when unknown or implausible.
+local function TakeCast(spellID, at)
+	local started = castStart[spellID]
+	castStart[spellID] = nil
+	if started and at and at > started and at - started <= CL.MAX_CAST then
+		return math.floor((at - started) * 100 + 0.5) / 100
+	end
+end
+local function Limit(cast)
+	return CL.BREAK_SECONDS + (cast and cast > 0 and cast or 0)
+end
+
+-- The speed table of a log entry, after one craft at clock time `at` (seconds, nil = unknown) whose cast took
+-- `cast` seconds (nil = not measured). The sample is the gap since the recipe's previous craft when within the limit,
+-- else the measured cast.
+local function AddGap(entry, recipeID, at, cast)
 	local before = lastCraft[recipeID]
 	lastCraft[recipeID] = at
-	if not (at and before) then
-		return
+	local gap = before and at and at - before
+	if not (gap and gap > 0 and gap <= Limit(cast)) then
+		gap = cast
 	end
-	local gap = at - before
-	if gap <= 0 or gap > CL.BREAK_SECONDS then
+	if not (gap and gap > 0) then
 		return
 	end
 	local speed = entry.speed
@@ -65,26 +92,26 @@ end
 
 -- Active seconds a craft at clock time `at` adds (#251): the gap since the previous craft of any recipe when it is
 -- positive and at most BREAK_SECONDS, else 0 (first craft of a run, a break, unknown clock).
-local function ActiveGap(at)
+local function ActiveGap(at, cast)
 	local before = lastAny
 	lastAny = at
-	if not (at and before) then
+	if not at then
 		return 0
 	end
-	local gap = at - before
-	if gap <= 0 or gap > CL.BREAK_SECONDS then
-		return 0
+	local gap = before and at - before
+	if gap and gap > 0 and gap <= Limit(cast) then
+		return math.floor(gap * 100 + 0.5) / 100
 	end
-	return math.floor(gap * 100 + 0.5) / 100
+	return cast and cast > 0 and cast or 0 -- the first craft of a run or after a break: its own measured cast, if any
 end
 
 -- Adds a craft's time to its day bucket (#273): active seconds, the crafts measured and the profit of those whose
 -- gap was counted. profit = this craft's profit or nil.
-local function AddTime(bucket, clock, profit)
+local function AddTime(bucket, clock, profit, cast)
 	if bucket[5] and not bucket[6] then
 		bucket[5] = nil -- from the first build: how many crafts it covers is unknown
 	end
-	local gap = ActiveGap(clock)
+	local gap = ActiveGap(clock, cast)
 	if clock then
 		bucket[5] = (bucket[5] or 0) + gap
 		bucket[6] = (bucket[6] or 0) + 1
@@ -286,7 +313,7 @@ function CL.ProfitNow(recipeID, recipe, clock)
 end
 
 -- One craft: one write into today's bucket.
-function CL.Record(recipeID, recipe, now, clock)
+function CL.Record(recipeID, recipe, now, clock, cast)
 	local log = CL.Store()
 	local key = log and ns.CharKey()
 	if not key then
@@ -315,8 +342,8 @@ function CL.Record(recipeID, recipe, now, clock)
 		bucket[3] = (bucket[3] or 0) + math.floor(profit + 0.5)
 		bucket[4] = (bucket[4] or 0) + 1
 	end
-	AddGap(entry, recipeID, clock)
-	AddTime(bucket, clock, profit)
+	AddGap(entry, recipeID, clock, cast)
+	AddTime(bucket, clock, profit, cast)
 	ns.Notify("CRAFTLOG_CHANGED", recipeID)
 end
 
@@ -623,7 +650,8 @@ function ns.OnCraft(recipeID)
 	if not prof then
 		return
 	end
-	CL.Record(recipeID, recipe, nil, GetTime and GetTime() or nil) -- every craft counts, with or without a skill update (#205)
+	local clock = GetTime and GetTime() or nil
+	CL.Record(recipeID, recipe, nil, clock, TakeCast(recipeID, clock)) -- every craft counts, with or without a skill update (#205)
 	ns.CheckSkills()
 	local now = Now()
 	local craft = { recipeID = recipeID, prof = prof, skill = tracked[prof], difficulty = recipe.difficulty, time = now }
@@ -645,6 +673,19 @@ function ns.OnCraft(recipeID)
 			ns.SettleCrafts()
 		end)
 	end
+end
+
+ns.On("UNIT_SPELLCAST_START", function(_, unit, _, spellID)
+	if unit == "player" and spellID and not Secret(spellID) and GetTime then
+		CL.CastStarted(spellID, GetTime())
+	end
+end)
+for _, event in ipairs({ "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED" }) do
+	ns.On(event, function(_, unit, _, spellID)
+		if unit == "player" and spellID and not Secret(spellID) then
+			CL.CastCancelled(spellID)
+		end
+	end)
 end
 
 ns.On("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)

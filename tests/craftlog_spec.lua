@@ -973,3 +973,61 @@ it("Crafted card: an estimate for the untimed crafts (count x the recipe's media
 	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
 	assert(not hero.name:find("est.", 1, true), hero.name)
 end)
+
+-- Long casts are timed by the cast itself (#295)
+local function castAt(stub, id, start, finish)
+	stub.now = start
+	stub.Fire("UNIT_SPELLCAST_START", "player", "guid", id)
+	stub.now = finish
+	craft(stub, id)
+end
+
+it("long casts: a 60 s recipe is timed from its cast, also when each craft starts after a pause", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	-- five crafts clicked one by one, minutes apart: every gap is a break, but each cast was measured
+	for i = 1, 5 do castAt(stub, R_BOOTS, 1000 + i * 300, 1060 + i * 300) end
+	local e = entryOf(ns, R_BOOTS)
+	eq(e.speed.n, 5); eq(e.speed.sum, 300)
+	local s = ns.CraftLog.Speed(R_BOOTS)
+	eq(s.sec, 60); eq(s.perHour, 60)
+	local b = e.days[20261115]
+	eq(b[5], 300, "each craft adds its own cast as active time"); eq(b[6], 5)
+end)
+
+it("long casts: a Create All run counts the gap up to the cast plus 30 s, not as a break", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	local t = 1000
+	for _ = 1, 6 do castAt(stub, R_BOOTS, t, t + 60); t = t + 60 + 5 end -- 5 s between a success and the next click
+	local s = entryOf(ns, R_BOOTS).speed
+	-- the first craft has no gap before it: its cast, 60; the later ones 65 s gaps (<= 60 + 30)
+	eq(s.n, 6); eq(s.gaps[1], 60); eq(s.gaps[2], 65)
+	eq(ns.CraftLog.Speed(R_BOOTS).sec, 65)
+end)
+
+it("long casts: a real break after a long cast is still excluded; the craft adds its own cast only", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	castAt(stub, R_BOOTS, 1000, 1060)
+	castAt(stub, R_BOOTS, 1065, 1125) -- gap 65 s <= 90: counts
+	castAt(stub, R_BOOTS, 1500, 1560) -- gap 435 s: a break
+	local e = entryOf(ns, R_BOOTS)
+	eq(e.speed.gaps[2], 65); eq(e.speed.gaps[3], 60, "the break's sample is its cast, not 435 s")
+	eq(e.days[20261115][5], 60 + 65 + 60)
+end)
+
+it("short casts: unchanged, no START seen means the old rules; a cancelled cast is not used", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	craftAt(stub, R_BOOTS, 100); craftAt(stub, R_BOOTS, 102.5)
+	eq(entryOf(ns, R_BOOTS).speed.n, 1); eq(entryOf(ns, R_BOOTS).days[20261115][5], 2.5)
+	craftAt(stub, R_BOOTS, 140) -- 37.5 s without a measured cast: a break
+	eq(entryOf(ns, R_BOOTS).speed.n, 1)
+	stub.now = 200
+	stub.Fire("UNIT_SPELLCAST_START", "player", "guid", R_BOOTS)
+	stub.Fire("UNIT_SPELLCAST_INTERRUPTED", "player", "guid", R_BOOTS)
+	craftAt(stub, R_BOOTS, 260) -- no cast measured: 120 s since the last craft is a break, adds 0
+	eq(entryOf(ns, R_BOOTS).speed.n, 1)
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 2.5)
+end)
