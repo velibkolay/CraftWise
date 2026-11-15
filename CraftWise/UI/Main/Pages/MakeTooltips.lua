@@ -292,6 +292,30 @@ local function CraftWiseHeader()
 	GameTooltip:AddLine(("|T%s:12|t %sCraftWise|r"):format(Style.Media.keyW, Style.Hex("keyGold")))
 end
 
+-- Craft log (#205): "Crafted N . today M", per character today / 7 days / total, the undated part, and the
+-- profit of those crafts at today's prices (past prices are not stored per craft).
+function MK.AddCraftLog(r)
+	local log = ns.CraftLog.Lines(r.recipeID)
+	if not log then
+		return
+	end
+	GameTooltip:AddLine(" ")
+	Heading("Crafted", Muted(log.headline))
+	for _, ch in ipairs(log.chars) do
+		GameTooltip:AddDoubleLine("  " .. ch.name, ch.text, 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+	if log.earlier then
+		Note("  " .. log.earlier)
+	end
+	if log.before then
+		Note("  " .. log.before .. " - counted before the log, no date, no character")
+	end
+	if r.profit and log.total > 0 then
+		GameTooltip:AddDoubleLine("  Profit of all crafts at today's prices", MK.Signed(r.profit * log.total) .. Muted(" (approx.)"),
+			0.8, 0.8, 0.8, 1, 1, 1)
+	end
+end
+
 -- Craft and Learn: the crafted item's own tooltip first (item level, stats, requirements, other addons'
 -- lines), then the CraftWise section. Recipes without an item output get the CraftWise section only.
 -- view: the reagent cost basis ("profit" | "learn").
@@ -319,6 +343,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 	if n > 0 then
 		GameTooltip:AddDoubleLine("Your crafts", ("%d skill-ups in %d crafts"):format(ups, n), 0.8, 0.8, 0.8, 1, 1, 1)
 	end
+	MK.AddCraftLog(r)
 
 	if r.status ~= "known" then
 		if r.learnCost then

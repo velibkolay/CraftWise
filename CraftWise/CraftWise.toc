@@ -87,4 +87,5 @@ UI\Main\Pages\Craft.lua
 UI\Main\Pages\Learn.lua
 UI\Main\Pages\LevelUp.lua
 UI\Main\Pages\Basket.lua
+UI\Main\Pages\Crafted.lua
 UI\MinimapButton.lua

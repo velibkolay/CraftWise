@@ -4,6 +4,252 @@
 --   [recipeID] = { [skill] = { n = crafts, ups = skill points gained, d = client difficulty } }
 local _, ns = ...
 
+-- Craft log (#205). Every craft is counted per character, recipe and local day, whether or not it gave a
+-- skill-up and at any skill, from the same craft detection below (OnCraft). CraftWiseDB.crafted:
+--   { seeded = true,
+--     before = { [recipeID] = crafts }  crafts counted in skillups before the log existed (undated, no character),
+--     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items } }, earlier = { crafts, items } } } } }
+-- Days older than KEEP_DAYS fold into `earlier` (once per session, never on a craft). items = crafts times the
+-- recipe's yield when that is one exact number; recipes with a yield range add crafts only (the client's
+-- received quantity is not read, see docs/ingame-checks.md).
+ns.CraftLog = ns.CraftLog or {}
+local CL = ns.CraftLog
+CL.KEEP_DAYS = 90
+
+-- Days since 1970-01-01 of a YYYYMMDD key (pure calendar maths, no time zone).
+function CL.DayNumber(ymd)
+	local y, m, d = math.floor(ymd / 10000), math.floor(ymd / 100) % 100, ymd % 100
+	if m <= 2 then
+		y, m = y - 1, m + 12
+	end
+	return 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400) + math.floor((153 * (m - 3) + 2) / 5) + d - 719469
+end
+
+function CL.Today(now)
+	return tonumber(date("%Y%m%d", now or time()))
+end
+
+-- The log table; the first call also seeds the undated bucket from skillups, once.
+function CL.Store()
+	local db = ns.db
+	if not db then
+		return nil
+	end
+	local log = db.crafted
+	if not log then
+		log = { chars = {}, before = {} }
+		db.crafted = log
+	end
+	log.chars = log.chars or {}
+	log.before = log.before or {}
+	if not log.seeded then
+		log.seeded = true
+		for recipeID, bySkill in pairs(db.skillups or {}) do
+			local n = 0
+			for _, e in pairs(bySkill) do
+				n = n + (e.n or 0)
+			end
+			if n > 0 then
+				log.before[recipeID] = n
+			end
+		end
+	end
+	return log
+end
+
+-- 1532 -> "1,532".
+function CL.Format(n)
+	local s = tostring(math.floor(n or 0))
+	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return (out:gsub("^,", ""))
+end
+
+-- Character shown in lists: the key without its realm ("<realm>-<name> <surname>").
+function CL.CharLabel(key)
+	return key:match("^.-%-(.+)$") or key
+end
+
+-- The lines the Make tooltip and the opened row show for one recipe (pure over Counts): nil when nothing
+-- was ever logged. { headline = "Crafted 1,532 - today 120", chars = { "Name  today 5 - 7 days 30 - total 200" },
+-- before = "Before the log (undated): 1,500", profit = crafts for the "at today's prices" line }.
+function CL.Lines(recipeID, now)
+	local c = CL.Counts(recipeID, now)
+	local total = c.total + c.before
+	if total == 0 then
+		return nil
+	end
+	local out = { total = total, today = c.today, chars = {}, dated = c.total }
+	out.headline = ("Crafted %s \194\183 today %s"):format(CL.Format(total), CL.Format(c.today))
+	for _, ch in ipairs(c.chars) do
+		out.chars[#out.chars + 1] = { name = CL.CharLabel(ch.key), text = ("today %s \194\183 7 days %s \194\183 total %s"):format(
+			CL.Format(ch.today), CL.Format(ch.week), CL.Format(ch.total)) }
+	end
+	if c.before > 0 then
+		out.before = ("Before the log (undated): %s"):format(CL.Format(c.before))
+	end
+	if c.earlier > 0 then
+		out.earlier = ("Older than %d days: %s"):format(CL.KEEP_DAYS, CL.Format(c.earlier))
+	end
+	return out
+end
+
+-- Exact items per craft, or nil for a range or an unknown output.
+local function Yield(recipe)
+	local q = recipe and recipe.output and recipe.output.quantity
+	if q and q >= 1 and q == math.floor(q) then
+		return q
+	end
+end
+
+-- One craft: one write into today's bucket.
+function CL.Record(recipeID, recipe, now)
+	local log = CL.Store()
+	local key = log and ns.CharKey()
+	if not key then
+		return
+	end
+	local char = log.chars[key]
+	if not char then
+		char = {}
+		log.chars[key] = char
+	end
+	local entry = char[recipeID]
+	if not entry then
+		entry = { days = {} }
+		char[recipeID] = entry
+	end
+	local day = CL.Today(now)
+	local bucket = entry.days[day]
+	if not bucket then
+		bucket = { 0, 0 }
+		entry.days[day] = bucket
+	end
+	bucket[1] = bucket[1] + 1
+	bucket[2] = bucket[2] + (Yield(recipe) or 0)
+	ns.Notify("CRAFTLOG_CHANGED", recipeID)
+end
+
+-- Folds days older than KEEP_DAYS into `earlier`, for every character. Returns the number of days folded.
+function CL.Fold(now)
+	local log = CL.Store()
+	if not log then
+		return 0
+	end
+	local today = CL.DayNumber(CL.Today(now))
+	local folded = 0
+	for _, char in pairs(log.chars) do
+		for _, entry in pairs(char) do
+			for day, bucket in pairs(entry.days) do
+				if today - CL.DayNumber(day) >= CL.KEEP_DAYS then
+					local earlier = entry.earlier or { 0, 0 }
+					entry.earlier = earlier
+					earlier[1], earlier[2] = earlier[1] + bucket[1], earlier[2] + bucket[2]
+					entry.days[day] = nil
+					folded = folded + 1
+				end
+			end
+		end
+	end
+	return folded
+end
+
+-- Counts of one recipe (reads that recipe only): today, week (today and the 6 days before), total and items
+-- over all characters, earlier (folded part), before (undated crafts from skillups, not in total), and chars =
+-- { { key, today, week, total, items } } sorted by total.
+function CL.Counts(recipeID, now)
+	local log = ns.db and ns.db.crafted
+	local out = { today = 0, week = 0, total = 0, items = 0, earlier = 0, before = 0, chars = {} }
+	if not log then
+		return out
+	end
+	out.before = log.before and log.before[recipeID] or 0
+	local today = CL.DayNumber(CL.Today(now))
+	for key, char in pairs(log.chars or {}) do
+		local entry = char[recipeID]
+		if entry then
+			local c = { key = key, today = 0, week = 0, total = 0, items = 0 }
+			for day, b in pairs(entry.days) do
+				local age = today - CL.DayNumber(day)
+				if age == 0 then
+					c.today = c.today + b[1]
+				end
+				if age >= 0 and age < 7 then
+					c.week = c.week + b[1]
+				end
+				c.total, c.items = c.total + b[1], c.items + b[2]
+			end
+			if entry.earlier then
+				c.total, c.items = c.total + entry.earlier[1], c.items + entry.earlier[2]
+				out.earlier = out.earlier + entry.earlier[1]
+			end
+			out.today, out.week, out.total, out.items = out.today + c.today, out.week + c.week, out.total + c.total, out.items + c.items
+			out.chars[#out.chars + 1] = c
+		end
+	end
+	table.sort(out.chars, function(a, b)
+		if a.total ~= b.total then
+			return a.total > b.total
+		end
+		return a.key < b.key
+	end)
+	return out
+end
+
+-- Every logged recipe for the Crafted page: { recipeID, today, week, total, before } with total = dated plus
+-- undated, sorted by today, then week, then total.
+function CL.List(now)
+	local log = CL.Store()
+	local list, byRecipe = {}, {}
+	if not log then
+		return list
+	end
+	local todayNumber = CL.DayNumber(CL.Today(now))
+	local function Row(recipeID)
+		local r = byRecipe[recipeID]
+		if not r then
+			r = { recipeID = recipeID, today = 0, week = 0, total = 0, before = 0 }
+			byRecipe[recipeID] = r
+			list[#list + 1] = r
+		end
+		return r
+	end
+	for _, char in pairs(log.chars) do
+		for recipeID, entry in pairs(char) do
+			local r = Row(recipeID)
+			for day, b in pairs(entry.days) do
+				local age = todayNumber - CL.DayNumber(day)
+				if age == 0 then
+					r.today = r.today + b[1]
+				end
+				if age >= 0 and age < 7 then
+					r.week = r.week + b[1]
+				end
+				r.total = r.total + b[1]
+			end
+			if entry.earlier then
+				r.total = r.total + entry.earlier[1]
+			end
+		end
+	end
+	for recipeID, n in pairs(log.before) do
+		local r = Row(recipeID)
+		r.before, r.total = n, r.total + n
+	end
+	table.sort(list, function(a, b)
+		if a.today ~= b.today then
+			return a.today > b.today
+		end
+		if a.week ~= b.week then
+			return a.week > b.week
+		end
+		if a.total ~= b.total then
+			return a.total > b.total
+		end
+		return a.recipeID < b.recipeID
+	end)
+	return list
+end
+
 local SETTLE = 2.5 -- seconds a craft waits for its skill update before it counts as no skill-up
 
 local tracked = {} -- [professionID] = skill last seen
@@ -101,6 +347,7 @@ function ns.OnCraft(recipeID)
 	if not prof then
 		return
 	end
+	CL.Record(recipeID, recipe) -- every craft counts, with or without a skill update (#205)
 	ns.CheckSkills()
 	local now = Now()
 	local craft = { recipeID = recipeID, prof = prof, skill = tracked[prof], difficulty = recipe.difficulty, time = now }
@@ -129,6 +376,10 @@ ns.On("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
 		return
 	end
 	ns.OnCraft(spellID)
+end)
+
+ns.On("PLAYER_ENTERING_WORLD", function()
+	CL.Fold()
 end)
 
 for _, event in ipairs({ "SKILL_LINES_CHANGED", "TRADE_SKILL_LIST_UPDATE", "CHAT_MSG_SKILL", "PLAYER_ENTERING_WORLD" }) do
