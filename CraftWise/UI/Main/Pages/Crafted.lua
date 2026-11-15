@@ -1,7 +1,10 @@
 -- Main window, Make › Crafted (#205): how many times each recipe was crafted, from the craft log
 -- (Crafts.lua, ns.CraftLog). One row per logged recipe: crafts today, in the last 7 days and in total over
 -- every character of this account. The total includes the undated crafts counted before the log existed
--- (the tooltip says how many). Hover a row for the split per character. Not tied to a profession.
+-- (the tooltip says how many). Hover a row for the split per character. Not tied to the Make profession:
+-- the filter box is Make's (one query for all its pages), the profession chip and the character chip
+-- choose "all" or one (this session); the headers sort (Recipe, Today, 7 days, Total) and the shell
+-- remembers the choice like Craft's (db.settings.ui.sort).
 local _, ns = ...
 local M = ns.Main
 local MK = M.Make
@@ -13,12 +16,79 @@ M.CraftedPage = P
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
-	MK.Column("name", L["Recipe"], 300, "LEFT", "Body", false),
-	MK.Column("today", L["Today"], 90, "RIGHT", "Figure"),
-	MK.Column("week", L["7 days"], 90, "RIGHT", "Figure"),
-	MK.Column("total", L["Total"], 110, "RIGHT", "FigureBold"),
+	MK.Column("name", L["Recipe"], 300, "LEFT", "Body", true),
+	MK.Column("today", L["Today"], 90, "RIGHT", "Figure", true),
+	MK.Column("week", L["7 days"], 90, "RIGHT", "Figure", true),
+	MK.Column("total", L["Total"], 110, "RIGHT", "FigureBold", true),
 }
 P.COLUMNS = COLUMNS
+
+-- The filters of this session: line = a profession's skill line (nil = all), char = a character key (nil = all).
+P.state = { line = nil, char = nil }
+
+-- Sort (pure): the chosen column, then today, 7 days and total (largest first), then the name. desc as the
+-- shell passes it (a click on the chosen column again flips it).
+local FALLBACK = { "today", "week", "total" }
+
+local function ByName(a, b)
+	local na, nb = (a.name or ""):lower(), (b.name or ""):lower()
+	if na ~= nb then
+		return na < nb
+	end
+end
+
+function P.Compare(key, desc)
+	return function(a, b)
+		if key == "name" then
+			local na, nb = (a.name or ""):lower(), (b.name or ""):lower()
+			if na ~= nb then
+				if desc then
+					return na > nb
+				end
+				return na < nb
+			end
+		else
+			local va, vb = a[key] or 0, b[key] or 0
+			if va ~= vb then
+				if desc then
+					return va > vb
+				end
+				return va < vb
+			end
+		end
+		for _, k in ipairs(FALLBACK) do
+			if k ~= key and (a[k] or 0) ~= (b[k] or 0) then
+				return (a[k] or 0) > (b[k] or 0)
+			end
+		end
+		local byName = ByName(a, b)
+		if byName ~= nil then
+			return byName
+		end
+		return a.recipeID < b.recipeID
+	end
+end
+
+function P.SortRows(rows, key, desc)
+	table.sort(rows, P.Compare(key or "today", desc ~= false))
+	return rows
+end
+
+-- Profession name of a skill line: the bundled name -> line table, else a profession of this character.
+local function LineName(line)
+	for name, id in pairs(ns.ProfessionSkillLines or {}) do
+		if id == line then
+			return name
+		end
+	end
+	for id, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+		if prof.name and ns.SkillLineOf(id) == line then
+			return prof.name
+		end
+	end
+	return (L["Profession %d"]):format(line)
+end
+P.LineName = LineName
 
 -- Name and icon of a recipe from anything this account has seen: a profession's cache, the client, the
 -- recipe's output item.
@@ -42,24 +112,66 @@ local function Identify(recipeID)
 	return name or ("Recipe #" .. recipeID), icon, itemID
 end
 
--- Rows of the log (pure over CL.List): cells in the window layout, view fields for the docked one.
-function P.Rows(now)
+-- Rows of the log behind the filters (filters = { line, char }, default the page's; the query is Make's):
+-- cells in the window layout, view fields for the docked one. Unsorted: the shell sorts.
+function P.Rows(now, filters)
+	filters = filters or P.state
 	local rows = {}
-	for _, e in ipairs(CL.List(now)) do
+	local query = (MK.state.query or ""):lower()
+	for _, e in ipairs(CL.List(now, filters.char)) do
 		local name, icon, itemID = Identify(e.recipeID)
-		local view = { name = name, nameColor = "text", icon = icon, itemID = itemID, cells = {}, colors = {}, tips = {} }
-		local r = { recipeID = e.recipeID, key = e.recipeID, name = name, icon = icon, itemID = itemID, view = view,
-			today = e.today, week = e.week, total = e.total, before = e.before }
-		view.cells.name, view.colors.name = name, "text"
-		view.cells.today, view.colors.today = CL.Format(e.today), e.today > 0 and "text" or "text3"
-		view.cells.week, view.colors.week = CL.Format(e.week), e.week > 0 and "text" or "text3"
-		view.cells.total, view.colors.total = CL.Format(e.total), "text"
-		view.result, view.resultColor = CL.Format(e.total), "text"
-		view.sub = (L["today %s"]):format(CL.Format(e.today)) .. " · " .. (L["7 days %s"]):format(CL.Format(e.week))
-		rows[#rows + 1] = r
+		local line = ns.RecipeLine and ns.RecipeLine(e.recipeID)
+		if (not filters.line or line == filters.line) and MK.Matches({ name = name }, query) then
+			local view = { name = name, nameColor = "text", icon = icon, itemID = itemID, cells = {}, colors = {}, tips = {} }
+			local r = { recipeID = e.recipeID, key = e.recipeID, name = name, icon = icon, itemID = itemID, view = view,
+				today = e.today, week = e.week, total = e.total, before = e.before, line = line }
+			view.cells.name, view.colors.name = name, "text"
+			view.cells.today, view.colors.today = CL.Format(e.today), e.today > 0 and "text" or "text3"
+			view.cells.week, view.colors.week = CL.Format(e.week), e.week > 0 and "text" or "text3"
+			view.cells.total, view.colors.total = CL.Format(e.total), "text"
+			view.result, view.resultColor = CL.Format(e.total), "text"
+			view.sub = (L["today %s"]):format(CL.Format(e.today)) .. " · " .. (L["7 days %s"]):format(CL.Format(e.week))
+			rows[#rows + 1] = r
+		end
 	end
 	return rows
 end
+
+-- Skill lines present in the log (unfiltered), by name: the profession menu's choices.
+function P.Lines()
+	local seen, out = {}, {}
+	for _, e in ipairs(CL.List()) do
+		local line = ns.RecipeLine and ns.RecipeLine(e.recipeID)
+		if line and not seen[line] then
+			seen[line] = true
+			out[#out + 1] = { line, LineName(line) }
+		end
+	end
+	table.sort(out, function(a, b)
+		return a[2] < b[2]
+	end)
+	return out
+end
+
+local function Filtered()
+	return P.state.line or P.state.char or (MK.state.query or "") ~= ""
+end
+
+local function FilterNote()
+	local parts = {}
+	if P.state.line then
+		parts[#parts + 1] = LineName(P.state.line)
+	end
+	if P.state.char then
+		parts[#parts + 1] = CL.CharLabel(P.state.char)
+	end
+	if (MK.state.query or "") ~= "" then
+		parts[#parts + 1] = "\"" .. MK.state.query .. "\""
+	end
+	return table.concat(parts, " · ")
+end
+
+local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L["by crafts in 7 days"], total = L["by total crafts"] }
 
 function P.Model()
 	local rows = P.Rows()
@@ -69,7 +181,8 @@ function P.Model()
 	end
 	local hero
 	if #rows == 0 then
-		hero = MK.NoHero(L["Crafted"], L["no crafts logged yet. Craft something and it shows here."])
+		hero = MK.NoHero(L["Crafted"], Filtered() and L["nothing matches the filters."]
+			or L["no crafts logged yet. Craft something and it shows here."])
 	else
 		hero = {
 			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today)), nameColor = "text",
@@ -80,9 +193,12 @@ function P.Model()
 		rows = rows,
 		hero = hero,
 		listTitle = #rows == 1 and L["1 recipe"] or (L["%d recipes"]):format(#rows),
-		listNote = L["by crafts today, then 7 days"],
-		empty = L["No crafts logged yet. Every craft you make is counted here, per day and character."],
-		footer = L["Counts come from craft events. Crafts counted before the log existed have no date and show in the total only."],
+		listNote = MK.SortNote(M.Page("crafted"), SORT_NOTES),
+		empty = Filtered() and L["No logged recipe matches. Clear the filter box, the profession or the character."]
+			or L["No crafts logged yet. Every craft you make is counted here, per day and character."],
+		footer = L["Counts come from craft events. Crafts counted before the log existed have no date and show in the total only."]
+			.. (P.state.char and (" · " .. L["The undated crafts have no character: they are left out while one character is chosen."]) or ""),
+		footerRight = FilterNote(),
 	}
 end
 
@@ -105,10 +221,88 @@ function P.RowTooltip(owner, r)
 			GameTooltip:AddLine("  " .. lines.earlier, 0.6, 0.6, 0.6)
 		end
 		if lines.before then
-			GameTooltip:AddLine("  " .. lines.before .. " - counted before the log, no date, no character", 0.6, 0.6, 0.6, true)
+			GameTooltip:AddLine("  " .. lines.before .. " - " .. L["counted before the log, no date, no character"], 0.6, 0.6, 0.6, true)
 		end
 	end
 	GameTooltip:Show()
+end
+
+----------------------------------------------------------------------------------------------------
+-- Tools: Make's filter box with the profession chip choosing "all" or one profession, and a character chip
+----------------------------------------------------------------------------------------------------
+
+local ALL = "all"
+
+function P.SetLine(id)
+	P.state.line = id ~= ALL and id or nil
+	M.Refresh()
+end
+
+function P.SetChar(id)
+	P.state.char = id ~= ALL and id or nil
+	M.Refresh()
+end
+
+local function Toggle(chip, build, current, onPick)
+	local menu = MK.Menu()
+	if menu and menu:IsShown() and menu.anchor == chip then
+		menu:Hide()
+		return
+	end
+	MK.ShowChoiceMenu(chip, build(), current, onPick)
+end
+
+function P.BuildTools(slot)
+	MK.BuildTools(slot)
+	slot.profession:SetScript("OnClick", function(self)
+		Toggle(self, function()
+			local entries = { { ALL, L["All professions"] } }
+			for _, e in ipairs(P.Lines()) do
+				entries[#entries + 1] = e
+			end
+			return entries
+		end, P.state.line or ALL, P.SetLine)
+	end)
+	slot.profession:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Profession"], L["Show the crafts of one profession, or all."])
+	end)
+end
+
+function P.UpdateTools(slot)
+	local chip, box = slot.profession, slot.filter
+	chip:SetLabel((P.state.line and LineName(P.state.line) or L["All professions"]) .. " " .. Style.Glyph("down", 9, "text2"))
+	chip.label:SetTextColor(Style.C.text[1], Style.C.text[2], Style.C.text[3], 1)
+	if (box:GetText() or "") ~= MK.state.query then
+		box.cwSetting = true
+		box:SetText(MK.state.query)
+		box.cwSetting = false
+	end
+	box.hint:SetShown(MK.state.query == "")
+end
+
+function P.ListTools(slot)
+	local chip = Style.Chip(slot, "")
+	slot.char = chip
+	chip:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+	chip:SetScript("OnClick", function(self)
+		Toggle(self, function()
+			local entries = { { ALL, L["All characters"] } }
+			for _, key in ipairs(CL.Characters()) do
+				entries[#entries + 1] = { key, CL.CharLabel(key) }
+			end
+			return entries
+		end, P.state.char or ALL, P.SetChar)
+	end)
+	chip:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Character"], L["Count the crafts of one character, or all. Crafts counted before the log have no character."])
+	end)
+	chip:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+end
+
+function P.UpdateListTools(slot)
+	slot.char:SetLabel((P.state.char and CL.CharLabel(P.state.char) or L["All characters"]) .. " " .. Style.Glyph("down", 9, "text2"))
 end
 
 M.RegisterPage({
@@ -118,5 +312,10 @@ M.RegisterPage({
 	rowHeight = 34,
 	sort = { key = "today", desc = true },
 	Model = P.Model,
+	SortRows = P.SortRows,
+	Tools = P.BuildTools,
+	UpdateTools = P.UpdateTools,
+	ListTools = P.ListTools,
+	UpdateListTools = P.UpdateListTools,
 	RowTooltip = P.RowTooltip,
 })

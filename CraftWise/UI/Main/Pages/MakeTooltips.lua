@@ -300,7 +300,7 @@ function MK.AddCraftLog(r)
 		return
 	end
 	GameTooltip:AddLine(" ")
-	Heading("Crafted", Muted(log.headline))
+	Heading(ns.L["Crafted"], Muted(log.headline))
 	for _, ch in ipairs(log.chars) do
 		GameTooltip:AddDoubleLine("  " .. ch.name, ch.text, 0.8, 0.8, 0.8, 1, 1, 1)
 	end
@@ -308,10 +308,10 @@ function MK.AddCraftLog(r)
 		Note("  " .. log.earlier)
 	end
 	if log.before then
-		Note("  " .. log.before .. " - counted before the log, no date, no character")
+		Note("  " .. log.before .. " - " .. ns.L["counted before the log, no date, no character"])
 	end
 	if r.profit and log.total > 0 then
-		GameTooltip:AddDoubleLine("  Profit of all crafts at today's prices", MK.Signed(r.profit * log.total) .. Muted(" (approx.)"),
+		GameTooltip:AddDoubleLine("  " .. ns.L["Profit of all crafts at today's prices"], MK.Signed(r.profit * log.total) .. Muted(" (" .. ns.L["approx."] .. ")"),
 			0.8, 0.8, 0.8, 1, 1, 1)
 	end
 end
