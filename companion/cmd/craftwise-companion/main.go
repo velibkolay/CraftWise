@@ -43,7 +43,7 @@ func run() int {
 		dir     = flag.String("dir", "", "settings, state and log directory (default: the user config directory)")
 		open    = flag.String("open", "", "open site, me, config or log, then exit")
 		status  = flag.Bool("status", false, "print where the files are and the last upload, then exit")
-		autoRun = flag.String("autostart", "", "on or off: start with Windows, then exit")
+		autoRun = flag.String("autostart", "", "on or off: start with Windows (macOS: at login), then exit")
 		showVer = flag.Bool("version", false, "print the version")
 	)
 	flag.Parse()
@@ -97,7 +97,7 @@ func run() int {
 			a.Log.Printf("%v", err)
 			return 1
 		}
-		a.Log.Printf("start with Windows: %s", st)
+		a.Log.Printf("%s: %s", autostart.Label(), st)
 		return 0
 	}
 
@@ -187,20 +187,20 @@ func menu(a *app.App, quit context.CancelFunc) []tray.Item {
 	)
 }
 
-// autostartItem is "Start with Windows", checked when the Run value starts this exe.
+// autostartItem is the autostart item, checked when the Run value starts this exe.
 func autostartItem(a *app.App) tray.Item {
 	m := autostart.New()
 	st, err := m.State()
 	if err != nil {
 		a.Log.Printf("%v", err)
 	}
-	return tray.Item{Label: "Start with Windows", Checked: st.On, Action: func() {
+	return tray.Item{Label: autostart.Label(), Checked: st.On, Action: func() {
 		st, err := m.Toggle()
 		if err != nil {
 			a.Log.Printf("%v", err)
 			return
 		}
-		a.Log.Printf("start with Windows: %s", st)
+		a.Log.Printf("%s: %s", autostart.Label(), st)
 	}}
 }
 
@@ -267,9 +267,9 @@ func printStatus(a *app.App) {
 	}
 	if autostart.Supported() {
 		if st, err := autostart.New().State(); err != nil {
-			fmt.Println("start with Windows:", err)
+			fmt.Println(autostart.Label()+":", err)
 		} else {
-			fmt.Println("start with Windows:", st)
+			fmt.Println(autostart.Label()+":", st)
 		}
 	}
 	fmt.Println(statusLine(a.Status()))
