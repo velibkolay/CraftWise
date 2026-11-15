@@ -953,3 +953,23 @@ it("timed: the measurement replayed: timed crafts times the gap equals the activ
 	assert(math.abs(b[5] - 199 * 3.1) < 2, "active " .. b[5])
 	assert(math.abs(b[5] / (b[6] - 1) - 3.1) < 0.05, "implied seconds per craft")
 end)
+
+it("Crafted card: an estimate for the untimed crafts (count x the recipe's median gap), marked and apart from the measured time", function()
+	local ns = setup()
+	local M, P = ns.Main, ns.Main.CraftedPage
+	time = function() return T(2026, 11, 15) end
+	-- 4,000 crafts, 400 timed (1,200 s measured); the recipe's median is 3 s (5+ gaps): 3,600 untimed x 3 s = 10,800 s = 3 h
+	ns.db.crafted = { seeded = true, chars = { A = { [R_BOOTS] = { days = { [20261115] = { 4000, 4000, 40000, 4000, 1200, 400, 4000 } },
+		speed = { n = 5, sum = 15, gaps = { 3, 3, 3, 3, 3 } } } } } }
+	M.Make.state.query = ""
+	local hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(hero.name:find("20 min active (400 of 4,000 crafts timed)", 1, true), hero.name)
+	assert(hero.name:find("+ ≈ 3 h est. for 3,600 untimed crafts", 1, true), hero.name)
+	-- the measured per-hour figure stays; the ≈ figure divides all of today's profit by measured + estimated seconds
+	assert(hero.name:find(M.Make.PlainMoney(4000 * 3600 / 1200) .. "/h", 1, true), hero.name)
+	assert(hero.name:find("≈ " .. M.Make.PlainMoney(40000 * 3600 / (1200 + 10800)) .. "/h est.", 1, true), hero.name)
+	-- without a measured median (under 5 gaps) there is no estimate
+	ns.db.crafted.chars.A[R_BOOTS].speed = { n = 2, sum = 6, gaps = { 3, 3 } }
+	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(not hero.name:find("est.", 1, true), hero.name)
+end)

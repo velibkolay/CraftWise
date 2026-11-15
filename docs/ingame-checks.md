@@ -952,3 +952,4 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Gold per active hour is the profit of the timed crafts over the active time: check it against Profit today / crafts today x crafts per hour (about the same per-craft figure).
 - Hover the Today cell of a row: "Active time: the time between crafts up to 30 s; longer pauses don't count."
 - Active time per craft is about the Speed column's seconds (e.g. 3.1 s); a day recorded by the first #251 build shows no time until a craft is made (its old seconds are dropped).
+- The window card also shows "+ ≈ X est. for N untimed crafts" (untimed crafts x that recipe median gap, only with 5+ gaps), kept apart from the measured time, and a "≈ .../h est." figure. The docked card leaves it out.

@@ -214,6 +214,12 @@ function P.Rows(now, filters)
 			local speed = CL.Speed(e.recipeID)
 			if speed then
 				r.speed, r.sec, r.perHour = speed, speed.sec, speed.perHour
+				-- Estimate for today's untimed crafts (#273): their count times this recipe's measured median gap. Kept
+				-- apart from the measured active time, only with a median (CL.MIN_GAPS gaps), never mixed in.
+				local untimed = e.today - (e.timedToday or 0)
+				if untimed > 0 then
+					r.untimedToday, r.estToday = untimed, untimed * speed.sec
+				end
 				measured[#measured + 1] = e.recipeID
 			end
 			speeds[e.recipeID] = r
@@ -318,8 +324,12 @@ function P.Model(ctx)
 	local profitToday, profitWeek, anyToday, anyWeek = 0, 0, false, false
 	local activeToday, activeWeek -- active crafting seconds (#251); nil while no day in the window was timed
 	local timedToday, timedWeek, timedProfitToday = 0, 0, 0 -- crafts measured and their profit (#273)
+	local untimedToday, estToday = 0, 0 -- untimed crafts that have a measured median, and their estimated seconds
 	for _, r in ipairs(rows) do
 		today, week, total = today + r.today, week + r.week, total + r.total
+		if r.estToday then
+			untimedToday, estToday = untimedToday + r.untimedToday, estToday + r.estToday
+		end
 		if r.activeToday then
 			activeToday = (activeToday or 0) + r.activeToday
 			timedToday, timedProfitToday = timedToday + r.timedToday, timedProfitToday + (r.timedProfitToday or 0)
@@ -347,6 +357,15 @@ function P.Model(ctx)
 		if timedProfitToday ~= 0 then
 			timedText = timedText .. " · " .. (L["%s/h"]):format(MK.PlainMoney(math.abs(timedProfitToday) * 3600 / activeToday)
 				.. (timedProfitToday < 0 and " " .. L["loss"] or ""))
+		end
+	end
+	if estToday >= 1 and not docked then -- clearly marked, apart from the measured time (never added into it)
+		timedText = timedText .. (activeToday and activeToday >= 1 and " + " or " · ") .. (L["≈ %s est. for %s untimed crafts"]):format(
+			CL.FormatDuration(estToday), CL.Format(untimedToday))
+		if profitToday ~= 0 then
+			local seconds = (activeToday or 0) + estToday
+			timedText = timedText .. " · ≈ " .. (L["%s/h"]):format(MK.PlainMoney(math.abs(profitToday) * 3600 / seconds)
+				.. (profitToday < 0 and " " .. L["loss"] or "")) .. " " .. L["est."]
 		end
 	end
 	local weekText = ""
