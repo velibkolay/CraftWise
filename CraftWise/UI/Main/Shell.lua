@@ -80,6 +80,7 @@ M.UI_DEFAULTS = {
 	escape = true, -- Close with Escape (Settings > Look)
 	locked = false, -- Lock position (Settings > Look)
 	scale = 1, -- Scale (Settings > Look)
+	size = {}, -- [layout key] = { width, height }: the size dragged to (#280; docked layouts keep the width only)
 	-- pos = { point, relativePoint, x, y } once the window was moved
 }
 
@@ -328,6 +329,101 @@ function M.SetLayout(key)
 	end
 	ns.Notify("MAIN_LAYOUT_CHANGED", key)
 	return true
+end
+
+----------------------------------------------------------------------------------------------------
+-- Size (#280): the window is dragged bigger at its bottom right corner, the docked sheet at its inner
+-- edge. The size is saved per layout in db.settings.ui.size and put on the layout's metrics (m.width,
+-- m.height) when the layout is applied, so every page and list reads it from ctx.metrics as before.
+-- m.baseWidth / m.baseHeight are the layout's own size: the smallest it can get.
+----------------------------------------------------------------------------------------------------
+
+M.DOCKED_MAX_SHARE = 0.5 -- a docked sheet takes at most this much of the screen width
+
+-- The room a frame at `scale` has on the screen, in its own units: width, height (1920 x 1080 when the
+-- client can't say).
+function M.ScreenRoom(scale)
+	scale = tonumber(scale) or 1
+	if scale <= 0 then
+		scale = 1
+	end
+	local w = UIParent and UIParent.GetWidth and UIParent:GetWidth() or nil
+	local h = UIParent and UIParent.GetHeight and UIParent:GetHeight() or nil
+	return math.floor((tonumber(w) or 1920) / scale), math.floor((tonumber(h) or 1080) / scale)
+end
+
+-- Width and height the layout's metrics `m` allow: at least the layout's own size, at most the screen (a
+-- docked sheet: its share of it). A docked layout has no height of its own: nil.
+local function Base(m)
+	if rawget(m, "baseWidth") == nil then
+		m.baseWidth, m.baseHeight = m.width, m.docked and nil or m.height
+	end
+	return m.baseWidth, m.baseHeight
+end
+
+function M.ClampSize(m, width, height, scale)
+	local roomW, roomH = M.ScreenRoom(scale)
+	local minW = Base(m)
+	local maxW = m.docked and math.floor(roomW * M.DOCKED_MAX_SHARE) or roomW
+	local w = math.max(minW, math.min(maxW, math.floor((tonumber(width) or minW) + 0.5)))
+	if m.docked or not m.baseHeight then
+		return w, nil
+	end
+	local h = math.max(m.baseHeight, math.min(math.max(roomH, m.baseHeight), math.floor((tonumber(height) or m.baseHeight) + 0.5)))
+	return w, h
+end
+
+-- The bounds to give the client's resize: min width, min height, max width, max height.
+function M.SizeBounds(m, scale)
+	local roomW, roomH = M.ScreenRoom(scale)
+	local minW, minH = Base(m)
+	return minW, minH, math.max(roomW, minW), math.max(roomH, minH or 0)
+end
+
+-- The saved size of the layout, clamped, or its own size.
+function M.SavedSize(key, m)
+	key = key or M.LayoutKey()
+	m = m or M.layouts[key].metrics
+	local saved = M.UI().size[key]
+	if type(saved) ~= "table" then
+		return Base(m)
+	end
+	return M.ClampSize(m, saved.width, saved.height, M.UI().scale)
+end
+
+-- Puts the current layout's saved size on its metrics (before the layout is applied).
+function M.ApplySize()
+	local layout = M.Layout()
+	local m = layout.metrics
+	local w, h = M.SavedSize(layout.key, m)
+	m.width = w
+	if h then
+		m.height = h
+	end
+	return w, h
+end
+
+-- Takes a size the user dragged to: clamps it, puts it on the metrics. save = remember it too.
+function M.SetSize(width, height, save)
+	local layout = M.Layout()
+	local m = layout.metrics
+	local w, h = M.ClampSize(m, width, height, M.UI().scale)
+	m.width = w
+	if h then
+		m.height = h
+	end
+	if save then
+		M.UI().size[layout.key] = { width = w, height = h }
+	end
+	return w, h
+end
+
+-- Settings: forget every dragged size; the layouts go back to their own.
+function M.ResetSize()
+	M.UI().size = {}
+	if M.ApplyLayout then
+		M.ApplyLayout()
+	end
 end
 
 function M.CanDock()
@@ -627,24 +723,58 @@ end
 
 M.COLUMN_GAP = 12
 
--- x and width of each column inside a row of `width` with `pad` on both sides; one column without a
--- width takes what the others leave (at least 40).
-function M.ColumnLayout(columns, width, pad, gap)
+-- x and width of each column inside a row of `width` with `pad` on both sides.
+--   col.width  the column's width (its minimum when it can grow).
+--   no width   the flexible column (the first one): it takes what the others leave, at least col.min (40).
+--   col.grow   the width a column wants when there is room (text that is cut at col.width, #280): it gets
+--              the room before the flexible column does, in column order, up to that width.
+-- `baseWidth` is the layout's own width: the growing columns and a fixed "name" column only get what the
+-- window was dragged past it (without it they get nothing), so the default look stays; the flexible column
+-- always takes what is left.
+function M.ColumnLayout(columns, width, pad, gap, baseWidth)
 	gap = gap or M.COLUMN_GAP
-	local fixed, flex = 0, nil
+	local flex
 	for i, col in ipairs(columns) do
-		if col.width then
-			fixed = fixed + col.width
-		elseif not flex then
+		if not col.width and not flex then
 			flex = i
 		end
 	end
 	local inner = width - 2 * pad - gap * math.max(#columns - 1, 0)
-	local out, x = {}, pad
+	local widths, used, nameAt = {}, 0, nil
 	for i, col in ipairs(columns) do
-		local w = col.width or (i == flex and math.max(inner - fixed, 40)) or 0
-		out[i] = { x = x, width = w }
-		x = x + w + gap
+		widths[i] = col.width or (i == flex and (col.min or 40)) or 0
+		used = used + widths[i]
+		if col.key == "name" and not nameAt then
+			nameAt = i
+		end
+	end
+	local free = inner - used
+	if not flex and baseWidth then
+		free = math.min(free, math.max(width - baseWidth, 0))
+	end
+	if free > 0 then
+		-- Columns that want more only get what the window was dragged past its own width (baseWidth).
+		local room = baseWidth and math.min(free, math.max(width - baseWidth, 0)) or 0
+		for i, col in ipairs(columns) do
+			local want = col.grow and col.grow - widths[i] or 0
+			if want > 0 and room > 0 then
+				local take = math.min(want, room)
+				widths[i] = widths[i] + take
+				room = room - take
+				free = free - take
+			end
+		end
+	end
+	if free > 0 then
+		local at = flex or (baseWidth and nameAt)
+		if at then
+			widths[at] = widths[at] + free
+		end
+	end
+	local out, x = {}, pad
+	for i = 1, #columns do
+		out[i] = { x = x, width = widths[i] }
+		x = x + widths[i] + gap
 	end
 	return out
 end

@@ -31,6 +31,15 @@ local COLUMNS = {
 }
 P.COLUMNS = COLUMNS
 P.MIN_NAME = 180 -- the narrowest the flexible recipe column may get at the default width
+-- Dragged wider (#280) the columns that are cut at their width get room first, the recipe name the rest.
+COLUMNS[2].min = P.MIN_NAME
+for key, grow in pairs({ speed = 140, profitHour = 100, profitToday = 100, profitTotal = 116 }) do
+	for _, col in ipairs(COLUMNS) do
+		if col.key == key then
+			col.grow = grow
+		end
+	end
+end
 
 -- Sorting keys that sort by another field: the merged Speed column sorts by crafts per hour.
 local SORT_FIELD = { speed = "perHour" }

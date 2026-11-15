@@ -523,6 +523,72 @@ function Style.Nokta(parent, color)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- Resize handles (#280): a corner grip of six 2 unit dots (the window's bottom right) and a thin edge
+-- handle (the docked sheet's inner edge, three dots on a hairline hit area). Plain Buttons: the caller sets
+-- their points and scripts. Dots in C.text3, C.text on hover.
+
+local GRIP_SIZE, GRIP_DOT, GRIP_STEP = 16, 2, 4
+
+function Style.ResizeGrip(parent)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(GRIP_SIZE, GRIP_SIZE)
+	b.dots = {}
+	for row = 0, 2 do
+		for col = 0, 2 - row do
+			local t = b:CreateTexture(nil, "OVERLAY")
+			Style.Fill(t, C.text3)
+			t:SetSize(GRIP_DOT, GRIP_DOT)
+			t:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -4 - col * GRIP_STEP, 4 + row * GRIP_STEP)
+			b.dots[#b.dots + 1] = t
+		end
+	end
+	local function Tint(self, color)
+		for _, t in ipairs(self.dots) do
+			t:SetVertexColor(color[1], color[2], color[3], 1)
+		end
+	end
+	b:SetScript("OnEnter", function(self)
+		Tint(self, C.text)
+		if self.cwTip then
+			Style.ShowTip(self, self.cwTip)
+		end
+	end)
+	b:SetScript("OnLeave", function(self)
+		Tint(self, C.text3)
+		Style.HideTip(self)
+	end)
+	return b
+end
+
+function Style.ResizeEdge(parent, width)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetWidth(width or 10)
+	b.dots = {}
+	for i = -1, 1 do
+		local t = b:CreateTexture(nil, "OVERLAY")
+		Style.Fill(t, C.text3)
+		t:SetSize(GRIP_DOT, GRIP_DOT)
+		t:SetPoint("CENTER", b, "CENTER", 0, i * GRIP_STEP)
+		b.dots[#b.dots + 1] = t
+	end
+	b:SetScript("OnEnter", function(self)
+		for _, t in ipairs(self.dots) do
+			t:SetVertexColor(C.text[1], C.text[2], C.text[3], 1)
+		end
+		if self.cwTip then
+			Style.ShowTip(self, self.cwTip)
+		end
+	end)
+	b:SetScript("OnLeave", function(self)
+		for _, t in ipairs(self.dots) do
+			t:SetVertexColor(C.text3[1], C.text3[2], C.text3[3], 1)
+		end
+		Style.HideTip(self)
+	end)
+	return b
+end
+
+---------------------------------------------------------------------------------------------------
 -- Rails: 4 unit bars on one shared axis per list. The largest absolute value fills the rail from the
 -- zero line to the right end; losses run left of the zero line in C.danger (clamped at the left end).
 

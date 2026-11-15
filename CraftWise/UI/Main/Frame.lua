@@ -16,7 +16,7 @@ local STATUS_POLL = 0.25 -- seconds between AH status checks while the window sh
 
 -- Window layout (spec table, "Window layout" column; board "Window layout").
 M.WINDOW_METRICS = {
-	width = 880, height = 600, point = { "CENTER", "CENTER", 0, 40 }, cut = 22,
+	width = 880, height = 600, baseWidth = 880, baseHeight = 600, point = { "CENTER", "CENTER", 0, 40 }, cut = 22,
 	header = 56, keyIcon = 30, keyX = 14, tabsX = 198, tabGap = 24, rightPad = 30, buttonGap = 6, statusGap = 8,
 	subBar = 46, pad = 22, subGap = 18, noSubBarTop = 16,
 	heroHeight = 76, heroPadX = 16, heroPadY = 12, heroCut = 14, heroLeft = 240, heroRight = 170, heroGap = 24,
@@ -898,12 +898,167 @@ local function ApplyWindow(frame, m)
 	end
 	frame.movable = true
 	frame:SetMovable(true)
+	-- Drag the bottom right corner to resize (#280): never smaller than the layout's own size, never
+	-- bigger than the screen.
+	local minW, minH, maxW, maxH = M.SizeBounds(m, M.UI().scale)
+	frame:SetResizable(true)
+	frame:SetResizeBounds(minW, minH, maxW, maxH)
+	frame.sizable = true
+	frame.grip:Show()
+	frame.edge:Hide()
 	frame.cwDockSide = nil -- docking again slides in (Docked.lua)
 	frame.sheet:SetCut(m.cut)
 	frame.head.art:SetTexture(Style.Media.headerWide)
 end
 
 M.RegisterLayout("window", { label = L["Window"], docked = false, metrics = M.WINDOW_METRICS, Apply = ApplyWindow })
+
+----------------------------------------------------------------------------------------------------
+-- Resize (#280)
+----------------------------------------------------------------------------------------------------
+
+-- While a corner or an edge is dragged the pages are drawn again at most this often (and no oftener than
+-- four times what the last redraw cost), and once when it is let go: never per pixel.
+M.REFLOW_EVERY = 0.1
+
+local sizing -- { kind = "window" | "edge", w, h, dirty, elapsed, cost } while a drag is on
+
+local function Reflow()
+	local layout = M.Layout()
+	ArrangeHeader(layout.metrics)
+	if layout.Arrange then
+		layout.Arrange(f, layout.metrics)
+	end
+	M.Refresh()
+end
+
+-- Draws the pages at the size the drag has reached; save = remember it as the layout's size.
+local function ReflowSizing(save)
+	local s = sizing
+	local t0 = debugprofilestop()
+	M.SetSize(s.w, s.h, save)
+	Reflow()
+	s.cost = (debugprofilestop() - t0) / 1000
+	s.elapsed, s.dirty = 0, false
+end
+
+function M.Sizing()
+	return sizing ~= nil
+end
+
+-- The corner grip was pressed: the client sizes the frame, OnSizeChanged tells where it is.
+function M.BeginSizing()
+	if not (f and f.sizable and not sizing) then
+		return false
+	end
+	sizing = { kind = "window", elapsed = 0, cost = 0 }
+	f:StartSizing("BOTTOMRIGHT")
+	return true
+end
+
+-- The docked sheet's inner edge was pressed: OnUpdate follows the cursor (the layout says how wide).
+function M.BeginEdgeSizing()
+	local layout = M.Layout()
+	if not (f and layout.docked and layout.DragWidth and not sizing) then
+		return false
+	end
+	sizing = { kind = "edge", elapsed = 0, cost = 0 }
+	return true
+end
+
+-- The size the client reports while the corner is dragged.
+function M.OnSized(w, h)
+	if sizing and sizing.kind == "window" and w and h then
+		sizing.w, sizing.h, sizing.dirty = w, h, true
+	end
+end
+
+-- Called every frame by the frame's OnUpdate while a drag is on.
+local function SizingStep(dt)
+	local s = sizing
+	s.elapsed = s.elapsed + (dt or 0)
+	if s.kind == "edge" then
+		local w = M.Layout().DragWidth(f, M.Layout().metrics)
+		if w and w ~= s.w then
+			s.w, s.dirty = w, true
+			f:SetWidth(select(1, M.ClampSize(M.Layout().metrics, w, nil, M.UI().scale)))
+		end
+	end
+	if s.dirty and s.elapsed >= math.max(M.REFLOW_EVERY, s.cost * 4) then
+		ReflowSizing(false)
+	end
+end
+
+-- The mouse was let go: the last size is kept for this layout, the pages drawn at it, the place saved.
+function M.EndSizing()
+	local s = sizing
+	if not s then
+		return false
+	end
+	if s.kind == "window" then
+		f:StopMovingOrSizing()
+	end
+	if s.w then
+		ReflowSizing(true)
+		local layout = M.Layout()
+		if s.kind == "window" then
+			f:SetSize(layout.metrics.width, layout.metrics.height)
+			local point, _, relativePoint, x, y = f:GetPoint(1)
+			if point then
+				M.UI().pos = { point, relativePoint, x, y } -- the client re-anchors a frame it sizes
+			end
+		else
+			f:SetWidth(layout.metrics.width)
+		end
+	end
+	sizing = nil
+	return s.w ~= nil
+end
+
+-- Ctrl + mouse wheel over the title bar: the Scale setting, one step per notch.
+local function WheelScale(delta)
+	local Set = M.Settings
+	if not (Set and Set.SetScale and IsControlKeyDown and IsControlKeyDown()) then
+		return false
+	end
+	Set.SetScale((tonumber(M.UI().scale) or 1) + (delta or 0) * (Set.SCALE_STEP or 0.05))
+	return true
+end
+M.WheelScale = WheelScale
+
+local function BuildResizeHandles()
+	f.grip = Style.ResizeGrip(f)
+	f.grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
+	f.grip:SetFrameLevel(f:GetFrameLevel() + 50)
+	f.grip:SetScript("OnMouseDown", function(_, button)
+		if button == "LeftButton" then
+			M.BeginSizing()
+		end
+	end)
+	f.grip:SetScript("OnMouseUp", function()
+		M.EndSizing()
+	end)
+	f.grip.cwTip = L["Drag to resize"]
+	f.edge = Style.ResizeEdge(f, 10)
+	f.edge.cwTip = L["Drag to resize"]
+	f.edge:SetFrameLevel(f:GetFrameLevel() + 50)
+	f.edge:SetScript("OnMouseDown", function(_, button)
+		if button == "LeftButton" then
+			M.BeginEdgeSizing()
+		end
+	end)
+	f.edge:SetScript("OnMouseUp", function()
+		M.EndSizing()
+	end)
+	f.edge:Hide()
+	f:SetScript("OnSizeChanged", function(_, w, h)
+		M.OnSized(w, h)
+	end)
+	f.head:EnableMouseWheel(true)
+	f.head:SetScript("OnMouseWheel", function(_, delta)
+		WheelScale(delta)
+	end)
+end
 
 -- Puts the current layout on the frame (the dock button swaps in place, no reload).
 function M.ApplyLayout()
@@ -916,6 +1071,9 @@ function M.ApplyLayout()
 	Style.SnapRules()
 	f.movable = false
 	f:SetMovable(false)
+	f.sizable = false
+	f:SetResizable(false)
+	M.ApplySize() -- the size this layout was dragged to (#280), clamped to the screen at this scale
 	layout.Apply(f, m)
 	ArrangeHeader(m)
 	if layout.Arrange then
@@ -957,6 +1115,7 @@ local function Build()
 	BuildHeader()
 	BuildSubBar()
 	BuildBody()
+	BuildResizeHandles()
 	f:SetScript("OnShow", function()
 		local layout = M.Layout()
 		if layout.OnShow then
@@ -966,6 +1125,9 @@ local function Build()
 	end)
 	local elapsed = 0
 	f:SetScript("OnUpdate", function(_, dt)
+		if sizing then
+			SizingStep(dt)
+		end
 		elapsed = elapsed + (dt or 0)
 		if elapsed < STATUS_POLL then
 			return
