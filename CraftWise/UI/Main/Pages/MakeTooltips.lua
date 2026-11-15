@@ -232,6 +232,36 @@ function MK.AddReturn(r)
 	end
 end
 
+-- Per day (#231): what the market takes of the product and the profit that makes; the history depth; for a recipe
+-- you don't know yet, how long its cost takes to pay back at that rate. Wording: "disappeared", never "sold".
+function MK.AddDaily(r)
+	local d = r.daily
+	if not d then
+		return
+	end
+	local L = ns.L
+	GameTooltip:AddLine(" ")
+	if d.daily then
+		Heading(L["Per day"], MK.Signed(d.daily) .. Muted(" (" .. L["approx."] .. ")"))
+		Note(("  %s units disappeared in %d days of history at prices up to the typical = %s a day = %s crafts a day"):format(
+			ns.CraftLog.Format(d.gone), d.days, ns.CraftLog.FormatSeconds(d.perDay), ns.CraftLog.FormatSeconds(d.crafts)), true)
+		if r.status ~= "known" and r.learnCost and d.daily > 0 then
+			Note(("  Learning costs %s: about %d days to pay back at this rate."):format(Money(r.learnCost), math.ceil(r.learnCost / d.daily)), true)
+		end
+	elseif d.noLimit then
+		Heading(L["Per day"], L["no limit"])
+		Note("  " .. L["Sold to a vendor: no market limit; your crafting time is the limit."], true)
+	elseif d.reason == "short" then
+		Heading(L["Per day"], M.DASH)
+		Note(("  " .. L["Market history too short: %d of %d days."]):format(d.days, ns.Market.MIN_HISTORY_DAYS), true)
+	else
+		Heading(L["Per day"], M.DASH)
+		local reasons = { profit = L["No profit yet: a price is missing."], item = L["This recipe makes no item."],
+			other = L["Its sale isn't an auction price."], history = L["No market history for the product at the profit house."] }
+		Note("  " .. (reasons[d.reason] or ""), true)
+	end
+end
+
 -- Vendor check (#185): per reagent the AH and vendor unit prices and the one the cost used, then the
 -- vendor sale and profit, and the loop when it holds. Pure data comes from Profit.VendorCheck.
 function MK.AddVendorCheck(r)
@@ -496,6 +526,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 		end
 	end
 	MK.AddReturn(r)
+	MK.AddDaily(r)
 	AddMarketSection(r)
 	if r.oldestAge and r.oldestAge > 1 then
 		Warn(("Oldest price is %d days old."):format(r.oldestAge))
