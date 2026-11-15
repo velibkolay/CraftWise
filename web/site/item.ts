@@ -1,6 +1,7 @@
 // Item page (/item/<id>): tooltip, cheapest listings, price history (#97); crafting profit (#143).
 import { chart, type Point, type Series } from "./chart";
-import { ApiError, type Browse, get, type House, type ItemDetail, type ItemInfo, type Market, mainHouse } from "./lib/api";
+import { ApiError, type Browse, type House, type ItemDetail, type ItemInfo, type Market, get } from "./lib/api";
+import { mainHouse } from "./lib/housesel";
 import { type CraftNames, craftBreakdown, craftItBreakdown } from "./lib/craftview";
 import { craft, makersOf, type Quote, quoteOf, RECIPES_URL, type RecipeData, recipeItemOf, recipeRow, teachOf } from "./lib/recipes";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, pctText, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";

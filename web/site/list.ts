@@ -1,6 +1,7 @@
 // Item list (/): category tree, search, filters, sortable table, favourites (#97), crafting profit of recipe
 // items (#143).
-import { type Browse, type BrowseItem, type Categories, get, type House, mainHouse } from "./lib/api";
+import { type Browse, type BrowseItem, type Categories, type House, get } from "./lib/api";
+import { mainHouse } from "./lib/housesel";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, skinMoney, slot, statusBar, topBar, type View } from "./lib/dom";
 import { favouriteLabel, favourites, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sellChoice, sparkPath, sparkValues, subclassName } from "./lib/format";

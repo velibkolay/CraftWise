@@ -1,7 +1,8 @@
 // Private fishing page /me/fishing (#128): where this character fishes for the most gold. Zones and spots
 // from the fishing document (snapshot.fishing with fishingZones), valued again with the Horde AH's prices
 // of now where the document carries the item lists. Behind Cloudflare Access like /me.
-import { type Browse, get, type House, pickHouse } from "./lib/api";
+import { type Browse, type House, get } from "./lib/api";
+import { chooseHouse } from "./lib/housesel";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, nowSeconds, onSkinChange, slot, topBar } from "./lib/dom";
 import * as F from "./lib/fishing";
 import { age, qualityClass } from "./lib/format";
@@ -675,7 +676,7 @@ async function main(): Promise<void> {
 		return;
 	}
 	try {
-		st.house = pickHouse((await get<{ houses: House[] }>("/api/houses")).houses);
+		st.house = chooseHouse((await get<{ houses: House[] }>("/api/houses")).houses, st.chars.map((c) => c.realm));
 	} catch {
 		st.pricesFailed = true;
 	}

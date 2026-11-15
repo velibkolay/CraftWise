@@ -1,7 +1,8 @@
 // Crafts (/crafts, #185): every craft with today's Horde AH prices and the vendor check, to find crafts that
 // pay when the product goes to a vendor and vendor loops. Prices and names come from /api/browse (as the list
 // page); the recipes from /data/recipes.json. A price that is missing stays missing.
-import { type Browse, type BrowseItem, get, type House, mainHouse } from "./lib/api";
+import { type Browse, type BrowseItem, type House, get } from "./lib/api";
+import { mainHouse } from "./lib/housesel";
 import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, snapshotLines, scopeOf, sortCrafts, toRow } from "./lib/crafts";
 import { type CraftNames, craftItBreakdown, craftsText, loopTag, profitEl } from "./lib/craftview";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";

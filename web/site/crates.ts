@@ -1,6 +1,7 @@
 // Private page /me/crates (#129): Waylaid crates by cost per Merchant's Favor, and what to buy with Favor.
 // From the character's snapshot (`crates`, `favor`, private API) with current Horde AH prices (public API).
-import { type Browse, get, type House, pickHouse } from "./lib/api";
+import { type Browse, type House, get } from "./lib/api";
+import { chooseHouse } from "./lib/housesel";
 import { GUIDE_SOURCES } from "./lib/crateFavorGuide";
 import * as C from "./lib/crates";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, nowSeconds, onSkinChange, s, slot, statusBar, topBar } from "./lib/dom";
@@ -619,7 +620,7 @@ async function main(): Promise<void> {
 		return;
 	}
 	try {
-		st.house = pickHouse((await get<{ houses: House[] }>("/api/houses")).houses);
+		st.house = chooseHouse((await get<{ houses: House[] }>("/api/houses")).houses, st.chars.map((c) => c.realm));
 	} catch {
 		st.house = null;
 	}

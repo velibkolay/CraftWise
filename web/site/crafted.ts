@@ -2,7 +2,8 @@
 // today, in the last 7 days and in total, the active crafting time and gold per active hour. Like Make > Crafted in
 // the addon. Data: /api/me/crafted, /api/me/characters (private API), recipes from /data/recipes.json, product names
 // from /api/browse?ids= (public API). A day without profit or time shows a dash, never a guess.
-import { type Browse, get, mainHouse } from "./lib/api";
+import { type Browse, get } from "./lib/api";
+import { mainHouse } from "./lib/housesel";
 import { profitEl } from "./lib/craftview";
 import { type Line, durationText, localDay, type LogRow, parseRows, SORT_KEYS, type SortKey, sortLines, summarize } from "./lib/craftedlog";
 import { bottomTabs, clear, closeButton, errorBox, h, onSkinChange, s, slot, statusBar, topBar } from "./lib/dom";
@@ -128,7 +129,7 @@ async function load(): Promise<void> {
 			const sp = spellOf(data, r.recipe);
 			if (sp) lineOf.set(r.recipe, sp.skillLine);
 		}
-		const house = await mainHouse().catch(() => null);
+		const house = await mainHouse(chars.map((c) => c.realm)).catch(() => null);
 		subline.textContent = "WoW: Forever, your crafting";
 		clear(statusSlot, house ? statusBar(house) : h("span", {}), h("span", { class: "hint" }, "Estimated profit at craft time, not money received"));
 		clear(footnote, "The craft log comes from the addon, uploaded by the companion app. The addon keeps 90 days; this page keeps every day it received.");

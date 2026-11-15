@@ -1,5 +1,7 @@
 // Small DOM helpers and the page chrome both pages share. Text always goes in as text nodes.
 import type { House } from "./api";
+import { pickable } from "./house";
+import { knownHouses, selectHouse } from "./housesel";
 import { age, freshness, type Money, money, moneyPadded, pct, pctMarked } from "./format";
 
 type Child = Node | string | number | null | undefined | false | Child[];
@@ -159,14 +161,23 @@ function keyBar(sub: Node | string, view: View | null): HTMLElement {
 // The scan status bar of the main house: full right after a scan, empty (stale) after 24 h.
 export function statusBar(house: House | null): HTMLElement {
 	if (!house || house.lastScan === null) {
-		return h("div", { class: "sbar", role: "status" }, h("i", { style: "width:0" }), h("b", {}, "No scans yet"));
+		return withPicker(h("div", { class: "sbar", role: "status" }, h("i", { style: "width:0" }), h("b", {}, "No scans yet")), house);
 	}
 	const since = nowSeconds() - house.lastScan;
 	const stale = since > 86400;
 	const text = `${house.label}, scanned ${age(since)}${stale ? ", prices are stale" : ""}`;
 	const bar = h("div", { class: `sbar${stale ? " stale" : ""}`, role: "img", "aria-label": `Last scan: ${text}` }, h("i", {}), h("b", {}, text));
 	(bar.firstChild as HTMLElement).style.width = `${Math.round(freshness(since) * 100)}%`;
-	return bar;
+	return withPicker(bar, house);
+}
+
+// The house picker (#282): shown next to the scan bar when more than one faction house is known.
+function withPicker(bar: HTMLElement, house: House | null): HTMLElement {
+	const list = pickable(knownHouses());
+	if (list.length < 2) return bar;
+	const sel = h("select", { class: "winput housepick", "aria-label": "Auction house", title: "Auction house" }, list.map((x) => h("option", { value: x.key, selected: x.key === house?.key }, x.label)));
+	sel.addEventListener("change", () => selectHouse(sel.value));
+	return h("div", { class: "housebar" }, bar, sel);
 }
 
 export type View = "browse" | "favourites" | "crafts" | "crates" | "me" | "crafted" | "fishing";
