@@ -350,6 +350,23 @@ it("Auctions: one list: Item, Qty, Status, When, Buyout, You get; sold, listed, 
 	eq(P.WhenText({ st = "expired", expT = NOW - 2 * 60 }, NOW), "expired · mail in 58 min")
 end)
 
+it("Auctions: a sale moves the open page live: the row goes from Listed to Sold without reopening (#235)", function()
+	local ns, _, M = Auctions()
+	M.Open("auctions")
+	local function Statuses()
+		local out = {}
+		for _, fr in ipairs(Rows(M, "auctions")) do
+			out[#out + 1] = fr.cells[4].text
+		end
+		return table.concat(out, ",")
+	end
+	eq(Statuses(), "Sold,Sold,Listed,Listed,Returning")
+	local rec = ns.Auctions.List()[3] -- Test Leather
+	rec.st, rec.soldT = "sold", NOW
+	ns.Notify("AUCTIONS_CHANGED", rec) -- what Auctions.lua fires when a sale is seen
+	eq(Statuses(), "Sold,Sold,Sold,Listed,Returning", "the row followed the notification")
+end)
+
 it("Auctions: nothing recorded: no cards, the empty line", function()
 	local _, _, M = Load()
 	M.Open("auctions")

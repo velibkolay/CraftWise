@@ -376,6 +376,21 @@ local function Groups()
 		} },
 	} }
 
+	groups[#groups + 1] = { key = "sales", label = L["Sale alert"], rows = {
+		{ key = "toast", kind = "check", label = L["Auction sold"], text = L["Show a line"],
+			sub = L["One line on screen when one of your auctions sells, with what you get after the cut. Click opens Sell › Auctions."],
+			get = function() return ns.AuctionAlert.SaleEnabled() end,
+			set = function(v) S().saleToast = v and true or false end },
+		{ key = "sound", kind = "check", label = L["Sale sound"], text = L["Play a sound"],
+			disabled = function() return not ns.AuctionAlert.SaleEnabled() end,
+			get = function() return ns.AuctionAlert.SoundEnabled() end,
+			set = function(v) S().saleSound = v and true or false end },
+		{ key = "expired", kind = "check", label = L["Auction expired"], text = L["Show a line"],
+			sub = L["When an auction runs out and the item is on its way back by mail."],
+			get = function() return ns.AuctionAlert.ExpiredEnabled() end,
+			set = function(v) S().expiredToast = v and true or false end },
+	} }
+
 	groups[#groups + 1] = { key = "loops", label = L["Vendor loops"], rows = {
 		{ key = "on", kind = "check", label = L["Loop alert"], text = L["On"],
 			sub = L["After prices change, one toast for vendor profits and loops that are new or clearly better. Click opens Make › Craft with Vendor check."],

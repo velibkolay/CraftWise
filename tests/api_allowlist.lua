@@ -58,6 +58,7 @@ return {
 		GetInventoryItemDurability = UI .. "Blizzard_FrameXML/Mainline/EquipmentManager.lua (durability, maxDurability = GetInventoryItemDurability(slot))",
 		HasPetUI = UI .. "Blizzard_UIPanels_Game/Mainline/PaperDollFrame.lua, Blizzard_FrameXML/PetHappiness.lua (hasPetUI, isHunterPet)",
 		GetTaxiMapID = UI .. "Blizzard_FlightMap/Blizzard_FlightMap.lua (FlightMapMixin:OnShow: mapID = GetTaxiMapID(), then C_TaxiMap.GetAllTaxiNodes(mapID) in FM_FlightPathDataProvider.lua)",
+		PlaySound = UI .. "Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseBuyDialog.lua (PlaySound(SOUNDKIT.LOOT_WINDOW_COIN_SOUND)); sale alert (#235)",
 		PlaySoundFile = GAME .. " (Music tab songs, 2026-10-01)",
 		StopSound = UI .. "Blizzard_HousingDashboardInitiatives.lua; " .. GAME .. " (music stops with the cast)",
 		debugstack = UI .. "Blizzard_ScriptErrors/Blizzard_ScriptErrors.lua (local stack = debugstack(debugStackLevel)); Core.lua uses it once per handler at load for the label in the Debug performance report (#194), falls back to a counter if absent",

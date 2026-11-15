@@ -609,3 +609,150 @@ it("listing, cancelling and expiring keep the Junk mark", function()
 	eq(Find(ns, function(r) return r.id == listed end).st, "expired")
 	eq(ns.db.junk[PANTS], true); eq(ns.db.junk[LEATHER], true)
 end)
+
+-- Sale alert (#235) -------------------------------------------------------------------------------
+
+-- Collects the toast lines the alert shows (the real toast still draws them).
+local function Spy(ns)
+	local shown = {}
+	local real = ns.LootToast.ShowCustom
+	ns.LootToast.ShowCustom = function(entry)
+		shown[#shown + 1] = entry
+		return real(entry)
+	end
+	local sounds = {}
+	SOUNDKIT = { LOOT_WINDOW_COIN_SOUND = 1234 }
+	PlaySound = function(id) sounds[#sounds + 1] = id end
+	return shown, sounds
+end
+
+it("sale alert: event then chat for one sale is one line, with the item, the payout after the cut and a sound", function()
+	local ns, stub = Load()
+	local shown, sounds = Spy(ns)
+	AtHouse(stub)
+	local id = Post(stub, PANTS, 1, 9000, { item = true })
+	Sold(stub, "Rugged Leather Pants", id)
+	stub.Fire("CHAT_MSG_SYSTEM", "A buyer has been found for your auction of Rugged Leather Pants.")
+	eq(#shown, 1, "one line per sale, not per source")
+	eq(shown[1].text, "Sold: Rugged Leather Pants"); eq(shown[1].detail, nil)
+	eq(shown[1].copper, 8550, "9000 less the confirmed 5% cut, as on the page")
+	eq(shown[1].sourceText, "you get"); eq(shown[1].itemID, PANTS)
+	eq(#sounds, 1); eq(sounds[1], 1234)
+	-- The owned list then reporting the same sale at the AH adds nothing.
+	stub.owned = { { auctionID = id, itemKey = { itemID = PANTS }, quantity = 1, status = 1, timeLeftSeconds = 3600 } }
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(#shown, 1); eq(#sounds, 1)
+end)
+
+it("sale alert: chat first, then the event that names the auction, is still one line", function()
+	local ns, stub = Load()
+	local shown = Spy(ns)
+	AtHouse(stub)
+	local id = Post(stub, PANTS, 1, 9000, { item = true })
+	stub.Fire("CHAT_MSG_SYSTEM", "A buyer has been found for your auction of Rugged Leather Pants.")
+	Sold(stub, "Rugged Leather Pants", id)
+	eq(#shown, 1)
+end)
+
+it("sale alert: a commodity sale of unknown size says 'some of N' and shows no number", function()
+	local ns, stub = Load()
+	local shown = Spy(ns)
+	AtHouse(stub)
+	Post(stub, LEATHER, 20, 150)
+	Sold(stub, "Light Leather")
+	eq(#shown, 1)
+	eq(shown[1].text, "Sold: Light Leather"); eq(shown[1].detail, "some of 20")
+	eq(shown[1].copper, nil, "units sold unknown: no payout is guessed")
+end)
+
+it("sale alert: a known quantity shows ×N and the owned list's sale is announced once", function()
+	local ns, stub = Load()
+	local shown = Spy(ns)
+	AtHouse(stub)
+	local id = Post(stub, LEATHER, 20, 150)
+	stub.owned = { { auctionID = id, itemKey = { itemID = LEATHER }, quantity = 15, status = 0, timeLeftSeconds = 3600 } }
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(#shown, 1, "5 units bought: the quantity dropped")
+	eq(shown[1].detail, "×5"); eq(shown[1].copper, 5 * 150 - math.floor(5 * 150 * 0.05 + 0.5))
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(#shown, 1, "the same list again")
+end)
+
+it("sale alert: sales already known are silent when the owned list is read again (login)", function()
+	local ns, stub = Load()
+	AtHouse(stub)
+	local id = Post(stub, PANTS, 1, 9000, { item = true })
+	Sold(stub, "Rugged Leather Pants", id) -- known before the shown spy exists, like a sale of last session
+	local shown, sounds = Spy(ns)
+	stub.owned = {
+		{ auctionID = id, itemKey = { itemID = PANTS }, quantity = 1, status = 1, timeLeftSeconds = 3600 },
+		{ auctionID = 901, itemKey = { itemID = CLOAK }, quantity = 1, status = 1, buyoutAmount = 4000, itemLink = Link(CLOAK, "Bandit Cloak") },
+	}
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(#shown, 0, "an already sold record, and an entry first seen as sold (adopted), tell nothing")
+	eq(#sounds, 0)
+	-- A message for an already sold record doesn't announce again either.
+	Sold(stub, "Rugged Leather Pants", id)
+	eq(#shown, 0)
+end)
+
+it("sale alert: a sale the owned list is first to show (active becomes sold) is announced once", function()
+	local ns, stub = Load()
+	local shown = Spy(ns)
+	AtHouse(stub)
+	local id = Post(stub, PANTS, 1, 9000, { item = true })
+	stub.owned = { { auctionID = id, itemKey = { itemID = PANTS }, quantity = 1, status = 1, timeLeftSeconds = 3600 } }
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(#shown, 1); eq(shown[1].text, "Sold: Rugged Leather Pants")
+	Sold(stub, "Rugged Leather Pants", id)
+	stub.Fire("CHAT_MSG_SYSTEM", "A buyer has been found for your auction of Rugged Leather Pants.")
+	eq(#shown, 1, "the message after the list is the same sale")
+end)
+
+it("sale alert: switches for the line and the sound; expired lines are off by default", function()
+	local ns, stub = Load()
+	local shown, sounds = Spy(ns)
+	AtHouse(stub)
+	local a = Post(stub, PANTS, 1, 9000, { item = true })
+	local b = Post(stub, CLOAK, 1, 9000, { item = true })
+	local c = Post(stub, LEATHER, 5, 150)
+	ns.db.settings.saleSound = false
+	Sold(stub, "Rugged Leather Pants", a)
+	eq(#shown, 1); eq(#sounds, 0, "line without sound")
+	ns.db.settings.saleToast = false
+	ns.db.settings.saleSound = true
+	Sold(stub, "Bandit Cloak", b)
+	eq(#shown, 1, "line off"); eq(#sounds, 0, "and no sound with it")
+	eq(Find(ns, function(r) return r.id == b end).st, "sold", "the record still moves")
+	stub.Fire("CHAT_MSG_SYSTEM", "Your auction of Light Leather has expired.")
+	eq(#shown, 1, "expired lines are off by default")
+	eq(Find(ns, function(r) return r.id == c end).st, "expired")
+end)
+
+it("sale alert: expired line when switched on, once however many sources say so", function()
+	local ns, stub = Load()
+	local shown, sounds = Spy(ns)
+	ns.db.settings.expiredToast = true
+	AtHouse(stub)
+	local id = Post(stub, LEATHER, 5, 150)
+	stub.Fire("CHAT_MSG_SYSTEM", "Your auction of Light Leather has expired.")
+	stub.Fire("AUCTION_HOUSE_AUCTIONS_EXPIRED", id)
+	eq(#shown, 1); eq(shown[1].text, "Expired: Light Leather"); eq(shown[1].detail, "×5 · returning by mail")
+	eq(shown[1].copper, nil); eq(#sounds, 0, "no chime for an expiry")
+end)
+
+it("sale alert: two sales stack as two lines; the line opens Sell > Auctions", function()
+	local ns, stub = Load()
+	local shown = Spy(ns)
+	AtHouse(stub)
+	local a = Post(stub, PANTS, 1, 9000, { item = true })
+	local b = Post(stub, CLOAK, 1, 9000, { item = true })
+	Sold(stub, "Rugged Leather Pants", a)
+	Sold(stub, "Bandit Cloak", b)
+	eq(#shown, 2); eq(#ns.LootToast.Lines(), 2)
+	local opened = 0
+	ns.OpenAuctionsPage = function() opened = opened + 1 end
+	shown[1].onClick()
+	eq(opened, 1)
+end)

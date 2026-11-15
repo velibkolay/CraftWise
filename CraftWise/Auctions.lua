@@ -110,6 +110,13 @@ local function Changed(rec)
 end
 
 -- Name as chat and mail show it: from the link (keeps a random suffix), else the client's name.
+-- A record newly became sold or expired (#235): AUCTION_SALE for the on-screen alert (AuctionAlert.lua).
+-- Called once per transition, never for a record that already was in that state, so the second and third
+-- source of the same sale (event, chat, owned list) and the owned list read at login stay silent.
+local function Announce(kind, rec)
+	ns.Notify("AUCTION_SALE", kind, rec)
+end
+
 local function NameOf(rec)
 	local fromLink = rec.l and rec.l:match("|h%[(.-)%]|h")
 	if fromLink then
@@ -358,7 +365,8 @@ local function ApplyKnown(list, rec, info, now)
 	local quantity = info.quantity
 	if IsSold(info) then
 		if rec.st == "active" or rec.st == "gone" or rec.st == "expired" or rec.st == "sold" then
-			if rec.st ~= "sold" then
+			local newly = rec.st ~= "sold"
+			if newly then
 				rec.soldT, rec.soldVia = now, "owned list"
 			end
 			rec.st, rec.why = "sold", nil
@@ -369,6 +377,9 @@ local function ApplyKnown(list, rec, info, now)
 				rest.st, rest.soldT, rest.soldVia, rest.qtyUnknown = "active", nil, nil, nil
 			end
 			rec.qtyUnknown, rec.uncertain, rec.candidates = nil, nil, nil -- confirmed by ID
+			if newly then
+				Announce("sold", rec)
+			end
 		end
 		return
 	end
@@ -390,6 +401,7 @@ local function ApplyKnown(list, rec, info, now)
 		-- Units of a commodity auction were bought: they are sold, awaiting mail.
 		local part = Split(list, rec, rec.q - quantity)
 		part.st, part.soldT, part.soldVia = "sold", now, "owned list (quantity dropped)"
+		Announce("sold", part)
 	end
 end
 
@@ -489,7 +501,7 @@ end
 
 -- Marks an auction sold or expired from a message. By ID when the message has one, else the oldest
 -- open auction with that item name, flagged uncertain when there were several.
-function A.MarkByMessage(kind, name, auctionID)
+function A.MarkByMessage(kind, name, auctionID, quiet)
 	local c = Char()
 	if not c then
 		return nil
@@ -511,6 +523,7 @@ function A.MarkByMessage(kind, name, auctionID)
 	local before = { st = rec.st, soldT = rec.soldT, soldVia = rec.soldVia, expT = rec.expT, why = rec.why,
 		qtyUnknown = rec.qtyUnknown, uncertain = rec.uncertain, candidates = rec.candidates }
 	local now = time()
+	local newly = rec.st ~= (kind == "sold" and "sold" or "expired")
 	if kind == "sold" then
 		if rec.st ~= "sold" then
 			rec.soldT, rec.soldVia = now, "message"
@@ -524,6 +537,9 @@ function A.MarkByMessage(kind, name, auctionID)
 	end
 	MarkMatch(rec, n)
 	Changed(rec)
+	if newly and not quiet then
+		Announce(kind, rec)
+	end
 	return rec, before
 end
 
@@ -556,7 +572,7 @@ local function Note(kind, name, auctionID, source)
 					if note.rec then
 						Undo(note.rec, note.before)
 					end
-					note.rec, note.before = A.MarkByMessage(kind, nil, auctionID)
+					note.rec, note.before = A.MarkByMessage(kind, nil, auctionID, true) -- the first source already announced it
 				end
 			end
 			return nil
