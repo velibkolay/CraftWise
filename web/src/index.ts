@@ -8,6 +8,7 @@ import * as L from "./limits";
 import * as me from "./me";
 import * as read from "./read";
 import { PAGE_HEADERS } from "./pages";
+import { syncMarket } from "./sync";
 import { assertJson, privateUpload, publicUpload } from "./upload";
 
 function nowSeconds(): number {
@@ -96,6 +97,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (request.method !== "GET" && request.method !== "HEAD") methodNotAllowed("GET");
 	// The item page: one static page for every item; its script reads the ID from the path.
 	if (path.startsWith("/item/")) return itemPage(request, env, url);
+	if (path === "/api/sync/market") return syncMarket(request, env, url, now);
 	if (path === "/api/houses") return read.houses(env);
 	if (path === "/api/scans") return read.scans(env, url);
 	if (path === "/api/items") return read.search(env, url);

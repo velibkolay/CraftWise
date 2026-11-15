@@ -115,3 +115,23 @@ Revoke it under Service Tokens; nothing else changes.
   such as Hivemind included: check their writes too (dashboard > **D1** > Metrics).
 - Errors and logs: Worker > **Observability** (Workers Logs, free tier).
 - Rollback: Worker > **Deployments** > an earlier version > Rollback.
+
+## #238 (`0005_sync.sql`): download of the merged market
+
+The migration adds `updated` to `prices` and `variants`, the index `prices_updated` and three triggers,
+and fills `updated` once for the rows already stored. Apply it from the PR's branch before merging
+(step 4 above), in PowerShell:
+```powershell
+cd C:\Users\Veli\Documents\GitHub\craftwise\web
+git fetch origin
+git switch claude/cw-238-site-bf8818
+npx wrangler d1 migrations apply craftwise --remote
+git switch main
+```
+It rewrites every `prices` row once (about 2 rows written per price row, a few ten thousand; fine
+on Workers Paid, on Free run it on a day with room left). The running Worker keeps working in
+between. Uploads that reach the old Worker after the migration and before the merge deploys leave
+`updated` stale on the rows they change; to catch those up once after the deploy:
+```powershell
+npx wrangler d1 execute craftwise --remote --command "UPDATE prices SET updated = t WHERE updated IS NULL OR updated < t"
+```

@@ -137,8 +137,9 @@ describe("write budget of a full scan (measurement)", () => {
 		);
 		// #118: a day with a full browse, a second one and the reloads in between stays under ~40,000
 		expect(first.rows).toBeLessThan(50_000);
-		expect(second.rows).toBeLessThan(15_000);
-		expect(nextDay.rows).toBeLessThan(20_000);
+		// #238: +1 row per changed price row (the prices_updated index of the download of the merged market)
+	expect(second.rows).toBeLessThan(17_000);
+		expect(nextDay.rows).toBeLessThan(23_000);
 		expect(first.maxBytes).toBeLessThan(MAX_PUBLIC_BYTES);
 	});
 });
