@@ -353,13 +353,13 @@ end
 -- label, thin, cutUnverified }. AH value is after the house's cut; selling to a vendor is always
 -- possible, so the higher one wins. Without a known cut the AH value stays gross and is marked
 -- cutUnverified (it can't be netted); a vendor paying more than that gross still wins.
--- An item marked "Sell to vendor" (#214) is valued at its vendor price here, once, for every caller; with no
--- known vendor price it has no value (nil), never the AH price silently.
+-- An item marked Junk (#214, #227) is valued at its vendor price here, once, for every caller; with no known
+-- vendor price it has no value (nil), never the AH price silently.
 function ns.GetSellValue(itemID)
 	local vendor = ns.GetVendorSellPrice(itemID)
 	local hasVendor = vendor and vendor > 0
-	if ns.db and ns.db.sellVendor and ns.db.sellVendor[itemID] then
-		return hasVendor and { copper = vendor, source = "vendor", label = "vendor (marked)", marked = true } or nil
+	if ns.db and ns.db.junk and ns.db.junk[itemID] then
+		return hasVendor and { copper = vendor, source = "vendor", label = "vendor (junk)", marked = true } or nil
 	end
 	local ah = ns.AuctionQuote(itemID)
 	if ah then

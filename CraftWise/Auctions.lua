@@ -90,16 +90,16 @@ function A.List(charKey)
 	return c and c.list or nil
 end
 
--- A recorded sale (the money arrived, the ledger's "ahsell") of an item marked "Sell to vendor" (#214, #222): the
--- item does sell on the AH, so the mark goes and it is valued at the AH again. Listing, cancelling and expiring
--- never get here. One chat line; the pages and bag advice refresh.
-function A.DropVendorMark(itemID)
-	if not (itemID and ns.db and ns.db.sellVendor and ns.db.sellVendor[itemID]) then
+-- A recorded sale (the money arrived, the ledger's "ahsell") of an item marked Junk (#214, #222, #227): the item does
+-- sell on the AH, so the mark goes and it is valued at the AH again. Listing, cancelling and expiring never get
+-- here. One chat line; the pages and bag advice refresh.
+function A.DropJunkMark(itemID)
+	if not (itemID and ns.db and ns.db.junk and ns.db.junk[itemID]) then
 		return false
 	end
-	ns.db.sellVendor[itemID] = nil
+	ns.db.junk[itemID] = nil
 	local name, link = ns.ItemInfoNow(itemID)
-	ns.Print((ns.L["%s sold on the AH: 'Sell to vendor' mark removed"]):format(link or name or ("item " .. itemID)))
+	ns.Print((ns.L["%s sold on the AH: Junk mark removed"]):format(link or name or ("item " .. itemID)))
 	ns.Notify("BAGS_CHANGED")
 	ns.Notify("JUNK_CHANGED")
 	return true
@@ -763,7 +763,7 @@ function A.SettleSale(t)
 	MarkMatch(rec, #found)
 	if rec.i and ns.Ledger then
 		ns.Ledger.Record("ahsell", rec.i, count, t.money, rec.h)
-		A.DropVendorMark(rec.i)
+		A.DropJunkMark(rec.i)
 	end
 	if oneHouse then
 		AddCutSample(rec, t, count)
