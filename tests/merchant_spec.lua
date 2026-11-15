@@ -816,3 +816,184 @@ it("the panel: every vendor listed, the nearest marked, buttons set waypoints on
 	eq(panel:IsShown(), false, "the same reagent again closes it")
 	eq(P.Toggle(99999, owner), nil, "nothing known: no panel")
 end)
+
+-- Restock reminders and learned restock times (#289) ------------------------------------------------
+
+local HARNESS = 15001
+
+local function visit(stub, items, id, name)
+	stub.mf = items
+	open(stub, id or 2819, name or "Tunkk")
+	stub.Fire("MERCHANT_CLOSED")
+end
+
+it("a vendor that never listed an item says not sold here with its complete visits, not out of stock", function()
+	local ns, stub = setup()
+	visit(stub, { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } })
+	visit(stub, { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } })
+	local m = ns.db.merchants[2819]
+	eq(m.visits, 2); eq(m.fullVisits, 2)
+	local st = ns.Merchant.ListingStatus(2819, HARNESS)
+	eq(st.state, "never"); eq(st.visits, 2)
+	eq(ns.Merchant.ListingText(st), "not sold here (seen 2 visits)")
+	eq(ns.Merchant.ListingStatus(2819, NIGHTCRAWLERS).state, "listed")
+	eq(ns.Merchant.ListingStatus(555, HARNESS).state, "unknown", "an unrecorded vendor says nothing")
+	-- A filtered view is not a complete one: no claim from it.
+	local ns2, stub2 = setup()
+	stub2.filter = 1
+	visit(stub2, { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } })
+	eq(ns2.Merchant.ListingStatus(2819, HARNESS).state, "unknown")
+	-- One window is one visit however many updates it sends.
+	local ns3, stub3 = setup()
+	stub3.mf = { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } }
+	open(stub3, 7, "V"); stub3.Fire("MERCHANT_UPDATE"); stub3.Fire("MERCHANT_UPDATE")
+	eq(ns3.db.merchants[7].visits, 1)
+end)
+
+it("an item that was listed and then is missing from a complete view is gone, and keeps its stock history", function()
+	local ns, stub = setup()
+	stub.now = 1000
+	local time0 = time
+	time = function() return stub.now end
+	visit(stub, { { itemID = HARNESS, name = "Pattern: Raptor Hide Harness", price = 500, available = 0 } })
+	eq(ns.Merchant.ListingStatus(2819, HARNESS).state, "soldout")
+	eq(ns.Merchant.ListingText(ns.Merchant.ListingStatus(2819, HARNESS)), "out of stock")
+	stub.now = 5000
+	visit(stub, { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } })
+	local st = ns.Merchant.ListingStatus(2819, HARNESS)
+	eq(st.state, "gone"); eq(st.t, 5000)
+	stub.now = 9000
+	visit(stub, { { itemID = HARNESS, name = "Pattern: Raptor Hide Harness", price = 500, available = 1 } })
+	local item = ns.db.merchants[2819].items[HARNESS]
+	eq(ns.db.merchants[2819].gone[HARNESS], nil)
+	local learned = ns.Merchant.Learned(item)
+	eq(learned.count, 1)
+	eq(learned.within, 9000 - 1000, "after the last 0 seen, before the first count above 0 seen")
+	time = time0
+end)
+
+it("learned restock times come only from a 0 followed by a higher count, shown as an observation", function()
+	local ns = setup()
+	eq(ns.Merchant.Learned({ log = { { n = 3, first = 1, last = 2, realm = "R" }, { n = 5, first = 10, last = 11, realm = "R" } } }), nil, "a rise from 3 is not a restock from sold out")
+	eq(ns.Merchant.Learned({ log = { { n = 0, first = 1, last = 100, realm = "R" }, { n = 2, first = 5000, last = 5000, realm = "S" } } }), nil, "another realm is another stock")
+	eq(ns.Merchant.Learned({}), nil)
+	local item = { log = { { n = 0, first = 0, last = 100, realm = "R" }, { n = 1, first = 4900, last = 4900, realm = "R" },
+		{ n = 0, first = 9000, last = 9000, realm = "R" }, { n = 1, first = 9000 + 1200, last = 9000 + 1200, realm = "R" } } }
+	local learned = ns.Merchant.Learned(item)
+	eq(learned.count, 2); eq(learned.within, 4800); eq(learned.shortest, 1200)
+	eq(ns.Merchant.LearnedText(learned), "restocked within 1h 20m, seen 2 times")
+	eq(ns.Merchant.LearnedText(ns.Merchant.Learned({ log = { { n = 0, first = 0, last = 0, realm = "R" }, { n = 4, first = 4800, last = 4800, realm = "R" } } })),
+		"restocked within 1h 20m, seen once")
+end)
+
+it("reminders: scheduling, choices with the learned time first, replacing, removal", function()
+	local ns, stub = setup()
+	stub.items[HARNESS] = { name = "Pattern: Raptor Hide Harness" }
+	ns.db.merchants = { [2819] = { name = "Tunkk", zone = "Hammerfall", map = 1417, x = 73.1, y = 32.4, items = {
+		[HARNESS] = { n = 0, log = { { n = 0, first = 0, last = 100, realm = "R" }, { n = 1, first = 4900, last = 4900, realm = "R" } } } } } }
+	local R = ns.Restock
+	local choices = R.Choices(2819, HARNESS)
+	eq(choices[1].learned, true); eq(choices[1].seconds, 4800); eq(choices[1].label, "Learned: 1h 20m")
+	eq(choices[2].seconds, 3600); eq(choices[5].seconds, 12 * 3600); eq(#choices, 5)
+	eq(#R.Choices(2819, 99), 4, "no log: only the fixed hours")
+	local rec = R.Add(2819, HARNESS, 7200, 1000)
+	eq(rec.due, 8200); eq(rec.vendor, "Tunkk"); eq(rec.zone, "Hammerfall"); eq(rec.map, 1417); eq(rec.item, "Pattern: Raptor Hide Harness")
+	eq(#R.List(), 1)
+	eq(R.Add(2819, HARNESS, 3600, 2000).due, 5600); eq(#R.List(), 1, "the same vendor and item replaces it")
+	eq(R.Add(404, HARNESS, 3600), nil, "an unrecorded vendor")
+	eq(select(1, R.Add(2819, HARNESS, 5, 0)), nil, "too short")
+	eq(R.Text(R.List()[1]), "Pattern: Raptor Hide Harness may be back at Tunkk (Hammerfall)")
+	eq(R.Remove(R.List()[1].id), true); eq(#R.List(), 0)
+end)
+
+it("the due check fires once with a toast, a chat line and the sale sound; one that came due offline fires at login", function()
+	local ns, stub = setup()
+	stub.items[HARNESS] = { name = "Pattern: Raptor Hide Harness" }
+	ns.db.merchants = { [2819] = { name = "Tunkk", zone = "Hammerfall", map = 1417, x = 73.1, y = 32.4, items = { [HARNESS] = { n = 0 } } } }
+	local R = ns.Restock
+	local shown, said, played = {}, {}, {}
+	ns.LootToast = ns.LootToast or {}
+	ns.LootToast.ShowCustom = function(entry) shown[#shown + 1] = entry; return entry end
+	local print0 = ns.Print
+	ns.Print = function(text) said[#said + 1] = text end
+	SOUNDKIT = { LOOT_WINDOW_COIN_SOUND = 7 }
+	PlaySound = function(id) played[#played + 1] = id end
+	R.Add(2819, HARNESS, 3600, 1000)
+	eq(R.Check(2000), 0, "not due yet")
+	eq(#shown, 0)
+	eq(R.Check(1000 + 3600), 1)
+	eq(#shown, 1); eq(shown[1].text, "Pattern: Raptor Hide Harness may be back at Tunkk (Hammerfall)"); eq(shown[1].detail, "Waypoint")
+	assert(said[1]:find("may be back at Tunkk", 1, true), said[1])
+	eq(played[1], 7)
+	eq(#R.List(), 0, "fired once")
+	eq(R.Check(1000 + 7200), 0)
+	-- Came due while offline: the next check (login) fires it, however late.
+	R.Add(2819, HARNESS, 3600, 1000)
+	eq(R.Check(1000 + 9 * 86400), 1)
+	-- Sound off: still the line, no sound.
+	ns.db.settings.saleSound = false
+	R.Add(2819, HARNESS, 3600, 1000)
+	played = {}
+	R.Check(1000 + 3600)
+	eq(#played, 0)
+	-- Clicking the line sets the waypoint.
+	local set = {}
+	C_Map.CanSetUserWaypointOnMap = function() return true end
+	C_Map.SetUserWaypoint = function(p) set[#set + 1] = p end
+	UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { uiMapID = map, x = x, y = y } end }
+	shown[#shown].onClick()
+	eq(#set, 1); eq(set[1].uiMapID, 1417)
+	ns.Print = print0
+end)
+
+it("the vendor panel: Remind offers the times and sets one; active reminders list with a delete", function()
+	local ns, stub = setup()
+	Maps(stub)
+	Seed2(ns, stub)
+	local owner = CreateFrame("Frame", nil, UIParent)
+	local P = ns.BuyAtPanel
+	local panel = P.Toggle(NOIR, owner)
+	local row = panel.rows[1]
+	row.remind.scripts.OnClick(row.remind)
+	assert(panel.choices[1] and panel.choices[1]:IsShown(), "the time choices appear")
+	panel.choices[2].scripts.OnClick(panel.choices[2]) -- 2 h
+	local list = ns.Restock.List()
+	eq(#list, 1); eq(list[1].npcID, 2); eq(list[1].itemID, NOIR); eq(list[1].due - list[1].set, 7200)
+	assert(panel.reminders[1] and panel.reminders[1]:IsShown(), "listed")
+	assert(panel.reminders[1].text:GetText():find("Near Barman", 1, true), panel.reminders[1].text:GetText())
+	local del = panel.reminders[1].del
+	del.scripts.OnClick(del)
+	eq(#ns.Restock.List(), 0); eq(panel.reminders[1]:IsShown(), false)
+end)
+
+it("the vendors a complete view dropped come last in the panel and are never the nearest", function()
+	local ns, stub = setup()
+	Maps(stub)
+	Seed2(ns, stub)
+	ns.db.merchants[2].items[NOIR] = nil
+	ns.db.merchants[2].gone = { [NOIR] = { name = "Bottle of Noir", t = time() - 7200, n = 3 } }
+	local all = ns.Merchant.BuyAtAll(NOIR)
+	local last = all.entries[#all.entries]
+	eq(last.merchant.name, "Near Barman"); eq(last.listed, false)
+	assert(last.text:find("not listed now, last seen 2h ago", 1, true), last.text)
+	assert(all.nearest.merchant.name ~= "Near Barman")
+end)
+
+it("/craftwise remind sets a reminder at the open vendor and lists and removes them", function()
+	local ns, stub = setup()
+	stub.items[HARNESS] = { name = "Pattern: Raptor Hide Harness" }
+	visit(stub, { { itemID = NIGHTCRAWLERS, name = "Nightcrawlers", price = 90 } })
+	local said = {}
+	ns.Print = function(text) said[#said + 1] = text end
+	MerchantFrame = { IsShown = function() return true end }
+	ns.Restock.Slash("6 item:" .. HARNESS .. ":0")
+	assert(said[1] and said[1]:find("not sold here (seen 1 visit)", 1, true), said[1])
+	eq(#ns.Restock.List(), 1)
+	eq(ns.Restock.List()[1].due - ns.Restock.List()[1].set, 6 * 3600)
+	said = {}
+	ns.Restock.Slash("")
+	assert(said[1]:find("1. Pattern: Raptor Hide Harness at Tunkk", 1, true), said[1])
+	ns.Restock.Slash("remove 1")
+	eq(#ns.Restock.List(), 0)
+	MerchantFrame = nil
+end)

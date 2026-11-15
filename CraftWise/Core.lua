@@ -148,6 +148,7 @@ local DB_DEFAULTS = {
 	loopNotice = {}, -- [recipeID] = { profit, loop } of the vendor finds already announced (Loops.lua, #186)
 	sources = {}, -- [recipe itemID] = { vendors, loot, quests } seen in game (SourceRecorder.lua, issue #37)
 	merchants = {}, -- [npcID] = full inventory of a merchant this account opened (Merchant.lua, issue #66)
+	reminders = {}, -- restock reminders: { id, npcID, vendor, zone, map, x, y, itemID, item, set, due } (Restock.lua, #289)
 	crates = {}, -- [itemID] = Waylaid crate: tooltip lines, fill options, reward (Crates.lua, issue #91)
 	-- [recipeID] = { fee = copper, required = skill, at, name, icon, skill = profession name, line,
 	--   reagents, output, noItemOutput, recipeAt }: seen at a trainer (Trainer.lua; recipe fields #83)
@@ -719,6 +720,11 @@ SlashCmdList.CRAFTWISE = function(input)
 			ns.Merchant.Slash(rawArg)
 		end
 		OpenItems(rawArg, "where")
+		return
+	end
+	local remindArg = msg:match("^remind%f[%A]%s*(.*)$")
+	if remindArg and ns.Restock then
+		ns.Restock.Slash(remindArg)
 		return
 	end
 	local toastArg = msg:match("^loottoast%f[%A]%s*(.*)$")

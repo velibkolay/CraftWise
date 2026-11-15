@@ -32,6 +32,7 @@ Trainer.lua
 ClassSpells.lua
 SourceRecorder.lua
 Merchant.lua
+Restock.lua
 Loot.lua
 Fishing.lua
 FishingTables.lua
