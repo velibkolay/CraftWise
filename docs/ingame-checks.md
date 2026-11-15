@@ -936,3 +936,8 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Y above X: the line is red. A recipe whose other reagents cost more than the sale says "loses money at any price".
 - Vendor reagents and crafted reagents show no line. Mark the product Junk: the sale side switches to the vendor price and X follows.
 - Unknown prices (a reagent never seen on the AH): no line at all, never a guess.
+
+## Make › Crafted: Profit/h shows the figures behind it (#265)
+- Hover a Profit/h cell: the tooltip ends with "One craft now: sale X (AH after the 5% cut | vendor price, no AH cut | vendor price (Junk mark), no AH cut) - reagents Y = +Z". Compare Z with Make › Craft's profit for the same recipe: they are the same figure.
+- A Junk-marked product (Cooked Crab Claw sold to a vendor): the sale is the vendor price with no cut. The footer says "vendor/Junk sales: no cut".
+- If Profit/h is negative while Profit today is positive, the line shows why (prices or the paid-cost basis now against craft time).

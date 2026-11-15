@@ -131,25 +131,53 @@ end
 
 -- Profit per craft of the recipes in `ids`: the same figure as Make › Craft's row, so it follows the Profit
 -- view's reagent cost basis (paid cost or AH, #47). Built from the rows of the profession of this character that
--- knows each recipe, once per profession. Returns profit[recipeID] and basis[recipeID] (MK.ProfitBasis of the row).
+-- knows each recipe, once per profession. Returns profit[recipeID], basis[recipeID] (MK.ProfitBasis of the row) and
+-- figures[recipeID] = the per-craft figures behind the profit: { sale, source, marked, cut, cost, profit } (#265).
 local function Profits(ids)
-	local byProfession, profit, basis = {}, {}, {}
+	local byProfession, profit, basis, figures = {}, {}, {}, {}
 	for _, recipeID in ipairs(ids) do
 		for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
 			if prof.recipes and prof.recipes[recipeID] then
 				if not byProfession[professionID] then
 					byProfession[professionID] = {}
 					for _, row in ipairs(ns.BuildRows(professionID, false, "profit")) do
-						byProfession[professionID][row.recipeID] = { row.profit, MK.ProfitBasis(row) }
+						byProfession[professionID][row.recipeID] = { row.profit, MK.ProfitBasis(row),
+							{ sale = row.sellsFor, source = row.sellSource, marked = row.sellMarked, cut = row.sellCut, cost = row.cost,
+								profit = row.profit } }
 					end
 				end
 				local found = byProfession[professionID][recipeID]
-				profit[recipeID], basis[recipeID] = found and found[1], found and found[2]
+				profit[recipeID], basis[recipeID], figures[recipeID] = found and found[1], found and found[2], found and found[3]
 				break
 			end
 		end
 	end
-	return profit, basis
+	return profit, basis, figures
+end
+
+-- Which sale a figure used (#265), in words: the vendor or Junk value has no AH cut; the AH value is after the cut.
+function P.SaleBasisText(f)
+	if not (f and f.sale) then
+		return nil
+	end
+	if f.marked then
+		return L["vendor price (Junk mark), no AH cut"]
+	elseif f.source == "vendor" then
+		return L["vendor price, no AH cut"]
+	elseif f.cut then
+		return (L["AH after the %s%% cut"]):format(CL.FormatSeconds(f.cut * 100))
+	end
+	return L["AH"]
+end
+
+-- The Profit/h tooltip's second text (#265): what one craft is worth now, so a figure that differs from the profit
+-- logged at craft time can be explained: "One craft now: sale 25c (vendor price, no AH cut) - reagents 17c = +8c".
+function P.FiguresText(f)
+	if not (f and f.sale and f.cost and f.profit) then
+		return nil
+	end
+	return (L["One craft now: sale %s (%s) - reagents %s = %s"]):format(MK.PlainMoney(f.sale), P.SaleBasisText(f),
+		MK.PlainMoney(f.cost), (f.profit < 0 and "-" or "+") .. MK.PlainMoney(math.abs(f.profit)))
 end
 P.Profits = Profits
 
@@ -190,10 +218,10 @@ function P.Rows(now, filters)
 	end
 	-- Profit per hour needs the prices: only for the recipes with a measured speed.
 	if #measured > 0 then
-		local profits, bases = Profits(measured)
+		local profits, bases, figures = Profits(measured)
 		for _, recipeID in ipairs(measured) do
 			local r = speeds[recipeID]
-			r.profit, r.basis = profits[recipeID], bases[recipeID]
+			r.profit, r.basis, r.figures = profits[recipeID], bases[recipeID], figures[recipeID]
 			r.profitHour = CL.ProfitPerHour(r.speed, r.profit)
 		end
 	end
@@ -223,8 +251,10 @@ function P.Rows(now, filters)
 		v.sub = (L["today %s"]):format(CL.Format(r.today)) .. (r.profitToday and (" · " .. MK.PlainMoney(math.abs(r.profitToday))
 			.. (r.profitToday < 0 and " " .. L["loss"] or "")) or "")
 		local basis = r.basis or MK.ProfitBasis()
+		local figures = P.FiguresText(r.figures)
 		v.tips.profitHour = { L["Profit/h"] .. " " .. basis.label, L["Crafts per hour times the profit per craft (approx.): not what was earned."]
-			.. (r.profitHour and basis.note and (" " .. basis.note .. " (*)") or "") }
+			.. (r.profitHour and basis.note and (" " .. basis.note .. " (*)") or "")
+			.. (figures and ("\n" .. figures .. " " .. L["Profit today uses the prices at craft time."]) or "") }
 	end
 	return rows
 end
@@ -269,8 +299,8 @@ function P.Footer(docked)
 		return L["Counts from craft events"]
 	end
 	local note = P.state.char and L["Undated crafts have no character: left out"]
-		or L["Counts from craft events; undated crafts count in Total only"]
-	return note .. " · " .. L["Profit/h"] .. " " .. MK.ProfitBasis().label
+		or L["Counts from craft events; undated in Total only"]
+	return note .. " · " .. L["Profit/h"] .. " " .. MK.ProfitBasis().label .. ", " .. L["vendor/Junk sales: no cut"]
 end
 
 local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L["by crafts in 7 days"], total = L["by total crafts"],
