@@ -409,6 +409,49 @@ it("Auctions: a click on a card lists that group; the card's total is the rows' 
 	P.filter = nil
 end)
 
+it("Auctions: the card frame itself takes the click; the chosen card is outlined twice and filled; the bar above the list says what shows (#270)", function()
+	local ns, _, M = Auctions()
+	M.Open("auctions")
+	local P = M.Page("auctions").P
+	P.filter = nil
+	local f = M.Frame()
+	local card = M.SlotsOf("auctions").hero.cards[1]
+	eq(card:IsMouseEnabled(), true, "the card is what takes the mouse")
+	eq(card.stat:IsMouseEnabled(), false, "no child takes the click away")
+	eq(card.mark:IsMouseEnabled(), false)
+	eq(card.chosen, false); eq(card.selectedBorder.top.shown, false)
+	assert(f.listBar.title.text:find("All auctions", 1, true), f.listBar.title.text)
+	assert(f.listBar.title.text:find("2 sold", 1, true) and f.listBar.title.text:find("2 listed", 1, true), f.listBar.title.text)
+	local plain = card.sheet.fill
+	-- a real click, as the client sends it: the script on the card
+	card.scripts.OnClick(card)
+	card = M.SlotsOf("auctions").hero.cards[1]
+	eq(card.chosen, true)
+	for _, border in ipairs({ card.selectedBorder, card.selectedInnerBorder }) do
+		eq(border.top.shown and border.bottom.shown and border.left.shown and border.right.shown, true)
+	end
+	assert(card.sheet.fill ~= plain, "the chosen card's fill is brighter")
+	eq(M.SlotsOf("auctions").hero.cards[2].chosen, false)
+	local want = "Showing: On its way · 2 auctions · " .. ns.FormatCoins(27575 + 18620)
+	eq(f.listBar.title.text, want)
+	card.scripts.OnClick(card)
+	eq(M.SlotsOf("auctions").hero.cards[1].chosen, false)
+	assert(f.listBar.title.text:find("All auctions", 1, true), f.listBar.title.text)
+	P.filter = nil
+end)
+
+it("Auctions: a sold record nothing shows pending for hours reads Probably collected and leaves the On its way card (#278)", function()
+	local ns, _, M = Auctions()
+	ns.Auctions.List()[1].soldT = NOW - 5 * 3600 -- Test Pants, sold five hours ago
+	M.Open("auctions")
+	local got = {}
+	for _, fr in ipairs(Rows(M, "auctions")) do got[#got + 1] = fr.cells[2].text .. "/" .. fr.cells[4].text end
+	eq(table.concat(got, ","), "Test Cloak/Sold,Test Hide/Listed,Test Leather/Listed,Test Bracers/Returning,Test Pants/Probably collected")
+	local card = M.SlotsOf("auctions").hero.cards[1]
+	eq(card.stat.figure.text, ns.FormatCoins(18620), "only the pending sale is on its way")
+	eq(card.stat.caption.text, "1 sold, after cut and deposit back")
+end)
+
 it("Auctions: nothing recorded: no cards, the empty line", function()
 	local _, _, M = Load()
 	M.Open("auctions")

@@ -77,6 +77,8 @@ function frameMeta.SetFontObject(self, f) self.fontObject = f end
 function frameMeta.SetAlpha(self, a) self.alpha = a end
 -- Mouse over a frame: specs set f.mouseOver.
 function frameMeta.IsMouseOver(self) return self.mouseOver == true end
+function frameMeta.EnableMouse(self, v) self.mouseEnabled = v and true or false end
+function frameMeta.IsMouseEnabled(self) return self.mouseEnabled == true end
 function frameMeta.SetDesaturated(self, v) self.desaturated = v and true or false end
 function frameMeta.IsDesaturated(self) return self.desaturated == true end
 function frameMeta.Disable(self) self.disabled = true end

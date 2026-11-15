@@ -28,15 +28,17 @@ P.STATUS = {
 	gone = { key = "uncertain", text = L["Uncertain"], color = "text3", order = 3 },
 	expired = { key = "returning", text = L["Returning"], color = "text2", order = 4 },
 	cancelled = { key = "returning", text = L["Returning"], color = "text2", order = 4 },
+	-- A sold record nothing has shown pending for hours: its money was most likely taken (#278).
+	stale = { key = "collected", text = L["Probably collected"], color = "text3", order = 5 },
 }
 
 -- A click on a card shows that group's auctions only (#269): the card's key -> the list's status key, and
 -- how the list is titled then. Uncertain records stay visible in every filter, labelled as always.
 -- P.filter: the card key now filtering, nil = all.
 P.GROUPS = {
-	way = { status = "sold", title = L["%d sold, waiting in the mail"], empty = L["No sold auction is waiting in the mail."] },
-	all = { status = "listed", title = L["%d listed"], empty = L["No auction is listed."] },
-	back = { status = "returning", title = L["%d returning by mail"], empty = L["No auction is on its way back."] },
+	way = { status = "sold", name = L["On its way"], title = L["%d sold, waiting in the mail"], empty = L["No sold auction is waiting in the mail."] },
+	all = { status = "listed", name = L["Listed"], title = L["%d listed"], empty = L["No auction is listed."] },
+	back = { status = "returning", name = L["Returning"], title = L["%d returning by mail"], empty = L["No auction is on its way back."] },
 }
 P.filter = nil
 
@@ -123,6 +125,9 @@ function P.Rows(list, now)
 	local rows, ids = {}, {}
 	for index, rec in ipairs(list or {}) do
 		local st = P.STATUS[rec.st]
+		if rec.st == "sold" and ns.Auctions and ns.Auctions.IsStale(rec, now) then
+			st = P.STATUS.stale
+		end
 		if st then
 			local name, quality = S.ItemName(rec.i, { name = rec.n, link = rec.l })
 			local youGet, why, depositKnown = P.YouGet(rec)
@@ -136,7 +141,7 @@ function P.Rows(list, now)
 			end
 			rows[#rows + 1] = {
 				key = rec.id and ("id" .. rec.id) or ("rec" .. index), itemID = rec.i, name = name, quality = quality,
-				qty = rec.q, state = rec.st, status = st.key, statusText = st.text, statusColor = st.color, live = st.live, order = st.order,
+				qty = rec.q, state = st == P.STATUS.stale and "stale" or rec.st, status = st.key, statusText = st.text, statusColor = st.color, live = st.live, order = st.order,
 				when = P.WhenText(rec, now), at = rec.exp or rec.soldT or rec.expT or rec.cancelT or rec.goneT or rec.t or 0,
 				buyout = buyout, buyoutNote = buyoutNote, youGet = youGet, youGetWhy = why, depositKnown = depositKnown,
 				deposit = rec.dep, uncertain = rec.uncertain and rec.candidates or nil, why = rec.why,
@@ -248,15 +253,22 @@ function P.Model(ctx)
 	local group = P.filter and P.GROUPS[P.filter]
 	rows = P.Filtered(rows, P.filter)
 	local model = { rows = rows, empty = group and group.empty or L["No auction listed, sold or returning. Post one and it shows here."] }
-	if group then
-		local n = 0
-		for _, r in ipairs(rows) do
-			if r.status == group.status then
-				n = n + 1
-			end
+	-- The state of the filter above the list (#270): what shows, how many auctions and what they pay, or the
+	-- three groups' counts when nothing filters, so the two views never read alike.
+	local counts, sums = { sold = 0, listed = 0, returning = 0 }, { sold = 0, listed = 0, returning = 0 }
+	for _, r in ipairs(all) do
+		if counts[r.status] then
+			counts[r.status] = counts[r.status] + 1
+			sums[r.status] = sums[r.status] + (r.youGet or 0)
 		end
-		model.listTitle = (group.title):format(n)
+	end
+	if group then
+		local n = counts[group.status]
+		model.listTitle = (L["Showing: %s · %d auctions · %s"]):format(group.name, n, ns.FormatCoins(sums[group.status]))
 		model.listNote = L["click the card again or All to show everything"]
+	else
+		model.listTitle = (L["All auctions · %d sold · %d listed · %d returning"]):format(counts.sold, counts.listed, counts.returning)
+		model.listNote = L["click a card to show one group"]
 	end
 	local totals = ns.HeroCards.AuctionTotals()
 	if totals then
@@ -366,8 +378,23 @@ function P.Hero(card, hero, ctx, slot)
 		local c = slot.cards[i]
 		if not c then
 			c = CreateFrame("Button", nil, slot)
+			c:EnableMouse(true)
+			c:RegisterForClicks("LeftButtonUp")
 			c.sheet = Style.Sheet(c, C.card, C.cardFlap, 14, false)
-			c.selectedBorder = Style.Border(c, C.text)
+			c.stat = S.Stat(c, true)
+			c.stat:EnableMouse(false) -- the click belongs to the card, never to a child
+			-- The chosen card: a double outline on a frame above the sheet (a border under the sheet's fill
+			-- is not seen) and the card's own fill brightened.
+			c.mark = CreateFrame("Frame", nil, c)
+			c.mark:SetAllPoints(c)
+			c.mark:SetFrameLevel((c:GetFrameLevel() or 1) + 20)
+			c.mark:EnableMouse(false)
+			c.selectedBorder = Style.Border(c.mark, C.live, "OVERLAY")
+			c.selectedInner = CreateFrame("Frame", nil, c.mark)
+			c.selectedInner:SetPoint("TOPLEFT", c.mark, "TOPLEFT", 2, -2)
+			c.selectedInner:SetPoint("BOTTOMRIGHT", c.mark, "BOTTOMRIGHT", -2, 2)
+			c.selectedInner:EnableMouse(false)
+			c.selectedInnerBorder = Style.Border(c.selectedInner, C.live, "OVERLAY")
 			c:SetScript("OnClick", function(self)
 				P.SetFilter(self.key)
 			end)
@@ -377,7 +404,6 @@ function P.Hero(card, hero, ctx, slot)
 			c:HookScript("OnLeave", function(self)
 				Style.HideTip(self)
 			end)
-			c.stat = S.Stat(c, true)
 			c.stat:SetPoint("TOPLEFT", c, "TOPLEFT", 14, -12)
 			c.stat:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -14, 12)
 			slot.cards[i] = c
@@ -386,10 +412,15 @@ function P.Hero(card, hero, ctx, slot)
 		c:SetPoint("TOPLEFT", slot, "TOPLEFT", (i - 1) * (w + gap), 0)
 		c:SetSize(w, hero.height or 80)
 		c.key, c.label = def.key, def.label
-		c.selectedBorder.top:SetShown(hero.selected == def.key)
-		c.selectedBorder.bottom:SetShown(hero.selected == def.key)
-		c.selectedBorder.left:SetShown(hero.selected == def.key)
-		c.selectedBorder.right:SetShown(hero.selected == def.key)
+		local chosen = hero.selected == def.key
+		c.chosen = chosen
+		for _, border in ipairs({ c.selectedBorder, c.selectedInnerBorder }) do
+			border.top:SetShown(chosen)
+			border.bottom:SetShown(chosen)
+			border.left:SetShown(chosen)
+			border.right:SetShown(chosen)
+		end
+		c.sheet:SetColors(chosen and C.selected or C.card, C.cardFlap)
 		local figure = def.count and tostring(def.count) or S.Coins(def.copper)
 		c.stat:Set(def.label, figure, def.caption, nil, def.count and def.unit or nil)
 		c:Show()
