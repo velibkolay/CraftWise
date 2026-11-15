@@ -689,8 +689,8 @@ it("Basket: Buy needs an open merchant that sells the item for gold alone, one a
 	eq(B.Buy(line), 7, "limited stock: never more than there is")
 	stub.merchant[2].available = nil
 	stub.merchant[2].stack = 5
-	n, why = B.Buy(line)
-	eq(n, nil); eq(why, "Sold in lots of 5: buy it by hand")
+	calls = {}
+	eq(B.Buy(line), 50, "lots of 5 (#217): 50 is ten whole lots"); eq(table.concat(calls, ","), "2:20,2:20,2:10")
 	stub.merchant[2].stack, stub.merchant[2].extended = 1, true
 	eq(select(2, B.Buy(line)), "Costs more than gold: buy it by hand")
 	stub.Fire("MERCHANT_CLOSED")

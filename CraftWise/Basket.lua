@@ -353,9 +353,12 @@ function Basket.MerchantSlot(itemID)
 end
 
 -- Can this line be bought here? Returns true, nil, slot, quantity, or false, why.
--- Only plain gold items sold one at a time are bought by the button: a merchant that sells lots of 5 has
--- its own quantity rule, which isn't read here, so those stay a purchase by hand.
-function Basket.CanBuy(line)
+-- Only plain gold items are bought by the button. An item sold in lots (stack > 1: Mild Spices x5) is
+-- bought in whole lots: BuyMerchantItem's quantity is in items and Blizzard's merchant frame only offers
+-- multiples of the lot (StackSplitFrame minSplit = stackCount, MerchantFrame.lua MerchantItemButton_
+-- BuyMultipleStacks). A typed quantity (strict) must be a multiple; a basket line is rounded up to whole lots.
+-- The merchant's stock (numAvailable) counts lots (it is shown on the lot's button).
+function Basket.CanBuy(line, strict)
 	if not merchantOpen then
 		return false, "Open a merchant that sells it"
 	end
@@ -366,12 +369,16 @@ function Basket.CanBuy(line)
 	if slot.extended then
 		return false, "Costs more than gold: buy it by hand"
 	end
-	if slot.stack ~= 1 then
-		return false, ("Sold in lots of %d: buy it by hand"):format(slot.stack)
-	end
+	local lot = math.max(1, slot.stack or 1)
 	local quantity = line.quantity
+	if lot > 1 then
+		if strict and quantity % lot ~= 0 then
+			return false, (ns.L["Type a multiple of %d"]):format(lot), slot
+		end
+		quantity = math.ceil(quantity / lot) * lot
+	end
 	if slot.available >= 0 then
-		quantity = math.min(quantity, slot.available)
+		quantity = math.min(quantity, slot.available * lot)
 	end
 	if quantity < 1 then
 		return false, "Sold out"
@@ -429,14 +436,15 @@ end
 -- Not strict (the basket line): the quantity is cut to what is left. Returns true, nil, slot, quantity,
 -- total price, or false, why.
 function Basket.Check(line, strict)
-	local ok, why, slot, quantity = Basket.CanBuy(line)
+	local ok, why, slot, quantity = Basket.CanBuy(line, strict)
 	if not ok then
 		return false, why
 	end
 	if strict and quantity < line.quantity then
 		return false, (ns.L["Only %d left at this merchant"]):format(quantity)
 	end
-	local total = (slot.price or 0) * quantity
+	-- The price is per lot, the quantity in items.
+	local total = (slot.price or 0) * (quantity / math.max(1, slot.stack or 1))
 	if GetMoney and slot.price and GetMoney() < total then
 		return false, ns.L["Not enough gold"], slot, quantity, total
 	end
@@ -459,6 +467,9 @@ function Basket.Purchase(line, strict)
 		return nil, why
 	end
 	local maxStack = GetMerchantItemMaxStack and GetMerchantItemMaxStack(slot.index) or 1
+	local lot = math.max(1, slot.stack or 1)
+	-- Every call is whole lots: the largest multiple of the lot that fits the per-call maximum (one lot at least).
+	maxStack = math.max(lot, math.floor(maxStack / lot) * lot)
 	local bought = 0
 	for _, n in ipairs(Basket.Chunks(quantity, maxStack)) do
 		if not merchantOpen then

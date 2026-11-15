@@ -859,6 +859,8 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
   lines, each once per open. Buy a stack: bag events do not re-plan per event (one "MerchantBuy: basket plan" a
   moment later), typing in the quantity box runs no plan.
 
+- Items sold in lots (#217): Mild Spices (lot of 5) from a spice vendor. Type 10: the panel says "10 for <2 lots' price>" and Buy buys 10 (two lots). Type 7: "Type a multiple of 5", Buy greyed. A basket line of 7 shows "10 x Mild Spices (2 lots of 5)" and its Buy buys 10. **Unverified, check these:** (1) a merchant's stock number on a lot item (numAvailable) is read as lots, so 2 left = 10 items; (2) a call above the merchant's GetMerchantItemMaxStack is never made: with a max of 20 and lots of 5, calls are at most 20 items; (3) gold spent equals price per lot x lots.
+
 ## Look up › Items: first open in slices (#202 follow-up)
 
 - No TOC change; `/reload` is enough.
