@@ -159,6 +159,7 @@ local DB_DEFAULTS = {
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	watch = {}, -- [itemID] = Unix time it was watched: Look up › Items watch list (ItemWatch.lua, #165); the companion reads it
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
+	crafted = { chars = {}, before = {} }, -- craft log per character, recipe and day; before = undated crafts counted in skillups (Crafts.lua, #205)
 	snapshots = {}, -- [ns.CharKey()] (= "<realm>-<name> <surname>", #77) = character snapshot for Claude (Snapshot.lua, issue #63)
 	fishing = {}, -- [ns.CharKey()] = { catches, opened, seen, findFish }, 90 days (Fishing.lua, issues #69, #86)
 	fishObjects = {}, -- [GameObject ID] = { name, t }: names the client gave for fishing loot sources (#86)

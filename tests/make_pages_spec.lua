@@ -95,10 +95,11 @@ it("Make: Craft, Learn and Level up are real pages in Make (one file each, in th
 	local keys = {}
 	for _, p in ipairs(M.SectionPages("make")) do
 		keys[#keys + 1] = p.key
-		eq(p.bridge, nil, p.key); eq(p.prices, true, p.key)
-		if p.key ~= "basket" then eq(p.profession, true, p.key) end -- the basket spans professions (#186)
+		eq(p.bridge, nil, p.key)
+		if p.key ~= "crafted" then eq(p.prices, true, p.key) end -- the craft log needs no prices (#205)
+		if p.key ~= "basket" and p.key ~= "crafted" then eq(p.profession, true, p.key) end -- the basket spans professions (#186)
 	end
-	eq(table.concat(keys, ","), "craft,learn,level,basket")
+	eq(table.concat(keys, ","), "craft,learn,level,basket,crafted")
 	eq(M.Page("level").label, "Level up")
 	local toc = io.open("CraftWise/CraftWise.toc"):read("*a")
 	local last = 0
