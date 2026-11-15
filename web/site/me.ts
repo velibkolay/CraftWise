@@ -1,6 +1,7 @@
 // Private page /me (#98): characters, ledger, auctions, fishing, upload tokens and usage, from the
 // private API behind Cloudflare Access. Desktop shows every pane; a phone shows one section at a time.
-import { type Browse, get, type House, pickHouse } from "./lib/api";
+import { type Browse, type House, get } from "./lib/api";
+import { chooseHouse } from "./lib/housesel";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, s, slot, topBar } from "./lib/dom";
 import { age, qualityClass } from "./lib/format";
 import * as M from "./lib/me";
@@ -882,7 +883,7 @@ async function main(): Promise<void> {
 	}
 	try {
 		const houses = (await get<{ houses: House[] }>("/api/houses")).houses;
-		st.house = pickHouse(houses);
+		st.house = chooseHouse(houses, st.chars.map((c) => c.realm));
 		for (const hs of houses) st.houseLabels.set(hs.key, hs.label);
 	} catch {
 		// labels fall back to the house keys

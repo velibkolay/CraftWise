@@ -1,14 +1,8 @@
 // The site's own read API (web/docs/api.md). Nothing else is fetched at runtime.
 import type { DayRow, Tier } from "./format";
+import type { House } from "./house";
 
-export interface House {
-	key: string;
-	realm: string;
-	kind: "faction" | "neutral";
-	faction: string | null;
-	label: string;
-	lastScan: number | null;
-}
+export type { House };
 
 export interface Current {
 	t: number;
@@ -100,13 +94,4 @@ export async function get<T>(path: string): Promise<T> {
 		throw new ApiError(res.status, message);
 	}
 	return (await res.json()) as T;
-}
-
-// The site is about one house: the Horde auction house (#96), else the first faction house.
-export function pickHouse(houses: House[]): House | null {
-	return houses.find((h) => h.kind === "faction" && h.faction === "Horde") ?? houses.find((h) => h.kind === "faction") ?? houses[0] ?? null;
-}
-
-export async function mainHouse(): Promise<House | null> {
-	return pickHouse((await get<{ houses: House[] }>("/api/houses")).houses);
 }

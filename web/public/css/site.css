@@ -46,6 +46,9 @@ button, input, select { font: inherit; color: inherit; letter-spacing: inherit; 
 
 .statusrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 0 4px 0 64px; margin: -2px 0 14px; font-size: 13px; }
 .sbar { flex: 1 1 420px; max-width: 640px; }
+.housebar { flex: 1 1 420px; max-width: 640px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.housebar .sbar { flex: 1 1 auto; max-width: none; min-width: 0; }
+.housepick { flex: 0 1 auto; max-width: 240px; }
 .cols { display: flex; flex-wrap: wrap; gap: 14px; }
 .side { flex: 1 1 260px; max-width: 316px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .searchrow { display: flex; gap: 8px; }
