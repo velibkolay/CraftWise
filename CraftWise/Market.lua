@@ -6,6 +6,8 @@
 --
 -- CraftWiseMarketDB (account-wide, its own SavedVariables so market size never touches CraftWiseDB):
 --   v, houses[houseKey], scans[houseKey] (last 30), cutSamples, prunedAt, scope = { items, skillLines }
+--   syncScans[houseKey] (last 30) and sync = { written, machine, at, ... }: what the other machine's file
+--   (CraftWise_Sync, #241) added; see the Sync section
 --   items[itemKey][houseKey] = entry, where itemKey is the itemID or "itemID:suffixID"
 --   entry = {
 --     last = { t, min, qty, listings, off },            latest observation (browse has no listings);
@@ -486,7 +488,7 @@ end
 M.indexBuilds = 0 -- how often the index was built, for the specs
 local index -- complete
 local building -- { items, byItem, cursor } while BuildIndexStep is part way
-local indexVersion, scopeVersion, namesVersion = 0, 0, 0
+local indexVersion, scopeVersion, namesVersion, syncVersion = 0, 0, 0, 0
 
 local function ItemIDOfKey(itemKey)
 	return type(itemKey) == "number" and itemKey or tonumber(tostring(itemKey):match("^%d+"))
@@ -1743,6 +1745,7 @@ function M.SnapshotSummary()
 		local h = { label = house.label, kind = house.kind, items = 0, withHistory = 0 }
 		local list = db.scans[houseKey] or {}
 		h.lastRecorded = list[#list] and list[#list].t or nil
+		h.lastSynced, h.lastSyncedMachine = M.LastSynced(houseKey)
 		for i = #list, 1, -1 do
 			if list[i].kind == "full" then
 				h.lastFullScan, h.lastFullScanSource = list[i].t, list[i].source
@@ -1907,10 +1910,11 @@ local function Index()
 	return index
 end
 
--- Changes whenever a key is added or removed, the scope grows or a stored name changes: caches built
+-- Changes whenever a key is added or removed, the scope grows, a stored name changes or a sync merge
+-- (#241) changed prices: caches built
 -- from RecordedItemIDs, InScope or StoredName stay valid while this stays equal.
 function M.DataVersion()
-	return indexVersion .. "." .. scopeVersion .. "." .. namesVersion
+	return indexVersion .. "." .. scopeVersion .. "." .. namesVersion .. "." .. syncVersion
 end
 
 -- The item keys recorded for an item: the plain itemID first, then its suffix variants by key. A new
@@ -2374,6 +2378,497 @@ function M.Slash(arg)
 end
 
 ----------------------------------------------------------------------------------------------------
+-- Sync (#241, part of #237): the market the companion downloaded from the other machine.
+-- The companion writes a data addon, CraftWise_Sync (never SavedVariables), that sets one global:
+--   CraftWiseSync = { v = 1, written = <unix>, machine = "<name>",
+--     market = { houses, scans, names, itemInfo, classNames, subclassNames,
+--                items = { [itemKey] = { [houseKey] = "<packed entry string>" } } } }
+-- Entries are the packed strings of EncodeEntry. The file is read once after login and merged into
+-- CraftWiseMarketDB in slices (SyncSlice: a few ms per frame, never a freeze). It only ever adds:
+--   last   the newer `t` wins (own on a tie);
+--   raw    union by `t` (the same `t` is the same point), then the usual 48 h;
+--   days   union; the same day on both machines keeps the aggregate with more points (n), own on a tie,
+--          the same rule as the site's download (#238);
+--   items outside the scope keep `last` only, as everywhere (#90);
+--   houses, names, item info, class names: filled in or, for item info, the newer read wins.
+-- Anything malformed is skipped, never an error. The same `written` again is skipped; running it again
+-- changes nothing. Scans of the other machine are kept apart (db.syncScans): they are not own scans, so
+-- "last scanned" never claims this machine scanned, and the companion doesn't send them back (no echo).
+----------------------------------------------------------------------------------------------------
+
+M.SYNC_VERSION = 1
+M.SYNC_DELAY = 10 -- seconds after login; the prebuilds and the Auctionator export have started by then
+M.SYNC_SLICE_MS = 4 -- time one slice may take
+M.SYNC_CHECK = 4 -- entries handled between two looks at the clock
+M.SYNC_SLICE_MAX = 400 -- and at most this many in a slice, whatever the clock says
+local MIN_TIME = 1600000000 -- 2020-09-13, as the site's upload checks
+local syncJob
+local syncStatus = { state = "none" }
+
+local function IsCount(v)
+	return type(v) == "number" and v >= 0 and v < 2 ^ 40 and v == math.floor(v)
+end
+
+local function SaneTime(t, now)
+	return IsCount(t) and t >= MIN_TIME and t <= now + DAY_SECONDS
+end
+
+local function SaneLast(last, now)
+	return type(last) == "table" and SaneTime(last.t, now) and IsCount(last.min) and IsCount(last.qty)
+		and (last.listings == nil or IsCount(last.listings)) and (last.off == nil or IsCount(last.off))
+end
+
+-- A decoded entry from outside, with what is malformed taken out. nil when nothing usable is left.
+local function SaneEntry(e, now)
+	if type(e) ~= "table" or type(e.raw) ~= "table" or type(e.days) ~= "table" then
+		return nil
+	end
+	if e.last and not SaneLast(e.last, now) then
+		e.last = nil
+	end
+	local raw = {}
+	for _, p in ipairs(e.raw) do
+		local ok = SaneTime(p.t, now) and IsCount(p.total) and (p.listings == nil or IsCount(p.listings))
+			and (p.m == nil or IsCount(p.m)) and #p.tiers <= MAX_TIERS * 2 and #p.tiers % 2 == 0
+		local prev = 0
+		for i = 1, ok and #p.tiers or 0, 2 do
+			ok = ok and IsCount(p.tiers[i]) and p.tiers[i] >= prev and IsCount(p.tiers[i + 1])
+			prev = p.tiers[i] or prev
+		end
+		if ok then
+			raw[#raw + 1] = p
+		end
+	end
+	e.raw = raw
+	local firstDay, lastDay = DayNumber(MIN_TIME), DayNumber(now) + 1
+	for day, d in pairs(e.days) do
+		local ok = type(day) == "number" and day >= firstDay and day <= lastDay and type(d) == "table"
+		for _, field in ipairs({ "lo", "qtyMax", "listMax", "n", "gone" }) do
+			ok = ok and (d[field] == nil or IsCount(d[field]))
+		end
+		ok = ok and (d.typ == nil or type(d.typ) == "number") and (d.hi == nil or type(d.hi) == "number")
+		if not ok then
+			e.days[day] = nil
+		end
+	end
+	if e.last or e.raw[1] or next(e.days) then
+		return e
+	end
+	return nil
+end
+
+local function CopyDay(d)
+	return { lo = d.lo, typ = d.typ, hi = d.hi, qtyMax = d.qtyMax, listMax = d.listMax, n = d.n, gone = d.gone }
+end
+
+-- Merges the decoded entry `theirs` into `mine` (changed in place). true when `mine` changed.
+-- Points and days older than the retention are not taken in; AggregateEntry afterwards applies it to the rest.
+function M.MergeEntry(mine, theirs, now)
+	local changed = false
+	local a, b = mine.last, theirs.last
+	if b and (not a or b.t > a.t) then
+		mine.last = { t = b.t, min = b.min, qty = b.qty, listings = b.listings, off = b.off }
+		changed = true
+	end
+	local have, added = {}, false
+	for _, p in ipairs(mine.raw) do
+		have[p.t] = true
+	end
+	for _, p in ipairs(theirs.raw) do
+		if p.t >= now - RAW_SECONDS and not have[p.t] then
+			have[p.t] = true
+			mine.raw[#mine.raw + 1] = p
+			added = true
+		end
+	end
+	if added then
+		table.sort(mine.raw, function(x, y)
+			return x.t < y.t
+		end)
+		changed = true
+	end
+	local oldest = DayNumber(now) - KEEP_DAYS
+	for day, d in pairs(theirs.days) do
+		local own = mine.days[day]
+		if day >= oldest and (not own or (d.n or 0) > (own.n or 0)) then
+			mine.days[day] = CopyDay(d)
+			changed = true
+		end
+	end
+	return changed
+end
+
+-- t of the `last` of a stored entry (packed or decoded) without decoding it.
+local function StoredLastT(stored)
+	if type(stored) == "string" then
+		return Num(stored:match("^([^,|]*)"))
+	end
+	return stored.last and stored.last.t or nil
+end
+
+local function PutEntry(itemKey, houseKey, value)
+	local perItem = db.items[itemKey]
+	if not perItem then
+		perItem = {}
+		db.items[itemKey] = perItem
+		KeyAdded(itemKey)
+	end
+	perItem[houseKey] = value
+end
+
+local function ValidItemKey(key)
+	if type(key) == "string" and key:match("^%d+$") then
+		key = tonumber(key)
+	end
+	if type(key) == "number" then
+		return key >= 1 and key == math.floor(key) and key < 2 ^ 31 and key or nil
+	end
+	return type(key) == "string" and key:match("^%d+:%-?%d+$") and key or nil
+end
+
+local function ValidID(id)
+	id = tonumber(id)
+	return id and id >= 1 and id == math.floor(id) and id < 2 ^ 31 and id or nil
+end
+
+-- One entry of one item at one house.
+local function MergeStored(job, itemKey, houseKey, packed)
+	local perItem = db.items[itemKey]
+	local mine = perItem and perItem[houseKey]
+	if mine == packed then
+		return
+	end
+	local now = job.now
+	local theirs
+	if IsLastOnly(packed) then
+		local ok, last = pcall(PackedLast, packed)
+		if not (ok and SaneLast(last, now)) then
+			job.bad = job.bad + 1
+			return
+		end
+		local mineT = mine ~= nil and StoredLastT(mine)
+		if mineT and mineT >= last.t then
+			return -- own or already merged: nothing newer
+		end
+		if mine == nil or (type(mine) == "string" and IsLastOnly(mine)) then
+			PutEntry(itemKey, houseKey, M.EncodeEntry({ last = last }))
+			job.changed = job.changed + 1
+			return
+		end
+		theirs = { last = last, raw = {}, days = {} }
+	else
+		local ok, decoded = pcall(M.DecodeEntry, packed)
+		theirs = ok and SaneEntry(decoded, now) or nil
+		if not theirs then
+			job.bad = job.bad + 1
+			return
+		end
+		if not db.scope.items[ItemIDOfKey(itemKey)] then -- outside the scope: `last` only
+			if not theirs.last then
+				return
+			end
+			theirs = { last = theirs.last, raw = {}, days = {} }
+		end
+	end
+	local entry
+	if type(mine) == "table" then
+		entry = mine
+	elseif mine ~= nil then
+		local ok, decoded = pcall(M.DecodeEntry, mine)
+		if not ok then
+			job.bad = job.bad + 1
+			return
+		end
+		entry = decoded
+	else
+		entry = { raw = {}, days = {} }
+	end
+	if not M.MergeEntry(entry, theirs, now) then
+		return
+	end
+	if not M.AggregateEntry(entry, now) and mine == nil then
+		return
+	end
+	job.changed = job.changed + 1
+	if type(mine) ~= "table" then -- an entry in use stays a table, as it was changed in place
+		PutEntry(itemKey, houseKey, M.EncodeEntry(entry))
+	end
+end
+
+local function MergeItem(job, key, perHouse)
+	local itemKey = ValidItemKey(key)
+	if not itemKey or type(perHouse) ~= "table" then
+		job.bad = job.bad + 1
+		return
+	end
+	for houseKey, packed in pairs(perHouse) do
+		job.entries = job.entries + 1
+		if type(packed) == "string" and db.houses[houseKey] then
+			local ok = pcall(MergeStored, job, itemKey, houseKey, packed)
+			if not ok then
+				job.bad = job.bad + 1
+			end
+		else
+			job.bad = job.bad + 1
+		end
+	end
+end
+
+-- Houses are made from their key, not from the file's text: "<realm>|H", "|A" or "|N:<Name>".
+local function MergeHouse(job, key, _)
+	local realm = type(key) == "string" and key:match("^(.+)|[HAN]") or nil
+	if not realm then
+		job.bad = job.bad + 1
+		return
+	end
+	if db.houses[key] then
+		return
+	end
+	local zone = key:match("^.+|N:(%w+)$")
+	if zone then
+		db.houses[key] = { realm = realm, kind = "neutral", label = NEUTRAL_LABELS[zone] or zone, cut = { samples = 0 } }
+	elseif key == realm .. "|H" or key == realm .. "|A" then
+		local faction = key == realm .. "|H" and "Horde" or "Alliance"
+		db.houses[key] = { realm = realm, kind = "faction", faction = faction, label = faction .. " AH" }
+	else
+		job.bad = job.bad + 1
+		return
+	end
+	job.changed = job.changed + 1
+end
+
+local function MergeName(job, id, name)
+	id = ValidID(id)
+	if not id or type(name) ~= "string" or name == "" or #name > 128 then
+		job.bad = job.bad + 1
+	elseif db.names[id] == nil then -- the client's own name (localized) wins
+		SetName(id, name)
+		job.changed = job.changed + 1
+	end
+end
+
+local function MergeInfo(job, id, packed)
+	id = ValidID(id)
+	if not id or type(packed) ~= "string"
+		or not (packed:match("^%w*,%w*,%w*,%w*,%w*$") or packed:match("^%w*,%w*,%w*,%w*,%w*,%w*$")) then
+		job.bad = job.bad + 1
+		return
+	end
+	local own = db.itemInfo[id]
+	local take = type(own) ~= "string"
+	if not take and own ~= packed then
+		if InfoComplete(own) ~= InfoComplete(packed) then
+			take = InfoComplete(packed)
+		else
+			take = (InfoTime(packed) or 0) > (InfoTime(own) or 0)
+		end
+	end
+	if take then
+		db.itemInfo[id] = packed
+		job.changed = job.changed + 1
+	end
+end
+
+local function ValidName(name)
+	return type(name) == "string" and name ~= "" and #name <= 64
+end
+
+local function MergeClassName(job, id, name)
+	id = tonumber(id)
+	if not (id and id >= 0 and id <= 65535 and ValidName(name)) then
+		job.bad = job.bad + 1
+	elseif db.classNames[id] == nil then
+		db.classNames[id] = name
+		job.changed = job.changed + 1
+	end
+end
+
+local function MergeSubclassNames(job, classID, names)
+	classID = tonumber(classID)
+	if not (classID and classID >= 0 and classID <= 65535 and type(names) == "table") then
+		job.bad = job.bad + 1
+		return
+	end
+	for subID, name in pairs(names) do
+		subID = tonumber(subID)
+		if not (subID and subID >= 0 and subID <= 65535 and ValidName(name)) then
+			job.bad = job.bad + 1
+		else
+			db.subclassNames[classID] = db.subclassNames[classID] or {}
+			if db.subclassNames[classID][subID] == nil then
+				db.subclassNames[classID][subID] = name
+				job.changed = job.changed + 1
+			end
+		end
+	end
+end
+
+local SCAN_KINDS = { full = true, search = true, gear = true }
+
+local function HasScan(list, t, kind)
+	for _, s in ipairs(list or {}) do
+		if s.t == t and s.kind == kind then
+			return true
+		end
+	end
+	return false
+end
+
+-- Scans of the other machine, merged by t and kept apart from the own ones (db.syncScans), last 30.
+-- An own scan that comes back (the site holds both machines' scans) is the same t and kind: not added.
+local function MergeScans(job, houseKey, scans)
+	if not (db.houses[houseKey] and type(scans) == "table") then
+		job.bad = job.bad + 1
+		return
+	end
+	local list = db.syncScans[houseKey] or {}
+	local added = false
+	for _, s in ipairs(scans) do
+		if type(s) == "table" and SaneTime(s.t, job.now) and SCAN_KINDS[s.kind] then
+			if not (HasScan(db.scans[houseKey], s.t, s.kind) or HasScan(list, s.t, s.kind)) then
+				list[#list + 1] = { t = s.t, kind = s.kind, items = IsCount(s.items) and s.items or nil,
+					lastOnly = IsCount(s.lastOnly) and s.lastOnly or nil,
+					source = type(s.source) == "string" and #s.source <= 32 and s.source or nil,
+					machine = type(s.machine) == "string" and #s.machine <= 64 and s.machine or nil }
+				added = true
+			end
+		else
+			job.bad = job.bad + 1
+		end
+	end
+	if added then
+		table.sort(list, function(x, y)
+			return x.t < y.t
+		end)
+		while #list > SCANS_KEPT do
+			table.remove(list, 1)
+		end
+		db.syncScans[houseKey] = list
+		job.changed = job.changed + 1
+	end
+end
+
+-- Houses first (entries need them), then the entries, then the small tables.
+local SYNC_STAGES = {
+	{ "houses", MergeHouse }, { "items", MergeItem }, { "names", MergeName }, { "itemInfo", MergeInfo },
+	{ "classNames", MergeClassName }, { "subclassNames", MergeSubclassNames }, { "scans", MergeScans },
+}
+
+local function FinishSync(job)
+	syncJob = nil
+	db.sync = { written = job.written, machine = job.machine, at = time(), entries = job.entries,
+		changed = job.changed, bad = job.bad }
+	syncStatus = { state = "done", written = job.written, machine = job.machine, entries = job.entries,
+		changed = job.changed, bad = job.bad }
+	if job.changed > 0 then
+		syncVersion = syncVersion + 1
+		ns.Notify("PRICES_CHANGED", "sync")
+	end
+end
+
+-- One step: the next key of the current stage. false when every stage is done.
+local function SyncStep(job)
+	local stage = SYNC_STAGES[job.stage]
+	if not stage then
+		return false
+	end
+	local source = job.source[stage[1]]
+	if type(source) ~= "table" then
+		job.stage, job.key = job.stage + 1, nil
+		return true
+	end
+	local ok, key, value = pcall(next, source, job.key)
+	if not ok or key == nil then
+		job.stage, job.key = job.stage + 1, nil
+		return true
+	end
+	job.key = key
+	local done = pcall(stage[2], job, key, value)
+	if not done then
+		job.bad = job.bad + 1
+	end
+	return true
+end
+
+local syncQueued = false
+local SyncSlice
+local function ScheduleSync()
+	if not syncQueued then
+		syncQueued = true
+		C_Timer.After(0, SyncSlice)
+	end
+end
+
+SyncSlice = ns.Timed("Market: sync merge slice", function()
+	syncQueued = false
+	local job = syncJob
+	if not job then
+		return
+	end
+	local started, n = debugprofilestop(), 0
+	while SyncStep(job) do
+		n = n + 1
+		if n >= M.SYNC_SLICE_MAX or (n % M.SYNC_CHECK == 0 and debugprofilestop() - started >= M.SYNC_SLICE_MS) then
+			syncStatus.entries, syncStatus.changed, syncStatus.bad = job.entries, job.changed, job.bad
+			ScheduleSync()
+			return
+		end
+	end
+	FinishSync(job)
+end)
+
+-- Reads CraftWiseSync (set by the CraftWise_Sync addon when it is installed) and starts the merge.
+-- Returns the state: "none" (no file or nothing usable), "unsupported" (another format version),
+-- "unchanged" (this `written` was merged before), "merging" (running in slices).
+function M.StartSync()
+	if not db or syncJob then
+		return syncJob and "merging" or syncStatus.state
+	end
+	local file = _G.CraftWiseSync
+	local market = type(file) == "table" and file.market
+	if type(market) ~= "table" then
+		syncStatus = { state = "none" }
+		return "none"
+	end
+	if file.v ~= M.SYNC_VERSION then
+		file.market = nil
+		syncStatus = { state = "unsupported", v = file.v }
+		return "unsupported"
+	end
+	local written = file.written
+	if not IsCount(written) then
+		file.market = nil
+		syncStatus = { state = "none" }
+		return "none"
+	end
+	if db.sync and db.sync.written == written then
+		file.market = nil -- the strings are not needed again: let go of them
+		syncStatus = { state = "unchanged", written = written, machine = db.sync.machine }
+		return "unchanged"
+	end
+	file.market = nil -- the job holds it until it is merged
+	syncJob = { source = market, stage = 1, now = time(), written = written,
+		machine = type(file.machine) == "string" and #file.machine <= 64 and file.machine or nil,
+		entries = 0, changed = 0, bad = 0 }
+	syncStatus = { state = "merging", written = written }
+	ScheduleSync()
+	return "merging"
+end
+
+-- { state, written, machine, entries, changed, bad } of the last read; for the specs and /craftwise debug.
+function M.SyncStatus()
+	return syncStatus
+end
+
+-- When the other machine's last scan at a house happened and under which name, nil without one.
+-- Never an own scan: LastRecorded is the own one.
+function M.LastSynced(houseKey)
+	local list = db and houseKey and db.syncScans[houseKey]
+	local last = list and list[#list]
+	return last and last.t or nil, last and last.machine or nil
+end
+
+----------------------------------------------------------------------------------------------------
 -- Events
 ----------------------------------------------------------------------------------------------------
 
@@ -2384,6 +2879,7 @@ ns.Listen("DB_READY", function()
 	db.v = db.v or 1
 	db.houses = db.houses or {}
 	db.scans = db.scans or {}
+	db.syncScans = db.syncScans or {}
 	db.items = db.items or {}
 	db.cutSamples = db.cutSamples or {}
 	db.scope = db.scope or {}
@@ -2411,6 +2907,7 @@ ns.On("PLAYER_LOGIN", function()
 	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, function()
 		M.FillItemInfo()
 	end)
+	C_Timer.NewTimer(M.SYNC_DELAY, ns.Timed("Market: sync start", M.StartSync))
 end)
 -- Names first, as a normal handler; packing last (#105): handlers loaded after Market read prices at
 -- logout (the snapshot values fishing catches), and a read unpacks the entry it touches.

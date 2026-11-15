@@ -428,7 +428,8 @@ function M.AuctionatorHasPrices(now)
 end
 
 -- The AH behind the prices: { house, label, at, age, stale, hasData, auctionator, hasPrices,
--- scanning = { label, done, total } }. hasData: CraftWise recorded something at the house; auctionator:
+-- scanning = { label, done, total }, synced = { machine } }. hasData: CraftWise recorded something at the
+-- house (synced: the newest of it came from the other machine's file, #241); auctionator:
 -- without that, Auctionator has prices; hasPrices: either (the "No prices" rule). Stale only looks at
 -- CraftWise's own records (Auctionator's age is per item, on the tooltips).
 function M.PriceStatus(now)
@@ -439,6 +440,13 @@ function M.PriceStatus(now)
 	end
 	local market = ns.Market
 	s.at = market and market.LastRecorded and s.house and market.LastRecorded(s.house) or nil
+	-- The other machine's scan (#241) counts as data when it is newer; the header says it was synced, never "scanned".
+	if market and market.LastSynced and s.house then
+		local syncedAt, machine = market.LastSynced(s.house)
+		if syncedAt and (not s.at or syncedAt > s.at) then
+			s.at, s.synced = syncedAt, { machine = machine }
+		end
+	end
 	s.hasData = s.at ~= nil
 	s.auctionator = not s.hasData and M.AuctionatorHasPrices(now) or false
 	s.hasPrices = s.hasData or s.auctionator
@@ -466,10 +474,15 @@ function M.StatusText(status)
 		end
 		return status.label .. " · " .. L["no AH data"], "none"
 	end
+	local synced = status.synced
+	local from = synced and (synced.machine and (L["synced from %s"]):format(synced.machine) or L["synced"])
 	if status.stale then
+		if from then
+			return status.label .. " · " .. from .. " " .. M.AgeText(status.age) .. " " .. L["ago"], "stale"
+		end
 		return status.label .. " · " .. (L["scanned %s ago"]):format(M.AgeText(status.age)), "stale"
 	end
-	return status.label .. " · " .. Style.Hex("text2") .. M.AgeText(status.age) .. "|r " .. L["ago"], "ok"
+	return status.label .. " · " .. (from and from .. " " or "") .. Style.Hex("text2") .. M.AgeText(status.age) .. "|r " .. L["ago"], "ok"
 end
 
 -- The header's AH status tooltip (#157: Records › Market's per-house scan summary moved here): a title and
@@ -504,6 +517,10 @@ function M.ScanSummary(now)
 	local lines = {}
 	for _, h in ipairs(houses) do
 		local scan = h.lastFullScan and (L["full scan %s ago"]):format(M.AgeText(now - h.lastFullScan)) or L["no full scan"]
+		if h.lastSynced then
+			scan = scan .. " · " .. (h.lastSyncedMachine and (L["synced from %s"]):format(h.lastSyncedMachine) or L["synced"])
+				.. " " .. M.AgeText(now - h.lastSynced) .. " " .. L["ago"]
+		end
 		lines[#lines + 1] = ("%s%s: %s · %s, %s %s"):format(h.label or "?", h.key == profit and (" (" .. L["profit"] .. ")") or "",
 			scan, Items(h.items), M.Thousands(h.withHistory), L["with history"])
 	end
