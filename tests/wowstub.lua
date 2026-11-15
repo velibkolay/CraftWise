@@ -491,6 +491,30 @@ C_Container.PickupContainerItem = function(bag, slot)
 	end
 end
 function GetCursorInfo() return stub.cursor and "item" or nil end
+-- Trade window (#299): stub.trade[slot] = { name, count, from = { bag, slot } }; ClickTradeButton drops the cursor
+-- stack into the slot (the item stays in its bag slot, locked, until the trade completes). AcceptTrade must never
+-- be called: stub.accepted counts it.
+stub.trade, stub.accepted, stub.tradePartner, stub.tradeNoDrop = {}, 0, nil, false
+C_Container.SplitContainerItem = function(bag, slot, amount)
+	if not stub.cursor then
+		stub.cursor = { bag = bag, slot = slot, split = amount }
+	end
+end
+function ClickTradeButton(slot)
+	if stub.cursor and not stub.tradeNoDrop then
+		local c = stub.cursor
+		local info = stub.bags[c.bag][c.slot]
+		stub.trade[slot] = { name = "item" .. info.itemID, count = c.split or info.stackCount, from = c }
+		stub.cursor = nil
+	end
+end
+function GetTradePlayerItemInfo(slot)
+	local t = stub.trade[slot]
+	if t then return t.name, nil, t.count end
+end
+function AcceptTrade() stub.accepted = stub.accepted + 1 end
+C_SecureTransfer = { GetTradePartner = function() return stub.tradePartner end,
+	AcceptTrade = function() stub.accepted = stub.accepted + 1 end }
 function ClearCursor() stub.cursor = nil end
 
 -- Where the player stands (house detection).
