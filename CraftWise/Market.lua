@@ -2399,7 +2399,7 @@ end
 M.SYNC_VERSION = 1
 M.SYNC_DELAY = 10 -- seconds after login; the prebuilds and the Auctionator export have started by then
 M.SYNC_SLICE_MS = 4 -- time one slice may take
-M.SYNC_CHECK = 10 -- entries handled between two looks at the clock
+M.SYNC_CHECK = 4 -- entries handled between two looks at the clock
 M.SYNC_SLICE_MAX = 400 -- and at most this many in a slice, whatever the clock says
 local MIN_TIME = 1600000000 -- 2020-09-13, as the site's upload checks
 local syncJob
