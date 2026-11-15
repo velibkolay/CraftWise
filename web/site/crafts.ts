@@ -2,11 +2,11 @@
 // pay when the product goes to a vendor and vendor loops. Prices and names come from /api/browse (as the list
 // page); the recipes from /data/recipes.json. A price that is missing stays missing.
 import { type Browse, type BrowseItem, get, type House, mainHouse } from "./lib/api";
-import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, scopeOf, sortCrafts, toRow } from "./lib/crafts";
-import { type CraftNames, craftItBreakdown, loopTag, profitEl } from "./lib/craftview";
+import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, snapshotLines, scopeOf, sortCrafts, toRow } from "./lib/crafts";
+import { type CraftNames, craftItBreakdown, craftsText, loopTag, profitEl } from "./lib/craftview";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
 import { qualityClass } from "./lib/format";
-import { type Quote, quoteOf, RECIPES_URL, type RecipeData, type Spell } from "./lib/recipes";
+import { type Quote, quoteOf, RECIPES_URL, type RecipeData, recipeItemOf, type Spell } from "./lib/recipes";
 
 const PAGE = 25;
 
@@ -15,7 +15,8 @@ interface State {
 	q: string;
 	vendorOnly: boolean;
 	loopsOnly: boolean;
-	mine: boolean;
+	mine: boolean; // "Known recipes"
+	myProf: boolean; // "My professions"
 	sort: CraftSort;
 	desc: boolean;
 	page: number;
@@ -30,7 +31,8 @@ function readState(): State {
 		q: (p.get("q") ?? "").trim(),
 		vendorOnly: p.get("vendor") === "1",
 		loopsOnly: p.get("loops") === "1",
-		mine: p.get("mine") === "1",
+		mine: p.get("known") === "1" || p.get("mine") === "1", // `mine` is the old name
+		myProf: p.get("myprof") === "1",
 		sort: sort && CRAFT_SORTS.includes(sort) ? sort : "vprofit",
 		desc: p.get("dir") !== "asc",
 		page: Math.max(1, Number(p.get("p")) || 1),
@@ -43,7 +45,8 @@ function writeState(push = false): void {
 	if (st.q) p.set("q", st.q);
 	if (st.vendorOnly) p.set("vendor", "1");
 	if (st.loopsOnly) p.set("loops", "1");
-	if (st.mine) p.set("mine", "1");
+	if (st.mine) p.set("known", "1");
+	if (st.myProf) p.set("myprof", "1");
 	if (st.sort !== "vprofit") p.set("sort", st.sort);
 	if (!st.desc) p.set("dir", "asc");
 	if (st.page > 1) p.set("p", String(st.page));
@@ -55,7 +58,9 @@ let st = readState();
 let house: House | null = null;
 let data: RecipeData | null = null;
 let spells: Spell[] = [];
-let known: Set<number> | null = null; // "My crafts": spell IDs known by the characters, when the private API answered
+let known: Set<number> | null = null; // "Known recipes": spell IDs known by the characters, when the private API answered
+let ownLines: Set<number> | null = null; // "My professions": the characters' skill lines
+let listedLines: Set<number> | null = null; // of those, the lines a snapshot lists the recipes of
 const quotes = new Map<number, Quote>();
 const fetched = new Set<number>();
 const itemNames: CraftNames = new Map();
@@ -77,7 +82,9 @@ const nameInput = h("input", { class: "winput", id: "f-name", type: "search", au
 const vendorBox = h("input", { type: "checkbox", id: "f-vendor" }) as HTMLInputElement;
 const loopBox = h("input", { type: "checkbox", id: "f-loops" }) as HTMLInputElement;
 const mineBox = h("input", { type: "checkbox", id: "f-mine" }) as HTMLInputElement;
-const mineLabel = h("label", { class: "field vcheck", for: "f-mine", hidden: true }, mineBox, h("span", { class: "lbl" }, "My crafts"));
+const mineLabel = h("label", { class: "field vcheck", for: "f-mine", hidden: true }, mineBox, h("span", { class: "lbl", title: "Recipes your characters already know" }, "Known recipes"));
+const profBox = h("input", { type: "checkbox", id: "f-myprof" }) as HTMLInputElement;
+const profLabel = h("label", { class: "field vcheck", for: "f-myprof", hidden: true }, profBox, h("span", { class: "lbl", title: "Every recipe of the professions your characters have, learned or not" }, "My professions"));
 const tableWrap = h("div", { class: "tscroll" });
 const pager = h("div", { class: "pager" });
 const colHint = h("span", { class: "hint" });
@@ -98,6 +105,7 @@ function shell(): void {
 			h("label", { class: "field vcheck", for: "f-vendor" }, vendorBox, h("span", { class: "lbl" }, "Profit when sold to a vendor")),
 			h("label", { class: "field vcheck", for: "f-loops" }, loopBox, h("span", { class: "lbl" }, "Loops only")),
 			mineLabel,
+			profLabel,
 		),
 		h("div", { class: "inset" }, tableWrap),
 	);
@@ -136,6 +144,10 @@ function wire(): void {
 		st.mine = mineBox.checked;
 		changed();
 	});
+	profBox.addEventListener("change", () => {
+		st.myProf = profBox.checked;
+		changed();
+	});
 }
 
 // A filter changed: back to page 1, and price what the new scope needs.
@@ -149,7 +161,7 @@ function changed(price = true): void {
 // ---- Data ---------------------------------------------------------------------------------------
 
 function filter(): CraftFilter {
-	return { line: st.line, vendorOnly: st.vendorOnly, loopsOnly: st.loopsOnly, known: st.mine && known ? known : null, q: st.q };
+	return { line: st.line, vendorOnly: st.vendorOnly, loopsOnly: st.loopsOnly, known: st.mine && known ? known : null, ownLines: st.myProf && ownLines ? ownLines : null, q: st.q };
 }
 
 function remember(items: BrowseItem[]): void {
@@ -171,6 +183,11 @@ async function priceScope(): Promise<void> {
 	const scope = scopeOf(data, spells, filter());
 	for (const sp of scope) if (!fetched.has(sp.output!) && !seen.has(sp.output!)) (seen.add(sp.output!), need.push(sp.output!));
 	for (const sp of scope) for (const id of itemsOfSpell(sp)) if (!fetched.has(id) && !seen.has(id)) (seen.add(id), need.push(id));
+	// The recipe items (their AH price is a recipe's cost), except of recipes a character knows (cost 0).
+	for (const sp of scope) {
+		const id = recipeItemOf(data, sp.id)?.item;
+		if (id !== undefined && !known?.has(sp.id) && !fetched.has(id) && !seen.has(id)) (seen.add(id), need.push(id));
+	}
 	if (!need.length) {
 		loading = false;
 		return renderTable();
@@ -199,7 +216,7 @@ async function priceScope(): Promise<void> {
 	}
 }
 
-// "My crafts": the recipes the characters know, from the uploaded snapshots (private API). Anyone without the
+// "Known recipes" and "My professions": the recipes and skill lines the characters have, from the uploaded snapshots (private API). Anyone without the
 // Access login (a redirect or an error) just doesn't get the filter. Never throws.
 async function loadKnown(): Promise<void> {
 	try {
@@ -208,19 +225,29 @@ async function loadKnown(): Promise<void> {
 		if (!list.ok) return;
 		const keys = ((await list.json()) as { characters?: { key?: unknown }[] }).characters?.flatMap((c) => (typeof c.key === "string" ? [c.key] : [])) ?? [];
 		const all = new Set<number>();
+		const own = new Set<number>();
+		const listed = new Set<number>();
 		for (const key of keys) {
 			const res = await fetch(`/api/me/characters/${encodeURIComponent(key)}`, opts);
 			if (!res.ok) continue;
 			const snap = ((await res.json()) as { snapshot?: { data?: unknown } | null }).snapshot;
 			for (const id of knownSpells(snap?.data)) all.add(id);
+			const lines = snapshotLines(snap?.data);
+			for (const l of lines.own) own.add(l);
+			for (const l of lines.listed) listed.add(l);
 		}
-		if (!all.size) return; // no snapshot lists learned recipes yet: no filter, nothing guessed
-		known = all;
-		mineLabel.hidden = false;
-		if (st.mine) {
-			void priceScope();
-			renderTable();
+		if (!own.size && !all.size) return; // no snapshot lists professions or recipes yet: no filters, nothing guessed
+		if (own.size) {
+			ownLines = own;
+			profLabel.hidden = false;
 		}
+		if (all.size) {
+			known = all;
+			listedLines = listed;
+			mineLabel.hidden = false;
+		}
+		void priceScope(); // a known recipe costs nothing: the table is drawn again either way
+		renderTable();
 	} catch {
 		// no private API for this visitor
 	}
@@ -267,13 +294,15 @@ const COLUMNS: Col[] = [
 	{ key: "pct", label: "Profit %", cls: "r", firstDesc: true },
 	{ key: "vprofit", label: "Vendor profit", cls: "r c-profit", firstDesc: true },
 	{ key: "vpct", label: "Vendor profit %", cls: "r", firstDesc: true },
+	{ key: "recipe", label: "Recipe", cls: "r", firstDesc: false },
+	{ key: "payback", label: "Pays back after", cls: "r", firstDesc: false },
 ];
 
 function rowsNow(): CraftRow[] {
 	if (!data) return [];
 	const f = filter();
 	return scopeOf(data, spells, f)
-		.map((sp) => toRow(data!, sp, quotes, fetched, nameOnly))
+		.map((sp) => toRow(data!, sp, quotes, fetched, nameOnly, known, st.vendorOnly, listedLines))
 		.filter((r) => keep(r, f));
 }
 
@@ -285,18 +314,20 @@ function renderTable(): void {
 	const shown = list.slice((st.page - 1) * PAGE, st.page * PAGE);
 	const note = failed ? ", some prices could not be loaded" : loading ? ", pricing the crafts" : "";
 	clear(heading, "Crafts ", h("span", { class: "hint count" }, `${list.length.toLocaleString("en-US")} ${list.length === 1 ? "craft" : "crafts"}${note}`));
-	clear(colHint, "AH sale: one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more). Vendor sale: what a vendor pays for the product. Reagents: each where it is cheaper, AH or vendor. A loop buys every reagent from a vendor and sells the product to one for more. Profit %: the return per gold spent on reagents (profit / reagents). Press a profit for the breakdown.");
+	clear(colHint, "AH sale: one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more). Vendor sale: what a vendor pays for the product. Reagents: each where it is cheaper, AH or vendor. A loop buys every reagent from a vendor and sells the product to one for more. Profit %: the return per gold spent on reagents (profit / reagents). Recipe: what learning it costs, from the cheapest first-hand source: known by one of your characters, a vendor, or the AH; unknown when we have no figure (a trainer fee is not uploaded). Pays back after: crafts until the recipe's cost is earned back, rounded up; \"never\" when a craft makes no profit. It uses the vendor profit when \"Profit when sold to a vendor\" is ticked, else the AH profit. Press a profit for the breakdown.");
 	document.title = "Crafts - Velikopter Market";
 	vendorBox.checked = st.vendorOnly;
 	loopBox.checked = st.loopsOnly;
 	mineBox.checked = st.mine;
+	profBox.checked = st.myProf;
 	nameInput.value = st.q;
 	const head = h(
 		"tr",
 		{},
 		COLUMNS.map((c) => {
 			const sorted = c.key === st.sort;
-			const th = h("th", { class: c.cls, scope: "col", "aria-sort": sorted ? (st.desc ? "descending" : "ascending") : null });
+			const tip = c.key === "payback" ? `Crafts until the recipe's cost is earned back, using the ${st.vendorOnly ? "vendor profit (\"Profit when sold to a vendor\" is ticked)" : "AH profit"}` : null;
+			const th = h("th", { class: c.cls, scope: "col", title: tip, "aria-sort": sorted ? (st.desc ? "descending" : "ascending") : null });
 			const btn = h("button", { type: "button" }, c.label, sorted ? h("span", { class: `srt${st.desc ? "" : " asc"}`, "aria-hidden": "true" }) : null);
 			btn.addEventListener("click", () => {
 				st.desc = sorted ? !st.desc : c.firstDesc;
@@ -331,6 +362,27 @@ function pctCell(r: CraftRow, v: number | null): HTMLElement {
 	return h("td", { class: "r" }, h("span", { class: v >= 0 ? "profit" : "profit loss" }, formatPct(v)));
 }
 
+// What the recipe costs and where the figure comes from; "unknown" when no first-hand figure exists.
+function recipeCell(r: CraftRow): HTMLElement {
+	const rc = r.recipeCost;
+	if (rc?.source === "known") return h("td", { class: "r" }, h("span", { class: "hint", title: "One of your characters already knows this recipe: it costs nothing" }, "known"));
+	if (rc) {
+		const src = rc.source === "vendor" ? "vendor" : rc.basis === "lowest" ? "AH, lowest" : "AH";
+		return h("td", { class: "r" }, moneyEl(rc.unit), " ", h("span", { class: "hint" }, src));
+	}
+	if (!r.recipeReady) return h("td", { class: "r" }, h("span", { class: "hint" }, "…"));
+	const tip = r.recipeItem === null ? "No first-hand cost: this recipe has no recipe item in the data (a trainer, a drop or a quest). Trainer fees are recorded by the addon but not uploaded" : "No first-hand cost: no vendor sells this recipe in the bundled data and it has no AH price";
+	return h("td", { class: "r" }, h("span", { class: "hint", title: tip }, "unknown"));
+}
+
+function paybackCell(r: CraftRow): HTMLElement {
+	if (r.payback === 0) return h("td", { class: "r" }, h("span", { class: "hint", title: "Known: nothing to pay back" }, "known"));
+	if (r.payback === Infinity) return h("td", { class: "r" }, h("span", { class: "profit loss", title: "A craft makes no profit with this basis" }, "never"));
+	if (r.payback !== null) return h("td", { class: "r num" }, craftsText(r.payback));
+	const waiting = !r.ready || !r.recipeReady;
+	return h("td", { class: "r" }, h("span", { class: "hint", title: r.recipeCost === null ? "The recipe's cost is unknown" : "The craft's profit is unknown" }, waiting ? "…" : "–"));
+}
+
 function profitButton(r: CraftRow, value: number | null, tip: string): HTMLElement {
 	const open = openRows.has(r.spell.id);
 	const label = value === null ? h("span", { class: "hint" }, r.ready ? "unknown" : "…") : profitEl(value);
@@ -362,7 +414,8 @@ function rowEl(r: CraftRow): HTMLElement {
 		h(
 			"td",
 			{ class: "c-name" },
-			h("a", { href: `/item/${out}`, class: `iname ${quality}` }, slot(name, quality), h("span", { class: "nm" }, name)),
+			h("a", { href: `/item/${out}`, class: `iname ${quality}${r.learned === false ? " unlearned" : ""}` }, slot(name, quality), h("span", { class: "nm" }, name)),
+			r.learned === false ? h("span", { class: "hint unlearned-tag", title: "None of your characters knows this recipe" }, " unlearned") : null,
 			r.spell.qty !== 1 ? h("span", { class: "hint" }, ` × ${Number.isInteger(r.spell.qty) ? r.spell.qty : r.spell.qty.toFixed(2)}`) : null,
 			r.loop ? " " : null,
 			r.loop ? loopTag() : null,
@@ -379,6 +432,8 @@ function rowEl(r: CraftRow): HTMLElement {
 			r.vprofit === null ? (v.sale === null ? "Vendors don't buy it, or the price isn't known" : "Unknown: a reagent has no price") : `Vendor sale ${skinMoney(v.sale!).short} - reagents ${skinMoney(r.cost!).short}`,
 		),
 		pctCell(r, r.vpct),
+		recipeCell(r),
+		paybackCell(r),
 	);
 }
 
