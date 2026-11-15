@@ -647,3 +647,151 @@ it("the tooltip shows the logged profit, the per-character split and the payback
 	assert(text:find("Main Tanner", 1, true) and text:find("Alt Mage", 1, true), text)
 	assert(text:find("Recipe cost 5s: 1s 50c to go", 1, true), text)
 end)
+
+-- Measured yield (#221)
+local function yieldSetup(realProfit)
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	LOOT_ITEM_CREATED_SELF = "You create: %s."
+	LOOT_ITEM_CREATED_SELF_MULTIPLE = "You create: %sx%d."
+	if not realProfit then ns.CraftLog.ProfitNow = function() return nil end end
+	local recipe = ns.charDB.professions[165].recipes[R_BOOTS]
+	recipe.output = { itemID = 2302, quantity = 3 }
+	return ns, stub, recipe
+end
+
+local function link(id) return "|cff1eff00|Hitem:" .. id .. "::::::::|h[Seasoned Wolf Kabob]|h|r" end
+
+local function created(stub, id, n)
+	local text = n == 1 and ("You create: " .. link(id) .. ".") or ("You create: " .. link(id) .. "x" .. n .. ".")
+	stub.Fire("CHAT_MSG_LOOT", text)
+end
+
+it("yield: the client's own format strings are turned into patterns, the multiple form first", function()
+	local ns = yieldSetup()
+	local id, n = ns.CraftLog.ParseCreated("You create: " .. link(2302) .. "x3.")
+	eq(id, 2302); eq(n, 3)
+	id, n = ns.CraftLog.ParseCreated("You create: " .. link(2302) .. ".")
+	eq(id, 2302); eq(n, 1)
+	eq(ns.CraftLog.ParseCreated("You receive loot: " .. link(2302) .. "."), nil, "another message")
+	eq(ns.CraftLog.ParseCreated(nil), nil)
+	-- a locale with another wording and positional arguments
+	LOOT_ITEM_CREATED_SELF = "Hergestellt: %s."
+	LOOT_ITEM_CREATED_SELF_MULTIPLE = "Hergestellt: %2$dx %1$s."
+	id, n = ns.CraftLog.ParseCreated("Hergestellt: 2x " .. link(2302) .. ".")
+	eq(id, 2302); eq(n, 2)
+	issecretvalue = function() return true end
+	eq(ns.CraftLog.ParseCreated("Hergestellt: " .. link(2302) .. "."), nil, "secret values are ignored")
+	issecretvalue = nil
+end)
+
+it("yield: a result pairs with the craft detected before it and replaces the data estimate in the bucket", function()
+	local ns, stub = yieldSetup()
+	craftAt(stub, R_BOOTS, 100)
+	eq(entryOf(ns, R_BOOTS).days[20261115][2], 3, "the exact data yield until the result arrives")
+	created(stub, 2302, 2)
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[1], 1); eq(b[2], 2); eq(b[5], 1)
+	eq(ns.db.crafted.yield[R_BOOTS].n, 1); eq(ns.db.crafted.yield[R_BOOTS].items, 2)
+end)
+
+it("yield: a result that comes before its craft pairs too; other items and old results don't", function()
+	local ns, stub = yieldSetup()
+	stub.now = 100
+	created(stub, 2302, 3)
+	craftAt(stub, R_BOOTS, 101)
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[2], 3); eq(b[5], 1)
+	created(stub, 99999, 5) -- another item: no craft of it
+	craftAt(stub, R_BOOTS, 102)
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 1, "still waiting")
+	stub.now = 120
+	created(stub, 2302, 1) -- 18 s later: the craft at 102 has expired
+	eq(entryOf(ns, R_BOOTS).days[20261115][5], 1)
+	craftAt(stub, R_BOOTS, 121) -- pairs with the line at 120
+	local day = entryOf(ns, R_BOOTS).days[20261115]
+	eq(day[5], 2); eq(day[1], 3)
+end)
+
+it("yield: a recipe with a yield range adds the real quantity (not 0) once the result arrives", function()
+	local ns, stub, recipe = yieldSetup()
+	recipe.output.quantity = 2.5 -- a range: no exact estimate
+	craftAt(stub, R_BOOTS, 100)
+	eq(entryOf(ns, R_BOOTS).days[20261115][2], 0)
+	created(stub, 2302, 3)
+	eq(entryOf(ns, R_BOOTS).days[20261115][2], 3)
+end)
+
+it("yield: the measured mean applies from 10 results; below that the data value stays", function()
+	local ns, stub = yieldSetup()
+	local t = 100
+	local got = { 3, 3, 3, 3, 2, 1, 3, 2, 3 }
+	for _, n in ipairs(got) do
+		craftAt(stub, R_BOOTS, t); created(stub, 2302, n); t = t + 2
+	end
+	eq(ns.CraftLog.MeasuredYield(R_BOOTS), nil, "9 results")
+	local out, info = ns.CraftLog.EffectiveOutput(R_BOOTS, { itemID = 2302, quantity = 3 })
+	eq(out.quantity, 3); eq(info, nil)
+	craftAt(stub, R_BOOTS, t); created(stub, 2302, 1)
+	local mean, n = ns.CraftLog.MeasuredYield(R_BOOTS)
+	eq(n, 10); eq(mean, 2.4)
+	out, info = ns.CraftLog.EffectiveOutput(R_BOOTS, { itemID = 2302, quantity = 3 })
+	eq(out.quantity, 2.4); eq(info.measured, true); eq(info.n, 10); eq(info.data, 3)
+	local day = entryOf(ns, R_BOOTS).days[20261115]
+	eq(day[1], 10); eq(day[2], 24); eq(day[5], 10)
+end)
+
+it("yield: the mean is shared account wide and stays bounded", function()
+	local ns = yieldSetup()
+	ns.db.crafted.yield = { [R_BOOTS] = { n = 1000, items = 2000 } }
+	ns.CraftLog.CraftSeen(R_BOOTS, 2302, { 0, 0, 0, 0 }, 0, 50)
+	ns.CraftLog.ResultSeen(2302, 3, 50)
+	local y = ns.db.crafted.yield[R_BOOTS]
+	eq(y.n, 500.5); eq(y.items, 1001.5)
+	eq(select(2, ns.CraftLog.MeasuredYield(R_BOOTS)), 501)
+end)
+
+it("yield: the profit per craft, the Make row and the craft log's profit use the measured mean", function()
+	local ns, stub, recipe = yieldSetup()
+	ns.db.vendor[2318] = 5
+	ns.GetSellValue = function() return { copper = 100, source = "auction", label = "AH" } end
+	local function row()
+		for _, r in ipairs(ns.BuildRows(165, false, "profit")) do
+			if r.recipeID == R_BOOTS then return r end
+		end
+	end
+	local data = row()
+	eq(data.outputQuantity, 3); eq(data.sellsFor, 300); eq(data.yieldMeasured, nil); eq(data.yieldData, 3)
+	eq(data.profit, 290) -- 3 x 100 minus 2 x 5
+	ns.db.crafted.yield = { [R_BOOTS] = { n = 40, items = 80 } }
+	local measured = row()
+	eq(measured.yieldMeasured, 2); eq(measured.yieldN, 40); eq(measured.yieldData, 3)
+	eq(measured.outputQuantity, 2); eq(measured.sellsFor, 200); eq(measured.profit, 190)
+end)
+
+it("yield: the craft log's profit per craft (ProfitNow) uses the measured mean", function()
+	local ns, stub, recipe = yieldSetup(true)
+	ns.db.vendor[2318] = 5
+	ns.GetSellValue = function() return { copper = 100, source = "auction", label = "AH" } end
+	eq(ns.CraftLog.ProfitNow(R_BOOTS, recipe, 1000), 290)
+	ns.db.crafted.yield = { [R_BOOTS] = { n = 40, items = 80 } }
+	eq(ns.CraftLog.ProfitNow(R_BOOTS, recipe, 1100), 190, "after the minute, with 2 per craft")
+end)
+
+it("yield: the tooltip says measured over N crafts, or from game data below the threshold", function()
+	local ns = yieldSetup()
+	local shown = {}
+	GameTooltip = GameTooltip or {}
+	GameTooltip.AddLine = function(_, text) shown[#shown + 1] = tostring(text) end
+	GameTooltip.AddDoubleLine = function(_, l, r) shown[#shown + 1] = tostring(l) .. " | " .. tostring(r) end
+	ns.Main.Make.AddYieldLine(R_BOOTS, 3)
+	eq(shown[1], "Yield | 3 (from game data)")
+	shown = {}
+	ns.Main.Make.AddYieldLine(R_BOOTS, 1)
+	eq(#shown, 0, "a plain yield of 1 that was never measured says nothing")
+	ns.db.crafted.yield = { [R_BOOTS] = { n = 37, items = 89 } }
+	shown = {}
+	ns.Main.Make.AddYieldLine(R_BOOTS, 3)
+	eq(shown[1], "Yield | 2.4 (measured over 37 crafts)")
+	assert(shown[2]:find("game data says 3", 1, true), shown[2])
+end)

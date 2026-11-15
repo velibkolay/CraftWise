@@ -218,6 +218,7 @@ function CL.ProfitNow(recipeID, recipe, clock)
 	if not reagents and ns.RecipeFallback then
 		reagents, output = ns.RecipeFallback(recipeID)
 	end
+	output = CL.EffectiveOutput(recipeID, output) -- the measured yield, once there is one (#221)
 	local profit
 	if reagents and ns.Profit and ns.ReagentPrices then
 		local result = ns.Profit.Evaluate({ reagents = reagents, output = output, learned = true }, ns.ReagentPrices("profit"))
@@ -225,6 +226,131 @@ function CL.ProfitNow(recipeID, recipe, clock)
 	end
 	profitMemo[recipeID] = { clock, profit or false }
 	return profit
+end
+
+----------------------------------------------------------------------------------------------------
+-- Real yield (#221): the quantity actually received per craft, from the client's own "You create" line
+----------------------------------------------------------------------------------------------------
+
+-- Variable-yield recipes (Seasoned Wolf Kabob 1-3) give a different number each craft; the bundled DB2 value is a
+-- mean the game may not match. The received quantity is read from the loot line LOOT_ITEM_CREATED_SELF(_MULTIPLE)
+-- (the client's own format strings, turned into patterns, never English text) and paired with the craft that
+-- OnCraft detects: crafts and results arrive in either order within PAIR_WINDOW seconds. Per recipe, account wide:
+-- crafted.yield[recipeID] = { n = results, items = their sum }; at YIELD_CAP results both halve (bounded). From
+-- MIN_YIELD results on, the measured mean replaces the data yield in profit (Recipes.lua MakeRow, CL.ProfitNow).
+CL.MIN_YIELD = 10
+CL.YIELD_CAP = 1000
+CL.PAIR_WINDOW = 3
+local pendingCrafts = {} -- crafts waiting for their result: { recipeID, itemID, bucket, estimate, t }
+local createdLines = {} -- results waiting for their craft: { itemID, quantity, t }
+
+-- Item ID and quantity of one of the player's own "You create" lines, or nil.
+function CL.ParseCreated(text)
+	if type(text) ~= "string" or (issecretvalue and issecretvalue(text)) or not (ns.LootFeed and ns.LootFeed.Pattern) then
+		return nil
+	end
+	local function Match(fmt)
+		local pattern, order = ns.LootFeed.Pattern(fmt)
+		local caps = pattern and { text:match(pattern) } or {}
+		if #caps == 0 then
+			return nil
+		end
+		local args = {}
+		for i, index in ipairs(order) do
+			args[index] = caps[i]
+		end
+		return args
+	end
+	local args = Match(LOOT_ITEM_CREATED_SELF_MULTIPLE)
+	local link, quantity
+	if args and args[1] and args[2] then
+		link, quantity = args[1], tonumber(args[2])
+	else
+		args = Match(LOOT_ITEM_CREATED_SELF)
+		if args and args[1] then
+			link, quantity = args[1], 1
+		end
+	end
+	local itemID = link and tonumber(link:match("|Hitem:(%d+)"))
+	if itemID and quantity and quantity > 0 then
+		return itemID, quantity
+	end
+end
+
+local function ExpireYield(clock)
+	for _, list in ipairs({ pendingCrafts, createdLines }) do
+		for i = #list, 1, -1 do
+			if clock - list[i].t > CL.PAIR_WINDOW then
+				table.remove(list, i)
+			end
+		end
+	end
+end
+
+-- A craft and its result are paired: the day bucket's items become the real quantity, the recipe's mean updates.
+local function ApplyYield(craft, quantity)
+	craft.bucket[2] = craft.bucket[2] + quantity - craft.estimate
+	craft.bucket[5] = (craft.bucket[5] or 0) + 1
+	local log = CL.Store()
+	log.yield = log.yield or {}
+	local y = log.yield[craft.recipeID]
+	if not y then
+		y = { n = 0, items = 0 }
+		log.yield[craft.recipeID] = y
+	end
+	y.n, y.items = y.n + 1, y.items + quantity
+	if y.n > CL.YIELD_CAP then
+		y.n, y.items = y.n / 2, y.items / 2
+	end
+	ns.Notify("CRAFTLOG_CHANGED", craft.recipeID)
+end
+
+-- A craft was detected (CL.Record): pair it with a result that came first, else wait for it.
+function CL.CraftSeen(recipeID, itemID, bucket, estimate, clock)
+	if not (clock and itemID) then
+		return
+	end
+	ExpireYield(clock)
+	for i, line in ipairs(createdLines) do
+		if line.itemID == itemID then
+			table.remove(createdLines, i)
+			return ApplyYield({ recipeID = recipeID, bucket = bucket, estimate = estimate }, line.quantity)
+		end
+	end
+	pendingCrafts[#pendingCrafts + 1] = { recipeID = recipeID, itemID = itemID, bucket = bucket, estimate = estimate, t = clock }
+end
+
+-- A "You create" line arrived: pair it with the oldest waiting craft of that item, else wait for the craft.
+function CL.ResultSeen(itemID, quantity, clock)
+	if not clock then
+		return
+	end
+	ExpireYield(clock)
+	for i, craft in ipairs(pendingCrafts) do
+		if craft.itemID == itemID then
+			table.remove(pendingCrafts, i)
+			return ApplyYield(craft, quantity)
+		end
+	end
+	createdLines[#createdLines + 1] = { itemID = itemID, quantity = quantity, t = clock }
+end
+
+-- Measured mean yield of a recipe and how many results it rests on: nil below MIN_YIELD results.
+function CL.MeasuredYield(recipeID)
+	local y = ns.db and ns.db.crafted and ns.db.crafted.yield and ns.db.crafted.yield[recipeID]
+	if y and y.n >= CL.MIN_YIELD and y.items > 0 then
+		return y.items / y.n, math.floor(y.n + 0.5)
+	end
+end
+
+-- The output a profit calculation should use: the measured mean replaces the data quantity once measured.
+-- Returns output, info = { measured = true, mean, n, data = the data quantity } or nil.
+function CL.EffectiveOutput(recipeID, output)
+	local mean, n = CL.MeasuredYield(recipeID)
+	if output and mean then
+		return { itemID = output.itemID, quantity = mean }, { measured = true, mean = mean, n = n, data = output.quantity }
+	end
+	return output, nil
 end
 
 -- One craft: one write into today's bucket.
@@ -251,7 +377,14 @@ function CL.Record(recipeID, recipe, now, clock)
 		entry.days[day] = bucket
 	end
 	bucket[1] = bucket[1] + 1
-	bucket[2] = bucket[2] + (Yield(recipe) or 0)
+	local estimate = Yield(recipe) or 0
+	bucket[2] = bucket[2] + estimate -- replaced by the received quantity when its "You create" line is paired
+	local outputItem = recipe and recipe.output and recipe.output.itemID
+	if not outputItem and ns.RecipeFallback then
+		local _, output = ns.RecipeFallback(recipeID)
+		outputItem = output and output.itemID
+	end
+	CL.CraftSeen(recipeID, outputItem, bucket, estimate, clock)
 	local profit = CL.ProfitNow(recipeID, recipe, clock)
 	if profit then
 		bucket[3] = (bucket[3] or 0) + math.floor(profit + 0.5)
@@ -582,6 +715,13 @@ end)
 
 ns.On("PLAYER_ENTERING_WORLD", function()
 	CL.Fold()
+end)
+
+ns.On("CHAT_MSG_LOOT", function(_, text)
+	local itemID, quantity = CL.ParseCreated(text)
+	if itemID then
+		CL.ResultSeen(itemID, quantity, Now())
+	end
 end)
 
 for _, event in ipairs({ "SKILL_LINES_CHANGED", "TRADE_SKILL_LIST_UPDATE", "CHAT_MSG_SKILL", "PLAYER_ENTERING_WORLD" }) do

@@ -310,6 +310,8 @@ function P.RowTooltip(owner, r)
 	else
 		GameTooltip:AddLine(r.name)
 	end
+	local _, output = ns.RecipeFallback(r.recipeID)
+	MK.AddYieldLine(r.recipeID, output and output.quantity)
 	local lines = CL.Lines(r.recipeID)
 	if lines then
 		GameTooltip:AddLine(lines.headline, 1, 1, 1)

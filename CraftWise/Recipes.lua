@@ -673,13 +673,21 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	if not recipe.learned then
 		learnCost, learnSource, learnLabel = ns.LearnCost(recipeID)
 	end
+	-- The measured yield of a variable-yield recipe replaces the data quantity once there is one (#221).
+	local output, yieldInfo = recipe.output, nil
+	if output and ns.CraftLog then
+		output, yieldInfo = ns.CraftLog.EffectiveOutput(recipeID, output)
+	end
+	local effective = output == recipe.output and recipe or setmetatable({ output = output }, { __index = recipe })
 	local result = ns.Profit.Evaluate({
 		reagents = recipe.reagents,
-		output = recipe.output,
+		output = output,
 		learned = recipe.learned,
 		learnCost = learnCost,
 	}, prices)
-	ns.Profit.VendorCheck(result, recipe, ns.VendorCheckPrices)
+	ns.Profit.VendorCheck(result, effective, ns.VendorCheckPrices)
+	result.yieldMeasured, result.yieldN = yieldInfo and yieldInfo.mean or nil, yieldInfo and yieldInfo.n or nil
+	result.yieldData = recipe.output and recipe.output.quantity
 	result.recipeID = recipeID
 	result.name = recipe.name
 	result.icon = recipe.icon
@@ -692,7 +700,7 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.skillColor = ns.SkillUpColor(recipe, tooLow)
 	result.noItemOutput = recipe.noItemOutput or result.noItemOutput
 	result.outputItemID = recipe.output and recipe.output.itemID
-	result.outputQuantity = recipe.output and recipe.output.quantity
+	result.outputQuantity = output and output.quantity
 	result.bundledOnly = recipe.bundledOnly
 	result.recordedInGame = recipe.recordedInGame -- recipe data from a trainer window (#83)
 	-- Skill-up thresholds come from the bundled data only; a recipe it lacks has none (never guessed).

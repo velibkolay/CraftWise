@@ -376,6 +376,21 @@ function MK.AddSpeedLines(speed, profit, basis)
 	Note("  " .. (L["measured over %d crafts"]):format(speed.n))
 end
 
+-- Yield per craft (#221): the measured mean once enough "You create" results are paired, else the game data's.
+-- dataQuantity = the bundled or client quantity; nothing for a plain yield of 1 that was never measured.
+function MK.AddYieldLine(recipeID, dataQuantity)
+	local L = ns.L
+	local mean, n = ns.CraftLog.MeasuredYield(recipeID)
+	if mean then
+		GameTooltip:AddDoubleLine(L["Yield"], (L["%s (measured over %d crafts)"]):format(ns.CraftLog.FormatSeconds(mean), n), 0.8, 0.8, 0.8, 1, 1, 1)
+		if dataQuantity and math.abs(dataQuantity - mean) >= 0.05 then
+			Note("  " .. (L["game data says %s"]):format(ns.CraftLog.FormatSeconds(dataQuantity)))
+		end
+	elseif dataQuantity and dataQuantity ~= 1 then
+		GameTooltip:AddDoubleLine(L["Yield"], (L["%s (from game data)"]):format(ns.CraftLog.FormatSeconds(dataQuantity)), 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+end
+
 -- Craft log (#205): "Crafted N . today M", per character today / 7 days / total, the undated part, and the
 -- profit of those crafts at today's prices (past prices are not stored per craft).
 function MK.AddCraftLog(r)
@@ -430,6 +445,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 	if n > 0 then
 		GameTooltip:AddDoubleLine("Your crafts", ("%d skill-ups in %d crafts"):format(ups, n), 0.8, 0.8, 0.8, 1, 1, 1)
 	end
+	MK.AddYieldLine(r.recipeID, r.yieldData or r.outputQuantity)
 	MK.AddCraftLog(r)
 
 	if r.status ~= "known" then
