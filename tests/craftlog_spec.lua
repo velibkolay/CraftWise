@@ -830,3 +830,66 @@ it("Crafted summary card: today's active time, the 7-day time in the window, fol
 	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
 	assert(not hero.name:find("active", 1, true) and not hero.sub:find("active", 1, true), "no time recorded: nothing shown")
 end)
+
+-- Profit/h and the profit logged at craft time use one valuation (#265)
+local function sameSetup(price)
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.db.vendor[2318] = 5 -- reagent: 5c, vendor
+	stub.items = stub.items or {}
+	ns.GetVendorSellPrice = function() return 25 end
+	ns.AuctionQuote = function() return price end
+	ns.AuctionCut = function() return 0.05, { text = "5%", source = "confirmed" } end
+	ns.db.crafted = { seeded = true, chars = { [ns.CharKey()] = {
+		[R_BOOTS] = { days = { [20261115] = { 0, 0 } }, speed = { n = 5, sum = 10, gaps = { 2, 2, 2, 2, 2 } } } } } }
+	ns.Main.Make.state.query = ""
+	return ns, stub
+end
+
+local function bootsRow(ns)
+	for _, r in ipairs(ns.Main.CraftedPage.Rows(T(2026, 11, 15), {})) do
+		if r.recipeID == R_BOOTS then return r end
+	end
+end
+
+it("Profit/h: a product sold to a vendor (Junk) has no AH cut; the per-craft profit equals the craft-time snapshot", function()
+	local ns, stub = sameSetup({ copper = 40, age = 1, label = "AH" }) -- AH 40 -> 38 after the cut: the AH pays more
+	local recipe = ns.charDB.professions[165].recipes[R_BOOTS]
+	ns.db.junk = ns.db.junk or {}
+	ns.db.junk[2302] = true -- the output item is Junk: valued at the vendor price 25, no cut
+	local now = ns.CraftLog.ProfitNow(R_BOOTS, recipe, 5000)
+	eq(now, 25 - 2 * 5)
+	local r = bootsRow(ns)
+	eq(r.profit, now, "Profit/h's per-craft profit is the snapshot's")
+	eq(r.profitHour, 1800 * now)
+	eq(r.figures.sale, 25); eq(r.figures.marked, true); eq(r.figures.cost, 10); eq(r.figures.cut, nil)
+	local tip = r.view.tips.profitHour[2]
+	assert(tip:find("sale 25c (vendor price (Junk mark), no AH cut) - reagents 10c = +15c", 1, true) or tip:find("vendor price (Junk mark), no AH cut", 1, true), tip)
+end)
+
+it("Profit/h: an AH sale is valued after the cut, named in the tooltip, and equals the snapshot", function()
+	local ns = sameSetup({ copper = 100, age = 1, label = "AH" })
+	local recipe = ns.charDB.professions[165].recipes[R_BOOTS]
+	local now = ns.CraftLog.ProfitNow(R_BOOTS, recipe, 5000)
+	eq(now, 95 - 10)
+	local r = bootsRow(ns)
+	eq(r.profit, now); eq(r.profitHour, 1800 * now)
+	eq(r.figures.sale, 95); eq(r.figures.cut, 0.05)
+	local tip = r.view.tips.profitHour[2]
+	assert(tip:find("AH after the 5% cut", 1, true), tip)
+	assert(tip:find("One craft now", 1, true) and tip:find("reagents 10c", 1, true), tip)
+end)
+
+it("Profit/h: when the price now makes a loss, the tooltip shows the figures behind it", function()
+	local ns = sameSetup({ copper = 100, age = 1, label = "AH" })
+	ns.db.vendor[2318] = 60 -- reagents now cost 120 against a sale of 95
+	local r = bootsRow(ns)
+	assert(r.profit < 0 and r.profitHour < 0)
+	assert(r.view.tips.profitHour[2]:find("= -25c", 1, true), r.view.tips.profitHour[2])
+end)
+
+it("Crafted footer names the sale basis and still fits one line", function()
+	local ns = sameSetup({ copper = 100, age = 1, label = "AH" })
+	local f = ns.Main.CraftedPage.Footer(false)
+	assert(f:find("vendor/Junk sales: no cut", 1, true), f)
+end)
