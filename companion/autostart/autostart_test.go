@@ -1,9 +1,9 @@
 package autostart
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
-	"errors"
 	"strings"
 	"testing"
 )
