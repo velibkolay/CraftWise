@@ -203,3 +203,107 @@ it("the count box: Enter or focus loss applies a valid number, Escape or nonsens
 	box.scripts.OnEditFocusLost(box)
 	eq(#applied, 2); eq(box:GetText(), "7", "Escape restores")
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Opening a vendor costs nothing noticeable (#201 follow-up): deferred, kept and shared work
+----------------------------------------------------------------------------------------------------
+
+-- C_Timer.After callbacks wait until the spec runs them (a frame later in the game).
+local function Deferred(stub)
+	local queue = {}
+	C_Timer.After = function(_, fn) queue[#queue + 1] = fn end
+	return function()
+		local q = queue
+		queue = {}
+		for _, fn in ipairs(q) do fn() end
+		return #q
+	end
+end
+
+local function WithBasket(ns, plans)
+	ns.Basket.Entries = function() return { {} } end
+	ns.Basket.Plan = function()
+		plans.n = plans.n + 1
+		return { split = { vendor = { { itemID = THREAD, quantity = 50 } } } }
+	end
+end
+
+it("opening a vendor makes no basket plan; it is made once a frame later and the lines drawn then", function()
+	local ns, stub = Setup()
+	local frame = Deferred(stub)
+	local plans = { n = 0 }
+	WithBasket(ns, plans)
+	stub.Fire("MERCHANT_SHOW")
+	eq(plans.n, 0, "not inside the opening event")
+	frame()
+	eq(plans.n, 1); eq(#ns.MerchantBuy.Rows(), 1, "the line is there")
+	stub.Fire("MERCHANT_UPDATE"); frame()
+	eq(plans.n, 1, "a page or purchase of the merchant keeps the plan")
+end)
+
+it("typing a quantity redraws the buy part only; bursts of bag events share one plan; an empty basket plans nothing", function()
+	local ns, stub = Setup()
+	local frame = Deferred(stub)
+	local plans = { n = 0 }
+	WithBasket(ns, plans)
+	stub.Fire("MERCHANT_SHOW"); frame()
+	local panel = ns.MerchantBuy.panel
+	for _, text in ipairs({ "1", "12", "123" }) do
+		panel.box:SetText(text)
+		panel.box.scripts.OnTextChanged(panel.box)
+	end
+	eq(plans.n, 1, "typing does not plan")
+	ns.Notify("BAGS_CHANGED"); ns.Notify("BAGS_CHANGED"); ns.Notify("BAGS_CHANGED")
+	eq(plans.n, 1, "nothing inside the burst")
+	frame()
+	eq(plans.n, 2, "one plan for three bag events")
+	ns.Notify("PRICES_CHANGED"); frame()
+	eq(plans.n, 3, "new prices: the plan is made again")
+	ns.Basket.Entries = function() return {} end
+	ns.Notify("BASKET_CHANGED"); frame()
+	eq(plans.n, 3, "an empty basket plans nothing"); eq(ns.MerchantBuy.Rows()[1].shown, false)
+end)
+
+it("the merchant window is read once per frame by every module, not once per module", function()
+	local ns, stub = Setup()
+	local frame = Deferred(stub)
+	local reads = 0
+	local read = C_MerchantFrame.GetItemInfo
+	C_MerchantFrame.GetItemInfo = function(i) reads = reads + 1; return read(i) end
+	stub.Fire("MERCHANT_SHOW")
+	local first = reads
+	for i = 1, 2 do ns.MerchantItemInfo(i); ns.MerchantItemInfo(i) end
+	eq(reads, first, "already read this frame")
+	frame()
+	ns.MerchantItemInfo(1)
+	eq(reads, first + 1, "the next frame reads again: a purchase is seen")
+	assert(first <= 2 * #stub.merchant, "at most one read per slot on opening, got " .. first)
+end)
+
+it("the recorder runs once, a frame after MERCHANT_SHOW and MERCHANT_UPDATE", function()
+	local ns, stub = Setup()
+	local frame = Deferred(stub)
+	stub.guids.npc, stub.names.npc = "Creature-0-3-1-1-777-000012345A", "Benchvendor"
+	local changed = 0
+	ns.Listen("MERCHANTS_CHANGED", function() changed = changed + 1 end)
+	stub.Fire("MERCHANT_SHOW"); stub.Fire("MERCHANT_UPDATE")
+	eq(ns.db.merchants and ns.db.merchants[777], nil, "nothing recorded inside the event")
+	frame()
+	eq(ns.db.merchants[777].name, "Benchvendor"); eq(changed, 1, "one recording")
+end)
+
+it("BuildRows with a set of recipes builds only those rows (the Basket needs a few of hundreds)", function()
+	local ns, stub = LoadAddon()
+	stub.items[HIDE] = { name = "Testhide" }
+	stub.items[100] = { name = "A", sellPrice = 5 }
+	stub.items[101] = { name = "B", sellPrice = 5 }
+	local S = stub.Schematic
+	stub.profession = { id = 165, name = "Testworking", skill = 100, max = 150, recipes = {
+		[7001] = { info = { name = "A", learned = true, relativeDifficulty = 1 }, schematic = S({ { HIDE, 1 } }, 100) },
+		[7002] = { info = { name = "B", learned = true, relativeDifficulty = 1 }, schematic = S({ { HIDE, 2 } }, 101) },
+	} }
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(#ns.BuildRows(165, true, "profit"), 2)
+	local rows = ns.BuildRows(165, true, "profit", { [7002] = true })
+	eq(#rows, 1); eq(rows[1].recipeID, 7002)
+end)

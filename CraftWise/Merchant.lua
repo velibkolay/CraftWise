@@ -167,7 +167,9 @@ end
 -- One merchant slot as the Forever client gives it (C_MerchantFrame.GetItemInfo, a table; the old
 -- GetMerchantItemInfo global is Vanilla only and does not exist here): { name, price, stack, available
 -- (-1 unlimited), usable, extended, currency } or nil. Shared by every module that reads the open merchant.
-local function ItemInfo(index)
+local slotMemo = {} -- [index] = info (or false) read during this frame
+local memoClear
+local function ReadSlot(index)
 	local info = C_MerchantFrame and C_MerchantFrame.GetItemInfo and C_MerchantFrame.GetItemInfo(index)
 	if not info then
 		return nil
@@ -175,6 +177,24 @@ local function ItemInfo(index)
 	return { name = Text(info.name), price = Number(info.price), stack = Number(info.stackCount),
 		available = Number(info.numAvailable), usable = info.isUsable, extended = info.hasExtendedCost,
 		currency = Number(info.currencyID) }
+end
+
+-- Opening a vendor makes five modules read every slot (the recorder, Prices, SourceRecorder, the
+-- Ledger, Crates); the client call is the cost, so a slot is read once per frame and shared. The memo
+-- is dropped on the next frame, so a purchase or a page change is always seen.
+local function ItemInfo(index)
+	local info = slotMemo[index]
+	if info == nil then
+		info = ReadSlot(index) or false
+		slotMemo[index] = info
+		if not memoClear and C_Timer and C_Timer.After then
+			memoClear = true
+			C_Timer.After(0, function()
+				slotMemo, memoClear = {}, false
+			end)
+		end
+	end
+	return info or nil
 end
 ns.MerchantItemInfo = ItemInfo
 
@@ -395,13 +415,30 @@ function M.Record()
 	return recorded
 end
 
+-- MERCHANT_SHOW and the MERCHANT_UPDATE that follows it come in the same frame: the recording (every
+-- slot, tooltips for recipes) runs once, a frame later, not inside the event that opens the window.
+local recordPending
+local function RecordSoon()
+	if recordPending then
+		return
+	end
+	recordPending = true
+	local function run()
+		recordPending = false
+		M.Record()
+	end
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, ns.Timed("Merchant: record", run))
+	else
+		run()
+	end
+end
+
 ns.On("MERCHANT_SHOW", function()
 	openFaction = nil
-	M.Record()
+	RecordSoon()
 end)
-ns.On("MERCHANT_UPDATE", function()
-	M.Record()
-end)
+ns.On("MERCHANT_UPDATE", RecordSoon)
 ns.On("MERCHANT_CLOSED", function()
 	openFaction = nil
 end)

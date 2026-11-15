@@ -853,6 +853,12 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - **Merchant slot read (fix, #201):** Forever has no `GetMerchantItemInfo` global; `ns.MerchantItemInfo` (Merchant.lua) reads `C_MerchantFrame.GetItemInfo` for Basket, Prices and SourceRecorder. With a merchant open, Make › Basket must draw without "Basket could not be built", and a vendor line's Buy shows "Buy N" (not greyed) for a gold-only item.
 - **Count box and Max (Make › Craft opened row, Make › Basket craft row):** type a number into the box next to − / +: Enter or clicking elsewhere applies it (the "Add N to basket" label / the basket count follow), Escape puts the old number back, 0 or empty puts it back, above 9999 becomes 9999. **Max** sets the count to what the reagents you already hold allow, ignoring reagents a vendor sells (Goblin Deviled Clams with 597 Tangy Clam Meat: 597, Hot Spices not counted). It is hidden when every reagent has a vendor source and greyed when a held reagent is missing.
 
+- Opening a vendor is quick (#201 follow-up): with a basket of a few crafts (Make > Basket) open Naal Mistrunner
+  (about 20 items) and a big vendor (about 100). No stutter. Settings > Debug > Record, open the vendor, Stop: no
+  `MERCHANT_SHOW` handler over a few ms; "MerchantBuy: basket plan" and "Merchant: record" show up as separate hook
+  lines, each once per open. Buy a stack: bag events do not re-plan per event (one "MerchantBuy: basket plan" a
+  moment later), typing in the quantity box runs no plan.
+
 ## Look up › Items: first open in slices (#202 follow-up)
 
 - No TOC change; `/reload` is enough.

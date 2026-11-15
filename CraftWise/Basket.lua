@@ -182,11 +182,11 @@ end
 ----------------------------------------------------------------------------------------------------
 
 -- The row (ns.BuildRows) of an entry; nil when its recipe isn't known to the addon any more.
-local function RowOf(e, cache)
+local function RowOf(e, cache, wanted)
 	local rows = cache[e.professionID]
 	if not rows then
 		rows = {}
-		for _, r in ipairs(ns.BuildRows(e.professionID, true, "profit")) do
+		for _, r in ipairs(ns.BuildRows(e.professionID, true, "profit", wanted[e.professionID])) do
 			rows[r.recipeID] = r
 		end
 		cache[e.professionID] = rows
@@ -203,8 +203,14 @@ function Basket.Plan()
 		return plan
 	end
 	local cache, items, expected = {}, {}, {}
+	-- Only the basket's own recipes get a row (a profession has hundreds; building them all was the cost).
+	local wanted = {}
 	for _, e in ipairs(Entries()) do
-		local row = RowOf(e, cache)
+		wanted[e.professionID] = wanted[e.professionID] or {}
+		wanted[e.professionID][e.recipeID] = true
+	end
+	for _, e in ipairs(Entries()) do
+		local row = RowOf(e, cache, wanted)
 		if row then
 			plan.crafts[#plan.crafts + 1] = { entry = e, row = row, count = e.count,
 				pct = row.costComplete and ns.Profit.Percent(row.vendorProfit, row.cost) or nil }
