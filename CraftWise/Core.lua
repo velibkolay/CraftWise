@@ -152,6 +152,8 @@ local DB_DEFAULTS = {
 	-- [recipeID] = { fee = copper, required = skill, at, name, icon, skill = profession name, line,
 	--   reagents, output, noItemOutput, recipeAt }: seen at a trainer (Trainer.lua; recipe fields #83)
 	trainer = {},
+	-- Class trainer spells recorded at class trainers (ClassSpells.lua, #259): [classFile] = { at, npc, visitLevel, services }.
+	classSpells = {},
 	sellPrices = {}, -- [itemID] = vendor sell price per unit, as the client returned it (#83)
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor
@@ -179,7 +181,7 @@ local DB_DEFAULTS = {
 	-- Make chips (#154): includeUnlearned, hideUnpriced, vendorCheck (#185), learnFitsSkill; Sell › Bags chips (#155): showKept,
 	-- bagsMatsOnly; Settings › Bags and loot: showDismissed. The main window keeps its own state (section,
 	-- pages, layout) in settings.ui.
-	settings = { includeUnlearned = true, hideUnpriced = false, vendorCheck = false, disenchantCheck = false, disenchantMinSamples = 10, loopAlert = true, loopAlertMin = 0, saleToast = true, saleSound = true, expiredToast = false, learnFitsSkill = false, showKept = true,
+	settings = { includeUnlearned = true, hideUnpriced = false, vendorCheck = false, disenchantCheck = false, disenchantMinSamples = 10, loopAlert = true, loopAlertMin = 0, trainAll = true, saleToast = true, saleSound = true, expiredToast = false, learnFitsSkill = false, showKept = true,
 		showDismissed = false, ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
 		alpha = { main = 0.96, farm = 0.86, toast = 0.70 }, -- background alpha per window (#162), Settings > Look
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
@@ -753,6 +755,14 @@ SlashCmdList.CRAFTWISE = function(input)
 		if ns.OpenAuctionsPage then
 			ns.OpenAuctionsPage() -- Sell › Auctions (#155)
 		end
+		return
+	end
+	if msg == "train" and ns.OpenMainWindow then
+		ns.OpenMainWindow("train") -- Make › Train (#259)
+		return
+	end
+	if msg == "trainercheck" and ns.ClassSpells then
+		ns.ClassSpells.PrintCrossCheck() -- the record against What's Training? (#259)
 		return
 	end
 	local fishingArg = msg:match("^fishing%f[%A]%s*(.*)$")

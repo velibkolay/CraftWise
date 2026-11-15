@@ -326,8 +326,22 @@ end
 function GetTrainerServiceTypeFilter(t) return stub.trainerFilter[t] == 1 and 1 or nil end
 function SetTrainerServiceTypeFilter(t, v) stub.trainerFilter[t] = v end
 function GetNumTrainerServices() return #visibleServices() end
-function GetTrainerServiceInfo(i) local s = visibleServices()[i]; return s.name, s.kind, s.icon end
+-- Class trainer (#259): stub.trainerType (Enum.TrainerType value, default General), per service level (reqLevel),
+-- rank (subText), abilities = { names }, spell: stub.buyTrainer = list of the indexes BuyTrainerService got.
+function GetTrainerServiceInfo(i) local s = visibleServices()[i]; return s.name, s.kind, s.icon, s.level, s.rank end
 function GetTrainerServiceCost(i) return visibleServices()[i].fee end
+function GetTrainerServiceNumAbilityReq(i) return #(visibleServices()[i].abilities or {}) end
+function GetTrainerServiceAbilityReq(i, n) return visibleServices()[i].abilities[n], true end
+stub.buyTrainer = {}
+function BuyTrainerService(i) stub.buyTrainer[#stub.buyTrainer + 1] = i end
+Enum.TrainerType = { General = 0, TalentsObsolete = 1, Tradeskills = 2, Pet = 3 }
+stub.trainerType = 0
+C_Trainer = { GetTrainerType = function() return stub.trainerType end }
+stub.class = "MAGE"
+function UnitClass() return "Mage", stub.class, 8 end
+stub.knownSpells = {}
+C_SpellBook = C_SpellBook or {}
+C_SpellBook.IsSpellKnown = function(id) return stub.knownSpells[id] == true end
 function GetTrainerServiceSkillReq(i)
 	local s = visibleServices()[i]
 	if s.skill == false then return nil, 0, false end
