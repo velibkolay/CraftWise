@@ -581,6 +581,79 @@ function M.StatusText(status)
 	return status.label .. " · " .. (from and from .. " " or "") .. Style.Hex("text2") .. M.AgeText(status.age) .. "|r " .. L["ago"], "ok"
 end
 
+----------------------------------------------------------------------------------------------------
+-- "Scan AH" (#6): the button in the header while an auction house is open. The model is pure (it reads
+-- Market only); Frame.lua draws it. A click asks the server for the whole list once, never by itself.
+----------------------------------------------------------------------------------------------------
+
+-- 754 -> "12:34".
+function M.Countdown(seconds)
+	seconds = math.max(0, math.ceil(seconds or 0))
+	return ("%d:%02d"):format(math.floor(seconds / 60), seconds % 60)
+end
+
+-- What a failed scan says (a line for the chat and the tooltip); `detail` is the client's error text.
+function M.ScanFailText(reason, detail)
+	local market = ns.Market
+	if reason == "timeout" then
+		return (L["No list arrived within %d s. Another addon may have scanned in the last 15 minutes (the server then sends nothing). Nothing was stored; try again after the countdown."])
+			:format(market and market.OWN_WAIT_SECONDS or 0)
+	elseif reason == "closed" then
+		return L["The auction house closed before the list was read. Nothing was stored."]
+	elseif reason == "changed" then
+		return L["The list changed while it was being read. Nothing was stored."]
+	end
+	return (L["The game refused the scan request: %s"]):format(tostring(detail or "?"))
+end
+
+-- { show, label, enabled, state, tip = { title, lines... } } of the header's scan button.
+--   ready        "Scan AH"                         enabled
+--   cooldown     "Scan AH · 12:34"                 disabled; the server allows one list per 15 minutes
+--   requested / waiting   "Waiting for the list · 8 s"
+--   reading / storing     "Reading · 1 200 of 5 000" / "Storing"
+function M.ScanButton(now)
+	now = now or time()
+	local market = ns.Market
+	local model = { show = false, enabled = false, tip = {} }
+	if not (market and market.OwnScan and market.CurrentHouse and market.CurrentHouse()) then
+		return model
+	end
+	local s = market.OwnScan(now)
+	if s.block == "unsupported" or s.block == "nodata" then
+		return model
+	end
+	model.show, model.state = true, s.state
+	local tip = model.tip
+	tip[1] = L["Scan the auction house"]
+	if s.state == "requested" or s.state == "waiting" then
+		model.label = (L["Waiting for the list · %d s"]):format(math.floor(s.elapsed or 0))
+		tip[#tip + 1] = L["The request is out. Large lists can take a while to arrive."]
+	elseif s.state == "reading" or s.state == "storing" then
+		local p = market.ScanProgress and market.ScanProgress()
+		if s.state == "reading" and p then
+			model.label = (L["Reading · %s of %s"]):format(M.Thousands(p.done), M.Thousands(p.total))
+		else
+			model.label = L["Storing"]
+		end
+		tip[#tip + 1] = L["The rows are read and stored a few milliseconds at a time."]
+	elseif s.cooldown > 0 then
+		model.label = L["Scan AH"] .. " · " .. M.Countdown(s.cooldown)
+		tip[#tip + 1] = (L["One full list per account every 15 minutes: next scan in %s."]):format(M.Countdown(s.cooldown))
+	else
+		model.label, model.enabled = L["Scan AH"], true
+		tip[#tip + 1] = L["Asks for every auction at once (one request, only when you click). The game may stutter or lag while the list arrives."]
+	end
+	if s.state == "failed" then
+		tip[#tip + 1] = ns.Style.Hex("danger") .. M.ScanFailText(s.error, s.detail) .. "|r"
+	end
+	local last = s.last
+	if last then
+		tip[#tip + 1] = (L["Last own scan %s ago: %s rows, %s items."]):format(M.AgeText(now - (last.t or now)),
+			M.Thousands(last.rows), M.Thousands((last.items or 0) + (last.lastOnly or 0)))
+	end
+	return model
+end
+
 -- The header's AH status tooltip (#157: Records › Market's per-house scan summary moved here): a title and
 -- one line per house CraftWise recorded at (faction houses first): its last full scan and how many items
 -- have a price there, then Auctionator's prices read so far. Pure apart from reading Market.

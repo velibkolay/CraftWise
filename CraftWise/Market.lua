@@ -6,6 +6,9 @@
 --
 -- CraftWiseMarketDB (account-wide, its own SavedVariables so market size never touches CraftWiseDB):
 --   v, houses[houseKey], scans[houseKey] (last 30), cutSamples, prunedAt, scope = { items, skillLines }
+--   ownScan = { requested, list, house, last }: the account-wide state of our own full scan (#6): when it was
+--   last asked for, when any full list last arrived (the server's limit is the account's, whoever scans), and
+--   what the last finished one cost; see the Own scan section
 --   syncScans[houseKey] (last 30) and sync = { written, machine, at, ... }: what the other machine's file
 --   (CraftWise_Sync, #241) added; see the Sync section
 --   items[itemKey][houseKey] = entry, where itemKey is the itemID or "itemID:suffixID"
@@ -61,6 +64,10 @@ local ROWS_PER_FRAME = 500 -- Auctionator's full scan reads 250 rows with a link
 local COMMIT_PER_FRAME = 40
 local PRUNE_PER_FRAME = 20
 local LIGHT_SHARE = 25
+-- Time, not counts, decides how much a frame does during a full scan (#6): a frame of the scan stops after
+-- this many milliseconds of work (checked every SLICE_CHECK steps), the unit budgets above stay as a cap.
+M.SLICE_MS = 6
+local SLICE_CHECK = 4
 local AUCTIONATOR_PER_FRAME = 200
 local AUCTIONATOR_REFRESH = 3600 -- an unchanged Auctionator price is written again at most hourly
 local AUCTIONATOR_LOGIN_DELAY = 5 -- Auctionator sets up its price database during login
@@ -852,17 +859,31 @@ local function LogScan(houseKey, kind, items, source, lastOnly)
 end
 
 -- Runs step(i) for i = 1..count, up to `budget` per frame. A step costs 1 unless it returns a number.
-local function Chunked(count, budget, step, done, isCancelled)
+-- With `slice` ({ n, total, worst } in ms, filled in) a frame also stops after M.SLICE_MS of work, so a heavy
+-- step can't make a frame longer than that by much (#6); the numbers are what the in-game check reads.
+local function Chunked(count, budget, step, done, isCancelled, slice)
 	local index = 1
 	local function run()
 		if isCancelled and isCancelled() then
 			return
 		end
 		local spent = 0
+		local started = slice and debugprofilestop()
+		local steps = 0
 		while index <= count and spent < budget do
 			local cost = step(index)
 			spent = spent + (type(cost) == "number" and cost or 1)
 			index = index + 1
+			steps = steps + 1
+			if started and steps % SLICE_CHECK == 0 and debugprofilestop() - started >= M.SLICE_MS then
+				break
+			end
+		end
+		if slice then
+			local took = debugprofilestop() - started
+			slice.n = (slice.n or 0) + 1
+			slice.total = (slice.total or 0) + took
+			slice.worst = math.max(slice.worst or 0, took)
 		end
 		if index > count then
 			done()
@@ -1063,6 +1084,126 @@ local function OnBrowseAdded(_, results)
 end
 
 ----------------------------------------------------------------------------------------------------
+-- Own scan (#6, step 1 of #253): a click asks the server for the whole list (C_AuctionHouse.
+-- ReplicateItems) and the reader below does the rest, marking the scan source = "own". States:
+--   requested   the request is being sent (momentary)
+--   waiting     the request is out, no list yet (timeout: M.OWN_WAIT_SECONDS)
+--   reading     the list is being read (OnReplicateList, a time budget per frame)
+--   storing     every row was read, the entries are being stored (CommitScan)
+--   done | failed (own.error: "timeout", "closed", "changed", "error")
+-- Nothing here is sent without a click. What the server does is not assumed: the 15 minutes are the
+-- limit #6 and Auctionator state, not verified on Forever; the cooldown starts at the click and any full
+-- list that arrives (whoever asked for it) restarts it, because the limit is the account's. The unknowns
+-- (row count, time to the list, early-request behaviour, stutter, disconnects) are in docs/ingame-checks.md,
+-- and db.ownScan.last keeps what each scan cost so they can be read from the saved file.
+----------------------------------------------------------------------------------------------------
+
+M.OWN_COOLDOWN = 15 * 60 -- seconds between full scans, per account (#6)
+M.OWN_WAIT_SECONDS = 120 -- how long we wait for a list before saying none came: a placeholder until measured
+
+local own = { state = "idle" } -- this session's own scan; saved: db.ownScan
+local ownTimer
+
+local OWN_ACTIVE = { requested = true, waiting = true, reading = true, storing = true }
+
+local function SetOwn(state, fields)
+	own.state = state
+	for k, v in pairs(fields or {}) do
+		own[k] = v
+	end
+	ns.Notify("OWN_SCAN_CHANGED", state)
+end
+
+local function CancelOwnTimer()
+	if ownTimer then
+		ownTimer:Cancel()
+		ownTimer = nil
+	end
+end
+
+local function OwnFail(reason, detail)
+	if not OWN_ACTIVE[own.state] then
+		return
+	end
+	CancelOwnTimer()
+	SetOwn("failed", { error = reason, detail = detail, finishedAt = time() })
+end
+
+-- Seconds until the next own scan may be asked for: 0 when it may. Counted from the later of our last
+-- request and the last full list that arrived at all (account-wide, saved).
+function M.ScanCooldown(now)
+	local s = db and db.ownScan
+	local from = s and math.max(tonumber(s.requested) or 0, tonumber(s.list) or 0) or 0
+	if from <= 0 then
+		return 0
+	end
+	now = now or time()
+	return math.max(0, math.min(M.OWN_COOLDOWN, from + M.OWN_COOLDOWN - now))
+end
+
+-- Why a scan can't be asked for now (nil when it can): "nodata", "unsupported", "closed" (no auction house
+-- open), "busy" (one is running), "cooldown".
+function M.ScanBlock(now)
+	if not db then
+		return "nodata"
+	end
+	if not (C_AuctionHouse and C_AuctionHouse.ReplicateItems) then
+		return "unsupported"
+	end
+	if not currentHouse then
+		return "closed"
+	end
+	if OWN_ACTIVE[own.state] or job then
+		return "busy"
+	end
+	if M.ScanCooldown(now) > 0 then
+		return "cooldown"
+	end
+	return nil
+end
+
+-- The own scan as the window shows it: { state, house, requestedAt, elapsed, error, detail, cooldown, block,
+-- last = what the last finished one cost }.
+function M.OwnScan(now)
+	now = now or time()
+	return {
+		state = own.state, house = own.house, requestedAt = own.requestedAt, listAt = own.listAt,
+		elapsed = own.requestedAt and OWN_ACTIVE[own.state] and math.max(0, now - own.requestedAt) or nil,
+		error = own.error, detail = own.detail, finishedAt = own.finishedAt,
+		cooldown = M.ScanCooldown(now), block = M.ScanBlock(now),
+		last = db and db.ownScan and db.ownScan.last or nil,
+	}
+end
+
+-- The click. Returns true, or false and the reason (see ScanBlock, or "error" when the client refused).
+function M.RequestScan()
+	local block = M.ScanBlock()
+	if block then
+		return false, block
+	end
+	local now = time()
+	local token = (own.token or 0) + 1
+	own = { state = "idle", token = token }
+	local before = db.ownScan.requested
+	db.ownScan.requested, db.ownScan.house = now, currentHouse -- before the call: a crash still counts as asked
+	SetOwn("requested", { house = currentHouse, requestedAt = now })
+	local ok, err = pcall(C_AuctionHouse.ReplicateItems)
+	if not ok then
+		db.ownScan.requested = before -- nothing was sent: no cooldown for it
+		OwnFail("error", tostring(err))
+		return false, "error"
+	end
+	SetOwn("waiting")
+	ownTimer = C_Timer.NewTimer(M.OWN_WAIT_SECONDS, function()
+		if own.token == token and own.state == "waiting" then
+			ownTimer = nil
+			OwnFail("timeout")
+		end
+	end)
+	return true
+end
+
+----------------------------------------------------------------------------------------------------
 -- Full scan. Reads the replicate list over several frames, collects in memory, and only stores once
 -- every row was read: the list isn't reliable after the AH closes (Auctionator treats that as a
 -- failed scan), and a partial list would count most of the market as disappeared.
@@ -1136,6 +1277,30 @@ local function FinishScan(scan)
 	end
 	lastScan = { count = scan.count, t = scan.t }
 	LogScan(scan.house, "full", scan.recorded, scan.source, scan.lastOnly)
+	if scan.own then
+		-- What it cost, for the in-game checks (#6): rows, seconds from the click to the list, milliseconds and
+		-- frames of reading and storing, and the longest frame of each.
+		local function Slice(sl)
+			sl = sl or {}
+			return math.floor((sl.total or 0) + 0.5), sl.n or 0, math.floor((sl.worst or 0) * 10 + 0.5) / 10
+		end
+		local readMs, readFrames, readWorst = Slice(scan.readSlice)
+		local storeMs, storeFrames, storeWorst = Slice(scan.commitSlice)
+		local unread = 0
+		for _ in pairs(scan.unread) do
+			unread = unread + 1
+		end
+		local last = {
+			t = scan.t, house = scan.house, rows = scan.count, items = scan.recorded, lastOnly = scan.lastOnly,
+			unread = unread, waited = scan.waited, readMs = readMs, readFrames = readFrames, readWorstMs = readWorst,
+			storeMs = storeMs, storeFrames = storeFrames, storeWorstMs = storeWorst,
+		}
+		db.ownScan.last = last
+		if own.token == scan.ownToken then
+			CancelOwnTimer()
+			SetOwn("done", { finishedAt = time(), result = last })
+		end
+	end
 	for itemID, name in pairs(scan.names) do
 		SetName(itemID, name)
 	end
@@ -1152,6 +1317,10 @@ end
 -- Steps return their cost: an entry with history 1 unit, a last-only one 1/LIGHT_SHARE (#90).
 local function CommitScan(scan)
 	scan.phase = "commit"
+	scan.commitSlice = {}
+	if scan.own and own.token == scan.ownToken and own.state == "reading" then
+		SetOwn("storing")
+	end
 	local keys, seen = {}, {}
 	for key in pairs(scan.rows) do
 		keys[#keys + 1] = key
@@ -1207,7 +1376,7 @@ local function CommitScan(scan)
 		return LIGHT_SHARE
 	end, function()
 		FinishScan(scan)
-	end)
+	end, nil, scan.commitSlice)
 end
 
 -- The list must stay what it was while it is read; a change means the rows moved under us.
@@ -1216,6 +1385,9 @@ local function ReadStopped(scan)
 		scan.aborted = true
 		if job == scan then
 			job = nil
+		end
+		if scan.own and own.token == scan.ownToken then
+			OwnFail("changed")
 		end
 	end
 	return scan.aborted
@@ -1250,7 +1422,7 @@ local function RetryLinks(scan, attempt)
 		end
 	end, function()
 		return ReadStopped(scan)
-	end)
+	end, scan.readSlice)
 end
 
 local function OnReplicateList()
@@ -1267,9 +1439,15 @@ local function OnReplicateList()
 	if lastScan and lastScan.count == count and time() - lastScan.t < DEDUPE_SECONDS then
 		return
 	end
+	-- Any full list restarts the cooldown: the server's limit is the account's, whoever asked (#6).
+	db.ownScan.list = time()
 	if job then
 		job.aborted = true
+		if job.own and own.token == job.ownToken then
+			OwnFail("changed")
+		end
 	end
+	local mine = own.state == "waiting" and own.house == currentHouse
 	local scan = {
 		phase = "read",
 		house = currentHouse,
@@ -1284,9 +1462,17 @@ local function OnReplicateList()
 		unread = {},
 		recorded = 0,
 		lastOnly = 0,
-		source = ns.HasAuctionator() and "auctionator" or "ui",
+		source = mine and "own" or ns.HasAuctionator() and "auctionator" or "ui",
+		readSlice = {},
+		own = mine or nil,
+		ownToken = mine and own.token or nil,
+		waited = mine and math.max(0, time() - (own.requestedAt or time())) or nil,
 	}
 	job = scan
+	if mine then
+		CancelOwnTimer()
+		SetOwn("reading", { listAt = time(), rows = count })
+	end
 	Chunked(count, ROWS_PER_FRAME, function(i)
 		local index = i - 1 -- the list is 0-based, as Auctionator reads it
 		scan.read = i
@@ -1303,7 +1489,7 @@ local function OnReplicateList()
 		end
 	end, function()
 		return ReadStopped(scan)
-	end)
+	end, scan.readSlice)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -2982,6 +3168,7 @@ ns.Listen("DB_READY", function()
 	db.houses = db.houses or {}
 	db.scans = db.scans or {}
 	db.syncScans = db.syncScans or {}
+	db.ownScan = type(db.ownScan) == "table" and db.ownScan or {}
 	db.items = db.items or {}
 	db.cutSamples = db.cutSamples or {}
 	db.scope = db.scope or {}
@@ -3033,6 +3220,7 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 	if houseKey then
 		db.houses[houseKey] = db.houses[houseKey] or house
 	end
+	ns.Notify("AH_STATE_CHANGED", true)
 end)
 
 ns.On("AUCTION_HOUSE_CLOSED", function()
@@ -3044,6 +3232,10 @@ ns.On("AUCTION_HOUSE_CLOSED", function()
 	end
 	FlushSearches()
 	currentHouse = nil
+	if own.state == "requested" or own.state == "waiting" or own.state == "reading" then
+		OwnFail("closed") -- a scan being stored goes on: the rows were all read
+	end
+	ns.Notify("AH_STATE_CHANGED", false)
 	if job and job.phase == "read" then
 		job.aborted = true
 		job = nil
