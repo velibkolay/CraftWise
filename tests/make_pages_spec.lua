@@ -342,10 +342,11 @@ it("Profession dropdown: name and current skill; the menu lists crafting profess
 	tools.profession.scripts.OnClick(tools.profession)
 	local menu = CraftWiseProfessionMenu
 	eq(menu.shown, true)
-	eq(Plain(menu.buttons[1].label.text), "Testbrewing 40"); eq(Plain(menu.buttons[2].label.text), "Testworking 100")
-	eq(menu.nokta.points[1][2], menu.buttons[2], "nokta on the current profession")
-	eq(menu.buttons[2].bg.shown, true)
-	menu.buttons[1].scripts.OnClick(menu.buttons[1])
+	eq(menu.buttons[1].label.text, "All professions", "Make > Craft only (#211)")
+	eq(Plain(menu.buttons[2].label.text), "Testbrewing 40"); eq(Plain(menu.buttons[3].label.text), "Testworking 100")
+	eq(menu.nokta.points[1][2], menu.buttons[3], "nokta on the current profession")
+	eq(menu.buttons[3].bg.shown, true)
+	menu.buttons[2].scripts.OnClick(menu.buttons[2])
 	eq(menu.shown, false)
 	eq(M.Profession(), 171); eq(M.UI().profession, 171, "remembered")
 	eq(Make.Names(ns, "craft"), "Test Brew")
@@ -783,4 +784,111 @@ it("Craft: sort by profit % puts the best return first, is remembered, rows with
 	eq((M.Sort(M.Page("craft"))), "pct", "from the database when the session has none")
 	ns.db.settings.ui.sort.craft = { key = "nonsense", desc = true }
 	eq((M.Sort(M.Page("craft"))), "profit", "an unknown saved key is ignored")
+end)
+-- Make › Craft: All professions (#211)
+local COOK, R_PIE, R_BELT2, PIE = 185, 990301, 990302, 990107
+
+local function WithCooking()
+	local ns, stub, M = Load()
+	stub.items[PIE] = { name = "Test Pie", sellPrice = 2 }
+	Seed(PIE, 500, NOW)
+	ns.charDB.professions[COOK] = { name = "Testcooking", skill = 50, max = 75, recipes = {
+		[R_PIE] = { name = "Test Pie", learned = true, difficulty = 1, reagents = { { itemID = HIDE, quantity = 1 } }, output = { itemID = PIE, quantity = 1 } },
+		-- the same output as Test Belt from another profession: both rows stay
+		[R_BELT2] = { name = "Test Belt", learned = true, difficulty = 1, reagents = { { itemID = THREAD, quantity = 1 } }, output = { itemID = BELT, quantity = 1 } },
+	} }
+	return ns, stub, M
+end
+
+it("All professions: the rows of every profession in one list, each tagged, same output twice stays twice", function()
+	local ns, _, M = WithCooking()
+	M.SetProfession("all")
+	eq(M.UI().profession, "all", "remembered with the other Make settings")
+	M.Open("craft")
+	local rows = Make.Rows(ns, "craft")
+	eq(#rows, 5)
+	local byId = {}
+	for _, r in ipairs(rows) do byId[r.recipeID] = r end
+	eq(byId[R_BELT].professionName, "Testworking"); eq(byId[R_PIE].professionName, "Testcooking")
+	eq(byId[R_BELT].professionID, PROF); eq(byId[R_BELT2].professionID, COOK)
+	assert(Plain(byId[R_PIE].view.cells.name):find("Test Pie  Testcooking", 1, true), Plain(byId[R_PIE].view.cells.name))
+	eq(byId[R_PIE].view.tag, "Testcooking")
+	eq(M.Frame().listBar.title.text, "5 recipes")
+	local f = M.Frame()
+	local chip = M.SlotsOf("craft").tools.profession
+	assert(chip.label.text:find("All professions", 1, true), chip.label.text)
+end)
+
+it("All professions: sorted across professions by profit like a single one, and the hero is the best of all", function()
+	local ns, _, M = WithCooking()
+	M.SetProfession("all")
+	M.Open("craft")
+	local rows = Make.Rows(ns, "craft")
+	eq(rows[1].name, "Test Pie") -- +490 beats the belt's +150
+	local last = math.huge
+	for _, r in ipairs(rows) do
+		if r.profit then
+			assert(r.profit <= last, "descending by profit")
+			last = r.profit
+		end
+	end
+	eq(M.Frame().hero.name.text, "Test Pie")
+end)
+
+it("All professions: the filter box, Unlearned and Hide unpriced work on the merged list", function()
+	local ns, _, M = WithCooking()
+	M.SetProfession("all")
+	M.Open("craft")
+	Make.Filter(ns, "craft", "pie")
+	eq(Make.Names(ns, "craft"), "Test Pie")
+	Make.Filter(ns, "craft", "testthread") -- a reagent name matches recipes of both professions
+	eq(Make.Names(ns, "craft"), "Test Belt,Test Belt,Test Bracers")
+	Make.Filter(ns, "craft", "")
+	ns.db.settings.hideUnpriced = true
+	M.Refresh()
+	for _, r in ipairs(Make.Rows(ns, "craft")) do assert(r.profit, r.name .. " is priced") end
+	ns.db.settings.hideUnpriced = false
+	ns.db.settings.includeUnlearned = true
+	M.Refresh()
+	assert(#Make.Rows(ns, "craft") > 5, "unlearned recipes of every profession")
+end)
+
+it("All professions: only Make › Craft offers it; Learn and Level up keep one profession", function()
+	local ns, _, M = WithCooking()
+	M.SetProfession("all")
+	eq(M.Page("craft").allowAll, true)
+	eq(M.Page("learn").allowAll, nil); eq(M.Page("level").allowAll, nil)
+	M.Open("learn")
+	local tools = Make.Tools(ns, "learn")
+	eq(tools.profession.allowAll, nil)
+	assert(not tools.profession.label.text:find("All professions", 1, true))
+	local id = M.Profession()
+	assert(id == PROF or id == COOK, "a real profession")
+	M.Open("craft")
+	assert(M.SlotsOf("craft").tools.profession.allowAll, "the Craft dropdown starts with All professions")
+	M.SetProfession(PROF)
+	M.Open("craft")
+	eq(#Make.Rows(ns, "craft"), 3, "one profession again")
+end)
+
+it("All professions: the dropdown lists All professions first and marks it when chosen", function()
+	local ns, _, M = WithCooking()
+	M.Open("craft")
+	local chip = M.SlotsOf("craft").tools.profession
+	chip.scripts.OnClick(chip)
+	local menu = Make.Menu and Make.Menu() or ns.Main.Make.Menu()
+	local first = menu.buttons[1]
+	eq(first.label.text, "All professions"); eq(first.current, false)
+	first.scripts.OnClick(first)
+	eq(M.UI().profession, "all")
+	chip.scripts.OnClick(chip)
+	eq(ns.Main.Make.Menu().buttons[1].current, true)
+end)
+
+it("All professions: Add to basket uses the row's own profession", function()
+	local ns, _, M = WithCooking()
+	M.SetProfession("all")
+	M.Open("craft")
+	local row = Row(ns, "craft", R_PIE)
+	assert(row and row.professionID == COOK, "the pie row knows its profession")
 end)

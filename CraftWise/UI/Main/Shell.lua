@@ -74,7 +74,7 @@ M.STALE_SECONDS = 24 * 3600 -- spec "Stale": newest scan at the profit house old
 M.UI_DEFAULTS = {
 	section = "make", -- a section key or M.SETTINGS
 	pages = {}, -- [section] = the sub-page last shown there
-	profession = nil, -- professionID chosen on the Make pages
+	profession = nil, -- professionID chosen on the Make pages, or "all" (Make > Craft lists every profession, #211)
 	sort = {}, -- [page key] = { key, desc }: the list sort last chosen (#197)
 	layout = "window", -- "window", "dockLeft" or "dockRight" (Docked.lua, #161)
 	escape = true, -- Close with Escape (Settings > Look)
@@ -268,6 +268,11 @@ function M.Profession()
 		return ids[1], profs[ids[1]]
 	end
 	return nil
+end
+
+-- Does this page show every profession at once (#211)? Only pages with allowAll, when "all" was chosen.
+function M.ShowsAll(page)
+	return page ~= nil and page.allowAll == true and M.UI().profession == "all"
 end
 
 function M.SetProfession(id)
@@ -577,7 +582,8 @@ end
 function M.Context(page, now)
 	local ctx = { page = page, layout = M.LayoutKey(), metrics = M.Layout() and M.Layout().metrics or {} }
 	if page and page.profession then
-		ctx.professionID, ctx.prof = M.Profession()
+		ctx.professionID, ctx.prof = M.Profession() -- with "all": the first profession with recipes, for the states
+		ctx.all = M.ShowsAll(page) or nil
 	end
 	if page and page.prices then
 		ctx.prices = M.PriceStatus(now)

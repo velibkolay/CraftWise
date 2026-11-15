@@ -116,8 +116,9 @@ it("gathering professions are not in the profession dropdown; icons come from th
 	eq(menu.shown, true)
 	local shown = 0
 	for _, b in ipairs(menu.buttons) do if b.shown ~= false then shown = shown + 1 end end
-	eq(shown, 1)
-	assert(menu.buttons[1].label.text:find("Leatherworking", 1, true), menu.buttons[1].label.text)
+	eq(shown, 2, "All professions (#211) and the one crafting profession")
+	eq(menu.buttons[1].label.text, "All professions")
+	assert(menu.buttons[2].label.text:find("Leatherworking", 1, true), menu.buttons[2].label.text)
 end)
 
 it("Craft: the Unlearned chip adds unlearned recipes to the list", function()
