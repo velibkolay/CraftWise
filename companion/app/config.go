@@ -39,11 +39,28 @@ type Config struct {
 	// before it is read.
 	PollSeconds   int `json:"pollSeconds"`
 	SettleSeconds int `json:"settleSeconds"`
+	// Sync: download the merged market of all machines after each upload and write the one data
+	// file the addon loads (CraftWise_Sync, #239). Needs the upload token (public scope).
+	Sync bool `json:"sync"`
+	// Machine: this machine's name, sent with every request and written into the sync file so the
+	// site and the addon can label data (#237). Empty = the host name.
+	Machine string `json:"machine"`
+}
+
+// MachineName is the machine's name: the setting, else the host name.
+func (c Config) MachineName() string {
+	if m := strings.TrimSpace(c.Machine); m != "" {
+		return m
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return "unknown"
 }
 
 // DefaultConfig is what a new settings file holds.
 func DefaultConfig() Config {
-	return Config{Site: DefaultSite, Private: true, PollSeconds: 5, SettleSeconds: 3}
+	return Config{Site: DefaultSite, Private: true, PollSeconds: 5, SettleSeconds: 3, Sync: true}
 }
 
 // DefaultDir is where the settings, state and log live: <user config dir>/CraftWise Companion

@@ -12,8 +12,10 @@ on `/reload` and logout) and, after each change, sends what is new since the las
   auction tracker's records, the fishing summary, new ledger entries and the item watch list (#165,
   `CraftWiseDB.watch`, sent whole when it changed; the site shows it as favourites, one way, never written back).
 
-The request format is `web/docs/api.md`. The companion only reads the game's files: no game
-memory, no input, nothing written into the World of Warcraft folder.
+The request format is `web/docs/api.md`. The companion reads the game's files (never SavedVariables for
+writing: no game memory, no input) and writes exactly one thing into the World of Warcraft folder:
+the sync add-on `CraftWise_Sync` (see "Sync with the other machine"). Everything else it keeps in its own
+folder.
 
 ## Build
 
@@ -86,6 +88,67 @@ Command line:
    (or reboot); `companion.log` in the settings folder shows "CraftWise Companion ... started".
    Turn it off with `-autostart off`.
 
+## Sync with the other machine (#237, #239)
+
+With two machines on one account, both upload their market scans and each gets the other's back, so the
+price history is one market. After every successful upload, and at start, the companion downloads what
+changed on the site and writes it into a small data add-on that CraftWise loads at login or `/reload`:
+
+1. `GET /api/sync/market?since=<t>` (`web/docs/api.md`, #238; the token needs the `public` scope, the same token as the upload). The answer has
+   the shape of the `POST /api/upload` body (`houses`, `scans`, `names`, `itemInfo`, `classNames`,
+   `subclassNames`, `items[item key][house key] = { last, raw, days }`) plus `until` (the server time to ask
+   from next time) and, for a long first download, `next` (a cursor; the companion follows the pages).
+   The first run asks `since=0` and gets everything. Each entry is complete (merged from both machines),
+   so a download replaces entries in `market-cache.json`.
+2. The cache holds everything downloaded; the add-on file is always written from the whole cache.
+3. `CraftWise_Sync` is written into `<wowPath>/Interface/AddOns/CraftWise_Sync/` (the folder and the TOC are
+   created if missing). The companion writes only these two files, atomically (a temporary file next to it,
+   then a rename, so a game that is loading never reads half a file), and rewrites the Lua file only when the
+   data or the machine name changed. It never writes SavedVariables or anything else in the game folder.
+
+`CraftWise_Sync.toc`: interface 16001, Title, `## Dependencies: CraftWise`, no SavedVariables.
+
+`CraftWise_Sync.lua` sets one global (format version 1; the addon ignores a higher `v`):
+
+```lua
+CraftWiseSync = {
+  v = 1,
+  written = 1763200000,        -- unix time the companion wrote it
+  machine = "PC",              -- this machine's name (setting `machine`, default host name)
+  market = {                   -- all of the merged market, not a delta
+    houses = { ["Realm|H"] = { realm = "Realm", kind = "faction", faction = "Horde", label = "Realm Horde" } },
+    scans = { ["Realm|H"] = { { t = 1763000000, kind = "full", items = 1200, lastOnly = 300, source = "..." } } },
+    names = { [2589] = "Linen Cloth" },
+    itemInfo = { [2589] = "q,i,c,s,t,p" },      -- Market.lua's packed item info
+    classNames = { [7] = "Trade Goods" },
+    subclassNames = { [7] = { [5] = "Cloth" } },
+    items = {
+      [2589] = { ["Realm|H"] = "last|raw|days" },       -- Market.lua's packed entry (`market.Encode`)
+      ["2589:123"] = { ["Realm|H"] = "..." },           -- a suffix variant: string key
+    },
+  },
+}
+```
+
+Entries are Market.lua's packed strings, so the addon decodes them with its own code and merges them into
+`CraftWiseMarketDB` per house and item. Strings are Lua-escaped; item keys are numbers, or `"<id>:<suffix>"`
+for variants; table order is not defined.
+
+**No echo.** The addon merges downloaded entries into `CraftWiseMarketDB`, so the next upload would find
+them in SavedVariables and send the other machine's data back as new. Before the file is written, the
+companion marks everything it downloaded in `state.json`: the newest scan time per house, the hashes of
+names and item info, class names, the newest `last` time per item and house, the days' hashes and the
+times of the downloaded raw points (`got`, kept 3 days, the addon keeps raw points 48 h). A recording made
+on this machine has its own time, so it is still sent, even when it is older than a downloaded one. A day
+that the merge changed differs from what was marked and is sent again; the server keeps the better one.
+
+A failed download (network, 5xx, 429) retries like an upload; a refusal (401, 403)
+is logged and tried again after the next upload. Nothing changes on a failure: the cache, `since`, the marks
+and the add-on file stay as they were. Turn it off with `"sync": false`.
+
+The machine name goes into the file and every request (header `X-CraftWise-Machine`) so the site can label
+data later (#237 phase 2).
+
 ## Files
 
 In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/CraftWise Companion`
@@ -102,10 +165,13 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   | `private` | `true` | also upload the private data |
   | `pollSeconds` | `5` | how often the file is checked |
   | `settleSeconds` | `3` | how long it must stay unchanged before it is read |
+  | `sync` | `true` | download the merged market and write the `CraftWise_Sync` add-on (the upload token, `public` scope) |
+  | `machine` | (host name) | this machine's name, sent with every request and written into the sync file |
 
   Changes apply at the next upload; a different `wowPath` or `account` switches the watched file.
 - `state.json`: what was uploaded (per site and file). Delete it, or use `-once -full`, to send
   everything again; re-sending is harmless (the server ignores what it has).
+- `market-cache.json`: the market downloaded so far and the time to ask `since` next. Delete it to download everything again.
 - `companion.log`: what happened; kept at about 1 MB (the previous one is `companion.log.1`).
 
 ## Uploads
