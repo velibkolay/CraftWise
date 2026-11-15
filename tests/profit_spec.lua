@@ -161,3 +161,61 @@ it("ByPercent: the 150 % craft is above the 10 % one; no % last in both directio
 	for _, r in ipairs(rows) do names[#names + 1] = r.name end
 	eq(table.concat(names, ","), "Big,TieRich,TieA,TieB,Small,Free,Unpriced", "ascending: no-% rows still last")
 end)
+-- Max AH price per reagent to break even (#261)
+local function mixed(buy, sell, vendorIDs)
+	return {
+		buy = function(id) return buy[id] and { copper = buy[id], source = vendorIDs and vendorIDs[id] and "vendor" or "auction", age = 1 } end,
+		sell = function(id) return sell[id] and { copper = sell[id], source = "auction", age = 1 } end,
+	}
+end
+
+it("max buy: omelet-like, one AH reagent and one vendor reagent: sale minus the vendor cost", function()
+	-- sells 190 net, egg 1 (AH, now 129), spices 36 (vendor)
+	local r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 }, { itemID = 2, quantity = 1 } },
+		output = { itemID = 9, quantity = 1 } }, mixed({ [1] = 129, [2] = 36 }, { [9] = 190 }, { [2] = true }))
+	eq(r.reagents[1].maxBuy, 154); eq(r.reagents[1].overMax, nil)
+	eq(r.reagents[2].maxBuy, nil, "a vendor reagent has a fixed price: nothing")
+end)
+
+it("max buy: the current price above the maximum is flagged", function()
+	local r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 }, { itemID = 2, quantity = 1 } },
+		output = { itemID = 9, quantity = 1 } }, mixed({ [1] = 200, [2] = 36 }, { [9] = 190 }, { [2] = true }))
+	eq(r.reagents[1].maxBuy, 154); eq(r.reagents[1].overMax, true)
+end)
+
+it("max buy: units per craft divide the room, rounded down; the output quantity multiplies the sale", function()
+	local r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 3 }, { itemID = 2, quantity = 2 } },
+		output = { itemID = 9, quantity = 2 } }, mixed({ [1] = 10, [2] = 20 }, { [9] = 100 }))
+	-- sale 200; others 2 x 20 = 40; room 160 over 3 units = 53
+	eq(r.reagents[1].maxBuy, 53)
+	-- sale 200; others 3 x 10 = 30; room 170 over 2 units = 85
+	eq(r.reagents[2].maxBuy, 85)
+end)
+
+it("max buy: a sale at the vendor or Junk value is the sell side as given", function()
+	local p = mixed({ [1] = 10 }, {})
+	p.sell = function() return { copper = 40, source = "vendor", label = "vendor (junk)", marked = true } end
+	local r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 } }, output = { itemID = 9, quantity = 1 } }, p)
+	eq(r.reagents[1].maxBuy, 40)
+end)
+
+it("max buy: unknown sale, unknown other reagent or an unverified cut give nothing", function()
+	local r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 }, { itemID = 2, quantity = 1 } },
+		output = { itemID = 9, quantity = 1 } }, mixed({ [1] = 10, [2] = 5 }, {}))
+	eq(r.reagents[1].maxBuy, nil); eq(r.reagents[1].maxBuyLoss, nil)
+	r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 }, { itemID = 2, quantity = 1 } },
+		output = { itemID = 9, quantity = 1 } }, mixed({ [1] = 10 }, { [9] = 100 }))
+	eq(r.reagents[1].maxBuy, nil, "reagent 2 has no price")
+	local p = mixed({ [1] = 10 }, {})
+	p.sell = function() return { copper = 100, source = "auction", cutUnverified = true } end
+	r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 } }, output = { itemID = 9, quantity = 1 } }, p)
+	eq(r.reagents[1].maxBuy, nil)
+	r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 } } }, mixed({ [1] = 10 }, {}))
+	eq(r.reagents[1].maxBuy, nil, "no item output")
+end)
+
+it("max buy: other reagents costing more than the sale lose money at any price", function()
+	local r = P.Evaluate({ learned = true, reagents = { { itemID = 1, quantity = 1 }, { itemID = 2, quantity = 1 } },
+		output = { itemID = 9, quantity = 1 } }, mixed({ [1] = 10, [2] = 500 }, { [9] = 100 }, { [2] = true }))
+	eq(r.reagents[1].maxBuyLoss, true); eq(r.reagents[1].maxBuy, nil)
+end)

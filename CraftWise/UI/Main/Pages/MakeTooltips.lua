@@ -112,6 +112,18 @@ local function ReagentDetail(line)
 end
 MK.ReagentDetail = ReagentDetail
 
+-- Max AH price of a reagent that still breaks even (#261), from Profit.MaxBuy: "max 1s 5c each (now 1s 29c)", red
+-- when the price now is above it; "loses money at any price" when the other reagents already cost more than the
+-- sale. nil for lines it doesn't apply to (vendor, crafted, unknown values).
+function MK.MaxBuyText(line)
+	if line.maxBuyLoss then
+		return "    " .. BAD .. "loses money at any price|r"
+	elseif line.maxBuy then
+		local color = line.overMax and BAD or GOOD
+		return "    " .. color .. ("max %s each|r"):format(Money(line.maxBuy)) .. Muted((" (now %s)"):format(Money(line.unit)))
+	end
+end
+
 -- "Sells for" line: the chosen value and its tag (#48).
 local function SellText(r)
 	if not r.sellsFor then
@@ -503,6 +515,10 @@ function MK.ShowRecipeTooltip(owner, r, view)
 			local detail = ReagentDetail(line)
 			if detail then
 				Note(detail)
+			end
+			local maxBuy = MK.MaxBuyText(line)
+			if maxBuy then
+				GameTooltip:AddLine(maxBuy, 1, 1, 1)
 			end
 		else
 			GameTooltip:AddDoubleLine(left, ns.Market.NO_DATA, 1, 1, 1, ORANGE[1], ORANGE[2], ORANGE[3])
