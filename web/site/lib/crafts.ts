@@ -36,7 +36,8 @@ export interface CraftRow {
 	spell: Spell;
 	craft: Craft;
 	ready: boolean; // every price the craft needs has been fetched (until then the AH columns say so)
-	name: string | null; // the product's name, once known
+	name: string | null; // the product's name, once known; the recipe's own name when the item was never scanned (#271)
+	nameFromRecipe: boolean; // `name` is the recipe's name (recipes.json), not an item name
 	recipeItem: number | null;
 	learned: boolean | null; // a character knows the recipe; null = not known (no snapshot lists that profession's recipes)
 	recipeCost: RecipeCost | null;
@@ -120,7 +121,8 @@ export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fe
 		spell: s,
 		craft: c,
 		ready: itemsOfSpell(s).every((id) => fetched.has(id)),
-		name: names.get(s.output!) ?? null,
+		name: names.get(s.output!) ?? s.name,
+		nameFromRecipe: (names.get(s.output!) ?? null) === null && s.name !== null,
 		recipeItem,
 		// Unlearned only where a snapshot lists that profession's recipes: otherwise nothing is assumed.
 		learned: !known ? null : known.has(s.id) ? true : cachedLines?.has(s.skillLine) ? false : null,

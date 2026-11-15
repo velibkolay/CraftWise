@@ -65,7 +65,7 @@ describe("recipe data (recipes.json)", () => {
 				{ item: 2318, qty: 7 },
 				{ item: 2320, qty: 2 },
 			],
-			name: null,
+			name: "Fine Leather Boots",
 		});
 		expect(real.vendor["2320"]).toBe(10);
 		expect(spellOf(real, 818)).toMatchObject({ output: null, qty: 0, profession: "Cooking" });

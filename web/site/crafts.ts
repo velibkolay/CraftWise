@@ -414,7 +414,12 @@ function rowEl(r: CraftRow): HTMLElement {
 		h(
 			"td",
 			{ class: "c-name" },
-			h("a", { href: `/item/${out}`, class: `iname ${quality}${r.learned === false ? " unlearned" : ""}` }, slot(name, quality), h("span", { class: "nm" }, name)),
+			h(
+				"a",
+				{ href: `/item/${out}`, class: `iname ${quality}${r.learned === false ? " unlearned" : ""}`, title: r.nameFromRecipe ? "Name from the recipe: this item has not been seen on the auction house" : null },
+				slot(name, quality),
+				h("span", { class: "nm" }, r.nameFromRecipe ? h("em", {}, name) : name),
+			),
 			r.learned === false ? h("span", { class: "hint unlearned-tag", title: "None of your characters knows this recipe" }, " unlearned") : null,
 			r.spell.qty !== 1 ? h("span", { class: "hint" }, ` × ${Number.isInteger(r.spell.qty) ? r.spell.qty : r.spell.qty.toFixed(2)}`) : null,
 			r.loop ? " " : null,

@@ -223,3 +223,29 @@ describe("known recipes, my professions, unlearned (#263)", () => {
 		expect(mk(12, null, null).learned).toBeNull();
 	});
 });
+
+describe("product name from the recipe (#271)", () => {
+	const named: RecipeData = { ...data, names: { "10": "Bolt of Test", "12": "Blade of Test" } };
+	const sp = (id: number) => craftSpells(named).find((s) => s.id === id)!;
+	const fe = new Set([50, 51, 60, 61, 62, 100]);
+
+	it("shows the recipe's name when the item was never scanned, marked as such", () => {
+		const r = toRow(named, sp(10), new Map(), fe, new Map([[50, null]]));
+		expect([r.name, r.nameFromRecipe]).toEqual(["Bolt of Test", true]);
+		const none = toRow(named, sp(12), new Map(), fe, new Map());
+		expect([none.name, none.nameFromRecipe]).toEqual(["Blade of Test", true]);
+	});
+
+	it("keeps the item's own name when there is one, and shows no name when neither exists", () => {
+		const r = toRow(named, sp(10), new Map(), fe, new Map([[50, "Bolt"]]));
+		expect([r.name, r.nameFromRecipe]).toEqual(["Bolt", false]);
+		const bare = toRow(data, craftSpells(data)[0]!, new Map(), fe, new Map());
+		expect([bare.name, bare.nameFromRecipe]).toEqual([null, false]); // nothing is invented
+	});
+
+	it("filters and sorts by the recipe name too", () => {
+		const rows = [10, 12].map((id) => toRow(named, sp(id), new Map(), fe, new Map()));
+		expect(rows.filter((x) => keep(x, { ...all, q: "blade" })).map((x) => x.spell.id)).toEqual([12]);
+		expect(sortCrafts(rows, "name", false).map((x) => x.name)).toEqual(["Blade of Test", "Bolt of Test"]);
+	});
+});
