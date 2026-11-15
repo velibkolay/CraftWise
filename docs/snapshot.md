@@ -314,7 +314,7 @@ Account-wide, in the same `CraftWise.lua` file. Written to disk at logout, `/rel
 
 - `items[<item key>][<house key>]`: one string per item and house. The item key is the item ID, or `"<itemID>:<suffixID>"` for random-suffix gear. Decoding is in `Market.lua` (`DecodeEntry`): numbers are base 36, `"last|raw|days"`.
   - `last` = `t,min,qty,listings[,off]`: the latest observation: when, lowest unit price, units listed, listings (price levels for commodities). `off` = time of a later full scan at that house that didn't list it.
-  - Items in the market scope (own professions' reagents, products and recipes, items you interacted with) also keep `raw` (48 h of scans with the cheapest 8 price levels) and `days` (30 days of daily low, typical, high, ...).
+  - Items in the market scope (the reagents, products and recipes of every profession in the bundled recipe data, whether a character knows it or not (#232), the recipes a trainer showed, items you interacted with) also keep `raw` (48 h of scans with the cheapest 8 price levels) and `days` (30 days of daily low, typical, high, ...).
   - Every other item of a full scan or browse list has `last` only: the string ends in `||` (#90).
 - `names[<itemID>]`: the item's name as the client gave it, in the client's language (full-scan rows, else the client cache after a scan, on AH close, after login and at logout). Missing when the client hadn't loaded the item; not part of any price record. A plain string, unchanged since #90.
 - `itemInfo[<itemID>]` (#92): `"q,i,c,s,t"`, numbers in base 36 like the price records, for every item ID that has a record in `items` (suffix variants share their item ID's entry) or in `auctionator.items`. Dropped together with the last of those records.
