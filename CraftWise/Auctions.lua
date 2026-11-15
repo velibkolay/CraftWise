@@ -90,6 +90,21 @@ function A.List(charKey)
 	return c and c.list or nil
 end
 
+-- A recorded sale (the money arrived, the ledger's "ahsell") of an item marked "Sell to vendor" (#214, #222): the
+-- item does sell on the AH, so the mark goes and it is valued at the AH again. Listing, cancelling and expiring
+-- never get here. One chat line; the pages and bag advice refresh.
+function A.DropVendorMark(itemID)
+	if not (itemID and ns.db and ns.db.sellVendor and ns.db.sellVendor[itemID]) then
+		return false
+	end
+	ns.db.sellVendor[itemID] = nil
+	local name, link = ns.ItemInfoNow(itemID)
+	ns.Print((ns.L["%s sold on the AH: 'Sell to vendor' mark removed"]):format(link or name or ("item " .. itemID)))
+	ns.Notify("BAGS_CHANGED")
+	ns.Notify("JUNK_CHANGED")
+	return true
+end
+
 local function Changed(rec)
 	ns.Notify("AUCTIONS_CHANGED", rec)
 end
@@ -748,6 +763,7 @@ function A.SettleSale(t)
 	MarkMatch(rec, #found)
 	if rec.i and ns.Ledger then
 		ns.Ledger.Record("ahsell", rec.i, count, t.money, rec.h)
+		A.DropVendorMark(rec.i)
 	end
 	if oneHouse then
 		AddCutSample(rec, t, count)
