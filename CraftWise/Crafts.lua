@@ -8,11 +8,15 @@ local _, ns = ...
 -- skill-up and at any skill, from the same craft detection below (OnCraft). CraftWiseDB.crafted:
 --   { seeded = true,
 --     before = { [recipeID] = crafts }  crafts counted in skillups before the log existed (undated, no character),
---     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit, known } },
+--     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit, known, active } },
 --                                                  earlier = { crafts, items, profit, known }, speed = ... } } } }
 -- profit = copper, the profit per craft as computed at craft time (profit view's cost basis, the sale with the
 -- Junk mark respected, #227), summed over the crafts that had one; known = how many crafts that is. A
 -- craft without a price adds to crafts only. Days from before profit was recorded have neither.
+-- active (#251) = seconds of active crafting added to that day: the gap since the character's previous craft of
+-- any recipe when it is at most BREAK_SECONDS, added to the day of the later craft. The first craft of a run (no
+-- craft before it in this session, or a break before it) adds 0: its cast time isn't known, nothing is guessed.
+-- Days from before this was recorded have no `active` (nil): they show no time, never an estimate.
 -- Days older than KEEP_DAYS fold into `earlier` (once per session, never on a craft). items = crafts times the
 -- recipe's yield when that is one exact number; recipes with a yield range add crafts only (the client's
 -- received quantity is not read, see docs/ingame-checks.md).
@@ -29,6 +33,7 @@ CL.BREAK_SECONDS = 30
 CL.GAP_KEEP = 50
 CL.MIN_GAPS = 5
 local lastCraft = {} -- [recipeID] = GetTime() of this session's previous craft of it (this character)
+local lastAny -- GetTime() of this session's previous craft of any recipe (this character), for the active time
 
 -- The speed table of a log entry, after one craft at clock time `at` (seconds, nil = unknown).
 local function AddGap(entry, recipeID, at)
@@ -49,6 +54,21 @@ local function AddGap(entry, recipeID, at)
 	gap = math.floor(gap * 100 + 0.5) / 100
 	speed.gaps[speed.n % CL.GAP_KEEP + 1] = gap
 	speed.n, speed.sum = speed.n + 1, speed.sum + gap
+end
+
+-- Active seconds a craft at clock time `at` adds (#251): the gap since the previous craft of any recipe when it is
+-- positive and at most BREAK_SECONDS, else 0 (first craft of a run, a break, unknown clock).
+local function ActiveGap(at)
+	local before = lastAny
+	lastAny = at
+	if not (at and before) then
+		return 0
+	end
+	local gap = at - before
+	if gap <= 0 or gap > CL.BREAK_SECONDS then
+		return 0
+	end
+	return math.floor(gap * 100 + 0.5) / 100
 end
 
 -- Median of a list of numbers (does not change it).
@@ -101,6 +121,20 @@ function CL.ProfitPerHour(speed, profit)
 		return nil
 	end
 	return speed.perHour * profit
+end
+
+-- "1 h 12 min", "12 min", "45 s" for a number of active seconds (rounded to the minute from one minute on).
+function CL.FormatDuration(sec)
+	sec = math.max(0, math.floor(sec + 0.5))
+	if sec < 60 then
+		return sec .. " s"
+	end
+	local min = math.floor(sec / 60 + 0.5)
+	if min < 60 then
+		return min .. " min"
+	end
+	local h = math.floor(min / 60)
+	return min % 60 == 0 and (h .. " h") or (h .. " h " .. (min % 60) .. " min")
 end
 
 -- "12.5" (one decimal, none for whole numbers).
@@ -258,6 +292,7 @@ function CL.Record(recipeID, recipe, now, clock)
 		bucket[4] = (bucket[4] or 0) + 1
 	end
 	AddGap(entry, recipeID, clock)
+	bucket[5] = (bucket[5] or 0) + ActiveGap(clock)
 	ns.Notify("CRAFTLOG_CHANGED", recipeID)
 end
 
@@ -277,6 +312,9 @@ function CL.Fold(now)
 					entry.earlier = earlier
 					earlier[1], earlier[2] = earlier[1] + bucket[1], earlier[2] + bucket[2]
 					earlier[3], earlier[4] = (earlier[3] or 0) + (bucket[3] or 0), (earlier[4] or 0) + (bucket[4] or 0)
+					if bucket[5] then
+						earlier[5] = (earlier[5] or 0) + bucket[5]
+					end
 					entry.days[day] = nil
 					folded = folded + 1
 				end
@@ -293,6 +331,9 @@ local function Windows(entry, todayNumber)
 	local w = { today = { 0, 0, 0 }, week = { 0, 0, 0 }, total = { 0, 0, 0 }, items = 0, earlier = 0 }
 	local function Add(window, b)
 		window[1], window[2], window[3] = window[1] + b[1], window[2] + (b[3] or 0), window[3] + (b[4] or 0)
+		if b[5] then -- active seconds (#251): the window has a figure once any of its days was timed
+			window[4] = (window[4] or 0) + b[5]
+		end
 	end
 	for day, b in pairs(entry.days) do
 		local age = todayNumber - CL.DayNumber(day)
@@ -388,6 +429,12 @@ function CL.List(now, charKey)
 				r.today, r.week, r.total, r.dated = r.today + w.today[1], r.week + w.week[1], r.total + w.total[1], r.dated + w.total[1]
 				r.profitToday, r.profitWeek, r.profitTotal = r.profitToday + w.today[2], r.profitWeek + w.week[2], r.profitTotal + w.total[2]
 				r.knownToday, r.knownWeek, r.known = r.knownToday + w.today[3], r.knownWeek + w.week[3], r.known + w.total[3]
+				if w.today[4] then
+					r.activeToday = (r.activeToday or 0) + w.today[4]
+				end
+				if w.week[4] then
+					r.activeWeek = (r.activeWeek or 0) + w.week[4]
+				end
 			end
 		end
 	end

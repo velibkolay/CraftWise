@@ -172,6 +172,7 @@ function P.Rows(now, filters)
 			r.profitWeek = e.knownWeek > 0 and e.profitWeek or nil
 			r.profitTotal = e.known > 0 and e.profitTotal or nil
 			r.knownToday, r.knownWeek = e.knownToday, e.knownWeek
+			r.activeToday, r.activeWeek = e.activeToday, e.activeWeek -- active seconds (#251), nil on days without time
 			view.cells.name, view.colors.name = name, "text"
 			view.cells.today, view.colors.today = CL.Format(e.today), e.today > 0 and "text" or "text3"
 			view.cells.week, view.colors.week = CL.Format(e.week), e.week > 0 and "text" or "text3"
@@ -281,8 +282,15 @@ function P.Model(ctx)
 	local rows = P.Rows()
 	local today, week, total = 0, 0, 0
 	local profitToday, profitWeek, anyToday, anyWeek = 0, 0, false, false
+	local activeToday, activeWeek -- active crafting seconds (#251); nil while no day in the window was timed
 	for _, r in ipairs(rows) do
 		today, week, total = today + r.today, week + r.week, total + r.total
+		if r.activeToday then
+			activeToday = (activeToday or 0) + r.activeToday
+		end
+		if r.activeWeek then
+			activeWeek = (activeWeek or 0) + r.activeWeek
+		end
 		if r.profitToday then
 			profitToday, anyToday = profitToday + r.profitToday, true
 		end
@@ -296,9 +304,12 @@ function P.Model(ctx)
 			or L["no crafts logged yet. Craft something and it shows here."])
 	else
 		hero = {
-			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today)), nameColor = "text",
+			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today))
+				.. (activeToday and activeToday >= 1 and (" · " .. (L["%s active"]):format(CL.FormatDuration(activeToday))) or ""),
+			nameColor = "text",
 			-- One line: the docked layout keeps it short (no total), the window adds the total crafts.
 			sub = (L["7 days %s"]):format(CL.Format(week))
+				.. (not docked and activeWeek and activeWeek >= 1 and (" (" .. (L["%s active"]):format(CL.FormatDuration(activeWeek)) .. ")") or "")
 				.. (docked and "" or (" · " .. (L["%s crafts in total"]):format(CL.Format(total))))
 				.. (anyWeek and (" · " .. (L["profit 7 days %s"]):format(MK.PlainMoney(math.abs(profitWeek)) .. (profitWeek < 0 and " " .. L["loss"] or ""))) or ""),
 			figureLabel = L["Estimated profit today"],

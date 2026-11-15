@@ -913,3 +913,9 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Same file again: `/reload` (or restart) without a newer download: nothing happens (no slices in the recorder). A second download with the same market changes no price; the file size of `CraftWiseMarketDB.lua` does not grow from reloads.
 - File size: after the first merge the SavedVariables file holds the other machine's history too (the market of two machines, the same as one machine that scanned twice as much). Note the size before and after here.
 - Companion upload after a merge: the next upload must not send the other machine's data back as new (the companion's no-echo rule, #239); the site's `/me` counts do not double.
+
+## Make › Crafted: active crafting time (#251)
+- Craft the same recipe 10 times in a row (queue or repeated clicks), then check the summary card on Make › Crafted: "today N · X min active" is about the time those crafts took (the first craft of the run adds nothing).
+- Wait over 30 s (stand at a vendor, tab out) and craft again: the break is not in the time. Craft a different recipe in between: the gaps are not counted twice.
+- The 7-day time is in brackets on the second line in the window layout; the docked layout shows today's time only.
+- A character filter and the profession chip change the time with the counts. Days logged before this version show no time (no figure at all, not 0).
