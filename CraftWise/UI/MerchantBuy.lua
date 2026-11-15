@@ -4,6 +4,10 @@
 --     total, press Buy. Gold, stock and bag room are checked first; if one fails the panel says why and
 --     nothing is bought.
 --   * Below it, the basket's vendor lines (Basket.Plan) that this merchant sells, each with its Buy button.
+--   * Opening a vendor must cost nothing noticeable: the basket plan (every craft of the basket through
+--     Balance) is the heavy part, so it is computed once, a frame after the window opens, kept until the
+--     basket, the bags or the prices change, and bursts of those events share one computation. Typing a
+--     quantity only redraws the small buy part.
 --   * Both buttons call Basket.Purchase, the same stack-sized purchase the Basket page uses. Every purchase
 --     starts from the player's click; nothing buys on open, on a timer or on its own.
 local _, ns = ...
@@ -20,6 +24,8 @@ local panel
 local picked -- itemID the typed quantity is for
 local rows = {} -- the basket line rows
 local hooked = {}
+local vendorPlan -- Basket.Plan().split.vendor, kept until the basket, the bags or the prices change
+local pending -- a recomputation of the plan is scheduled
 
 local function ItemName(itemID)
 	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
@@ -77,13 +83,22 @@ function MB.Buy()
 	return bought, why
 end
 
--- Basket vendor lines this merchant sells: { { itemID, quantity } }, at most MAX_LINES.
-function MB.BasketLines()
+-- The plan's vendor buy lines. Planning is the expensive part (every craft of the basket), so the result
+-- is kept: MB.Stale() drops it. Nothing is planned for an empty basket.
+function MB.VendorPlan()
 	if #ns.Basket.Entries() == 0 then
 		return {}
 	end
+	if not vendorPlan then
+		vendorPlan = ns.Basket.Plan().split.vendor
+	end
+	return vendorPlan
+end
+
+-- Basket vendor lines this merchant sells: { { itemID, quantity } }, at most MAX_LINES.
+function MB.BasketLines()
 	local out = {}
-	for _, l in ipairs(ns.Basket.Plan().split.vendor) do
+	for _, l in ipairs(MB.VendorPlan()) do
 		if ns.Basket.MerchantSlot(l.itemID) then
 			out[#out + 1] = l
 			if #out == MB.MAX_LINES then
@@ -130,7 +145,8 @@ function MB.Rows()
 	return rows
 end
 
-function MB.Update()
+-- The part that follows what is typed: the picked item, the total or why not, the Buy button.
+function MB.UpdateBuy()
 	if not (panel and ns.Basket.MerchantOpen()) then
 		return
 	end
@@ -139,6 +155,9 @@ function MB.Update()
 	panel.item:SetText(picked and ItemName(picked) or L["Buy a quantity"])
 	panel.status:SetText(text)
 	panel.buy:SetEnabled(ok)
+end
+
+local function DrawLines()
 	local y = -118
 	local lines = MB.BasketLines()
 	panel.basketTitle:SetShown(#lines > 0)
@@ -149,7 +168,7 @@ function MB.Update()
 			r.line = l
 			r:SetShown(l ~= nil)
 			if l then
-				local can, why = ns.Basket.CanBuy(l)
+				local can = ns.Basket.CanBuy(l)
 				r.text:SetText((L["%d × %s"]):format(l.quantity, ItemName(l.itemID)))
 				r.buy:SetEnabled(can)
 				r:ClearAllPoints()
@@ -159,6 +178,35 @@ function MB.Update()
 		end
 	end
 	panel:SetHeight(-y + (#lines > 0 and 30 or 12))
+end
+
+-- Everything. The basket lines are drawn from the kept plan; with none (the basket changed, or the
+-- window just opened) the plan is made in a later frame and the lines drawn then.
+function MB.Update()
+	if not (panel and ns.Basket.MerchantOpen()) then
+		return
+	end
+	MB.UpdateBuy()
+	if vendorPlan or #ns.Basket.Entries() == 0 then
+		DrawLines()
+	elseif not pending then
+		pending = true
+		C_Timer.After(MB.delay or 0, ns.Timed("MerchantBuy: basket plan", function()
+			pending = false
+			if ns.Basket.MerchantOpen() then
+				MB.VendorPlan()
+			end
+			MB.Update()
+		end))
+	end
+end
+
+-- The basket, the bags or the prices changed: the kept plan is out of date.
+function MB.Stale(delay)
+	vendorPlan = nil
+	MB.delay = delay
+	MB.Update()
+	MB.delay = nil
 end
 
 local function Create()
@@ -186,7 +234,7 @@ local function Create()
 	panel.box:SetFontObject(Style.Fonts.Small)
 	panel.box:SetTextInsets(8, 8, 0, 0)
 	panel.box.border = Style.Border(panel.box, Style.C.ruleStrong)
-	panel.box:SetScript("OnTextChanged", MB.Update)
+	panel.box:SetScript("OnTextChanged", MB.UpdateBuy)
 	panel.box:SetScript("OnEnterPressed", function(self)
 		self:ClearFocus()
 	end)
@@ -230,9 +278,14 @@ ns.On("MERCHANT_SHOW", function()
 	if panel then
 		picked = nil
 		panel.box:SetText("")
-		MB.Update()
+		MB.Stale()
 	end
 end)
--- BASKET_CHANGED also fires on open and close; BAGS_CHANGED when a purchase lands (money, room, lines).
-ns.Listen("BASKET_CHANGED", MB.Update)
-ns.Listen("BAGS_CHANGED", MB.Update)
+ns.On("MERCHANT_UPDATE", function()
+	MB.Update() -- the merchant's list changed (a page, a purchase): the kept plan still holds
+end)
+-- BASKET_CHANGED also fires on open and close; BAGS_CHANGED when a purchase lands (money, room, lines):
+-- a burst of them is one plan, made a moment later. PRICES_CHANGED moves the plan's sources.
+ns.Listen("BASKET_CHANGED", function() MB.Stale() end)
+ns.Listen("BAGS_CHANGED", function() MB.Stale(0.2) end)
+ns.Listen("PRICES_CHANGED", function() MB.Stale(0.2) end)

@@ -737,7 +737,9 @@ end)
 -- added too, so "what could I learn" works even if the client only lists learned recipes, and so are
 -- recipes a trainer showed that neither lists (#83, marked recordedInGame).
 -- view: the window view asking ("profit" | "learn" | "level"); it picks the reagent cost basis (#47).
-function ns.BuildRows(professionID, includeUnlearned, view)
+-- only: optional set { [recipeID] = true }; when given, just those recipes get a row (the Basket needs a few
+-- rows of a profession that has hundreds, and building every row is what costs).
+function ns.BuildRows(professionID, includeUnlearned, view, only)
 	local prof = ns.charDB and ns.charDB.professions[professionID]
 	if not prof then
 		return {}
@@ -745,7 +747,7 @@ function ns.BuildRows(professionID, includeUnlearned, view)
 	local prices = ns.ReagentPrices(view or "profit")
 	local rows = {}
 	for recipeID, recipe in pairs(prof.recipes) do
-		if (recipe.learned or includeUnlearned) and ns.RecipeBelongs(professionID, recipeID) then
+		if (recipe.learned or includeUnlearned) and (not only or only[recipeID]) and ns.RecipeBelongs(professionID, recipeID) then
 			if not recipe.reagents then
 				local reagents, output, noItem, origin = ns.RecipeFallback(recipeID)
 				if reagents then
@@ -759,7 +761,7 @@ function ns.BuildRows(professionID, includeUnlearned, view)
 	if includeUnlearned and ns.RecipeData then
 		local skillLine = ns.SkillLineOf(professionID)
 		for recipeID, data in pairs(ns.RecipeData) do
-			if data.skillLine == skillLine and not prof.recipes[recipeID] and data.reagents then
+			if data.skillLine == skillLine and (not only or only[recipeID]) and not prof.recipes[recipeID] and data.reagents then
 				local learned = IsSpellKnown(recipeID)
 				local name = (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(recipeID))
 					or BundledName(skillLine, recipeID)
@@ -783,7 +785,7 @@ function ns.BuildRows(professionID, includeUnlearned, view)
 	if includeUnlearned then
 		local skillLine = ns.SkillLineOf(professionID)
 		for recipeID, rec in pairs(ns.db and ns.db.trainer or {}) do
-			if rec.line == skillLine and rec.reagents and not prof.recipes[recipeID]
+			if rec.line == skillLine and (not only or only[recipeID]) and rec.reagents and not prof.recipes[recipeID]
 				and not (ns.RecipeData and ns.RecipeData[recipeID]) and not IsSpellKnown(recipeID) then
 				local output = rec.output
 				local icon = rec.icon or (output and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(output.itemID))
