@@ -266,3 +266,99 @@ it("covers the reagent bag (bag 5): listed in the Bags view, menu opens, junk th
 	-- the sort leaves the reagent bag alone
 	for _, s in ipairs(ns.BagSort.Slots()) do assert(s.bag ~= 5) end
 end)
+
+-- #308: one symbol per concept. A junk-marked item shows the fold and the dim and never a coin;
+-- unmarked grey items keep the client's coin.
+local function withCoin(button)
+	button.JunkIcon = CreateFrame("Frame")
+	button.JunkIcon:Show()
+	return button
+end
+
+it("Blizzard bag button: marked junk shows the fold, no coin, even when the client shows it again", function()
+	local ns, stub = setup()
+	local function button(bag, slot)
+		local b = withCoin(CreateFrame("Button"))
+		b.icon = CreateFrame("Frame")
+		b.GetBagID = function() return bag end
+		b.GetID = function() return slot end
+		return b
+	end
+	ContainerFrameCombinedBags = CreateFrame("Frame")
+	ContainerFrameCombinedBags.Update = function() end
+	ContainerFrameCombinedBags.Items = { button(0, 1), button(0, 2) }
+	stub.Fire("PLAYER_LOGIN")
+	local linen, boots = ContainerFrameCombinedBags.Items[1], ContainerFrameCombinedBags.Items[2]
+	ns.SetItemState(400, "junk")
+	eq(ns.SlotCorners[boots].shown, true)
+	eq(boots.JunkIcon.shown, false)
+	boots.JunkIcon:Show() -- the client re-shows the coin at a merchant
+	eq(boots.JunkIcon.shown, false)
+	boots.JunkIcon:SetShown(true)
+	eq(boots.JunkIcon.shown, false)
+	eq(linen.JunkIcon.shown, true) -- unmarked items keep the client's coin
+	ns.SetItemState(400, "normal")
+	boots.JunkIcon:Show()
+	eq(boots.JunkIcon.shown, true) -- unmarked again: the coin is the client's
+end)
+
+it("Bagnon item: marked junk shows the fold, no coin", function()
+	local ns, stub = setup()
+	Bagnon = { Item = { UpdateBorder = function() end }, Frames = { Update = function() end } }
+	stub.Fire("PLAYER_LOGIN")
+	local item = withCoin(CreateFrame("Button"))
+	item.icon, item.info, item.IsCached = CreateFrame("Frame"), { itemID = 400 }, function() return false end
+	ns.SetItemState(400, "junk")
+	Bagnon.Item.UpdateBorder(item)
+	eq(ns.SlotCorners[item].shown, true)
+	eq(item.JunkIcon.shown, false)
+	eq(item.icon.alpha, 0.55)
+end)
+
+it("Baganator corner widget: marked junk shows the fold and dim on the item button, no coin", function()
+	local ns, stub = setup()
+	local widget, junk
+	Baganator = { API = {
+		RegisterJunkPlugin = function(_, _, fn) junk = fn end,
+		RegisterCornerWidget = function(_, _, onUpdate, onInit) widget = { onUpdate = onUpdate, onInit = onInit } end,
+		RequestItemButtonsRefresh = function() end,
+	} }
+	stub.Fire("PLAYER_LOGIN")
+	local button = withCoin(CreateFrame("Button"))
+	button.icon = CreateFrame("Frame")
+	local corner = widget.onInit(button)
+	corner.GetParent = function() return CreateFrame("Frame") end -- Baganator re-parents it to its container
+	ns.SetItemState(400, "junk")
+	eq(widget.onUpdate(corner, { itemID = 400 }), true)
+	eq(corner.vertexColor[1], ns.Style.C.text3[1])
+	eq(button.icon.alpha, 0.55); eq(button.icon.desaturated, true)
+	eq(button.JunkIcon.shown, false)
+	button.JunkIcon:Show() -- Baganator's own junk widget shows it afterwards
+	eq(button.JunkIcon.shown, false)
+	ns.SetItemState(400, "normal")
+	eq(widget.onUpdate(corner, { itemID = 400 }), false)
+	eq(button.icon.alpha, 1)
+end)
+
+it("Baganator junk plugin: marked items are junk, unmarked sellable grey items stay junk, others not", function()
+	local ns, stub = setup()
+	stub.items[700] = { name = "Torn Rag", sellPrice = 3, quality = 0 }
+	stub.items[701] = { name = "Odd Rag", sellPrice = 0, quality = 0 }
+	local junk
+	Baganator = { API = { RegisterJunkPlugin = function(_, _, fn) junk = fn end } }
+	stub.Fire("PLAYER_LOGIN")
+	ns.SetItemState(400, "junk")
+	eq(junk(0, 1, 400), true)  -- marked
+	eq(junk(0, 1, 700), true)  -- unmarked grey, sellable: the client's coin rule
+	eq(junk(0, 1, 701), false) -- no sell value
+	eq(junk(0, 1, 100), false) -- white item
+end)
+
+it("Bags page: a junk row's icon is dimmed like the slot, a kept row only greyed", function()
+	local ns = setup()
+	local P = ns.Main.Page("bags")
+	local junk = P.DockedRow({ junk = true, name = "Old Boots", itemID = 400 })
+	eq(junk.desaturate, true); eq(junk.dim, ns.JUNK_DIM)
+	local kept = P.DockedRow({ kept = true, name = "Linen", itemID = 100 })
+	eq(kept.desaturate, true); eq(kept.dim, nil)
+end)

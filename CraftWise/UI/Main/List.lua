@@ -429,7 +429,7 @@ end
 -- What a docked row shows (pure):
 --   group = { title, note, right }        a group header row (Bags, Upgrades): title, note, total right
 --   line, lineColor                       a row of one line of text
---   icon (texture) | itemID, desaturate   the icon when the page's list has one (icon = false: none)
+--   icon (texture) | itemID, desaturate, dim   the icon (dim: alpha, junk uses ns.JUNK_DIM) when the page's list has one (icon = false: none)
 --   name, nameColor, nameFont             line 1, left
 --   rail = { value, max, zeroAt, point, low, high, selected }   line 2, under the name
 --   note, noteColor, live                 line 2 when there is no rail (live: the orange nokta before it)
@@ -640,6 +640,7 @@ function List:InitDockedRow(b, element)
 			local tex = v.icon or (v.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(v.itemID)) or nil
 			d.icon:SetTexture(tex)
 			d.icon:SetDesaturated(v.desaturate and true or false)
+			d.icon:SetAlpha(v.dim or 1)
 			d.icon:ClearAllPoints()
 			d.icon:SetPoint("LEFT", b, "LEFT", pad, 0)
 			d.icon:Show()

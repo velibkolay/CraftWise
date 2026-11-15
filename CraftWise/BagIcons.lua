@@ -1,7 +1,8 @@
 -- Marks on bag slots (issues #12, #160): a folded corner on the slot's top right, 13 units.
 -- Sell on AH: C.coinGold corner. Junk: C.text3 corner and the slot's icon desaturated and dimmed to 55 %.
 -- Keep has no mark (it is the default). Works on the game's bags, Bagnon and Baganator (Baganator.lua
--- calls ns.ApplySlotMark too). Only marks are added; the client's slot art is left alone.
+-- calls ns.ApplySlotMark too). Only marks are added; the client's slot art is left alone,
+-- except that the junk coin is hidden on items marked junk (#308: one symbol per concept).
 local _, ns = ...
 
 ns.SLOT_CORNER = 13
@@ -75,6 +76,45 @@ function ns.SetSlotDim(button, dim)
 	end
 end
 
+-- Junk shows the fold and the dim, never a coin (#308). The coin is the item button's JunkIcon (the
+-- client's art; Bagnon and Baganator reuse it). On a CraftWise-marked item it is hidden, and a hook
+-- on the icon keeps it hidden when the client or Baganator shows it again. Unmarked grey items keep
+-- the client's coin: it is not touched.
+local coinHidden = setmetatable({}, { __mode = "k" }) -- [button] = true while we keep its coin hidden
+ns.SlotCoinHidden = coinHidden
+local coinHooked = setmetatable({}, { __mode = "k" }) -- [JunkIcon] = true
+
+function ns.SetSlotCoin(button, hide)
+	local coin = button and button.JunkIcon
+	if type(coin) ~= "table" or not coin.Hide then
+		return
+	end
+	if hide then
+		coinHidden[button] = true
+		if not coinHooked[coin] and hooksecurefunc then
+			coinHooked[coin] = true
+			local function Rehide()
+				if coinHidden[button] then
+					coin:Hide()
+				end
+			end
+			if coin.Show then
+				hooksecurefunc(coin, "Show", Rehide)
+			end
+			if coin.SetShown then
+				hooksecurefunc(coin, "SetShown", function(_, shown)
+					if shown then
+						Rehide()
+					end
+				end)
+			end
+		end
+		coin:Hide()
+	else
+		coinHidden[button] = nil -- the client shows its coin again on its next update
+	end
+end
+
 -- Mark a slot for `mark` ("ah", "junk" or nil), or clear it.
 function ns.SetSlotMark(button, mark)
 	if not button then
@@ -90,6 +130,7 @@ function ns.SetSlotMark(button, mark)
 		t:Hide()
 	end
 	ns.SetSlotDim(button, mark == "junk")
+	ns.SetSlotCoin(button, mark == "junk")
 end
 
 function ns.ApplySlotMark(button, itemID)

@@ -1073,3 +1073,10 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 ## Key bindings: one header (#306)
 - `/console scriptErrors 1`, then log in or `/reload`: no "Binding header CRAFTWISE was attempted to be loaded more than once" warning.
 - Game menu › Options › Key Bindings: the three bindings (party, main window, farm) are still listed together under CraftWise.
+
+## Icons: junk is one symbol (#308)
+- Mark a poor-quality (grey) item as junk with the middle mouse button. Check in Blizzard's bags (combined and single), Bagnon and Baganator: each shows the grey folded corner (top right) and the dimmed icon, and **no coin**. Open Baganator's Settings > Icons and make sure "CraftWise: marks" sits in a corner and the "Junk" widget too: the coin still must not show on the marked item.
+- Visit a merchant: the marked grey item shows the fold only; an unmarked grey item shows the client's coin (Blizzard bags and Baganator with the CraftWise junk plugin selected).
+- Unmark the item: the fold and dim go, the coin returns on a grey item at a merchant. Mark a non-grey item (white): fold and dim, no coin.
+- Make > Bags: a junk row has its icon grey and dimmed like the slot; docked layout the same.
+- Baganator: the dim also shows on marked items (the corner widget no longer needs the button as its parent).

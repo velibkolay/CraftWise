@@ -300,7 +300,9 @@ function P.InitRow(b, data, ctx)
 		return
 	end
 	if b.icons[1] then
-		b.icons[1]:SetDesaturated(data.kept)
+		-- Junk looks as it does on the bag slot (#308): icon grey and dimmed to ns.JUNK_DIM
+		b.icons[1]:SetDesaturated(data.kept or data.junk)
+		b.icons[1]:SetAlpha(data.junk and ns.JUNK_DIM or 1)
 	end
 	-- the user's mark as a line tag, right-aligned in its column
 	if data.mark then
@@ -375,7 +377,7 @@ function P.DockedRow(data)
 	end
 	return {
 		icon = data.icon or (data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID)),
-		desaturate = data.kept, name = data.name, nameColor = S.QualityColor(data.quality), note = note,
+		desaturate = data.kept or data.junk, dim = data.junk and ns.JUNK_DIM or nil, name = data.name, nameColor = S.QualityColor(data.quality), note = note,
 		result = P.columns[VALUE_COLUMN].text(data), tag = data.mark, missing = data.noValue,
 		tip = data.reason and { L["No value"], data.reason } or nil,
 	}

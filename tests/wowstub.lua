@@ -220,6 +220,7 @@ function GetItemInfo(id)
 		item.equipLoc or "", nil, item.sellPrice, item.classID, item.subClassID, item.bindType
 end
 C_Item = { GetItemInfo = GetItemInfo, RequestLoadItemDataByID = noop }
+function C_Item.GetItemQualityByID(id) local item = stub.items[id]; return item and (item.quality or 1) end
 -- Item data loading (#286): an item in stub.uncached has no data (a replicate row of it has no link) until
 -- stub.ArriveItem(id[, false]) is called; requests are recorded in stub.loadRequests.
 stub.uncached, stub.loadRequests = {}, {}

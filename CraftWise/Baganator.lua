@@ -1,6 +1,9 @@
 -- Baganator integration (optional; does nothing without Baganator). Uses Baganator's public API:
---  * junk plugin "CraftWise": Baganator shows its junk coin on items you marked as junk
---    (pick "CraftWise" under Baganator's junk settings if another plugin is selected)
+--  * junk plugin "CraftWise": items you marked as junk count as junk for Baganator's junk search,
+--    category and grey option (pick "CraftWise" under Baganator's junk settings if another plugin
+--    is selected). Unmarked poor-quality items stay junk too, as with Baganator's own default.
+--    Baganator draws its coin from the plugin's answer and has no way to hide it per item, so the
+--    coin of a CraftWise-marked item is hidden by BagIcons.lua (ns.SetSlotCoin): fold + dim only (#308)
 --  * corner widget "CraftWise: marks": the folded corner of BagIcons.lua on the slot's top right
 --    (gold: sell on AH; grey: junk, and the slot's icon dimmed). Baganator settings > Icons: place
 --    it in a corner if it isn't shown
@@ -17,14 +20,28 @@ local function Register()
 	registered = true
 	if api.RegisterJunkPlugin then
 		pcall(api.RegisterJunkPlugin, "CraftWise", "craftwise", function(_, _, itemID)
-			return itemID and ns.db and ns.db.junk and ns.db.junk[itemID] or false
+			if not itemID then
+				return false
+			end
+			if ns.db and ns.db.junk and ns.db.junk[itemID] then
+				return true
+			end
+			-- Not marked: the client's rule, a sellable poor-quality item (Baganator's own default)
+			local quality = C_Item and C_Item.GetItemQualityByID and C_Item.GetItemQualityByID(itemID)
+			if quality ~= 0 then
+				return false
+			end
+			local sell = C_Item.GetItemInfo and select(11, C_Item.GetItemInfo(itemID))
+			return sell ~= 0
 		end)
 	end
 	if api.RegisterCornerWidget then
 		pcall(api.RegisterCornerWidget, "CraftWise: marks", "craftwise_marks", ns.Timed("Baganator: corner widget", function(corner, details)
 			local mark = details and ns.SlotMark(details.itemID)
-			local parent = corner.GetParent and corner:GetParent()
-			ns.SetSlotDim(parent, mark == "junk")
+			-- Baganator re-parents the corner widget to its container: the button is kept from onInit
+			local button = corner.cwButton or (corner.GetParent and corner:GetParent())
+			ns.SetSlotDim(button, mark == "junk")
+			ns.SetSlotCoin(button, mark == "junk")
 			if not mark then
 				return false
 			end
@@ -35,6 +52,7 @@ local function Register()
 			local t = itemButton:CreateTexture(nil, "OVERLAY")
 			t:SetTexture(ns.Style.Media.fold)
 			t:SetSize(ns.SLOT_CORNER, ns.SLOT_CORNER)
+			t.cwButton = itemButton
 			return t
 		end, { corner = "top_right", priority = 1 }, true)
 	end
