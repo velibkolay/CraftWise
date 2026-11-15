@@ -1072,4 +1072,4 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 
 ## Key bindings: one header (#306)
 - `/console scriptErrors 1`, then log in or `/reload`: no "Binding header CRAFTWISE was attempted to be loaded more than once" warning.
-- Game menu › Options › Key Bindings: the three bindings (party, main window, farm) are still listed together under CraftWise.
+- Game menu â€º Options â€º Key Bindings: the three bindings (party, main window, farm) are still listed together under CraftWise.
