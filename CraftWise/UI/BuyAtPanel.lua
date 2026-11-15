@@ -10,7 +10,7 @@ local Style, L = ns.Style, ns.L
 local P = {}
 ns.BuyAtPanel = P
 
-P.WIDTH, P.ROW, P.MAX_ROWS = 460, 24, 10
+P.WIDTH, P.ROW, P.MAX_ROWS, P.MAX_REMINDERS = 520, 24, 10, 5
 
 local panel
 
@@ -43,16 +43,80 @@ local function Row(i)
 	row:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -34 - (i - 1) * P.ROW)
 	row.text = Style.Text(row, "Small", "text")
 	row.text:SetPoint("LEFT", row, "LEFT", 0, 0)
-	row.text:SetPoint("RIGHT", row, "RIGHT", -90, 0)
+	row.text:SetPoint("RIGHT", row, "RIGHT", -156, 0)
 	row.text:SetJustifyH("LEFT")
-	row.go = Style.ActionButton(row, L["Waypoint"], 80, 20)
+	row.go = Style.ActionButton(row, L["Waypoint"], 74, 20)
 	row.go:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+	row.remind = Style.ActionButton(row, L["Remind"], 74, 20)
+	row.remind:SetPoint("RIGHT", row.go, "LEFT", -6, 0)
+	row.remind:SetScript("OnClick", function(self)
+		if self.entry then
+			P.PickTime(self.entry)
+		end
+	end)
 	row.go:SetScript("OnClick", function(self)
 		if self.entry then
 			P.Waypoint(self.entry)
 		end
 	end)
 	panel.rows[i] = row
+	return row
+end
+
+-- Setting a reminder (#289): "Remind" on a vendor row shows the time choices (the learned one first when the
+-- stock log has it); one click sets it. Active reminders are listed under the vendors, each with a delete.
+function P.PickTime(entry)
+	panel.pick = (panel.pick and panel.pick.npcID == entry.npcID) and nil or entry
+	P.Fill(panel.itemID)
+end
+
+function P.SetReminder(entry, seconds)
+	local rec, why = ns.Restock.Add(entry.npcID, panel.itemID, seconds)
+	if rec then
+		Say((L["Reminder set: %s"]):format(ns.Restock.Line(rec)))
+	else
+		Say((why or L["No reminder"]) .. ".")
+	end
+	panel.pick = nil
+	P.Fill(panel.itemID)
+	return rec
+end
+
+local function Chip(i)
+	local b = panel.choices[i]
+	if b then
+		return b
+	end
+	b = Style.ActionButton(panel, "", 96, 20)
+	b:SetScript("OnClick", function(self)
+		if self.entry and self.seconds then
+			P.SetReminder(self.entry, self.seconds)
+		end
+	end)
+	panel.choices[i] = b
+	return b
+end
+
+local function ReminderRow(i)
+	local row = panel.reminders[i]
+	if row then
+		return row
+	end
+	row = CreateFrame("Frame", nil, panel)
+	row:SetSize(P.WIDTH - 24, P.ROW)
+	row.text = Style.Text(row, "Small", "text2")
+	row.text:SetPoint("LEFT", row, "LEFT", 0, 0)
+	row.text:SetPoint("RIGHT", row, "RIGHT", -34, 0)
+	row.text:SetJustifyH("LEFT")
+	row.del = Style.ActionButton(row, "×", 26, 20)
+	row.del:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+	row.del:SetScript("OnClick", function(self)
+		if self.id then
+			ns.Restock.Remove(self.id)
+			P.Fill(panel.itemID)
+		end
+	end)
+	panel.reminders[i] = row
 	return row
 end
 
@@ -65,7 +129,7 @@ local function Create()
 	panel:SetFrameStrata("DIALOG")
 	panel:EnableMouse(true)
 	panel.sheet = Style.Sheet(panel, nil, nil, 10, true)
-	panel.rows = {}
+	panel.rows, panel.choices, panel.reminders = {}, {}, {}
 	panel.title = Style.Text(panel, "BodyBold", "text")
 	panel.title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -10)
 	panel.title:SetWidth(P.WIDTH - 60)
@@ -112,6 +176,7 @@ function P.Fill(itemID)
 		local scope = SCOPE_WORDS[e.scope]
 		row.text:SetText((nearest and (Style.Hex("live") .. "› |r") or "") .. e.text .. (scope and (" " .. Style.Hex("text3") .. scope .. "|r") or ""))
 		row.go.entry = e
+		row.remind.entry = e
 		local located = e.merchant.map and e.merchant.x and e.merchant.y
 		if row.go.SetEnabled then
 			row.go:SetEnabled(located and true or false)
@@ -119,6 +184,30 @@ function P.Fill(itemID)
 		row:Show()
 	end
 	local y = 34 + shown * P.ROW + 4
+	for _, b in ipairs(panel.choices) do
+		b:Hide()
+	end
+	if panel.pick then
+		local choices = ns.Restock.Choices(panel.pick.npcID, itemID)
+		panel.pickLabel = panel.pickLabel or Style.Text(panel, "Small", "text2")
+		panel.pickLabel:ClearAllPoints()
+		panel.pickLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -y - 4)
+		panel.pickLabel:SetText((L["Remind me at %s in:"]):format(panel.pick.merchant.name or "?"))
+		panel.pickLabel:Show()
+		local x = 12
+		for i, choice in ipairs(choices) do
+			local b = Chip(i)
+			b.entry, b.seconds = panel.pick, choice.seconds
+			b:SetLabel(choice.label)
+			b:ClearAllPoints()
+			b:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -y - 24)
+			b:Show()
+			x = x + 102
+		end
+		y = y + 50
+	elseif panel.pickLabel then
+		panel.pickLabel:Hide()
+	end
 	panel.nearest.entry = all.nearest
 	panel.nearest:ClearAllPoints()
 	panel.nearest:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -y)
@@ -138,7 +227,22 @@ function P.Fill(itemID)
 	panel.note:SetWidth(P.WIDTH - 24 - 170)
 	panel.note:SetText(note or "")
 	panel.nearest:SetShown(not all.bundled)
-	panel:SetHeight(y + 36)
+	y = y + 32
+	local active = ns.Restock.List()
+	for _, row in ipairs(panel.reminders) do
+		row:Hide()
+	end
+	for i = 1, math.min(#active, P.MAX_REMINDERS) do
+		local r = active[i]
+		local row = ReminderRow(i)
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -y)
+		row.text:SetText(ns.Restock.Line(r))
+		row.del.id = r.id
+		row:Show()
+		y = y + P.ROW
+	end
+	panel:SetHeight(y + 8)
 	return panel
 end
 
@@ -147,6 +251,9 @@ function P.Toggle(itemID, owner)
 	if panel and panel:IsShown() and panel.itemID == itemID then
 		panel:Hide()
 		return nil
+	end
+	if panel and panel.itemID ~= itemID then
+		panel.pick = nil
 	end
 	if not P.Fill(itemID) then
 		return nil

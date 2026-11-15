@@ -21,6 +21,10 @@
 --     filter, full,               merchant filter (GetMerchantFilter) and whether it showed everything
 --                                 (LE_LOOT_FILTER_ALL). A filtered view keeps items it did not show.
 --     first, t,                   first and last visit (Unix time)
+--     visits, fullVisits,         windows opened here, and how many of them showed everything (#289): an item
+--                                 missing from `fullVisits` complete views was not sold here, not "out of stock"
+--     gone = { [itemID] = { name, t, n, log } },  items an earlier view listed that a complete view no longer
+--                                 shows, with the last count and the stock log, kept so a return keeps its history
 --     items = { [itemID] = {
 --       name,                     item name as the merchant window showed it
 --       p, s,                     price in copper for one purchase and the stack it buys (p = 0: currency only)
@@ -300,6 +304,7 @@ local function ParseNpc(guid)
 	end
 end
 
+local visit -- { npcID, full } for the merchant window that is open: counted once per window (#289)
 local openFaction -- { npcID, f = faction data or false } for the merchant window that is open
 
 -- Records the open merchant. Returns the number of items recorded (0 when nothing was recorded).
@@ -351,6 +356,10 @@ function M.Record()
 	m.filter = filter
 	m.full = (filter ~= nil and filter == LE_LOOT_FILTER_ALL) or nil
 	m.t = now
+	if not (visit and visit.npcID == npcID) then
+		visit = { npcID = npcID }
+		m.visits = (m.visits or 0) + 1
+	end
 
 	local seen, recorded, resolved = {}, 0, 0
 	for index = 1, count do
@@ -360,7 +369,15 @@ function M.Record()
 			resolved = resolved + 1
 		end
 		if info and not info.currency then
-			local item = m.items[itemID] or {}
+			local item = m.items[itemID]
+			if not item then
+				item = {}
+				local back = m.gone and m.gone[itemID]
+				if back then
+					item.log = back.log -- it is listed again: its history comes back with it
+					m.gone[itemID] = nil
+				end
+			end
 			m.items[itemID] = item
 			item.name = info.name or item.name
 			item.p = info.price or 0
@@ -403,10 +420,16 @@ function M.Record()
 	-- one whose filter is unknown, or a list the client had not fully loaded) keeps them, with their own
 	-- last-seen time.
 	if m.full and resolved == count then
-		for itemID in pairs(m.items) do
+		for itemID, item in pairs(m.items) do
 			if not seen[itemID] then
+				m.gone = m.gone or {}
+				m.gone[itemID] = { name = item.name, t = now, n = item.n, log = item.log }
 				m.items[itemID] = nil
 			end
+		end
+		if not visit.full then
+			visit.full = true
+			m.fullVisits = (m.fullVisits or 0) + 1
 		end
 	end
 	if recorded > 0 then
@@ -435,12 +458,12 @@ local function RecordSoon()
 end
 
 ns.On("MERCHANT_SHOW", function()
-	openFaction = nil
+	openFaction, visit = nil, nil
 	RecordSoon()
 end)
 ns.On("MERCHANT_UPDATE", RecordSoon)
 ns.On("MERCHANT_CLOSED", function()
-	openFaction = nil
+	openFaction, visit = nil, nil
 end)
 
 ----------------------------------------------------------------------------------------------------
@@ -645,6 +668,53 @@ function M.Restocks(item)
 	return out
 end
 
+-- What a recorded merchant's own history says about one item (#289), never more:
+--   { state = "listed", item }               the last view listed it (stock in item.n)
+--   { state = "soldout", item }              it was listed with a count of 0
+--   { state = "gone", t, n }                 an earlier view listed it, a complete one no longer does
+--   { state = "never", visits }              `visits` complete views, none ever listed it: not sold here
+--   { state = "unknown" }                    no complete view yet, so nothing can be said
+function M.ListingStatus(npcID, itemID)
+	local m = Store() and Store()[npcID]
+	if not m then
+		return { state = "unknown" }
+	end
+	local item = m.items and m.items[itemID]
+	if item then
+		return { state = item.n == 0 and "soldout" or "listed", item = item }
+	end
+	local g = m.gone and m.gone[itemID]
+	if g then
+		return { state = "gone", t = g.t, n = g.n }
+	end
+	if (m.fullVisits or 0) > 0 then
+		return { state = "never", visits = m.fullVisits }
+	end
+	return { state = "unknown" }
+end
+
+-- What the stock log of a limited item shows about restocking (#289): every time a count of 0 was followed
+-- by a higher one on the same realm, the rise lies between the last sighting of 0 and the first of the
+-- higher count. { count = rises seen, within = the longest such window in seconds, shortest = the shortest },
+-- or nil when none was seen. "Restocked within" is a bound on what was observed, not a schedule.
+function M.Learned(item)
+	local count, longest, shortest = 0, nil, nil
+	local log = item and item.log or {}
+	for i = 2, #log do
+		local a, b = log[i - 1], log[i]
+		if a.n == 0 and b.n > 0 and a.realm == b.realm then
+			local window = math.max(0, b.first - a.last)
+			count = count + 1
+			longest = longest and math.max(longest, window) or window
+			shortest = shortest and math.min(shortest, window) or window
+		end
+	end
+	if count == 0 then
+		return nil
+	end
+	return { count = count, within = longest, shortest = shortest }
+end
+
 ----------------------------------------------------------------------------------------------------
 -- Text
 ----------------------------------------------------------------------------------------------------
@@ -668,6 +738,30 @@ local function Span(seconds)
 		return ("%dh %dm"):format(math.floor(seconds / 3600), math.floor(seconds % 3600 / 60))
 	end
 	return ("%dd"):format(math.floor(seconds / 86400))
+end
+
+M.Span = Span
+
+-- "restocked within 1h 20m, seen once" (#289): what the stock log shows, worded as an observation.
+function M.LearnedText(learned)
+	if not learned then
+		return nil
+	end
+	return ("restocked within %s, seen %s"):format(Span(learned.within),
+		learned.count == 1 and "once" or (learned.count .. " times"))
+end
+
+-- The line for a vendor's state of an item (#289): "not sold here (seen 3 visits)", "sold out", "no longer
+-- listed", or nil when nothing is known beyond the listing itself.
+function M.ListingText(status)
+	if status.state == "never" then
+		return ("not sold here (seen %d %s)"):format(status.visits, status.visits == 1 and "visit" or "visits")
+	elseif status.state == "soldout" then
+		return "out of stock"
+	elseif status.state == "gone" then
+		return "not listed now, last seen " .. M.FormatAge(time() - (status.t or 0))
+	end
+	return nil
 end
 
 -- "90c", "90c for 5", "10 Merchant's Favor", "1s + 2 Silk Cloth".
@@ -775,6 +869,10 @@ function M.SellerLines(itemID, now)
 			parts[#parts + 1] = "not usable"
 		end
 		parts[#parts + 1] = "seen " .. M.FormatAge(now - (item.t or m.t or now))
+		local learned = M.LearnedText(M.Learned(item))
+		if learned then
+			parts[#parts + 1] = learned
+		end
 		lines[#lines + 1] = "  " .. table.concat(parts, " · ")
 		for _, r in ipairs(M.Restocks(item)) do
 			lines[#lines + 1] = ("    count rose %d -> %d between %s and %s (within %s, may be another layer)"):format(r.from, r.to,
@@ -885,8 +983,31 @@ function M.BuyAtAll(itemID)
 		local m = s.merchant
 		if (m.group == nil or mine == nil or m.group == mine) and (m.name or m.zone) then
 			local scope, distance = ScopeOf(m, here)
+			local text = M.BuyAtText(m, s.item, s.npcID)
+			if s.item.n == 0 then
+				text = text .. " · " .. M.ListingText({ state = "soldout" })
+			end
+			local learned = M.LearnedText(M.Learned(s.item))
+			if learned then
+				text = text .. " · " .. learned
+			end
 			entries[#entries + 1] = { npcID = s.npcID, merchant = m, item = s.item, unit = s.unit, scope = scope,
-				distance = distance, text = M.BuyAtText(m, s.item, s.npcID) }
+				distance = distance, text = text, listed = true }
+		end
+	end
+	-- Vendors a complete view once showed it at and no longer does (#289): listed last, never "nearest".
+	for npcID, m in pairs(Store() or {}) do
+		local g = m.gone and m.gone[itemID]
+		if g and not (m.items and m.items[itemID]) and (m.group == nil or mine == nil or m.group == mine) and (m.name or m.zone) then
+			local scope, distance = ScopeOf(m, here)
+			local text = (m.name or ("NPC " .. tostring(npcID))) .. (m.zone and (", " .. m.zone) or "") .. " · "
+				.. M.ListingText({ state = "gone", t = g.t })
+			local learned = M.LearnedText(M.Learned(g))
+			if learned then
+				text = text .. " · " .. learned
+			end
+			entries[#entries + 1] = { npcID = npcID, merchant = m, item = g, scope = scope, distance = distance,
+				text = text, listed = false }
 		end
 	end
 	if #entries == 0 then
@@ -896,6 +1017,9 @@ function M.BuyAtAll(itemID)
 		return nil
 	end
 	table.sort(entries, function(a, b)
+		if a.listed ~= b.listed then
+			return a.listed
+		end
 		local ra, rb = SCOPE_RANK[a.scope] or 9, SCOPE_RANK[b.scope] or 9
 		if ra ~= rb then
 			return ra < rb
@@ -914,7 +1038,7 @@ function M.BuyAtAll(itemID)
 		end
 		return tostring(a.npcID) < tostring(b.npcID)
 	end)
-	return { entries = entries, nearest = entries[1].scope and entries[1] or nil }
+	return { entries = entries, nearest = entries[1].listed and entries[1].scope and entries[1] or nil }
 end
 
 -- The tooltip's short form: at most M.MAX_BUY_AT lines and how many more.
