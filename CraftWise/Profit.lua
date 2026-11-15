@@ -143,6 +143,7 @@ function Profit.Evaluate(recipe, prices)
 		if value then
 			result.sellsFor = value.copper * recipe.output.quantity
 			result.sellSource = value.source
+			result.sellMarked = value.marked or nil -- "Sell to vendor" mark (#214)
 			result.sellLabel, result.sellThin, result.sellCut = value.label, value.thin, value.cut
 			result.sellCutText, result.sellCutDiffers = value.cutText, value.cutDiffers
 			result.sellGross = value.gross and value.gross * recipe.output.quantity

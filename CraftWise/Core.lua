@@ -156,6 +156,7 @@ local DB_DEFAULTS = {
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor
 	sellAH = {}, -- [itemID] = true: items marked to sell on the auction house
+	sellVendor = {}, -- [itemID] = true: items valued at their vendor price everywhere, the AH price still shown (#214)
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	watch = {}, -- [itemID] = Unix time it was watched: Look up › Items watch list (ItemWatch.lua, #165); the companion reads it
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)

@@ -26,6 +26,7 @@ local OPTIONS = {
 	{ key = "keep", label = "Keep", note = "Left out of the advice and selling" },
 	{ key = "junk", label = "Junk", note = "Sold with \"Sell junk\" at a vendor", sells = true },
 	{ key = "auction", label = "Sell on AH", note = "Always advised for the auction house, grouped first in the selling part of a bag sort", sells = true },
+	{ key = "vendor", label = "Sell to vendor", note = "Valued at its vendor price everywhere; the AH price is still shown", sells = true },
 	{ key = "quest", label = "Quest items can't be sold", quest = true },
 	{ key = "normal", label = "Normal", note = "CraftWise advises vendor or AH" },
 	{ key = "rule" },
@@ -41,13 +42,15 @@ local OPTIONS = {
 	{ key = "recipes", label = "Recipes using this", note = "Opens Make › Craft with every recipe of yours that uses it" },
 }
 ns.ItemMenuOptions = OPTIONS
-local MARKS = { keep = true, junk = true, auction = true, normal = true }
+local MARKS = { keep = true, junk = true, auction = true, vendor = true, normal = true }
 
 local function State(itemID)
 	if ns.db.junk and ns.db.junk[itemID] then
 		return "junk"
 	elseif ns.db.sellAH and ns.db.sellAH[itemID] then
 		return "auction"
+	elseif ns.db.sellVendor and ns.db.sellVendor[itemID] then
+		return "vendor"
 	elseif ns.db.keep[itemID] then
 		return "keep"
 	end
@@ -57,9 +60,11 @@ end
 function ns.SetItemState(itemID, state)
 	ns.db.junk = ns.db.junk or {}
 	ns.db.sellAH = ns.db.sellAH or {}
+	ns.db.sellVendor = ns.db.sellVendor or {}
 	ns.db.keep[itemID] = state == "keep" or nil
 	ns.db.junk[itemID] = state == "junk" or nil
 	ns.db.sellAH[itemID] = state == "auction" or nil
+	ns.db.sellVendor[itemID] = state == "vendor" or nil
 	ns.Notify("BAGS_CHANGED")
 	ns.Notify("JUNK_CHANGED")
 end
@@ -208,7 +213,7 @@ local function Choose(opt)
 			ns.ItemWatch.Toggle(itemID)
 		elseif opt.key == "dismiss" and ns.ToggleDismissed then
 			ns.ToggleDismissed(itemID)
-		elseif MARKS[opt.key] and not (menu.quest and (opt.key == "junk" or opt.key == "auction")) then
+		elseif MARKS[opt.key] and not (menu.quest and (opt.key == "junk" or opt.key == "auction" or opt.key == "vendor")) then
 			ns.SetItemState(itemID, opt.key)
 		end
 	end

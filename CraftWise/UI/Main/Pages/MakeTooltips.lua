@@ -117,7 +117,7 @@ local function SellText(r)
 	if not r.sellsFor then
 		return ns.Market.NO_DATA
 	end
-	local tag = MK.SaleTag(r.sellSource, r.cutUnverified)
+	local tag = MK.SaleTag(r.sellSource, r.cutUnverified, r.sellMarked)
 	return ("%s  %s"):format(Money(r.sellsFor), r.cutUnverified and (WARN .. tag .. "|r") or Muted(tag or ""))
 end
 

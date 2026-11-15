@@ -59,9 +59,9 @@ end
 
 -- Short tag for where a sale price comes from (#48): "vendor", "AH", or "AH gross" when the house's
 -- cut is unverified (no net value); nil without a sale value.
-function MK.SaleTag(source, cutUnverified)
+function MK.SaleTag(source, cutUnverified, marked)
 	if source == "vendor" then
-		return "vendor"
+		return marked and L["vendor (marked)"] or "vendor"
 	elseif source == "disenchant" then
 		return "disenchant" -- Disenchant check (#190)
 	elseif source == "auction" then
