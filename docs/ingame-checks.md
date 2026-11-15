@@ -953,3 +953,10 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Hover the Today cell of a row: "Active time: the time between crafts up to 30 s; longer pauses don't count."
 - Active time per craft is about the Speed column's seconds (e.g. 3.1 s); a day recorded by the first #251 build shows no time until a craft is made (its old seconds are dropped).
 - The window card also shows "+ ≈ X est. for N untimed crafts" (untimed crafts x that recipe median gap, only with 5+ gaps), kept apart from the measured time, and a "≈ .../h est." figure. The docked card leaves it out.
+
+## Where to buy a reagent (#276)
+
+- No TOC change; `/reload` is enough. Hover a Make › Craft or Make › Level up row whose recipe has a reagent that a merchant you opened sells (e.g. First Aid's Bottle of Dalaran Noir after visiting Barkeep Morag): under that reagent, "Buy at: Barkeep Morag, Orgrimmar · Valley of Strength 54, 68 · 50c". The coordinates are the ones recorded when you opened the merchant (a decimal rounded to whole numbers); stand next to him and compare with the map.
+- A reagent you hold fewer of than one craft needs (bags, bank and mail as counted for the tooltip) has the line in the danger colour and "you hold 0 of 1". Several vendors: the one in the zone you stand in first, then the cheapest, at most two lines and "+N more: /craftwise where". Vendors of the other faction are left out; a vendor that sells to both shows for both.
+- A limited-stock item says "limited stock, N seen" (the count at your last visit). A reagent no merchant was recorded for, but the bundled data says a vendor sells, shows "Sold by vendors, location not recorded yet" only when you are short of it; nothing else is claimed.
+- Not done: clicking the line to set a map waypoint (tooltip lines can't be clicked), and the Basket page's rows have no tooltip of their own, so they still show the item's "Sold by" line only.

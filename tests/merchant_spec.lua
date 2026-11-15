@@ -618,3 +618,84 @@ it("#107: names stay with their item IDs across reordered, shorter, filtered and
 	open(stub, 248201, "Pawani")
 	eq(#check("filtered").items, 3)
 end)
+
+-- Where to buy (#276) ---------------------------------------------------------------------------------------
+
+local NOIR = 8000 -- a reagent only recorded vendors sell
+
+local function Seed(ns, stub)
+	stub.items[NOIR] = { name = "Bottle of Noir" }
+	UnitFactionGroup = function() return "Horde" end
+	stub.zone = "Durotar"
+	ns.db.merchants = {
+		[5611] = { name = "Barkeep Morag", zone = "Orgrimmar", sub = "Valley of Strength", x = 54.4, y = 67.9, group = "H", t = 100,
+			items = { [NOIR] = { name = "Bottle of Noir", p = 50, s = 1, n = -1, t = 100 } } },
+		[5612] = { name = "Cheap Keg", zone = "Durotar", x = 40.2, y = 10.6, t = 50,
+			items = { [NOIR] = { name = "Bottle of Noir", p = 80, s = 1, n = 3, t = 50 } } },
+		[5613] = { name = "Alliance Barman", zone = "Stormwind City", x = 10, y = 10, group = "A", t = 300,
+			items = { [NOIR] = { name = "Bottle of Noir", p = 10, s = 1, n = -1, t = 300 } } },
+		[5614] = { name = "Old Barman", zone = "Undercity", group = "H", t = 20,
+			items = { [NOIR] = { name = "Bottle of Noir", p = 50, s = 1, n = -1, t = 20 } } },
+	}
+end
+
+it("buy at: the vendor, zone, subzone, rounded coordinates and price; the player's faction only", function()
+	local ns, stub = setup()
+	Seed(ns, stub)
+	stub.zone = "Orgrimmar"
+	local w = ns.Merchant.BuyAt(NOIR)
+	eq(w.lines[1].text, "Barkeep Morag, Orgrimmar · Valley of Strength 54, 68 · 50c")
+	local all = ""
+	for _, l in ipairs(w.lines) do all = all .. l.text end
+	eq(all:find("Alliance", 1, true), nil, "the other faction's vendor is left out")
+	-- An Alliance character sees the Alliance vendor and the neutral ones, not the Horde ones.
+	UnitFactionGroup = function() return "Alliance" end
+	w = ns.Merchant.BuyAt(NOIR)
+	eq(w.lines[1].npcID, 5613); eq(w.lines[2].npcID, 5612); eq(w.more, 0)
+end)
+
+it("buy at: the current zone first, then the cheapest, then the most recently seen; two lines and '+N more'", function()
+	local ns, stub = setup()
+	Seed(ns, stub)
+	stub.zone = "Durotar"
+	local w = ns.Merchant.BuyAt(NOIR)
+	eq(w.lines[1].npcID, 5612, "in this zone, though dearer")
+	eq(w.lines[2].npcID, 5611, "then the cheaper of the rest (ties go to the one seen last)")
+	eq(w.more, 1)
+	eq(w.lines[1].text, "Cheap Keg, Durotar · 40, 11 · 80c · limited stock, 3 seen", "limited stock is said, with the count seen")
+end)
+
+it("buy at: no record says nothing, or the bundled-price wording; never a location", function()
+	local ns, stub = setup()
+	stub.items[NOIR] = { name = "Bottle of Noir" }
+	eq(ns.Merchant.BuyAt(NOIR), nil)
+	ns.VendorPrices = ns.VendorPrices or {}
+	ns.VendorPrices[NOIR] = 50
+	local w = ns.Merchant.BuyAt(NOIR)
+	eq(w.bundled, true); eq(#w.lines, 0)
+	-- Only another faction's vendor recorded: nothing to show, not the bundled wording either.
+	UnitFactionGroup = function() return "Alliance" end
+	ns.db.merchants = { [1] = { name = "Orc", zone = "Orgrimmar", group = "H", items = { [NOIR] = { p = 50, s = 1, n = -1, t = 1 } } } }
+	eq(ns.Merchant.BuyAt(NOIR), nil)
+end)
+
+it("buy at in the tooltips: marked for a missing reagent, plain when held, bundled wording only when missing", function()
+	local ns, stub = setup()
+	Seed(ns, stub)
+	stub.zone = "Orgrimmar"
+	local lines = {}
+	GameTooltip = GameTooltip or {}
+	GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+	local MK = ns.Main.Make
+	local held = function() return 0 end
+	MK.AddBuyAt({ itemID = NOIR, quantity = 1 }, held)
+	assert(lines[1]:find("Buy at: Barkeep Morag, Orgrimmar", 1, true), lines[1])
+	assert(lines[1]:find("you hold 0 of 1", 1, true), "a missing reagent says so: " .. lines[1])
+	eq(#lines, 3, "two vendors and the more line")
+	lines = {}
+	MK.AddBuyAt({ itemID = NOIR, quantity = 1 }, function() return 2 end)
+	eq(lines[1]:find("you hold", 1, true), nil, "held: no mark")
+	lines = {}
+	MK.AddBuyAt({ itemID = THREAD or 99999, quantity = 1 }, held)
+	eq(#lines, 0, "no vendor known, no line")
+end)

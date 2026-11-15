@@ -7,7 +7,7 @@
 local _, ns = ...
 local M = ns.Main
 local MK = M.Make
-local Style = ns.Style
+local Style, L = ns.Style, ns.L
 
 local GOOD, WARN, BAD, INFO = Style.Hex("text"), Style.Hex("danger"), Style.Hex("danger"), Style.Hex("text2")
 local HEAD = Style.C.keyGold -- section headings
@@ -111,6 +111,35 @@ local function ReagentDetail(line)
 	return "    " .. table.concat(parts, " · ")
 end
 MK.ReagentDetail = ReagentDetail
+
+-- "Buy at:" lines under a reagent that a recorded vendor sells (#276); a reagent you hold too few of is
+-- marked, and then also says when only the bundled data knows a vendor sells it. held = a Holdings counter.
+local function AddBuyAt(line, held)
+	local where = ns.Merchant and ns.Merchant.BuyAt(line.itemID)
+	if not where then
+		return
+	end
+	local have = held and held(line.itemID) or 0
+	local missing = have < (line.quantity or 1)
+	if where.bundled then
+		if missing then
+			Note("    " .. L["Sold by vendors, location not recorded yet"])
+		end
+		return
+	end
+	for i, l in ipairs(where.lines) do
+		local text = "    " .. (i == 1 and (L["Buy at"] .. ": ") or "        ") .. l.text
+		if missing and i == 1 then
+			Warn(text .. " · " .. (L["you hold %d of %d"]):format(have, line.quantity or 1))
+		else
+			Note(text)
+		end
+	end
+	if where.more > 0 then
+		Note("        " .. (L["+%d more: /craftwise where"]):format(where.more))
+	end
+end
+MK.AddBuyAt = AddBuyAt
 
 -- Max AH price of a reagent that still breaks even (#261), from Profit.MaxBuy: "max 1s 5c each (now 1s 29c)", red
 -- when the price now is above it; "loses money at any price" when the other reagents already cost more than the
@@ -508,6 +537,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 	if #(r.reagents or {}) == 0 then
 		Warn("Unknown - open this profession again.")
 	end
+	local held = ns.Holdings and ns.Holdings.Counter()
 	for _, line in ipairs(r.reagents or {}) do
 		local left = ("%d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
@@ -523,6 +553,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 		else
 			GameTooltip:AddDoubleLine(left, ns.Market.NO_DATA, 1, 1, 1, ORANGE[1], ORANGE[2], ORANGE[3])
 		end
+		AddBuyAt(line, held)
 	end
 	AddBalance(r)
 	if r.vendorView or r.vendorLoop then
@@ -603,6 +634,7 @@ function MK.ShowLevelTooltip(owner, r, skill)
 	end
 	GameTooltip:AddLine(" ")
 	Heading("One craft", Muted(MK.CostBasisText("level")))
+	local held = ns.Holdings and ns.Holdings.Counter()
 	for _, line in ipairs(r.reagents or {}) do
 		local left = ("  %d × %s"):format(line.quantity, ItemName(line.itemID))
 		if line.total then
@@ -614,6 +646,7 @@ function MK.ShowLevelTooltip(owner, r, skill)
 		else
 			GameTooltip:AddDoubleLine(left, "no price", 1, 1, 1, ORANGE[1], ORANGE[2], ORANGE[3])
 		end
+		AddBuyAt(line, held)
 	end
 	local d = r.saleDetails or {}
 	if r.saleSource == "auction" then

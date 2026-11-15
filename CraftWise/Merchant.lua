@@ -789,6 +789,78 @@ function M.SellerLines(itemID, now)
 	return lines
 end
 
+-- Where to buy an item (#276), from the recorded merchants only: the vendors of the player's faction group
+-- (a vendor with no group sells to both), the one in the current zone first, then the cheapest, then the
+-- most recently seen. Returns { lines = { { npcID, text, merchant } } (at most MAX_BUY_AT), more = n,
+-- bundled = true when no merchant is recorded but the bundled data says a vendor sells it }, or nil when
+-- nothing is known. A location is never invented: the text carries what the record has.
+M.MAX_BUY_AT = 2
+
+local function Rounded(v)
+	return math.floor(v + 0.5)
+end
+
+-- "Barkeep Morag, Orgrimmar · Valley of Strength 54, 68 · 50c" (+ " · limited stock, 3 seen").
+function M.BuyAtText(m, item, npcID)
+	local text = m.name or ("NPC " .. tostring(npcID))
+	if m.zone then
+		text = text .. ", " .. m.zone
+	end
+	local place = (m.sub and m.sub ~= m.zone) and m.sub or nil
+	if m.x and m.y then
+		place = (place and (place .. " ") or "") .. ("%d, %d"):format(Rounded(m.x), Rounded(m.y))
+	end
+	if place then
+		text = text .. " · " .. place
+	end
+	text = text .. " · " .. M.PriceText(item, true)
+	if item.n and item.n >= 0 then
+		text = text .. (" · limited stock, %d seen"):format(item.n)
+	end
+	return text
+end
+
+function M.BuyAt(itemID)
+	local mine = UnitFactionGroup and UnitFactionGroup("player")
+	mine = mine == "Horde" and "H" or mine == "Alliance" and "A" or nil
+	local zone = GetRealZoneText and GetRealZoneText() or nil
+	local kept = {}
+	for _, s in ipairs(M.Sellers(itemID)) do
+		local group = s.merchant.group
+		if (group == nil or mine == nil or group == mine) and (s.merchant.name or s.merchant.zone) then
+			kept[#kept + 1] = s
+		end
+	end
+	if #kept == 0 then
+		if next(M.Sellers(itemID)) == nil and ns.GetVendorBuyPrice and ns.GetVendorBuyPrice(itemID) then
+			return { lines = {}, more = 0, bundled = true }
+		end
+		return nil
+	end
+	table.sort(kept, function(a, b)
+		local az, bz = zone ~= nil and a.merchant.zone == zone, zone ~= nil and b.merchant.zone == zone
+		if az ~= bz then
+			return az
+		end
+		if (a.unit ~= nil) ~= (b.unit ~= nil) then
+			return a.unit ~= nil
+		end
+		if a.unit and a.unit ~= b.unit then
+			return a.unit < b.unit
+		end
+		if (a.item.t or 0) ~= (b.item.t or 0) then
+			return (a.item.t or 0) > (b.item.t or 0)
+		end
+		return tostring(a.npcID) < tostring(b.npcID)
+	end)
+	local out = { lines = {}, more = math.max(0, #kept - M.MAX_BUY_AT) }
+	for i = 1, math.min(#kept, M.MAX_BUY_AT) do
+		local s = kept[i]
+		out.lines[i] = { npcID = s.npcID, text = M.BuyAtText(s.merchant, s.item, s.npcID), merchant = s.merchant }
+	end
+	return out
+end
+
 -- Tooltip: "Sold by" with the cheapest merchants (at most 2) and how many more.
 function M.TooltipLines(itemID, now)
 	now = now or time()
