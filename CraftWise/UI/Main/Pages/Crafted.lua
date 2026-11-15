@@ -201,6 +201,10 @@ function P.Rows(now, filters)
 			r.profitTotal = e.known > 0 and e.profitTotal or nil
 			r.knownToday, r.knownWeek = e.knownToday, e.knownWeek
 			r.activeToday, r.activeWeek = e.activeToday, e.activeWeek -- active seconds (#251), nil on days without time
+			r.timedToday, r.timedWeek, r.timedProfitToday = e.timedToday, e.timedWeek, e.timedProfitToday -- #273
+			if e.activeToday then
+				view.tips.today = { L["Today"], L["Active time: the time between crafts up to 30 s; longer pauses don't count."] }
+			end
 			view.cells.name, view.colors.name = name, "text"
 			view.cells.today, view.colors.today = CL.Format(e.today), e.today > 0 and "text" or "text3"
 			view.cells.week, view.colors.week = CL.Format(e.week), e.week > 0 and "text" or "text3"
@@ -210,6 +214,12 @@ function P.Rows(now, filters)
 			local speed = CL.Speed(e.recipeID)
 			if speed then
 				r.speed, r.sec, r.perHour = speed, speed.sec, speed.perHour
+				-- Estimate for today's untimed crafts (#273): their count times this recipe's measured median gap. Kept
+				-- apart from the measured active time, only with a median (CL.MIN_GAPS gaps), never mixed in.
+				local untimed = e.today - (e.timedToday or 0)
+				if untimed > 0 then
+					r.untimedToday, r.estToday = untimed, untimed * speed.sec
+				end
 				measured[#measured + 1] = e.recipeID
 			end
 			speeds[e.recipeID] = r
@@ -313,13 +323,20 @@ function P.Model(ctx)
 	local today, week, total = 0, 0, 0
 	local profitToday, profitWeek, anyToday, anyWeek = 0, 0, false, false
 	local activeToday, activeWeek -- active crafting seconds (#251); nil while no day in the window was timed
+	local timedToday, timedWeek, timedProfitToday = 0, 0, 0 -- crafts measured and their profit (#273)
+	local untimedToday, estToday = 0, 0 -- untimed crafts that have a measured median, and their estimated seconds
 	for _, r in ipairs(rows) do
 		today, week, total = today + r.today, week + r.week, total + r.total
+		if r.estToday then
+			untimedToday, estToday = untimedToday + r.untimedToday, estToday + r.estToday
+		end
 		if r.activeToday then
 			activeToday = (activeToday or 0) + r.activeToday
+			timedToday, timedProfitToday = timedToday + r.timedToday, timedProfitToday + (r.timedProfitToday or 0)
 		end
 		if r.activeWeek then
 			activeWeek = (activeWeek or 0) + r.activeWeek
+			timedWeek = timedWeek + r.timedWeek
 		end
 		if r.profitToday then
 			profitToday, anyToday = profitToday + r.profitToday, true
@@ -328,20 +345,45 @@ function P.Model(ctx)
 			profitWeek, anyWeek = profitWeek + r.profitWeek, true
 		end
 	end
+	-- Active time (#251, #273): only the crafts measured count. The gold per hour is their profit over their time, never the
+	-- profit of all of today's crafts; when only some crafts of the window were measured the card says how many.
+	local timedText = ""
+	if activeToday and activeToday >= 1 then
+		timedText = " · " .. (L["%s active"]):format(CL.FormatDuration(activeToday))
+		if timedToday < today then
+			timedText = timedText .. " (" .. (docked and (L["%s timed"]):format(CL.Format(timedToday))
+				or (L["%s of %s crafts timed"]):format(CL.Format(timedToday), CL.Format(today))) .. ")"
+		end
+		if timedProfitToday ~= 0 then
+			timedText = timedText .. " · " .. (L["%s/h"]):format(MK.PlainMoney(math.abs(timedProfitToday) * 3600 / activeToday)
+				.. (timedProfitToday < 0 and " " .. L["loss"] or ""))
+		end
+	end
+	if estToday >= 1 and not docked then -- clearly marked, apart from the measured time (never added into it)
+		timedText = timedText .. (activeToday and activeToday >= 1 and " + " or " · ") .. (L["≈ %s est. for %s untimed crafts"]):format(
+			CL.FormatDuration(estToday), CL.Format(untimedToday))
+		if profitToday ~= 0 then
+			local seconds = (activeToday or 0) + estToday
+			timedText = timedText .. " · ≈ " .. (L["%s/h"]):format(MK.PlainMoney(math.abs(profitToday) * 3600 / seconds)
+				.. (profitToday < 0 and " " .. L["loss"] or "")) .. " " .. L["est."]
+		end
+	end
+	local weekText = ""
+	if not docked and activeWeek and activeWeek >= 1 then
+		weekText = " (" .. (L["%s active"]):format(CL.FormatDuration(activeWeek))
+			.. (timedWeek < week and (", " .. (L["%s of %s crafts timed"]):format(CL.Format(timedWeek), CL.Format(week))) or "") .. ")"
+	end
 	local hero
 	if #rows == 0 then
 		hero = MK.NoHero(L["Crafted"], Filtered() and L["nothing matches the filters."]
 			or L["no crafts logged yet. Craft something and it shows here."])
 	else
 		hero = {
-			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today))
-				.. (activeToday and activeToday >= 1 and (" · " .. (L["%s active"]):format(CL.FormatDuration(activeToday))
-					.. (anyToday and (" · " .. (L["%s/h"]):format(MK.PlainMoney(math.abs(profitToday) * 3600 / activeToday)
-						.. (profitToday < 0 and " " .. L["loss"] or ""))) or "")) or ""),
+			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today)) .. timedText,
 			nameColor = "text",
 			-- One line: the docked layout keeps it short (no total), the window adds the total crafts.
 			sub = (L["7 days %s"]):format(CL.Format(week))
-				.. (not docked and activeWeek and activeWeek >= 1 and (" (" .. (L["%s active"]):format(CL.FormatDuration(activeWeek)) .. ")") or "")
+				.. weekText
 				.. (docked and "" or (" · " .. (L["%s crafts in total"]):format(CL.Format(total))))
 				.. (anyWeek and (" · " .. (L["profit 7 days %s"]):format(MK.PlainMoney(math.abs(profitWeek)) .. (profitWeek < 0 and " " .. L["loss"] or ""))) or ""),
 			figureLabel = L["Estimated profit today"],

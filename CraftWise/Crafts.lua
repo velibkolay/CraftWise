@@ -8,7 +8,7 @@ local _, ns = ...
 -- skill-up and at any skill, from the same craft detection below (OnCraft). CraftWiseDB.crafted:
 --   { seeded = true,
 --     before = { [recipeID] = crafts }  crafts counted in skillups before the log existed (undated, no character),
---     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit, known, active } },
+--     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit, known, active, timed, timedProfit } },
 --                                                  earlier = { crafts, items, profit, known }, speed = ... } } } }
 -- profit = copper, the profit per craft as computed at craft time (profit view's cost basis, the sale with the
 -- Junk mark respected, #227), summed over the crafts that had one; known = how many crafts that is. A
@@ -17,6 +17,13 @@ local _, ns = ...
 -- any recipe when it is at most BREAK_SECONDS, added to the day of the later craft. The first craft of a run (no
 -- craft before it in this session, or a break before it) adds 0: its cast time isn't known, nothing is guessed.
 -- Days from before this was recorded have no `active` (nil): they show no time, never an estimate.
+-- timed (#273) = how many of that day's crafts were measured at all (every craft recorded while the clock was
+-- known, including the first of a run, which adds 0 s), timedProfit = the profit (copper) of the crafts whose gap
+-- was counted, i.e. the crafts the `active` seconds belong to. A day logged before `timed` existed has only some
+-- crafts timed: the card shows "N of M crafts timed" and the gold per active hour divides timedProfit by `active`,
+-- never the profit of all crafts. A day with `active` but no `timed` (the first #251 build) is not used for the
+-- time at all, and the first craft recorded by this version on such a day drops its `active`: how many of its
+-- crafts were timed is unknown, nothing is guessed. Both fields are additive for readers of `crafted`.
 -- Days older than KEEP_DAYS fold into `earlier` (once per session, never on a craft). items = crafts times the
 -- recipe's yield when that is one exact number; recipes with a yield range add crafts only (the client's
 -- received quantity is not read, see docs/ingame-checks.md).
@@ -69,6 +76,23 @@ local function ActiveGap(at)
 		return 0
 	end
 	return math.floor(gap * 100 + 0.5) / 100
+end
+
+-- Adds a craft's time to its day bucket (#273): active seconds, the crafts measured and the profit of those whose
+-- gap was counted. profit = this craft's profit or nil.
+local function AddTime(bucket, clock, profit)
+	if bucket[5] and not bucket[6] then
+		bucket[5] = nil -- from the first build: how many crafts it covers is unknown
+	end
+	local gap = ActiveGap(clock)
+	if clock then
+		bucket[5] = (bucket[5] or 0) + gap
+		bucket[6] = (bucket[6] or 0) + 1
+		bucket[7] = bucket[7] or 0
+		if gap > 0 and profit then
+			bucket[7] = bucket[7] + math.floor(profit + 0.5)
+		end
+	end
 end
 
 -- Median of a list of numbers (does not change it).
@@ -292,7 +316,7 @@ function CL.Record(recipeID, recipe, now, clock)
 		bucket[4] = (bucket[4] or 0) + 1
 	end
 	AddGap(entry, recipeID, clock)
-	bucket[5] = (bucket[5] or 0) + ActiveGap(clock)
+	AddTime(bucket, clock, profit)
 	ns.Notify("CRAFTLOG_CHANGED", recipeID)
 end
 
@@ -312,8 +336,9 @@ function CL.Fold(now)
 					entry.earlier = earlier
 					earlier[1], earlier[2] = earlier[1] + bucket[1], earlier[2] + bucket[2]
 					earlier[3], earlier[4] = (earlier[3] or 0) + (bucket[3] or 0), (earlier[4] or 0) + (bucket[4] or 0)
-					if bucket[5] then
-						earlier[5] = (earlier[5] or 0) + bucket[5]
+					if bucket[5] and bucket[6] then
+						earlier[5], earlier[6] = (earlier[5] or 0) + bucket[5], (earlier[6] or 0) + bucket[6]
+						earlier[7] = (earlier[7] or 0) + (bucket[7] or 0)
 					end
 					entry.days[day] = nil
 					folded = folded + 1
@@ -331,8 +356,8 @@ local function Windows(entry, todayNumber)
 	local w = { today = { 0, 0, 0 }, week = { 0, 0, 0 }, total = { 0, 0, 0 }, items = 0, earlier = 0 }
 	local function Add(window, b)
 		window[1], window[2], window[3] = window[1] + b[1], window[2] + (b[3] or 0), window[3] + (b[4] or 0)
-		if b[5] then -- active seconds (#251): the window has a figure once any of its days was timed
-			window[4] = (window[4] or 0) + b[5]
+		if b[5] and b[6] then -- active seconds (#251) of the crafts measured (#273); older days have neither
+			window[4], window[5], window[6] = (window[4] or 0) + b[5], (window[5] or 0) + b[6], (window[6] or 0) + (b[7] or 0)
 		end
 	end
 	for day, b in pairs(entry.days) do
@@ -429,11 +454,13 @@ function CL.List(now, charKey)
 				r.today, r.week, r.total, r.dated = r.today + w.today[1], r.week + w.week[1], r.total + w.total[1], r.dated + w.total[1]
 				r.profitToday, r.profitWeek, r.profitTotal = r.profitToday + w.today[2], r.profitWeek + w.week[2], r.profitTotal + w.total[2]
 				r.knownToday, r.knownWeek, r.known = r.knownToday + w.today[3], r.knownWeek + w.week[3], r.known + w.total[3]
-				if w.today[4] then
-					r.activeToday = (r.activeToday or 0) + w.today[4]
+				if w.today[4] then -- seconds, crafts measured, profit of the crafts whose gap counted (#273)
+					r.activeToday, r.timedToday = (r.activeToday or 0) + w.today[4], (r.timedToday or 0) + w.today[5]
+					r.timedProfitToday = (r.timedProfitToday or 0) + w.today[6]
 				end
 				if w.week[4] then
-					r.activeWeek = (r.activeWeek or 0) + w.week[4]
+					r.activeWeek, r.timedWeek = (r.activeWeek or 0) + w.week[4], (r.timedWeek or 0) + w.week[5]
+					r.timedProfitWeek = (r.timedProfitWeek or 0) + w.week[6]
 				end
 			end
 		end

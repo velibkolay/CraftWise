@@ -781,8 +781,8 @@ it("active time: today and 7 days per recipe and over the characters; old days w
 	local ns = setup()
 	time = function() return T(2026, 11, 15) end
 	ns.db.crafted = { seeded = true, chars = {
-		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 0, 0, 120 }, [20261112] = { 3, 3, 0, 0, 60 } } } },
-		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 30 } } }, [R_CLAMS] = { days = { [20261115] = { 1, 1 } } } } } }
+		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 0, 0, 120, 4, 0 }, [20261112] = { 3, 3, 0, 0, 60, 3, 0 } } } },
+		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 30, 2, 0 } } }, [R_CLAMS] = { days = { [20261115] = { 1, 1 } } } } } }
 	local now = T(2026, 11, 15)
 	local byID = {}
 	for _, e in ipairs(ns.CraftLog.List(now)) do byID[e.recipeID] = e end
@@ -796,7 +796,7 @@ end)
 it("the 90-day fold carries the active seconds; days without time stay without", function()
 	local ns = setup()
 	local now = T(2026, 11, 15)
-	ns.db.crafted = { seeded = true, chars = { A = { [R_BOOTS] = { days = { [20260801] = { 2, 2, 0, 0, 40 }, [20260802] = { 1, 1 } } } } } }
+	ns.db.crafted = { seeded = true, chars = { A = { [R_BOOTS] = { days = { [20260801] = { 2, 2, 0, 0, 40, 2, 0 }, [20260802] = { 1, 1 } } } } } }
 	eq(ns.CraftLog.Fold(now), 2)
 	eq(ns.db.crafted.chars.A[R_BOOTS].earlier[5], 40)
 end)
@@ -811,8 +811,8 @@ it("Crafted summary card: today's active time, the 7-day time in the window, fol
 	local M, P = ns.Main, ns.Main.CraftedPage
 	time = function() return T(2026, 11, 15) end
 	ns.db.crafted = { seeded = true, chars = {
-		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 43800, 4, 4320 }, [20261112] = { 3, 3, 0, 0, 600 } } } },
-		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 60 } } } } } }
+		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 43800, 4, 4320, 4, 43800 }, [20261112] = { 3, 3, 0, 0, 600, 3, 0 } } } },
+		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 60, 2, 0 } } } } } }
 	M.Make.state.query = ""
 	local hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
 	assert(hero.name:find("1 h 13 min active", 1, true), hero.name)
@@ -892,4 +892,84 @@ it("Crafted footer names the sale basis and still fits one line", function()
 	local ns = sameSetup({ copper = 100, age = 1, label = "AH" })
 	local f = ns.Main.CraftedPage.Footer(false)
 	assert(f:find("vendor/Junk sales: no cut", 1, true), f)
+end)
+
+-- Timed crafts and the gold per active hour from them only (#273)
+it("timed: every craft recorded with a clock counts as measured, the profit only of those whose gap counted", function()
+	local ns, stub = profitSetup(100)
+	craftAt(stub, R_BOOTS, 100) -- first of a run: measured, adds 0 s, its profit is not in timedProfit
+	craftAt(stub, R_BOOTS, 103) -- gap 3 s
+	craftAt(stub, R_BOOTS, 106) -- gap 3 s
+	craftAt(stub, R_BOOTS, 200) -- break
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[1], 4); eq(b[5], 6); eq(b[6], 4); eq(b[7], 200)
+end)
+
+it("a day from before timing: its seconds are dropped when this version adds a craft, the count stays honest", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, chars = { [ns.CharKey()] = { [R_BOOTS] = { days = { [20261115] = { 100, 100, 0, 0, 300 } } } } } }
+	craftAt(stub, R_BOOTS, 100)
+	craftAt(stub, R_BOOTS, 103)
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[1], 102); eq(b[5], 3); eq(b[6], 2)
+	-- before the first new craft the old seconds are not used either
+	ns.db.crafted.chars[ns.CharKey()][R_BOOTS].days[20261114] = { 50, 50, 0, 0, 999 }
+	local e
+	for _, x in ipairs(ns.CraftLog.List(T(2026, 11, 15))) do if x.recipeID == R_BOOTS then e = x end end
+	eq(e.activeWeek, 3)
+end)
+
+it("Crafted card: a day half timed says how many crafts were timed, and the gold per hour uses only those", function()
+	local ns = setup()
+	local M, P = ns.Main, ns.Main.CraftedPage
+	time = function() return T(2026, 11, 15) end
+	-- 4,000 crafts today with a profit of 10 each (40,000); 400 of them timed: 1,200 s and 4,000 profit
+	ns.db.crafted = { seeded = true, chars = { A = { [R_BOOTS] = { days = { [20261115] = { 4000, 4000, 40000, 4000, 1200, 400, 4000 } } } } } }
+	M.Make.state.query = ""
+	local hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(hero.name:find("20 min active", 1, true), hero.name)
+	assert(hero.name:find("(400 of 4,000 crafts timed)", 1, true), hero.name)
+	assert(hero.name:find(M.Make.PlainMoney(4000 * 3600 / 1200) .. "/h", 1, true), "profit of the timed crafts over their time: " .. hero.name)
+	assert(not hero.name:find(M.Make.PlainMoney(40000 * 3600 / 1200), 1, true), "never all crafts over the timed seconds")
+	assert(hero.sub:find("400 of 4,000 crafts timed", 1, true), hero.sub)
+	assert(P.Model({ metrics = M.DOCKED_METRICS }).hero.name:find("(400 timed)", 1, true))
+	-- a fully timed day drops the parenthesis
+	ns.db.crafted.chars.A[R_BOOTS].days[20261115] = { 100, 100, 1000, 100, 300, 100, 1000 }
+	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(hero.name:find("5 min active", 1, true) and not hero.name:find("timed", 1, true), hero.name)
+	-- the Today cell explains what active means
+	local row
+	for _, r in ipairs(P.Rows(T(2026, 11, 15), {})) do if r.recipeID == R_BOOTS then row = r end end
+	assert(row.view.tips.today[2]:find("up to 30 s", 1, true) and row.view.tips.today[2]:find("longer pauses don't count", 1, true))
+end)
+
+it("timed: the measurement replayed: timed crafts times the gap equals the active seconds", function()
+	local ns, stub = profitSetup(10)
+	local t = 1000
+	for _ = 1, 200 do craftAt(stub, R_BOOTS, t); t = t + 3.1 end
+	local b = entryOf(ns, R_BOOTS).days[20261115]
+	eq(b[6], 200)
+	assert(math.abs(b[5] - 199 * 3.1) < 2, "active " .. b[5])
+	assert(math.abs(b[5] / (b[6] - 1) - 3.1) < 0.05, "implied seconds per craft")
+end)
+
+it("Crafted card: an estimate for the untimed crafts (count x the recipe's median gap), marked and apart from the measured time", function()
+	local ns = setup()
+	local M, P = ns.Main, ns.Main.CraftedPage
+	time = function() return T(2026, 11, 15) end
+	-- 4,000 crafts, 400 timed (1,200 s measured); the recipe's median is 3 s (5+ gaps): 3,600 untimed x 3 s = 10,800 s = 3 h
+	ns.db.crafted = { seeded = true, chars = { A = { [R_BOOTS] = { days = { [20261115] = { 4000, 4000, 40000, 4000, 1200, 400, 4000 } },
+		speed = { n = 5, sum = 15, gaps = { 3, 3, 3, 3, 3 } } } } } }
+	M.Make.state.query = ""
+	local hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(hero.name:find("20 min active (400 of 4,000 crafts timed)", 1, true), hero.name)
+	assert(hero.name:find("+ ≈ 3 h est. for 3,600 untimed crafts", 1, true), hero.name)
+	-- the measured per-hour figure stays; the ≈ figure divides all of today's profit by measured + estimated seconds
+	assert(hero.name:find(M.Make.PlainMoney(4000 * 3600 / 1200) .. "/h", 1, true), hero.name)
+	assert(hero.name:find("≈ " .. M.Make.PlainMoney(40000 * 3600 / (1200 + 10800)) .. "/h est.", 1, true), hero.name)
+	-- without a measured median (under 5 gaps) there is no estimate
+	ns.db.crafted.chars.A[R_BOOTS].speed = { n = 2, sum = 6, gaps = { 3, 3 } }
+	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
+	assert(not hero.name:find("est.", 1, true), hero.name)
 end)
