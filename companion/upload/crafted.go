@@ -14,6 +14,14 @@ func craftedKey(char string, recipe, day int64) string {
 	return fmt.Sprintf("%s\x1f%d\x1f%d", char, recipe, day)
 }
 
+// wholeNumber is v[i] when it exists and has no fraction.
+func wholeNumber(v savedvars.CraftedDay, i int) (int64, bool) {
+	if i >= len(v) || v[i] != math.Trunc(v[i]) || math.Abs(v[i]) > 1e15 {
+		return 0, false
+	}
+	return int64(v[i]), true
+}
+
 // validDay reports a local day written as YYYYMMDD (2020 to 2100, month and day in range).
 func validDay(d int64) bool {
 	y, m, dd := d/10000, d/100%100, d%100
@@ -45,26 +53,28 @@ func (d *delta) crafted(c *savedvars.Crafted) []unit[PrivatePayload] {
 		}
 		for recipe, rec := range c.Chars[ch] {
 			for day, v := range rec.Days {
-				if v.Crafts != nil && *v.Crafts == 0 {
+				if len(v) > 0 && v[0] == 0 {
 					continue // nothing crafted that day
 				}
-				if recipe < 1 || !validDay(day) || v.Crafts == nil || *v.Crafts < 1 {
+				crafts, ok := wholeNumber(v, 0)
+				if recipe < 1 || !validDay(day) || !ok || crafts < 1 {
 					d.skip("craft log day without a valid recipe, day or craft count")
 					continue
 				}
-				row := CraftedRow{C: ch, R: recipe, D: day, N: *v.Crafts}
-				if v.Items != nil && *v.Items >= 0 {
-					row.I = v.Items
+				row := CraftedRow{C: ch, R: recipe, D: day, N: crafts}
+				// A new day starts as { 0, 0, 0, 0 } (Crafts.lua): 0 in items, profit or known is "not recorded".
+				if items, ok := wholeNumber(v, 1); ok && items > 0 {
+					row.I = &items
 				}
-				if v.Profit != nil && !math.IsNaN(*v.Profit) && math.Abs(*v.Profit) < 1e12 {
-					p := int64(math.Round(*v.Profit))
-					row.P = &p
+				if known, ok := wholeNumber(v, 3); ok && known > 0 && known <= crafts {
+					row.K = &known
+					if len(v) > 2 && !math.IsNaN(v[2]) && math.Abs(v[2]) < 1e12 {
+						p := int64(math.Round(v[2]))
+						row.P = &p
+					}
 				}
-				if v.Known != nil && *v.Known >= 0 && *v.Known <= row.N {
-					row.K = v.Known
-				}
-				if v.Active != nil && *v.Active >= 0 && *v.Active <= 86400 {
-					a := math.Round(*v.Active*100) / 100
+				if len(v) > 4 && v[4] >= 0 && v[4] <= 86400 {
+					a := math.Round(v[4]*100) / 100
 					row.A = &a
 				}
 				key := craftedKey(ch, recipe, day)

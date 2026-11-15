@@ -46,16 +46,12 @@ type CraftedRecipe struct {
 	Days map[int64]CraftedDay `json:"days,omitempty"`
 }
 
-// CraftedDay is one day of one recipe of one character. Items, Profit, Known and Active are nil
-// when the addon didn't record them (days from before they were), never filled in. Profit is the
-// estimate recorded at craft time, in copper; Active is seconds of active crafting.
-type CraftedDay struct {
-	Crafts *int64   `json:"crafts,omitempty"`
-	Items  *int64   `json:"items,omitempty"`
-	Profit *float64 `json:"profit,omitempty"`
-	Known  *int64   `json:"known,omitempty"`
-	Active *float64 `json:"active,omitempty"`
-}
+// CraftedDay is one day of one recipe of one character, a positional list as Crafts.lua stores it
+// (CL.Record): { crafts, items, profit, known, active }. profit is the estimate recorded at craft
+// time in copper, known how many crafts had one, active seconds of active crafting. A new day
+// starts as { 0, 0, 0, 0 }, so 0 in items, profit or known means "not recorded"; days from before
+// time was recorded have no fifth value.
+type CraftedDay []float64
 
 // MarketDB is CraftWiseMarketDB (#26, #46, #81, #90, #92, #120).
 type MarketDB struct {

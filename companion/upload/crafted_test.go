@@ -8,25 +8,28 @@ import (
 	"github.com/velibkolay/CraftWise/companion/savedvars"
 )
 
-// A craft log as the addon writes it (Crafts.lua header), read through the real SavedVariables reader.
+// A craft log in the shape the addon really writes (Crafts.lua, CL.Record; checked against a real
+// SavedVariables file, values invented): a day is a positional list { crafts, items, profit, known, active },
+// a new day starts as { 0, 0, 0, 0 }, days from before the time was recorded have four values.
 const craftedLua = `CraftWiseDB = {
 ["crafted"] = {
-["seeded"] = true,
 ["before"] = { [2549] = 12 },
+["seeded"] = true,
 ["chars"] = {
 ["Realm-Aria"] = {
 [2549] = {
 ["days"] = {
-[20261114] = { ["crafts"] = 10, ["items"] = 10, ["profit"] = 2500, ["known"] = 10, ["active"] = 31.5 },
-[20261115] = { ["crafts"] = 4, ["items"] = 4, ["profit"] = -120, ["known"] = 3 },
-[20261116] = { ["crafts"] = 2 },
+[20261114] = { 10, 10, 2500, 10, 31.5 },
+[20261115] = { 4, 4, -120, 3 },
+[20261116] = { 2, 0, 0, 0, 0 },
+[20261117] = { 0, 0, 0, 0, 0 },
 },
-["earlier"] = { ["crafts"] = 50, ["items"] = 50 },
+["earlier"] = { 50, 50, 900, 40 },
 ["speed"] = { ["n"] = 6, ["sum"] = 12, ["gaps"] = { 2, 2, 2, 2, 2, 2 } },
 },
-[3000] = { ["days"] = { [20261115] = { ["crafts"] = 0 } } },
+[3000] = { ["days"] = { [20261115] = { 0, 0, 0, 0 } } },
 },
-["Bad key"] = { [2549] = { ["days"] = { [20261115] = { ["crafts"] = 1 } } } },
+["Bad key"] = { [2549] = { ["days"] = { [20261115] = { 1, 1 } } } },
 },
 },
 }
@@ -67,8 +70,9 @@ func TestCraftedReadAndUpload(t *testing.T) {
 	if *rows[1].P != -120 || rows[1].A != nil {
 		t.Errorf("second row %+v: a loss is sent, a day without time has no a", rows[1])
 	}
-	if rows[2].P != nil || rows[2].K != nil || rows[2].A != nil || rows[2].I != nil {
-		t.Errorf("third row %+v: nothing recorded must stay missing", rows[2])
+	// a day that started as { 0, 0, 0, 0 } and never had a priced craft: 0 means not recorded
+	if rows[2].N != 2 || rows[2].P != nil || rows[2].K != nil || rows[2].I != nil || rows[2].A == nil || *rows[2].A != 0 {
+		t.Errorf("third row %+v: zero items, profit and known must stay missing", rows[2])
 	}
 	if plan.Skipped["craft log of an invalid character key"] != 1 {
 		t.Errorf("skipped %v", plan.Skipped)
@@ -91,12 +95,8 @@ func TestCraftedDelta(t *testing.T) {
 	}
 	// one day grows, one new day appears: only those two go out
 	rec := f.DB.Crafted.Chars["Realm-Aria"][2549]
-	day := rec.Days[20261115]
-	n := int64(5)
-	p := 100.0
-	day.Crafts, day.Profit = &n, &p
-	rec.Days[20261115] = day
-	rec.Days[20261117] = savedvars.CraftedDay{Crafts: &n}
+	rec.Days[20261115] = savedvars.CraftedDay{5, 5, 100, 5}
+	rec.Days[20261117] = savedvars.CraftedDay{5}
 	rows := craftedRows(Build(f, st, Options{Now: fixtureNow + 60, Private: true}))
 	if len(rows) != 2 || rows[0].D != 20261115 || rows[0].N != 5 || *rows[0].P != 100 || rows[1].D != 20261117 {
 		t.Fatalf("after a change: %+v", rows)
@@ -117,10 +117,9 @@ func TestCraftedLimits(t *testing.T) {
 		t.Error("private requests with Private off")
 	}
 	// more days than one request takes are split, none lost
-	n := int64(1)
 	days := map[int64]savedvars.CraftedDay{}
 	for i := int64(0); i < 12000; i++ {
-		days[20260101+i%28+100*(i/28%12)+10000*(i/336)] = savedvars.CraftedDay{Crafts: &n}
+		days[20260101+i%28+100*(i/28%12)+10000*(i/336)] = savedvars.CraftedDay{1}
 	}
 	big := &savedvars.File{DB: &savedvars.DB{Crafted: &savedvars.Crafted{Chars: map[string]map[int64]savedvars.CraftedRecipe{
 		"Realm-Aria": {2549: {Days: days}},
