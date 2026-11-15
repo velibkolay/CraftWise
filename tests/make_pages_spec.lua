@@ -1032,3 +1032,50 @@ it("Make tooltip: each AH reagent shows its max price and the price now, red abo
 	local row = Row(ns, "craft", R_BELT)
 	eq(row.reagents[1].maxBuy, math.floor((row.sellsFor - (row.cost - row.reagents[1].total)) / 2))
 end)
+
+-- Item tooltip: max price to pay for a reagent (#292)
+local function tipLines(ns, itemID)
+	local tip = { lines = {} }
+	function tip:AddLine(t) self.lines[#self.lines + 1] = Plain(t) end
+	function tip:AddDoubleLine(l, r) self.lines[#self.lines + 1] = Plain(l) .. " | " .. Plain(r) end
+	function tip:Show() end
+	ns.db.tooltip.lines.market = false
+	ns.AddTooltipLines(tip, itemID)
+	return table.concat(tip.lines, "\n"), tip.lines
+end
+
+it("item tooltip: a reagent shows the max price per recipe it is used in, best first, red above the max, '+N more' after two", function()
+	local ns = Load()
+	-- Testhide (AH 10): Belt (2 hide + thread 20 vendor, sale 190) and Gloves (4 hide, sold to a vendor 25)
+	local text = tipLines(ns, HIDE)
+	local belt = Plain(ns.FormatMoney(85))
+	assert(text:find("Max to pay | " .. belt .. " for Test Belt (now " .. Plain(ns.FormatMoney(10)) .. ")", 1, true), text)
+	assert(text:find("Test Gloves", 1, true), text)
+	assert(text:find("Test Belt", 1, true) < text:find("Test Gloves", 1, true), "the highest maximum first")
+	local uses = ns.MaxBuyFor(HIDE)
+	eq(uses[1].name, "Test Belt"); eq(uses[1].maxBuy, 85); eq(uses[1].over, nil)
+	eq(uses[2].name, "Test Gloves"); eq(uses[2].maxBuy, 6); eq(uses[2].over, true, "10 now is above 6")
+end)
+
+it("item tooltip: a vendor-only reagent, an unrelated item and unknown values have no line; the setting turns it off", function()
+	local ns = Load()
+	assert(not tipLines(ns, THREAD):find("Max to pay", 1, true), "Testthread is a vendor reagent")
+	assert(not tipLines(ns, 424242):find("Max to pay", 1, true))
+	CraftWiseMarketDB.items[HIDE] = nil
+	ns.Notify("PRICES_CHANGED")
+	assert(not tipLines(ns, HIDE):find("Max to pay", 1, true), "no AH price for the reagent: nothing, never a guess")
+	local ns2 = Load()
+	ns2.db.tooltip.lines.maxBuy = false
+	assert(not tipLines(ns2, HIDE):find("Max to pay", 1, true), "the line can be turned off")
+end)
+
+it("item tooltip: other reagents costing more than the sale say 'loses money at any price'; the figure follows prices", function()
+	local ns = Load()
+	ns.db.vendor[THREAD] = 500 -- the belt's other reagent now costs more than its sale
+	ns.Notify("PRICES_CHANGED")
+	eq(ns.MaxBuyFor(HIDE)[1].name, "Test Gloves", "the recipe that can still pay comes first")
+	local belt
+	for _, e in ipairs(ns.MaxBuyFor(HIDE)) do if e.name == "Test Belt" then belt = e end end
+	eq(belt.loss, true)
+	assert(tipLines(ns, HIDE):find("loses money at any price for Test Belt", 1, true))
+end)

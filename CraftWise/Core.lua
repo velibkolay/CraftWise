@@ -178,7 +178,7 @@ local DB_DEFAULTS = {
 		mini = false, fade = false },
 	farmLog = {}, -- [ns.CharKey()] = { current = session, history = finished sessions, newest first } (#126)
 	-- CraftWise section in item tooltips (Tooltip.lua); mode "always" or "shift".
-	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true } },
+	tooltip = { enabled = true, mode = "always", lines = { status = true, advice = true, usedIn = true, skillups = true, market = true, tracked = true, soldBy = true, maxBuy = true } },
 	-- Make chips (#154): includeUnlearned, hideUnpriced, vendorCheck (#185), learnFitsSkill; Sell › Bags chips (#155): showKept,
 	-- bagsMatsOnly; Settings › Bags and loot: showDismissed. The main window keeps its own state (section,
 	-- pages, layout) in settings.ui.
