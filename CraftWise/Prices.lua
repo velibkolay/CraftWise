@@ -189,8 +189,9 @@ end
 
 -- Remembers the sell price of every item in the list ({ [itemID] = true }, the market scope) that has
 -- none yet: cached items now, the rest when the client loads them (GET_ITEM_INFO_RECEIVED). Loads are
--- requested a batch per frame so a large scope doesn't flood the client.
-local SELL_BATCH = 100
+-- requested a small batch per tick so a large scope doesn't flood the client.
+-- 100 loads in one frame meant a burst of GET_ITEM_INFO_RECEIVED and 47-68 ms frames on a vendor open (#212).
+local SELL_BATCH, SELL_EVERY = 10, 0.1
 local waitingSell = {}
 local queue, inQueue, queued = {}, {}, false
 
@@ -208,7 +209,7 @@ local function RunSellQueue()
 	end
 	if #queue > 0 and C_Timer and C_Timer.After then
 		queued = true
-		C_Timer.After(0.2, RunSellQueue)
+		C_Timer.After(SELL_EVERY, RunSellQueue)
 	end
 end
 

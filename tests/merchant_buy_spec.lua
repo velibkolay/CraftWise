@@ -307,3 +307,23 @@ it("BuildRows with a set of recipes builds only those rows (the Basket needs a f
 	local rows = ns.BuildRows(165, true, "profit", { [7002] = true })
 	eq(#rows, 1); eq(rows[1].recipeID, 7002)
 end)
+
+it("the sell-price queue asks the client for a few items per tick, not a hundred in one frame (#212)", function()
+	local ns, stub = LoadAddon()
+	local ticks = {}
+	C_Timer.After = function(_, fn) ticks[#ticks + 1] = fn end
+	local requested = 0
+	ns.RequestItemData = function() requested = requested + 1 end
+	local items = {}
+	for i = 1, 95 do items[500000 + i] = true end
+	ns.PersistSellPrices(items)
+	assert(requested > 0 and requested <= 10, "first batch small, got " .. requested)
+	local last = requested
+	while #ticks > 0 do
+		local fn = table.remove(ticks, 1)
+		fn()
+		assert(requested - last <= 10, "a tick asked for " .. (requested - last))
+		last = requested
+	end
+	eq(requested, 95)
+end)
