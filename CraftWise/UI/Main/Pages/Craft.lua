@@ -83,7 +83,13 @@ function CraftPage.View(r, ctx)
 	view.cells.pct, view.colors.pct = MK.PercentText(r.pct), r.pct and r.pct < 0 and "danger" or "text2"
 	view.tips.pct = { L["Return"], L["Profit divided by the cost to craft."] }
 	view.missing = r.profit == nil and not r.noItemOutput -- a skeleton while scanning (both layouts)
-	return MK.Attach(r, view)
+	MK.Attach(r, view)
+	if ctx.all and r.professionName then
+		-- All professions (#211): the profession next to the name, muted (the docked layout's tag chip).
+		view.cells.name = view.name .. "  " .. Style.Hex("text3") .. r.professionName .. "|r"
+		view.tag = r.professionName
+	end
+	return r
 end
 
 local SORT_NOTES = { profit = L["by profit"], pct = L["by profit %"], name = L["by name"] }
@@ -101,7 +107,7 @@ end
 -- Hero card (spec: best profit among known, priced recipes): name, colour word, skill-up chance,
 -- "short N <reagent>", profit; the rail runs cost (grey) then profit (white) along the sale price.
 function CraftPage.Hero(rows, ctx)
-	local h, why = ns.HeroCards.BestCraft(rows, { professionID = ctx.professionID, sort = (M.Sort(M.Page("craft"))) })
+	local h, why = ns.HeroCards.BestCraft(rows, { professionID = not ctx.all and ctx.professionID or nil, sort = (M.Sort(M.Page("craft"))) })
 	local label = ctx.vendorCheck and L["Best vendor craft right now"] or ctx.disenchantCheck and L["Best disenchant craft right now"]
 		or L["Best craft right now"]
 	if not h then
@@ -177,7 +183,12 @@ end
 
 function CraftPage.Model(ctx)
 	local s = ns.db.settings
-	local rows, hidden = MK.CraftRows(ctx.professionID, s)
+	local rows, hidden
+	if ctx.all then
+		rows, hidden = MK.CraftRowsAll(s)
+	else
+		rows, hidden = MK.CraftRows(ctx.professionID, s)
+	end
 	ctx.vendorCheck = s.vendorCheck and true or false
 	ctx.disenchantCheck = s.disenchantCheck and not s.vendorCheck and true or false
 	local values = {}
@@ -219,7 +230,7 @@ end
 
 M.RegisterPage({
 	key = "craft", section = "make", label = L["Craft"], order = 1, title = L["Craft"],
-	profession = true, prices = true,
+	profession = true, prices = true, allowAll = true,
 	events = { "BAGS_CHANGED", "LEDGER_CHANGED", "SKILLUPS_CHANGED" },
 	columns = COLUMNS,
 	rowHeight = 38,
@@ -227,7 +238,10 @@ M.RegisterPage({
 	SortRows = CraftPage.SortRows,
 	Model = CraftPage.Model,
 	Hero = DrawHero,
-	Tools = MK.BuildTools,
+	Tools = function(slot)
+		MK.BuildTools(slot)
+		slot.profession.allowAll = true -- the dropdown starts with All professions (#211)
+	end,
 	UpdateTools = MK.UpdateTools,
 	ListTools = function(slot)
 		slot.chips = {

@@ -228,7 +228,9 @@ function MK.CraftRows(professionID, settings, query)
 	local s = settings or ns.db.settings
 	query = Query(query)
 	local out, hidden = {}, 0
+	local prof = ns.charDB and ns.charDB.professions[professionID]
 	for _, r in ipairs(ns.BuildRows(professionID, s.includeUnlearned, "profit")) do
+		r.professionID, r.professionName = professionID, prof and prof.name -- the row's profession (#211)
 		if MK.Matches(r, query) then
 			if s.disenchantCheck and not s.vendorCheck then
 				-- Disenchant check (#190): the sale is the expected disenchant value, the profit that minus the
@@ -266,6 +268,20 @@ function MK.CraftRows(professionID, settings, query)
 	end
 	return out, hidden
 end
+
+-- Craft with "All professions" (#211): the rows of every profession of this character in one list, each built
+-- by CraftRows (the same filters, chips and profits as one profession). Returns rows, hidden.
+MK.CraftRowsAll = ns.Timed("Make: all professions rows", function(settings, query)
+	local out, hidden = {}, 0
+	for _, id in ipairs(M.ProfessionIDs()) do
+		local rows, h = MK.CraftRows(id, settings, query)
+		for _, r in ipairs(rows) do
+			out[#out + 1] = r
+		end
+		hidden = hidden + h
+	end
+	return out, hidden
+end)
 
 -- Learn: every recipe not known yet, with where to get it. Returns rows, hidden (by the chips), all
 -- (unfiltered, for the hero card).
@@ -434,10 +450,14 @@ end
 function MK.ShowProfessionMenu(anchor)
 	local profs = ns.charDB and ns.charDB.professions or {}
 	local entries = {}
+	if anchor.allowAll then
+		entries[1] = { "all", L["All professions"] } -- Make > Craft only (#211)
+	end
 	for _, id in ipairs(M.ProfessionIDs()) do
 		entries[#entries + 1] = { id, ProfessionLabel(id, profs[id]) }
 	end
-	return MK.ShowChoiceMenu(anchor, entries, (M.Profession()), M.SetProfession)
+	local current = anchor.allowAll and M.UI().profession == "all" and "all" or (M.Profession())
+	return MK.ShowChoiceMenu(anchor, entries, current, M.SetProfession)
 end
 
 function MK.Menu()
@@ -517,7 +537,7 @@ end
 
 function MK.UpdateTools(slot, ctx)
 	local chip, box = slot.profession, slot.filter
-	chip:SetLabel(ProfessionLabel(ctx.professionID, ctx.prof) .. " " .. Style.Glyph("down", 9, "text2"))
+	chip:SetLabel((ctx.all and L["All professions"] or ProfessionLabel(ctx.professionID, ctx.prof)) .. " " .. Style.Glyph("down", 9, "text2"))
 	chip.label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
 	if (box:GetText() or "") ~= MK.state.query then
 		box.cwSetting = true
@@ -822,7 +842,7 @@ function MK.DrawBasketRow(content, pool, r, ctx, top)
 	end
 	local inBasket = ns.Basket.Find(id)
 	local add = pool:Button((L["Add %d to basket"]):format(n) .. (inBasket and (" · " .. (L["%d in it"]):format(inBasket.count)) or ""), function()
-		ns.Basket.Add(id, ctx.professionID, MK.BasketCount(id))
+		ns.Basket.Add(id, r.professionID or ctx.professionID, MK.BasketCount(id))
 	end, { L["Add to basket"], L["Adds these crafts to Make › Basket: what to buy for them, minus your bags."] }, MK.BUTTON_HEIGHT)
 	add:SetPoint("LEFT", last, "RIGHT", 6, 0)
 	content.basketButton = add
