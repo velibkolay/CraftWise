@@ -165,10 +165,11 @@ function T.LineParts(line)
 	local Style = ns.Style
 	local parts = { test = line.test and true or nil }
 	if line.text then -- a line of another feature (the vendor loop alert, #186): text, best name, profit
-		parts.name, parts.color = line.text, Style.C.text
+		parts.name = line.text
+		parts.color = line.itemID and Style.QualityColor(T.Quality(line.itemID)) or Style.C.text
 		parts.count = line.detail
 		parts.money = line.copper and ("+" .. ns.FormatCoins(line.copper)) or nil
-		parts.source = line.copper and "per craft" or nil
+		parts.source = line.copper and (line.sourceText or "per craft") or nil
 		return parts
 	end
 	if line.key == "money" then

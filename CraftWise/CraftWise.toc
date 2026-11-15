@@ -37,6 +37,7 @@ FishingTables.lua
 FishingZones.lua
 LootFeed.lua
 LootToast.lua
+AuctionAlert.lua
 Crafts.lua
 Bags.lua
 Holdings.lua
