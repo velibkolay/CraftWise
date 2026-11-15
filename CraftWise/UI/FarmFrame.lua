@@ -49,8 +49,9 @@ FF.FADE_ALPHA = 0.4
 FF.FADE_TIME = 0.14
 
 FF.FISH_MARK = "|TInterface\\Icons\\Trade_Fishing:12:12|t"
-FF.COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
-local QUESTION_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+-- One coin icon for a money line and one for an item without an icon: LootToast's (#308, docs/icons.md)
+FF.COIN_ICON = ns.LootToast.COIN_ICON
+local QUESTION_ICON = ns.LootToast.UNKNOWN_ICON
 
 local frame
 local last -- model of the last refresh
