@@ -4,39 +4,67 @@
 local _, ns = ...
 
 local index -- [itemID] = { { recipeID, skillLine, quantity } }
+local building -- { index, seen, cursor } while UsedInStep is part way (#202)
 
-local function Build()
-	index = {}
-	local seen = {}
-	local function add(itemID, recipeID, skillLine, quantity)
-		local key = itemID .. ":" .. recipeID
-		if seen[key] then
-			return
-		end
-		seen[key] = true
-		index[itemID] = index[itemID] or {}
-		table.insert(index[itemID], { recipeID = recipeID, skillLine = skillLine, quantity = quantity })
+local function Add(b, itemID, recipeID, skillLine, quantity)
+	local seen = b.seen[itemID]
+	if not seen then
+		seen = {}
+		b.seen[itemID] = seen
+		b.index[itemID] = {}
 	end
-	-- Client first: recipes of your professions as the profession window lists them.
-	for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
-		local skillLine = ns.SkillLineOf(professionID)
-		for recipeID, recipe in pairs(prof.recipes) do
-			if ns.RecipeBelongs(professionID, recipeID) then
-				for _, r in ipairs(recipe.reagents or {}) do
-					add(r.itemID, recipeID, skillLine, r.quantity)
+	if seen[recipeID] then
+		return
+	end
+	seen[recipeID] = true
+	table.insert(b.index[itemID], { recipeID = recipeID, skillLine = skillLine, quantity = quantity })
+end
+
+-- One slice of building the index: the recipes of your professions as the profession window lists them (a
+-- few hundred at most, in the first call), then up to maxRecipes more of the bundled reagent table. Returns
+-- true once the index is complete. Without maxRecipes it does all of it.
+function ns.UsedInStep(maxRecipes)
+	if index then
+		return true
+	end
+	if not building then
+		building = { index = {}, seen = {} }
+		for professionID, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
+			local skillLine = ns.SkillLineOf(professionID)
+			for recipeID, recipe in pairs(prof.recipes) do
+				if ns.RecipeBelongs(professionID, recipeID) then
+					for _, r in ipairs(recipe.reagents or {}) do
+						Add(building, r.itemID, recipeID, skillLine, r.quantity)
+					end
 				end
 			end
 		end
 	end
-	for recipeID, data in pairs(ns.RecipeData or {}) do
-		for _, r in ipairs(data.reagents or {}) do
-			add(r.itemID, recipeID, data.skillLine, r.quantity)
+	local b = building
+	local data = ns.RecipeData or {}
+	local recipeID = b.cursor
+	for _ = 1, maxRecipes or math.huge do
+		local entry
+		recipeID, entry = next(data, recipeID)
+		if recipeID == nil then
+			index, building = b.index, nil
+			return true
+		end
+		for _, r in ipairs(entry.reagents or {}) do
+			Add(b, r.itemID, recipeID, entry.skillLine, r.quantity)
 		end
 	end
+	b.cursor = recipeID
+	return false
+end
+
+-- Is the index built? Callers that must not pay for building it check this and wait for it.
+function ns.UsedInReady()
+	return index ~= nil
 end
 
 ns.Listen("RECIPES_CHANGED", function()
-	index = nil
+	index, building = nil, nil
 end)
 
 local englishNames
@@ -60,8 +88,8 @@ local ORDER = { known = 1, learnable = 2, other = 3 }
 -- Recipes using an item, best first: ones you know, then ones you can learn, then other professions.
 -- Entry: { recipeID, name, quantity, profession, professionID (yours) , state, required, tooLow }
 function ns.UsedIn(itemID)
-	if not index then
-		Build()
+	while not index do
+		ns.UsedInStep()
 	end
 	local out = {}
 	for _, e in ipairs(index[itemID] or {}) do
