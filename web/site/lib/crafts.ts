@@ -1,9 +1,36 @@
 // The crafts view (#185): every recipe that makes an item, with today's prices and the vendor check. Pure: no
 // DOM, no fetch; the Worker tests import it. The maths is recipes.ts (craft, vendorCheck).
-import { craft, type Craft, type Quote, type RecipeData, recipeItemOf, type Spell, spellOf } from "./recipes";
+import { craft, type Basis, type Craft, paysBack, type Quote, reagentPrice, type RecipeData, recipeItemOf, type Spell, spellOf } from "./recipes";
 
-export type CraftSort = "name" | "profession" | "cost" | "ah" | "vendor" | "profit" | "vprofit" | "pct" | "vpct";
-export const CRAFT_SORTS: CraftSort[] = ["name", "profession", "cost", "ah", "vendor", "profit", "vprofit", "pct", "vpct"];
+export type CraftSort = "name" | "profession" | "cost" | "ah" | "vendor" | "profit" | "vprofit" | "pct" | "vpct" | "recipe" | "payback";
+export const CRAFT_SORTS: CraftSort[] = ["name", "profession", "cost", "ah", "vendor", "profit", "vprofit", "pct", "vpct", "recipe", "payback"];
+
+// What the recipe costs, from the cheapest first-hand source (#263): a character already knows it (0), the recipe
+// item's bundled vendor buy price, or its price at the Horde AH. Trainer fees have no uploaded figure: unknown.
+export interface RecipeCost {
+	source: "known" | "vendor" | "ah";
+	unit: number; // copper; 0 when known
+	basis: Basis | null; // the AH price's basis (typical / lowest); null for known and vendor
+}
+
+// The recipe's cost, or null when no first-hand figure exists (nothing is guessed). `known` = the spell IDs the
+// characters know, when the private API answered.
+export function recipeCostOf(data: RecipeData, spellId: number, recipeItem: number | null, quotes: Map<number, Quote>, known: Set<number> | null): RecipeCost | null {
+	if (known?.has(spellId)) return { source: "known", unit: 0, basis: null };
+	if (recipeItem === null) return null;
+	const p = reagentPrice(quotes.get(recipeItem), data.vendor[String(recipeItem)]);
+	if (!p) return null;
+	return p.basis === "vendor" ? { source: "vendor", unit: p.unit, basis: null } : { source: "ah", unit: p.unit, basis: p.basis };
+}
+
+// Crafts to pay the recipe back: ceil(cost / profit), the recipe list's paysBack. 0 when it costs nothing (known),
+// Infinity ("never") when it costs something and the profit is zero or less, null when either is unknown.
+export function paybackOf(cost: number | null, profit: number | null): number | null {
+	if (cost === null) return null;
+	if (cost === 0) return 0;
+	if (profit === null) return null;
+	return paysBack(cost, profit) ?? Infinity;
+}
 
 export interface CraftRow {
 	spell: Spell;
@@ -11,6 +38,8 @@ export interface CraftRow {
 	ready: boolean; // every price the craft needs has been fetched (until then the AH columns say so)
 	name: string | null; // the product's name, once known
 	recipeItem: number | null;
+	recipeCost: RecipeCost | null;
+	recipeReady: boolean; // the recipe item's price has been fetched (or it is known): until then its cost says so
 	// The sortable numbers; null = unknown.
 	cost: number | null;
 	ah: number | null; // the sale: the product at the Horde AH after the cut, or a vendor when that pays more (as the list)
@@ -19,6 +48,8 @@ export interface CraftRow {
 	vprofit: number | null;
 	pct: number | null; // profit / reagents cost (1.5 = +150 %)
 	vpct: number | null;
+	recipe: number | null; // the recipe's cost; 0 = known
+	payback: number | null; // crafts to pay the recipe back with the profit the basis picks; Infinity = never
 	loop: boolean;
 }
 
@@ -77,14 +108,19 @@ export function scopeOf(data: RecipeData, spells: Spell[], f: CraftFilter): Spel
 	});
 }
 
-export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fetched: Set<number>, names: Map<number, string | null>): CraftRow {
+// `vendorBasis`: "Profit when sold to a vendor" is ticked, so the payback uses the vendor profit, else the AH profit.
+export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fetched: Set<number>, names: Map<number, string | null>, known: Set<number> | null = null, vendorBasis = false): CraftRow {
 	const c = craft(data, s, quotes);
+	const recipeItem = recipeItemOf(data, s.id)?.item ?? null;
+	const recipeCost = recipeCostOf(data, s.id, recipeItem, quotes, known);
 	return {
 		spell: s,
 		craft: c,
 		ready: itemsOfSpell(s).every((id) => fetched.has(id)),
 		name: names.get(s.output!) ?? null,
-		recipeItem: recipeItemOf(data, s.id)?.item ?? null,
+		recipeItem,
+		recipeCost,
+		recipeReady: recipeCost?.source === "known" || recipeItem === null || fetched.has(recipeItem),
 		cost: c.cost,
 		ah: c.revenue,
 		vendor: c.vendor.sale,
@@ -92,6 +128,8 @@ export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fe
 		vprofit: c.vendor.profit,
 		pct: pctOf(c.profit, c.cost),
 		vpct: pctOf(c.vendor.profit, c.cost),
+		recipe: recipeCost?.unit ?? null,
+		payback: paybackOf(recipeCost?.unit ?? null, vendorBasis ? c.vendor.profit : c.profit),
 		loop: c.vendor.loop,
 	};
 }

@@ -324,7 +324,23 @@ Filters: profession, product name, "Profit when sold to a vendor" (vendor profit
 characters' snapshots (docs/snapshot.md). Only the prices of the filtered crafts are fetched (`/api/browse?ids=`).
 Profit % = profit / reagents cost, Vendor profit % = vendor profit / reagents cost; null when the cost is unknown or 0
 or the profit is unknown (sorted last in both directions; ties by absolute profit, then name).
-URL: `?prof=<skill line>&q=&vendor=1&loops=1&mine=1&sort=&dir=&p=` (`sort` also takes `pct`, `vpct`).
+URL: `?prof=<skill line>&q=&vendor=1&loops=1&mine=1&sort=&dir=&p=` (`sort` also takes `pct`, `vpct`, `recipe`,
+`payback`).
+
+Recipe cost and payback (#263), the same idea as the addon's recipe payback (#219: "Recipe cost", "paid back"):
+
+- **Recipe** = what learning the craft costs, from the cheapest first-hand source, with the source shown:
+  `known` (a character's snapshot lists the spell: cost 0, needs the Access login), the recipe item's bundled vendor
+  buy price (`vendor`), or its Horde AH price (`AH`: typical, else lowest, as everywhere). The cheaper of vendor and AH
+  wins. The recipe item is the one `teach` maps to the spell. No recipe item, or neither a vendor nor an AH price:
+  `unknown`. Trainer fees are recorded by the addon (`Trainer.lua`) but no upload or bundled file carries them, so a
+  trainer recipe is `unknown`; nothing is guessed.
+- **Pays back after** = ceil(recipe cost / profit per craft) crafts (the recipe list's `paysBack`), at least 1. The
+  profit is the vendor profit when "Profit when sold to a vendor" is ticked, else the AH profit (the header tooltip and
+  the footer text say which). `known` shows `known` (0 crafts), a craft that makes no profit with that basis shows
+  `never`, an unknown cost or profit shows a dash. Both columns sort; unknowns last in both directions, `never` after
+  every number.
+- Only the recipe items of the filtered crafts are fetched (`/api/browse?ids=`), the same requests as the prices.
 
 A Recipe list of 158 items needs about 300 more item IDs, so 3 to 4 browse requests (about 10 rows read per item).
 
