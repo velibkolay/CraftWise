@@ -387,7 +387,7 @@ local function Cache()
 end
 
 -- A short while after login the build starts by itself, so it is ready before the page is first opened.
--- It waits for a running sync merge (#253): the merge adds keys, which would restart the build again and again,
+-- It waits for a running sync merge (#241): the merge adds keys, which would restart the build again and again,
 -- and both are background work that shares the frames.
 Items.PREBUILD_WAIT = 5 -- seconds before it looks again
 local function Prebuild()

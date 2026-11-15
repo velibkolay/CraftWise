@@ -1,4 +1,4 @@
--- #253: the sync merge of a 40,000 entry file stays cheap. Veli's PC stuttered after #248: the companion
+-- #241: the sync merge of a 40,000 entry file stays cheap. Veli's PC stuttered after #248: the companion
 -- writes the whole market (42,531 items) and nearly every entry equals one already in CraftWiseMarketDB, but
 -- each was decoded (about 20 KB of garbage) and merged at 4 ms of every frame. Invented data only.
 local NOW = 1794000000
@@ -82,7 +82,7 @@ local function Run(M, file, step)
 	return slices, v0, versions
 end
 
-it("#253: a file that equals what we have costs no decoding, no allocation worth the name, no cache restarts", function()
+it("#241: a file that equals what we have costs no decoding, no allocation worth the name, no cache restarts", function()
 	local _, _, M, File, own = Setup("same")
 	local decodes = CountDecodes(M)
 	local step = SliceClock(0.25)
@@ -105,7 +105,7 @@ it("#253: a file that equals what we have costs no decoding, no allocation worth
 	end
 end)
 
-it("#253: an entry of ours that is newer than the file's (the text differs) is told apart without decoding it", function()
+it("#241: an entry of ours that is newer than the file's (the text differs) is told apart without decoding it", function()
 	local _, _, M, File, own = Setup("older")
 	local decodes = CountDecodes(M)
 	local step = SliceClock(0.25)
@@ -129,7 +129,7 @@ it("#253: an entry of ours that is newer than the file's (the text differs) is t
 	eq(M.SyncStatus().state, "done"); eq(M.SyncStatus().changed, 0)
 end)
 
-it("#253: a slice is about a millisecond: the clock is looked at after every entry, nothing in the frame that starts it", function()
+it("#241: a slice is about a millisecond: the clock is looked at after every entry, nothing in the frame that starts it", function()
 	local _, _, M, File = Setup("older")
 	local step = SliceClock(0.25) -- every look at the clock costs 0.25 ms
 	local file = File(NOW - 10)
@@ -151,7 +151,7 @@ it("#253: a slice is about a millisecond: the clock is looked at after every ent
 	assert(steps > 1000, "spread over many frames: " .. steps)
 end)
 
-it("#253: a file the PC has nothing of (40,000 new entries) still merges in the same small slices and ends with one cache bump", function()
+it("#241: a file the PC has nothing of (40,000 new entries) still merges in the same small slices and ends with one cache bump", function()
 	local ns, _, M, File = Setup("new")
 	local step = SliceClock(0.25)
 	local file = File(NOW - 10)
@@ -166,7 +166,7 @@ it("#253: a file the PC has nothing of (40,000 new entries) still merges in the 
 	assert(slices > 1000, "slices: " .. slices)
 end)
 
-it("#253: Look up's prebuild waits for a running merge instead of restarting on every key it adds", function()
+it("#241: Look up's prebuild waits for a running merge instead of restarting on every key it adds", function()
 	local ns, stub = LoadAddon()
 	time = function() return stub.clock end
 	stub.clock = NOW

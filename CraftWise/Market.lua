@@ -2398,7 +2398,7 @@ end
 
 M.SYNC_VERSION = 1
 M.SYNC_DELAY = 10 -- seconds after login; the prebuilds and the Auctionator export have started by then
--- A background job next to the game, not a loading screen: it takes at most about 1 ms of a frame (#253; the
+-- A background job next to the game, not a loading screen: it takes at most about 1 ms of a frame (#241; the
 -- first version took 4 ms, looked at the clock every 4 entries and decoded every entry, which stuttered).
 M.SYNC_SLICE_MS = 1 -- time one slice may take
 M.SYNC_CHECK = 1 -- entries handled between two looks at the clock (one entry can cost a millisecond in game)
@@ -2512,7 +2512,7 @@ end
 
 -- Would merging the packed entry `theirs` into the packed entry `mine` change nothing? Answered from the
 -- text, without building the points and days (decoding an entry costs about 20 KB of garbage and 0.3 ms;
--- a file of 40,000 entries that mostly equal ours was the stutter of #253). It asks exactly what
+-- a file of 40,000 entries that mostly equal ours was the stutter of #241). It asks exactly what
 -- MergeEntry would change: a newer `last`, a raw point of the last 48 h that we don't have, a day that we
 -- don't have or that has fewer points here. Anything it can't read is "not sure" (false): the full merge,
 -- which checks the entry, then decides.
@@ -2847,7 +2847,7 @@ local SYNC_STAGES = {
 local function FinishSync(job)
 	syncJob = nil
 	-- What it cost, kept in the saved file: same = identical text, skipped = nothing to take (read from the text),
-	-- decoded = entries that had to be built; ms and slices of work, worst = the longest slice (#253).
+	-- decoded = entries that had to be built; ms and slices of work, worst = the longest slice (#241).
 	db.sync = { written = job.written, machine = job.machine, at = time(), entries = job.entries,
 		changed = job.changed, bad = job.bad, same = job.same, skipped = job.skipped, decoded = job.decoded,
 		ms = math.floor(job.ms + 0.5), slices = job.slices, worst = math.floor(job.worst + 0.5) }
