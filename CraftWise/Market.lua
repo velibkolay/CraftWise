@@ -2398,8 +2398,10 @@ end
 
 M.SYNC_VERSION = 1
 M.SYNC_DELAY = 10 -- seconds after login; the prebuilds and the Auctionator export have started by then
-M.SYNC_SLICE_MS = 4 -- time one slice may take
-M.SYNC_CHECK = 4 -- entries handled between two looks at the clock
+-- A background job next to the game, not a loading screen: it takes at most about 1 ms of a frame (#253; the
+-- first version took 4 ms, looked at the clock every 4 entries and decoded every entry, which stuttered).
+M.SYNC_SLICE_MS = 1 -- time one slice may take
+M.SYNC_CHECK = 1 -- entries handled between two looks at the clock (one entry can cost a millisecond in game)
 M.SYNC_SLICE_MAX = 400 -- and at most this many in a slice, whatever the clock says
 local MIN_TIME = 1600000000 -- 2020-09-13, as the site's upload checks
 local syncJob
@@ -2498,6 +2500,86 @@ function M.MergeEntry(mine, theirs, now)
 	return changed
 end
 
+-- An entry text split at its two "|": last, raw, days. nil for a text that has no two.
+local function Parts(s)
+	local a = s:find("|", 1, true)
+	local b = a and s:find("|", a + 1, true)
+	if not b then
+		return nil
+	end
+	return s:sub(1, a - 1), s:sub(a + 1, b - 1), s:sub(b + 1)
+end
+
+-- Would merging the packed entry `theirs` into the packed entry `mine` change nothing? Answered from the
+-- text, without building the points and days (decoding an entry costs about 20 KB of garbage and 0.3 ms;
+-- a file of 40,000 entries that mostly equal ours was the stutter of #253). It asks exactly what
+-- MergeEntry would change: a newer `last`, a raw point of the last 48 h that we don't have, a day that we
+-- don't have or that has fewer points here. Anything it can't read is "not sure" (false): the full merge,
+-- which checks the entry, then decides.
+local function Unchanged(mine, theirs, now, inScope)
+	local ml, mr, md = Parts(mine)
+	local tl, tr, td = Parts(theirs)
+	if not (ml and tl) then
+		return false
+	end
+	local tT = Num(tl:match("^([^,]*)"))
+	local mT = Num(ml:match("^([^,]*)"))
+	if tT and not (mT and mT >= tT) then
+		return false
+	end
+	if not inScope then
+		return true -- outside the scope only `last` is taken
+	end
+	if tr ~= "" then
+		local have, prev = {}, 0
+		for point in mr:gmatch("[^;]+") do
+			local z = Num(point:match("^([^,]*)"))
+			if not z then
+				return false
+			end
+			prev = prev + Unzig(z)
+			have[prev] = true
+		end
+		local cutoff, prevT = now - RAW_SECONDS, 0
+		for point in tr:gmatch("[^;]+") do
+			local z = Num(point:match("^([^,]*)"))
+			if not z then
+				return false
+			end
+			prevT = prevT + Unzig(z)
+			if prevT >= cutoff and not have[prevT] then
+				return false
+			end
+		end
+	end
+	if td ~= "" then
+		local mineN, day = {}, 0
+		for text in md:gmatch("[^;]+") do
+			local z, n = text:match("^([^,]*),[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,([^,]*)")
+			z = Num(z)
+			if not z then
+				return false
+			end
+			day = day + Unzig(z)
+			mineN[day] = Num(n) or 0
+		end
+		local oldest = DayNumber(now) - KEEP_DAYS
+		day = 0
+		for text in td:gmatch("[^;]+") do
+			local z, n = text:match("^([^,]*),[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,([^,]*)")
+			z = Num(z)
+			if not z then
+				return false
+			end
+			day = day + Unzig(z)
+			if day >= oldest and (mineN[day] == nil or (Num(n) or 0) > mineN[day]) then
+				return false
+			end
+		end
+	end
+	return true
+end
+
 -- t of the `last` of a stored entry (packed or decoded) without decoding it.
 local function StoredLastT(stored)
 	if type(stored) == "string" then
@@ -2536,19 +2618,22 @@ local function MergeStored(job, itemKey, houseKey, packed)
 	local perItem = db.items[itemKey]
 	local mine = perItem and perItem[houseKey]
 	if mine == packed then
+		job.same = job.same + 1
 		return
 	end
 	local now = job.now
 	local theirs
 	if IsLastOnly(packed) then
+		local mineT = mine ~= nil and StoredLastT(mine)
+		local theirT = StoredLastT(packed)
+		if mineT and theirT and mineT >= theirT then
+			job.skipped = job.skipped + 1
+			return -- own or already merged: nothing newer, and nothing built to find out
+		end
 		local ok, last = pcall(PackedLast, packed)
 		if not (ok and SaneLast(last, now)) then
 			job.bad = job.bad + 1
 			return
-		end
-		local mineT = mine ~= nil and StoredLastT(mine)
-		if mineT and mineT >= last.t then
-			return -- own or already merged: nothing newer
 		end
 		if mine == nil or (type(mine) == "string" and IsLastOnly(mine)) then
 			PutEntry(itemKey, houseKey, M.EncodeEntry({ last = last }))
@@ -2557,6 +2642,10 @@ local function MergeStored(job, itemKey, houseKey, packed)
 		end
 		theirs = { last = last, raw = {}, days = {} }
 	else
+		if type(mine) == "string" and Unchanged(mine, packed, now, db.scope.items[ItemIDOfKey(itemKey)] == true) then
+			job.skipped = job.skipped + 1
+			return
+		end
 		local ok, decoded = pcall(M.DecodeEntry, packed)
 		theirs = ok and SaneEntry(decoded, now) or nil
 		if not theirs then
@@ -2570,6 +2659,7 @@ local function MergeStored(job, itemKey, houseKey, packed)
 			theirs = { last = theirs.last, raw = {}, days = {} }
 		end
 	end
+	job.decoded = job.decoded + 1
 	local entry
 	if type(mine) == "table" then
 		entry = mine
@@ -2756,10 +2846,14 @@ local SYNC_STAGES = {
 
 local function FinishSync(job)
 	syncJob = nil
+	-- What it cost, kept in the saved file: same = identical text, skipped = nothing to take (read from the text),
+	-- decoded = entries that had to be built; ms and slices of work, worst = the longest slice (#253).
 	db.sync = { written = job.written, machine = job.machine, at = time(), entries = job.entries,
-		changed = job.changed, bad = job.bad }
+		changed = job.changed, bad = job.bad, same = job.same, skipped = job.skipped, decoded = job.decoded,
+		ms = math.floor(job.ms + 0.5), slices = job.slices, worst = math.floor(job.worst + 0.5) }
 	syncStatus = { state = "done", written = job.written, machine = job.machine, entries = job.entries,
-		changed = job.changed, bad = job.bad }
+		changed = job.changed, bad = job.bad, same = job.same, skipped = job.skipped, decoded = job.decoded,
+		ms = db.sync.ms, slices = job.slices, worst = db.sync.worst }
 	if job.changed > 0 then
 		syncVersion = syncVersion + 1
 		ns.Notify("PRICES_CHANGED", "sync")
@@ -2787,6 +2881,7 @@ local function SyncStep(job)
 	if not done then
 		job.bad = job.bad + 1
 	end
+	source[key] = nil -- the file's strings go as they are merged (clearing a field during next is allowed)
 	return true
 end
 
@@ -2806,14 +2901,19 @@ SyncSlice = ns.Timed("Market: sync merge slice", function()
 		return
 	end
 	local started, n = debugprofilestop(), 0
+	job.slices = job.slices + 1
 	while SyncStep(job) do
 		n = n + 1
 		if n >= M.SYNC_SLICE_MAX or (n % M.SYNC_CHECK == 0 and debugprofilestop() - started >= M.SYNC_SLICE_MS) then
 			syncStatus.entries, syncStatus.changed, syncStatus.bad = job.entries, job.changed, job.bad
+			local took = debugprofilestop() - started
+			job.ms, job.worst = job.ms + took, math.max(job.worst, took)
 			ScheduleSync()
 			return
 		end
 	end
+	local took = debugprofilestop() - started
+	job.ms, job.worst = job.ms + took, math.max(job.worst, took)
 	FinishSync(job)
 end)
 
@@ -2849,10 +2949,15 @@ function M.StartSync()
 	file.market = nil -- the job holds it until it is merged
 	syncJob = { source = market, stage = 1, now = time(), written = written,
 		machine = type(file.machine) == "string" and #file.machine <= 64 and file.machine or nil,
-		entries = 0, changed = 0, bad = 0 }
+		entries = 0, changed = 0, bad = 0, same = 0, skipped = 0, decoded = 0, ms = 0, slices = 0, worst = 0 }
 	syncStatus = { state = "merging", written = written }
 	ScheduleSync()
 	return "merging"
+end
+
+-- Is a merge running? Other background jobs (the Look up prebuild) wait for it.
+function M.SyncBusy()
+	return syncJob ~= nil
 end
 
 -- { state, written, machine, entries, changed, bad } of the last read; for the specs and /craftwise debug.

@@ -399,16 +399,20 @@ end
 
 it("#241: the merge runs in slices: nothing in the frame that starts it, a few entries per frame, the same result as in one go", function()
 	local M, _, ns = Market()
-	local ids, entries = {}, {}
-	for id = 1, 1500 do
-		ids[#ids + 1] = id
-		entries[id] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - id, min = 100 + id, qty = 5 }, raw = { Point(NOW - id, 100 + id, 5) }, days = { [TODAY] = Day(100 + id, 1, 0) } }) }
+	local ids = {}
+	local function Entries() -- the merge lets go of the file's strings as it goes: a second file for the second run
+		local entries = {}
+		for id = 1, 1500 do
+			ids[#ids + 1] = id
+			entries[id] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - id, min = 100 + id, qty = 5 }, raw = { Point(NOW - id, 100 + id, 5) }, days = { [TODAY] = Day(100 + id, 1, 0) } }) }
+		end
+		return entries
 	end
-	InScope(ids)
+	InScope((function() Entries() return ids end)())
 	local step = SliceClock()
 	local hooks = {}
 	ns.SetRecorder(function(kind, _, label) hooks[#hooks + 1] = kind .. "|" .. label end)
-	eq(Merge(M, File(entries, { names = { [1] = "One", [2] = "Two" } })), "merging")
+	eq(Merge(M, File(Entries(), { names = { [1] = "One", [2] = "Two" } })), "merging")
 	eq(Count(CraftWiseMarketDB.items), 0, "nothing merged in the frame that started it")
 	local slices, worst, last = 0, 0, 0
 	while step() do
@@ -430,7 +434,7 @@ it("#241: the merge runs in slices: nothing in the frame that starts it, a few e
 	local sliced = Dump(M)
 	local M2 = Market()
 	InScope(ids)
-	Merge(M2, File(entries))
+	Merge(M2, File(Entries()))
 	eq(Dump(M2):len() > 0, true)
 	eq(sliced, Dump(M2), "the same entries")
 end)
@@ -442,7 +446,7 @@ it("#241: a merge that is not finished at logout is not marked done, and the nex
 	local entries = {}
 	for id = 1, 300 do entries[id] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - id, min = 10, qty = 1 } }) } end
 	Merge(M, File(entries))
-	step(); step() -- two slices, then the game closes
+	for _ = 1, 40 do step() end -- some slices, then the game closes
 	eq(CraftWiseMarketDB.sync, nil, "written is only recorded when it is all merged")
 	local partial = Count(CraftWiseMarketDB.items)
 	assert(partial > 0 and partial < 300, "part way: " .. partial)
