@@ -11,7 +11,7 @@ local _, ns = ...
 --     chars = { [ns.CharKey()] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit, known } },
 --                                                  earlier = { crafts, items, profit, known }, speed = ... } } } }
 -- profit = copper, the profit per craft as computed at craft time (profit view's cost basis, the sale with the
--- "Sell to vendor" mark respected), summed over the crafts that had one; known = how many crafts that is. A
+-- Junk mark respected, #227), summed over the crafts that had one; known = how many crafts that is. A
 -- craft without a price adds to crafts only. Days from before profit was recorded have neither.
 -- Days older than KEEP_DAYS fold into `earlier` (once per session, never on a craft). items = crafts times the
 -- recipe's yield when that is one exact number; recipes with a yield range add crafts only (the client's

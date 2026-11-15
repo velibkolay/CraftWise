@@ -550,7 +550,7 @@ it("auctions are kept per character", function()
 	eq(#ns.Auctions.List("PvP-Veli Tanner"), 1)
 end)
 
--- "Sell to vendor" mark dropped by a recorded AH sale (#222)
+-- Junk mark dropped by a recorded AH sale (#222, #227)
 local function SaleMail(ns, stub, name, item, money)
 	stub.Fire("AUCTION_HOUSE_CLOSED")
 	stub.inbox = { { subject = "Auction successful: " .. name, money = money,
@@ -561,25 +561,25 @@ local function SaleMail(ns, stub, name, item, money)
 	stub.Fire("PLAYER_MONEY")
 end
 
-it("a recorded AH sale removes the Sell to vendor mark, prints one line and refreshes", function()
+it("a recorded AH sale removes the Junk mark, prints one line and refreshes", function()
 	local ns, stub = Load()
 	local lines, refreshed = {}, 0
 	ns.Print = function(msg) lines[#lines + 1] = tostring(msg) end
 	ns.Listen("BAGS_CHANGED", function() refreshed = refreshed + 1 end)
-	ns.db.sellVendor[PANTS] = true
-	ns.db.sellVendor[LEATHER] = true -- another marked item: untouched
+	ns.db.junk[PANTS] = true
+	ns.db.junk[LEATHER] = true -- another marked item: untouched
 	AtHouse(stub)
 	local id = Post(stub, PANTS, 1, 9000, { item = true })
 	Sold(stub, "Rugged Leather Pants", id)
-	eq(ns.db.sellVendor[PANTS], true, "a sold message alone is not the recorded sale")
+	eq(ns.db.junk[PANTS], true, "a sold message alone is not the recorded sale")
 	SaleMail(ns, stub, "Rugged Leather Pants", PANTS, 8650)
 	eq(Find(ns, function(r) return r.id == id end).st, "settled")
-	eq(ns.db.sellVendor[PANTS], nil); eq(ns.db.sellVendor[LEATHER], true)
+	eq(ns.db.junk[PANTS], nil); eq(ns.db.junk[LEATHER], true)
 	eq(#lines, 1)
-	assert(lines[1]:find("sold on the AH: 'Sell to vendor' mark removed", 1, true), lines[1])
+	assert(lines[1]:find("sold on the AH: Junk mark removed", 1, true), lines[1])
 	assert(refreshed > 0, "pages refresh")
 	-- a second sale of the now unmarked item prints nothing
-	eq(ns.Auctions.DropVendorMark(PANTS), false)
+	eq(ns.Auctions.DropJunkMark(PANTS), false)
 	eq(#lines, 1)
 end)
 
@@ -591,21 +591,21 @@ it("an unmarked item's sale changes nothing and prints nothing", function()
 	local id = Post(stub, PANTS, 1, 9000, { item = true })
 	Sold(stub, "Rugged Leather Pants", id)
 	SaleMail(ns, stub, "Rugged Leather Pants", PANTS, 8650)
-	eq(next(ns.db.sellVendor), nil); eq(#lines, 0)
+	eq(next(ns.db.junk), nil); eq(#lines, 0)
 end)
 
-it("listing, cancelling and expiring keep the Sell to vendor mark", function()
+it("listing, cancelling and expiring keep the Junk mark", function()
 	local ns, stub = Load()
 	ns.Print = function() error("no chat line expected") end
-	ns.db.sellVendor[PANTS] = true
-	ns.db.sellVendor[LEATHER] = true
+	ns.db.junk[PANTS] = true
+	ns.db.junk[LEATHER] = true
 	AtHouse(stub)
 	local posted = Post(stub, PANTS, 1, 9000, { item = true })
 	local listed = Post(stub, LEATHER, 20, 150)
-	eq(ns.db.sellVendor[PANTS], true, "listed")
+	eq(ns.db.junk[PANTS], true, "listed")
 	stub.Fire("AUCTION_CANCELED", posted)
 	eq(Find(ns, function(r) return r.id == posted end).st, "cancelled")
 	stub.Fire("CHAT_MSG_SYSTEM", "Your auction of Light Leather has expired.")
 	eq(Find(ns, function(r) return r.id == listed end).st, "expired")
-	eq(ns.db.sellVendor[PANTS], true); eq(ns.db.sellVendor[LEATHER], true)
+	eq(ns.db.junk[PANTS], true); eq(ns.db.junk[LEATHER], true)
 end)

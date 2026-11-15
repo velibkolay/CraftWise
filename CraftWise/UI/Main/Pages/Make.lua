@@ -61,7 +61,7 @@ end
 -- cut is unverified (no net value); nil without a sale value.
 function MK.SaleTag(source, cutUnverified, marked)
 	if source == "vendor" then
-		return marked and L["vendor (marked)"] or "vendor"
+		return marked and L["vendor (junk)"] or "vendor"
 	elseif source == "disenchant" then
 		return "disenchant" -- Disenchant check (#190)
 	elseif source == "auction" then

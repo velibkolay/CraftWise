@@ -156,7 +156,6 @@ local DB_DEFAULTS = {
 	keep = {}, -- [itemID] = true: items you keep; left out of bag advice and totals
 	junk = {}, -- [itemID] = true: items marked as junk, sold with one click at a vendor
 	sellAH = {}, -- [itemID] = true: items marked to sell on the auction house
-	sellVendor = {}, -- [itemID] = true: items valued at their vendor price everywhere, the AH price still shown (#214)
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	watch = {}, -- [itemID] = Unix time it was watched: Look up › Items watch list (ItemWatch.lua, #165); the companion reads it
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
@@ -230,6 +229,15 @@ ns.On("ADDON_LOADED", function(_, loaded)
 		CraftWiseDB.settings[key] = nil
 	end
 	ns.db, ns.charDB = CraftWiseDB, CraftWiseCharDB
+	-- #227: "Sell to vendor" (#214) and Junk became one mark. The old marks move to Junk once, then the table goes.
+	if type(ns.db.sellVendor) == "table" then
+		for itemID in pairs(ns.db.sellVendor) do
+			if not ns.db.keep[itemID] then
+				ns.db.junk[itemID] = true
+			end
+		end
+	end
+	ns.db.sellVendor = nil
 	ns.db.debug = { unknownEvents = ns.unknownEvents }
 	ns.Notify("DB_READY")
 	ns.MigrateCharKey() -- "pending" when the client doesn't know the character yet: retried below

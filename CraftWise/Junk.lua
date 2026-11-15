@@ -11,16 +11,15 @@ local job -- { slots, index, elapsed, sold, copper }
 local button, merchantOpen = nil, false
 local inCombat = false
 
--- Bag slots holding marked junk, or items marked "Sell to vendor" (#214), that a vendor buys. Keep wins.
+-- Bag slots holding marked junk that a vendor buys (Junk is also valued at the vendor price, #227). Keep wins.
 function Junk.Slots()
 	local slots = {}
 	local junk = ns.db and ns.db.junk or {}
-	local vendor = ns.db and ns.db.sellVendor or {}
 	local keep = ns.db and ns.db.keep or {}
 	for bag = 0, ns.LAST_BAG do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
 			local item = C_Container.GetContainerItemInfo(bag, slot)
-			if item and item.itemID and (junk[item.itemID] or vendor[item.itemID]) and not keep[item.itemID]
+			if item and item.itemID and junk[item.itemID] and not keep[item.itemID]
 				and not item.hasNoValue and not item.isLocked then
 				slots[#slots + 1] = { bag = bag, slot = slot, itemID = item.itemID, count = item.stackCount or 1 }
 			end
@@ -125,9 +124,9 @@ local function Step(_, elapsed)
 	end
 	job.index = job.index + 1
 	UpdateProgress()
-	-- The slot may have changed since the list was made: only sell what is still marked junk (or Sell to vendor).
+	-- The slot may have changed since the list was made: only sell what is still marked junk .
 	local item = C_Container.GetContainerItemInfo(s.bag, s.slot)
-	if item and item.itemID == s.itemID and not item.isLocked and (ns.db.junk[s.itemID] or (ns.db.sellVendor and ns.db.sellVendor[s.itemID]))
+	if item and item.itemID == s.itemID and not item.isLocked and ns.db.junk[s.itemID]
 		and not ns.db.keep[s.itemID] then
 		C_Container.UseContainerItem(s.bag, s.slot)
 		job.sold = job.sold + 1
@@ -180,7 +179,7 @@ local function CreateButton()
 		else
 			lines[#lines + 1] = "Mark items: middle-click them in your bags, or click them in CraftWise > Bags."
 		end
-		lines[#lines + 1] = "Includes items marked Sell to vendor."
+		lines[#lines + 1] = "Junk items are valued at their vendor price everywhere."
 		ns.Style.ShowTip(self, "Sell junk", unpack(lines))
 	end)
 	local unfold = button:GetScript("OnLeave")
