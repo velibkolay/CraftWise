@@ -80,6 +80,7 @@ M.UI_DEFAULTS = {
 	escape = true, -- Close with Escape (Settings > Look)
 	locked = false, -- Lock position (Settings > Look)
 	scale = 1, -- Scale (Settings > Look)
+	ahBar = true, -- the scan's progress bar above the auction house window (Settings > Look, #297)
 	size = {}, -- [layout key] = { width, height }: the size dragged to (#280; docked layouts keep the width only)
 	-- pos = { point, relativePoint, x, y } once the window was moved
 }
@@ -677,7 +678,7 @@ function M.ScanModel(now)
 	end
 	local s = market.OwnScan(now)
 	local st = s.state
-	local model = { state = st }
+	local model = { state = st, finishedAt = s.finishedAt }
 	if st == "ready" then
 		local elapsed, timeout = s.elapsed or 0, s.readyTimeout or 0
 		model.kind = "scanning"

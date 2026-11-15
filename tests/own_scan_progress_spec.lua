@@ -232,3 +232,103 @@ it("#285 the bar under the auction house: text, bar, hint; done stays 10 s; hidd
 	eq(bar:IsShown(), false)
 	_G.AuctionHouseFrame = nil
 end)
+
+----------------------------------------------------------------------------------------------------
+-- The bar must not cover the auction house's tabs (#297)
+----------------------------------------------------------------------------------------------------
+
+local function Host(stub)
+	local host = CreateFrame("Frame", "AuctionHouseFrame", UIParent)
+	_G.AuctionHouseFrame = host
+	-- the tabs, Blizzard's and the ones addons add, hang below the frame
+	host.tabs = {}
+	for i = 1, 8 do host.tabs[i] = CreateFrame("Button", nil, host) end
+	return host
+end
+
+it("#297 the bar sits above the auction house window, never over its tabs, and takes no mouse input", function()
+	local _, stub, M, Main = Load()
+	local host = Host(stub)
+	OpenAH(stub)
+	M.RequestScan()
+	local bar = Main.AHBar()
+	assert(bar and bar:IsShown())
+	for _, p in ipairs(bar.points) do
+		assert(p[2] == host, "anchored to the auction house frame")
+		assert(p[3] == "TOPLEFT" or p[3] == "TOPRIGHT", "to its top edge, not its bottom where the tabs are: " .. tostring(p[3]))
+		assert(p[1] == "BOTTOMLEFT" or p[1] == "BOTTOMRIGHT", "the bar's own bottom edge touches it: " .. tostring(p[1]))
+		assert(p[5] > 0, "a few units above")
+	end
+	eq(#bar.points, 2)
+	eq(bar.mouseEnabled, false, "mouse-transparent: clicks go through, even where it is pushed over the frame")
+	eq(bar:IsMouseEnabled(), false)
+	-- nothing in it takes the mouse either
+	for _, region in ipairs({ bar.text, bar.hint, bar.fill, bar.track }) do
+		assert(not region.mouseEnabled, "no mouse on its parts")
+	end
+	-- the bar is the only thing CraftWise anchors to the AH frame
+	for _, fr in ipairs(stub.frames) do
+		if fr ~= bar then
+			for _, p in ipairs(fr.points or {}) do
+				assert(p[2] ~= host or fr == bar, "only the scan bar is anchored to the AH frame")
+			end
+		end
+	end
+	_G.AuctionHouseFrame = nil
+end)
+
+it("#297 a done or failed line leaves the bar after M.AH_BAR_LINGER seconds; the header keeps it", function()
+	local _, stub, M, Main = Load()
+	Host(stub)
+	OpenAH(stub)
+	eq(Main.AH_BAR_LINGER, 6)
+	M.RequestScan()
+	stub.clock = NOW + 3
+	stub.replicate = Items(20)
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	local bar = Main.AHBar()
+	eq(M.OwnScan().state, "done")
+	stub.clock = NOW + 3 + 5
+	bar.scripts.OnUpdate(bar, 0.3)
+	eq(bar:IsShown(), true, "still there after 5 s")
+	stub.clock = NOW + 3 + 7
+	bar.scripts.OnUpdate(bar, 0.3)
+	eq(bar:IsShown(), false, "gone after 6 s")
+	assert(Main.ScanModel(), "the header's summary stays 10 s")
+	-- failed: the same, while the header keeps the failure until the next click
+	stub.clock = NOW + 3000
+	M.RequestScan()
+	stub.RunTimers()
+	eq(M.OwnScan().error, "timeout")
+	assert(bar:IsShown(), "shown when it failed")
+	stub.clock = NOW + 3000 + 7
+	bar.scripts.OnUpdate(bar, 0.3)
+	eq(bar:IsShown(), false)
+	eq(Main.ScanModel().kind, "failed", "the header still says it")
+	_G.AuctionHouseFrame = nil
+end)
+
+it("#297 Settings > Look: the scan bar can be switched off; on by default", function()
+	local _, stub, M, Main = Load()
+	Host(stub)
+	eq(Main.UI().ahBar, true)
+	OpenAH(stub)
+	M.RequestScan()
+	local bar = Main.AHBar()
+	eq(bar:IsShown(), true)
+	Main.Open("settings")
+	Main.Settings.SelectGroup("look")
+	local row = Main.Settings.RowOf("look", "ahBar")
+	assert(row, "the row")
+	local box = row.holder.control
+	box.scripts.OnClick(box)
+	eq(Main.UI().ahBar, false)
+	eq(bar:IsShown(), false, "off: gone at once")
+	stub.clock = NOW + 5
+	Main.UpdateAHBar()
+	eq(bar:IsShown(), false)
+	box.scripts.OnClick(box)
+	eq(Main.UI().ahBar, true)
+	eq(bar:IsShown(), true)
+	_G.AuctionHouseFrame = nil
+end)

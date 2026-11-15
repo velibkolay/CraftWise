@@ -238,6 +238,14 @@ local function Groups()
 			get = function() return M.LayoutKey() end, set = function(v) M.SetLayout(v) end },
 		{ key = "scale", kind = "slider", label = L["Scale"], min = Set.SCALE_MIN, max = Set.SCALE_MAX, step = Set.SCALE_STEP,
 			onRelease = true, get = function() return tonumber(M.UI().scale) or 1 end, set = Set.SetScale, format = Pct },
+		{ key = "ahBar", kind = "check", label = L["Scan bar"], text = L["Show the scan's progress above the auction house window"],
+			get = function() return M.UI().ahBar ~= false end,
+			set = function(v)
+				M.UI().ahBar = v and true or false
+				if M.UpdateAHBar then
+					M.UpdateAHBar()
+				end
+			end },
 		AlphaRow("bgMain", L["Background · Main window"], "main"),
 		AlphaRow("bgFarm", L["Background · Farm tracker"], "farm"),
 		AlphaRow("bgToast", L["Background · Loot toast"], "toast"),
