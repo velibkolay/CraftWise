@@ -305,7 +305,9 @@ function P.Model(ctx)
 	else
 		hero = {
 			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today))
-				.. (activeToday and activeToday >= 1 and (" · " .. (L["%s active"]):format(CL.FormatDuration(activeToday))) or ""),
+				.. (activeToday and activeToday >= 1 and (" · " .. (L["%s active"]):format(CL.FormatDuration(activeToday))
+					.. (anyToday and (" · " .. (L["%s/h"]):format(MK.PlainMoney(math.abs(profitToday) * 3600 / activeToday)
+						.. (profitToday < 0 and " " .. L["loss"] or ""))) or "")) or ""),
 			nameColor = "text",
 			-- One line: the docked layout keeps it short (no total), the window adds the total crafts.
 			sub = (L["7 days %s"]):format(CL.Format(week))

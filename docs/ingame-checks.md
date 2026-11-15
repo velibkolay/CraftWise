@@ -919,3 +919,4 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Wait over 30 s (stand at a vendor, tab out) and craft again: the break is not in the time. Craft a different recipe in between: the gaps are not counted twice.
 - The 7-day time is in brackets on the second line in the window layout; the docked layout shows today's time only.
 - A character filter and the profession chip change the time with the counts. Days logged before this version show no time (no figure at all, not 0).
+- The card also shows gold per active hour next to the time (estimated profit today / active time today). It is absent without active time or a recorded profit.

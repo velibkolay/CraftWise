@@ -811,16 +811,18 @@ it("Crafted summary card: today's active time, the 7-day time in the window, fol
 	local M, P = ns.Main, ns.Main.CraftedPage
 	time = function() return T(2026, 11, 15) end
 	ns.db.crafted = { seeded = true, chars = {
-		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 0, 0, 4320 }, [20261112] = { 3, 3, 0, 0, 600 } } } },
+		A = { [R_BOOTS] = { days = { [20261115] = { 4, 4, 43800, 4, 4320 }, [20261112] = { 3, 3, 0, 0, 600 } } } },
 		B = { [R_BOOTS] = { days = { [20261115] = { 2, 2, 0, 0, 60 } } } } } }
 	M.Make.state.query = ""
 	local hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
 	assert(hero.name:find("1 h 13 min active", 1, true), hero.name)
+	assert(hero.name:find(ns.Main.Make.PlainMoney(43800 * 3600 / 4380) .. "/h", 1, true), "gold per active hour: " .. hero.name)
 	assert(hero.sub:find("(1 h 23 min active)", 1, true), hero.sub)
 	assert(not P.Model({ metrics = M.DOCKED_METRICS }).hero.sub:find("active", 1, true), "docked: key figure only")
 	P.state.char = "B"
 	hero = P.Model({ metrics = M.WINDOW_METRICS }).hero
 	assert(hero.name:find("1 min active", 1, true), hero.name)
+	assert(not hero.name:find("/h", 1, true), "no profit recorded for B: no rate")
 	P.state.char = nil
 	ns.db.crafted.chars.A[R_BOOTS].days[20261115][5] = nil
 	ns.db.crafted.chars.A[R_BOOTS].days[20261112][5] = nil
