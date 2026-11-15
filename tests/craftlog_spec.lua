@@ -419,15 +419,15 @@ it("Crafted page: speed columns are sortable, rows without a speed sort last eit
 	local function ids(r) local t = {} for _, x in ipairs(r) do t[#t + 1] = x.name end return table.concat(t, ",") end
 	eq(ids(P.SortRows(rows, "profitHour", true)), "C,B,A")
 	eq(ids(P.SortRows(rows, "profitHour", false)), "B,C,A")
-	eq(ids(P.SortRows(rows, "sec", false)), "C,B,A")
-	for _, key in ipairs({ "sec", "perHour", "profitHour" }) do
+	eq(ids(P.SortRows(rows, "speed", false)), "B,C,A") -- by crafts per hour, the unmeasured one last
+	for _, key in ipairs({ "speed", "profitHour" }) do
 		local found
 		for _, col in ipairs(P.COLUMNS) do if col.key == key then found = col.sort end end
 		eq(found, true, key)
 	end
 end)
 
-it("Crafted page: a recipe with a measured speed shows sec/craft, crafts/h and profit/h, others a dash", function()
+it("Crafted page: a recipe with a measured speed shows its speed and profit/h, others a dash", function()
 	local ns, stub = setup()
 	time = function() return T(2026, 11, 15) end
 	local key = ns.CharKey()
@@ -438,9 +438,9 @@ it("Crafted page: a recipe with a measured speed shows sec/craft, crafts/h and p
 	local rows = ns.Main.CraftedPage.Rows(T(2026, 11, 15), {})
 	local byId = {}
 	for _, r in ipairs(rows) do byId[r.recipeID] = r end
-	eq(byId[R_BOOTS].view.cells.sec, "2"); eq(byId[R_BOOTS].view.cells.perHour, "1,800")
+	eq(byId[R_BOOTS].view.cells.speed, "2 s · 1,800/h")
 	eq(byId[R_BOOTS].sec, 2)
-	eq(byId[R_CLAMS].view.cells.sec, ns.Main.DASH); eq(byId[R_CLAMS].profitHour, nil)
+	eq(byId[R_CLAMS].view.cells.speed, ns.Main.DASH); eq(byId[R_CLAMS].profitHour, nil)
 	ns.Main.Open("crafted")
 end)
 
@@ -590,7 +590,7 @@ it("Crafted columns: profit today / 7 days / total, estimated, starred when part
 	assert(by[R_BOOTS].view.tips.profitTotal[2]:find("known for 6 of 9 crafts", 1, true), by[R_BOOTS].view.tips.profitTotal[2])
 	assert(by[R_BOOTS].view.tips.profitTotal[2]:find("Not money received", 1, true))
 	eq(by[R_CLAMS].profitTotal, nil); eq(by[R_CLAMS].view.cells.profitTotal, ns.Main.DASH, "undated seed and unpriced: a dash")
-	for _, key in ipairs({ "profitToday", "profitWeek", "profitTotal" }) do
+	for _, key in ipairs({ "profitToday", "profitTotal" }) do
 		local found
 		for _, col in ipairs(P.COLUMNS) do if col.key == key then found = col.sort end end
 		eq(found, true, key)
@@ -646,4 +646,92 @@ it("the tooltip shows the logged profit, the per-character split and the payback
 	assert(text:find("profit known for 4 of 4 crafts", 1, true), text)
 	assert(text:find("Main Tanner", 1, true) and text:find("Alt Mage", 1, true), text)
 	assert(text:find("Recipe cost 5s: 1s 50c to go", 1, true), text)
+end)
+
+-- Make › Crafted fits the window and the docked layout (#228)
+local function fitSetup()
+	local ns = setup()
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, before = { [R_CLAMS] = 1500 }, chars = { [ns.CharKey()] = {
+		[R_BOOTS] = { days = { [20261115] = { 4, 4, 400, 4 }, [20261105] = { 5, 5, 250, 2 } }, speed = { n = 5, sum = 10, gaps = { 2, 2, 2, 2, 2 } } },
+		[R_CLAMS] = { days = { [20261115] = { 2, 2 } } } } } }
+	ns.Main.Make.state.query = ""
+	return ns
+end
+
+it("Crafted window layout: the columns fit the default width, the recipe column keeps at least 180", function()
+	local ns = fitSetup()
+	local M, P = ns.Main, ns.Main.CraftedPage
+	local m = M.WINDOW_METRICS
+	local layout = M.ColumnLayout(P.COLUMNS, m.width, m.pad)
+	local last = layout[#layout]
+	assert(last.x + last.width <= m.width - m.pad, ("the last column ends at %d, the row at %d"):format(last.x + last.width, m.width - m.pad))
+	for i = 2, #layout do
+		assert(layout[i].x >= layout[i - 1].x + layout[i - 1].width, "columns don't overlap")
+	end
+	local name
+	for i, col in ipairs(P.COLUMNS) do if col.key == "name" then name = layout[i].width end end
+	assert(name >= P.MIN_NAME, "recipe column " .. tostring(name))
+	eq(#P.COLUMNS, 9)
+	-- Sec/craft and Crafts/h are one Speed column; Profit 7 days left the table
+	local keys = {}
+	for _, col in ipairs(P.COLUMNS) do keys[col.key] = true end
+	eq(keys.speed, true); eq(keys.sec, nil); eq(keys.perHour, nil); eq(keys.profitWeek, nil)
+end)
+
+it("Crafted Speed column: 'sec · per hour', sorts by crafts per hour, a dash and last without a measurement", function()
+	local ns = fitSetup()
+	local P = ns.Main.CraftedPage
+	local rows = P.Rows(T(2026, 11, 15), {})
+	local by = {}
+	for _, r in ipairs(rows) do by[r.recipeID] = r end
+	eq(by[R_BOOTS].view.cells.speed, "2 s · 1,800/h"); eq(by[R_CLAMS].view.cells.speed, ns.Main.DASH)
+	local a = { name = "A", recipeID = 1, today = 0, week = 0, total = 1, perHour = 900 }
+	local b = { name = "B", recipeID = 2, today = 0, week = 0, total = 1, perHour = 1800 }
+	local c = { name = "C", recipeID = 3, today = 0, week = 0, total = 1 }
+	local function ids(r) local t = {} for _, x in ipairs(r) do t[#t + 1] = x.name end return table.concat(t, ",") end
+	eq(ids(P.SortRows({ a, b, c }, "speed", true)), "B,A,C")
+	eq(ids(P.SortRows({ a, b, c }, "speed", false)), "A,B,C")
+	eq(ns.Main.Page("crafted").columns[6].key, "speed")
+end)
+
+it("Crafted docked layout: the hero line, the footer and the row lines stay short", function()
+	local ns = fitSetup()
+	local P = ns.Main.CraftedPage
+	local M = ns.Main
+	local ctx = { metrics = M.DOCKED_METRICS }
+	local CHAR = 6 -- an estimate of a Caption character; the stub has no text widths
+	local heroRoom = M.DOCKED_METRICS.width - 2 * M.DOCKED_METRICS.pad - 2 * M.DOCKED_METRICS.heroPadX
+	local model = P.Model(ctx)
+	assert(#model.hero.sub * CHAR <= heroRoom, ("hero line %d chars for %d px: %s"):format(#model.hero.sub, heroRoom, model.hero.sub))
+	-- the footer shares its line with the filter note (at most 160 px) and a gap of 12
+	local footRoom = M.DOCKED_METRICS.width - 2 * M.DOCKED_METRICS.pad - 160 - 12
+	assert(#model.footer * CHAR <= footRoom, ("footer %d chars for %d px: %s"):format(#model.footer, footRoom, model.footer))
+	-- the window keeps the longer texts
+	local wide = P.Model({ metrics = M.WINDOW_METRICS })
+	assert(#wide.hero.sub > #model.hero.sub and #wide.footer > #model.footer)
+	assert(#wide.footer * CHAR <= M.WINDOW_METRICS.width - 2 * M.WINDOW_METRICS.pad - 160 - 12, wide.footer)
+	-- a chosen character puts the undated note in the footer, still one line
+	P.state.char = ns.CharKey()
+	local one = P.Model({ metrics = M.WINDOW_METRICS })
+	assert(#one.footer * CHAR <= M.WINDOW_METRICS.width - 2 * M.WINDOW_METRICS.pad - 160 - 12, one.footer)
+	P.state.char = nil
+	-- rows keep the key figures: total as the result, today and the profit of today on line two
+	local rows = P.Rows(T(2026, 11, 15), {})
+	local boots
+	for _, r in ipairs(rows) do if r.recipeID == R_BOOTS then boots = r end end
+	eq(boots.view.result, "9")
+	assert(boots.view.sub:find("today 4", 1, true) and boots.view.sub:find("4s", 1, true), boots.view.sub)
+	assert(#boots.view.sub * CHAR <= M.DOCKED_METRICS.width - 2 * M.DOCKED_METRICS.pad - M.DOCKED_METRICS.rightColumn, boots.view.sub)
+end)
+
+it("Crafted opens in the window and the docked layout without an error", function()
+	local ns = fitSetup()
+	local M = ns.Main
+	M.Open("crafted")
+	assert(M.Frame(), "window")
+	M.UI().layout = "dockLeft"
+	M.Open("crafted")
+	assert(M.Frame(), "docked")
+	M.UI().layout = "window"
 end)

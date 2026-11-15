@@ -14,20 +14,26 @@ local CL = ns.CraftLog
 local P = {}
 M.CraftedPage = P
 
+-- Eight columns that fit the window at its default width (the shell's ColumnLayout: 836 inside the padding, 12
+-- between columns): the recipe name takes what the fixed ones leave (at least 180). Speed merges seconds per craft
+-- and crafts per hour ("3.1 s · 1,168/h") and sorts by crafts per hour. Profit 7 days is not a column: it is in the
+-- hero card and the tooltip.
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
-	MK.Column("name", L["Recipe"], 170, "LEFT", "Body", true),
+	MK.Column("name", L["Recipe"], nil, "LEFT", "Body", true),
 	MK.Column("today", L["Today"], 52, "RIGHT", "Figure", true),
 	MK.Column("week", L["7 days"], 52, "RIGHT", "Figure", true),
 	MK.Column("total", L["Total"], 66, "RIGHT", "FigureBold", true),
-	MK.Column("sec", L["Sec/craft"], 60, "RIGHT", "Figure", true),
-	MK.Column("perHour", L["Crafts/h"], 56, "RIGHT", "Figure", true),
-	MK.Column("profitHour", L["Profit/h"], 76, "RIGHT", "Figure", true),
-	MK.Column("profitToday", L["Profit today"], 78, "RIGHT", "Figure", true),
-	MK.Column("profitWeek", L["Profit 7 days"], 78, "RIGHT", "Figure", true),
-	MK.Column("profitTotal", L["Profit total"], 88, "RIGHT", "FigureBold", true),
+	MK.Column("speed", L["Speed"], 104, "RIGHT", "Figure", true),
+	MK.Column("profitHour", L["Profit/h"], 84, "RIGHT", "Figure", true),
+	MK.Column("profitToday", L["Profit today"], 84, "RIGHT", "Figure", true),
+	MK.Column("profitTotal", L["Profit total"], 96, "RIGHT", "FigureBold", true),
 }
 P.COLUMNS = COLUMNS
+P.MIN_NAME = 180 -- the narrowest the flexible recipe column may get at the default width
+
+-- Sorting keys that sort by another field: the merged Speed column sorts by crafts per hour.
+local SORT_FIELD = { speed = "perHour" }
 
 -- The filters of this session: line = a profession's skill line (nil = all), char = a character key (nil = all).
 P.state = { line = nil, char = nil }
@@ -80,7 +86,8 @@ function P.Compare(key, desc)
 end
 
 function P.SortRows(rows, key, desc)
-	table.sort(rows, P.Compare(key or "today", desc ~= false))
+	key = key or "today"
+	table.sort(rows, P.Compare(SORT_FIELD[key] or key, desc ~= false))
 	return rows
 end
 
@@ -170,7 +177,7 @@ function P.Rows(now, filters)
 			view.cells.week, view.colors.week = CL.Format(e.week), e.week > 0 and "text" or "text3"
 			view.cells.total, view.colors.total = CL.Format(e.total), "text"
 			view.result, view.resultColor = CL.Format(e.total), "text"
-			view.sub = (L["today %s"]):format(CL.Format(e.today)) .. " · " .. (L["7 days %s"]):format(CL.Format(e.week))
+			view.sub = (L["today %s"]):format(CL.Format(e.today)) -- the docked line; the profit joins it below
 			local speed = CL.Speed(e.recipeID)
 			if speed then
 				r.speed, r.sec, r.perHour = speed, speed.sec, speed.perHour
@@ -204,14 +211,16 @@ function P.Rows(now, filters)
 				v.tips[key] = { L["Profit"] .. " (" .. L["est."] .. ")", note }
 			end
 		end
-		v.cells.sec = r.speed and CL.FormatSeconds(r.sec) or M.DASH
-		v.cells.perHour = r.speed and CL.Format(r.perHour) or M.DASH
+		v.cells.speed = r.speed and ((L["%s s · %s/h"]):format(CL.FormatSeconds(r.sec), CL.Format(r.perHour))) or M.DASH
 		local incomplete = r.profitHour and r.basis and (r.basis.partial or r.basis.fallback)
 		v.cells.profitHour = r.profitHour and ((MK.Signed(r.profitHour)) .. (incomplete and "*" or "")) or M.DASH
-		v.colors.sec, v.colors.perHour = r.speed and "text" or "text3", r.speed and "text" or "text3"
+		v.colors.speed = r.speed and "text" or "text3"
 		v.colors.profitHour = r.profitHour and select(2, MK.Signed(r.profitHour)) or "text3"
-		v.tips.sec = r.speed and { L["Sec/craft"], (L["Median of the measured gaps between two crafts, measured over %d crafts."]):format(r.speed.n) }
-			or { L["Sec/craft"], (L["Shown after %d measured crafts in a row (gaps over %d s are breaks)."]):format(CL.MIN_GAPS, CL.BREAK_SECONDS) }
+		v.tips.speed = r.speed and { L["Speed"], (L["Median of the measured gaps between two crafts, and crafts per hour, measured over %d crafts."]):format(r.speed.n) }
+			or { L["Speed"], (L["Shown after %d measured crafts in a row (gaps over %d s are breaks)."]):format(CL.MIN_GAPS, CL.BREAK_SECONDS) }
+		-- Docked line 2: what you made today and the profit of it (the key figures next to the total).
+		v.sub = (L["today %s"]):format(CL.Format(r.today)) .. (r.profitToday and (" · " .. MK.PlainMoney(math.abs(r.profitToday))
+			.. (r.profitToday < 0 and " " .. L["loss"] or "")) or "")
 		local basis = r.basis or MK.ProfitBasis()
 		v.tips.profitHour = { L["Profit/h"] .. " " .. basis.label, L["Crafts per hour times the profit per craft (approx.): not what was earned."]
 			.. (r.profitHour and basis.note and (" " .. basis.note .. " (*)") or "") }
@@ -253,11 +262,22 @@ local function FilterNote()
 	return table.concat(parts, " · ")
 end
 
+-- One short line, never longer than the footer can show (the docked footer shares its line with the filter note).
+function P.Footer(docked)
+	if docked then
+		return L["Counts from craft events"]
+	end
+	local note = P.state.char and L["Undated crafts have no character: left out"]
+		or L["Counts from craft events; undated crafts count in Total only"]
+	return note .. " · " .. L["Profit/h"] .. " " .. MK.ProfitBasis().label
+end
+
 local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L["by crafts in 7 days"], total = L["by total crafts"],
-	sec = L["by seconds per craft"], perHour = L["by crafts per hour"], profitHour = L["by profit per hour"],
+	speed = L["by crafts per hour"], profitHour = L["by profit per hour"],
 	profitToday = L["by profit today"], profitWeek = L["by profit in 7 days"], profitTotal = L["by total profit"] }
 
-function P.Model()
+function P.Model(ctx)
+	local docked = M.IsDocked(ctx)
 	local rows = P.Rows()
 	local today, week, total = 0, 0, 0
 	local profitToday, profitWeek, anyToday, anyWeek = 0, 0, false, false
@@ -277,7 +297,9 @@ function P.Model()
 	else
 		hero = {
 			label = L["Crafted"], name = (L["today %s"]):format(CL.Format(today)), nameColor = "text",
-			sub = (L["7 days %s"]):format(CL.Format(week)) .. " · " .. (L["%s crafts in total"]):format(CL.Format(total))
+			-- One line: the docked layout keeps it short (no total), the window adds the total crafts.
+			sub = (L["7 days %s"]):format(CL.Format(week))
+				.. (docked and "" or (" · " .. (L["%s crafts in total"]):format(CL.Format(total))))
 				.. (anyWeek and (" · " .. (L["profit 7 days %s"]):format(MK.PlainMoney(math.abs(profitWeek)) .. (profitWeek < 0 and " " .. L["loss"] or ""))) or ""),
 			figureLabel = L["Estimated profit today"],
 		}
@@ -294,9 +316,7 @@ function P.Model()
 		listNote = MK.SortNote(M.Page("crafted"), SORT_NOTES),
 		empty = Filtered() and L["No logged recipe matches. Clear the filter box, the profession or the character."]
 			or L["No crafts logged yet. Every craft you make is counted here, per day and character."],
-		footer = L["Counts come from craft events. Crafts counted before the log existed have no date and show in the total only."]
-			.. " · " .. L["Profit/h"] .. " " .. MK.ProfitBasis().label
-			.. (P.state.char and (" · " .. L["The undated crafts have no character: they are left out while one character is chosen."]) or ""),
+		footer = P.Footer(docked),
 		footerRight = FilterNote(),
 	}
 end
