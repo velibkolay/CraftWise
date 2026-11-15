@@ -1,6 +1,6 @@
 // The crafts view's logic (web/site/lib/crafts.ts, #185). Data and prices are invented.
 import { describe, expect, it } from "vitest";
-import { type CraftFilter, craftSpells, formatPct, keep, knownSpells, paybackOf, pctOf, professionList, recipeCostOf, scopeOf, sortCrafts, toRow } from "../site/lib/crafts";
+import { type CraftFilter, craftSpells, formatPct, keep, knownSpells, paybackOf, snapshotLines, pctOf, professionList, recipeCostOf, scopeOf, sortCrafts, toRow } from "../site/lib/crafts";
 import type { Quote, RecipeData } from "../site/lib/recipes";
 
 const data: RecipeData = {
@@ -16,7 +16,7 @@ const data: RecipeData = {
 	sell: { "50": 20, "51": 100 },
 };
 const q = (typical: number | null): Quote => ({ typical, lowest: null, sellPrice: null });
-const all: CraftFilter = { line: null, vendorOnly: false, loopsOnly: false, known: null, q: "" };
+const all: CraftFilter = { line: null, vendorOnly: false, loopsOnly: false, known: null, ownLines: null, q: "" };
 const names = new Map<number, string | null>([
 	[50, "Bolt"],
 	[51, "Blade"],
@@ -197,5 +197,29 @@ describe("recipe cost and payback (#263)", () => {
 		expect(order("payback", true)).toEqual([10, 12]);
 		const unknown = toRow(d3, craftSpells(d3)[1]!, new Map(), new Set([51, 62]), names);
 		expect(sortCrafts([unknown, rows3[0]!], "payback", true).map((r) => r.spell.id)).toEqual([10, 12]);
+	});
+});
+
+describe("known recipes, my professions, unlearned (#263)", () => {
+	const spells = craftSpells(data);
+	const fe = new Set([50, 51, 60, 61, 62, 100]);
+	const mk = (id: number, known: Set<number> | null, cached: Set<number> | null) => toRow(data, spells.find((s) => s.id === id)!, new Map(), fe, names, known, false, cached);
+
+	it("reads the skill lines of a snapshot and which of them list their recipes", () => {
+		const snap = { professions: [{ line: 197, known: "10" }, { line: 164, cached: false }, { name: "x" }] };
+		expect(snapshotLines(snap)).toEqual({ own: new Set([197, 164]), listed: new Set([197]) });
+		expect(snapshotLines(null)).toEqual({ own: new Set(), listed: new Set() });
+	});
+
+	it("My professions keeps every recipe of the owned lines, learned or not", () => {
+		expect(scopeOf(data, spells, { ...all, ownLines: new Set([197]) }).map((s) => s.id)).toEqual([10]);
+	});
+
+	it("marks a recipe learned, unlearned only where the profession's recipes are listed, else unknown", () => {
+		const known = new Set([10]);
+		expect(mk(10, known, new Set([197])).learned).toBe(true);
+		expect(mk(12, known, new Set([164])).learned).toBe(false);
+		expect(mk(12, known, new Set([197])).learned).toBeNull(); // 164's recipes are not listed: nothing is assumed
+		expect(mk(12, null, null).learned).toBeNull();
 	});
 });

@@ -320,11 +320,14 @@ and vendor profit. Same definitions as the addon (`vendorCheck` in `site/lib/rec
 - Loop: every reagent has a bundled vendor buy price and vendor sale - cost at vendor prices > 0. Needs no AH price.
 
 Filters: profession, product name, "Profit when sold to a vendor" (vendor profit > 0), "Loops only" and, when
-`/api/me/characters` answers (Access login), "My crafts": the recipe spell IDs in `professions[].known` of the
-characters' snapshots (docs/snapshot.md). Only the prices of the filtered crafts are fetched (`/api/browse?ids=`).
+`/api/me/characters` answers (Access login), "Known recipes": the recipe spell IDs in `professions[].known` of the
+characters' snapshots (docs/snapshot.md), and "My professions": every recipe of the skill lines in `professions[].line`,
+learned or not (`mine=1` still reads as `known=1`). A craft the characters know shows `known` in the Pays back
+column; one they don't shows a dimmed name and an "unlearned" tag, but only where a snapshot lists that profession's
+recipes (`cached` not false), otherwise nothing is assumed. Only the prices of the filtered crafts are fetched (`/api/browse?ids=`).
 Profit % = profit / reagents cost, Vendor profit % = vendor profit / reagents cost; null when the cost is unknown or 0
 or the profit is unknown (sorted last in both directions; ties by absolute profit, then name).
-URL: `?prof=<skill line>&q=&vendor=1&loops=1&mine=1&sort=&dir=&p=` (`sort` also takes `pct`, `vpct`, `recipe`,
+URL: `?prof=<skill line>&q=&vendor=1&loops=1&known=1&myprof=1&sort=&dir=&p=` (`sort` also takes `pct`, `vpct`, `recipe`,
 `payback`).
 
 Recipe cost and payback (#263), the same idea as the addon's recipe payback (#219: "Recipe cost", "paid back"):

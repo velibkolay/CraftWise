@@ -38,6 +38,7 @@ export interface CraftRow {
 	ready: boolean; // every price the craft needs has been fetched (until then the AH columns say so)
 	name: string | null; // the product's name, once known
 	recipeItem: number | null;
+	learned: boolean | null; // a character knows the recipe; null = not known (no snapshot lists that profession's recipes)
 	recipeCost: RecipeCost | null;
 	recipeReady: boolean; // the recipe item's price has been fetched (or it is known): until then its cost says so
 	// The sortable numbers; null = unknown.
@@ -93,7 +94,8 @@ export interface CraftFilter {
 	line: number | null; // skill line, null = all
 	vendorOnly: boolean; // "Profit when sold to a vendor": vendor profit > 0
 	loopsOnly: boolean;
-	known: Set<number> | null; // "My crafts": spell IDs known by the characters; null = off
+	known: Set<number> | null; // "Known recipes": spell IDs known by the characters; null = off
+	ownLines: Set<number> | null; // "My professions": skill lines the characters have; null = off
 	q: string; // part of the product's name (needs the names)
 }
 
@@ -103,13 +105,14 @@ export function scopeOf(data: RecipeData, spells: Spell[], f: CraftFilter): Spel
 	return spells.filter((s) => {
 		if (f.line !== null && s.skillLine !== f.line) return false;
 		if (f.known && !f.known.has(s.id)) return false;
+		if (f.ownLines && !f.ownLines.has(s.skillLine)) return false;
 		if (f.loopsOnly && !craft(data, s, none).vendor.loop) return false;
 		return true;
 	});
 }
 
 // `vendorBasis`: "Profit when sold to a vendor" is ticked, so the payback uses the vendor profit, else the AH profit.
-export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fetched: Set<number>, names: Map<number, string | null>, known: Set<number> | null = null, vendorBasis = false): CraftRow {
+export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fetched: Set<number>, names: Map<number, string | null>, known: Set<number> | null = null, vendorBasis = false, cachedLines: Set<number> | null = null): CraftRow {
 	const c = craft(data, s, quotes);
 	const recipeItem = recipeItemOf(data, s.id)?.item ?? null;
 	const recipeCost = recipeCostOf(data, s.id, recipeItem, quotes, known);
@@ -119,6 +122,8 @@ export function toRow(data: RecipeData, s: Spell, quotes: Map<number, Quote>, fe
 		ready: itemsOfSpell(s).every((id) => fetched.has(id)),
 		name: names.get(s.output!) ?? null,
 		recipeItem,
+		// Unlearned only where a snapshot lists that profession's recipes: otherwise nothing is assumed.
+		learned: !known ? null : known.has(s.id) ? true : cachedLines?.has(s.skillLine) ? false : null,
 		recipeCost,
 		recipeReady: recipeCost?.source === "known" || recipeItem === null || fetched.has(recipeItem),
 		cost: c.cost,
@@ -160,7 +165,23 @@ export function sortCrafts(list: CraftRow[], key: CraftSort, desc: boolean): Cra
 	});
 }
 
-// "My crafts": the spell IDs a character snapshot (docs/snapshot.md, `professions[].known`, "id,id,...") lists.
+// "My professions": the skill lines (`professions[].line`) a character snapshot has, and of those the lines whose
+// recipes the snapshot lists (`cached` is not false), so a spell outside them is not called unlearned.
+export function snapshotLines(snapshotData: unknown): { own: Set<number>; listed: Set<number> } {
+	const own = new Set<number>();
+	const listed = new Set<number>();
+	const d = snapshotData as { professions?: unknown } | null;
+	if (!d || !Array.isArray(d.professions)) return { own, listed };
+	for (const p of d.professions) {
+		const o = p as { line?: unknown; cached?: unknown } | null;
+		if (typeof o?.line !== "number" || !Number.isInteger(o.line) || o.line <= 0) continue;
+		own.add(o.line);
+		if (o.cached !== false) listed.add(o.line);
+	}
+	return { own, listed };
+}
+
+// "Known recipes": the spell IDs a character snapshot (docs/snapshot.md, `professions[].known`, "id,id,...") lists.
 // A profession whose window was never opened has none (`cached = false`): nothing is assumed for it.
 export function knownSpells(snapshotData: unknown): Set<number> {
 	const out = new Set<number>();

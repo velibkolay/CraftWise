@@ -79,6 +79,8 @@ button, input, select { font: inherit; color: inherit; letter-spacing: inherit; 
 .tbl .empty { height: 80px; text-align: center; color: var(--text-3); white-space: normal; }
 .iname { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; max-width: 100%; }
 .iname .nm { overflow: hidden; text-overflow: ellipsis; }
+.iname.unlearned { opacity: 0.55; } /* crafts (#263): a recipe no character knows */
+.unlearned-tag { font-size: 12px; font-style: italic; }
 .iname:hover .nm { text-decoration: underline; text-underline-offset: 3px; }
 .star { display: inline-block; width: 13px; height: 13px; flex: none; background: url(/tex/star.svg) center / 13px no-repeat; }
 .spark { display: block; }

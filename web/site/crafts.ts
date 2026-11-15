@@ -2,7 +2,7 @@
 // pay when the product goes to a vendor and vendor loops. Prices and names come from /api/browse (as the list
 // page); the recipes from /data/recipes.json. A price that is missing stays missing.
 import { type Browse, type BrowseItem, get, type House, mainHouse } from "./lib/api";
-import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, scopeOf, sortCrafts, toRow } from "./lib/crafts";
+import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, snapshotLines, scopeOf, sortCrafts, toRow } from "./lib/crafts";
 import { type CraftNames, craftItBreakdown, craftsText, loopTag, profitEl } from "./lib/craftview";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
 import { qualityClass } from "./lib/format";
@@ -15,7 +15,8 @@ interface State {
 	q: string;
 	vendorOnly: boolean;
 	loopsOnly: boolean;
-	mine: boolean;
+	mine: boolean; // "Known recipes"
+	myProf: boolean; // "My professions"
 	sort: CraftSort;
 	desc: boolean;
 	page: number;
@@ -30,7 +31,8 @@ function readState(): State {
 		q: (p.get("q") ?? "").trim(),
 		vendorOnly: p.get("vendor") === "1",
 		loopsOnly: p.get("loops") === "1",
-		mine: p.get("mine") === "1",
+		mine: p.get("known") === "1" || p.get("mine") === "1", // `mine` is the old name
+		myProf: p.get("myprof") === "1",
 		sort: sort && CRAFT_SORTS.includes(sort) ? sort : "vprofit",
 		desc: p.get("dir") !== "asc",
 		page: Math.max(1, Number(p.get("p")) || 1),
@@ -43,7 +45,8 @@ function writeState(push = false): void {
 	if (st.q) p.set("q", st.q);
 	if (st.vendorOnly) p.set("vendor", "1");
 	if (st.loopsOnly) p.set("loops", "1");
-	if (st.mine) p.set("mine", "1");
+	if (st.mine) p.set("known", "1");
+	if (st.myProf) p.set("myprof", "1");
 	if (st.sort !== "vprofit") p.set("sort", st.sort);
 	if (!st.desc) p.set("dir", "asc");
 	if (st.page > 1) p.set("p", String(st.page));
@@ -55,7 +58,9 @@ let st = readState();
 let house: House | null = null;
 let data: RecipeData | null = null;
 let spells: Spell[] = [];
-let known: Set<number> | null = null; // "My crafts": spell IDs known by the characters, when the private API answered
+let known: Set<number> | null = null; // "Known recipes": spell IDs known by the characters, when the private API answered
+let ownLines: Set<number> | null = null; // "My professions": the characters' skill lines
+let listedLines: Set<number> | null = null; // of those, the lines a snapshot lists the recipes of
 const quotes = new Map<number, Quote>();
 const fetched = new Set<number>();
 const itemNames: CraftNames = new Map();
@@ -77,7 +82,9 @@ const nameInput = h("input", { class: "winput", id: "f-name", type: "search", au
 const vendorBox = h("input", { type: "checkbox", id: "f-vendor" }) as HTMLInputElement;
 const loopBox = h("input", { type: "checkbox", id: "f-loops" }) as HTMLInputElement;
 const mineBox = h("input", { type: "checkbox", id: "f-mine" }) as HTMLInputElement;
-const mineLabel = h("label", { class: "field vcheck", for: "f-mine", hidden: true }, mineBox, h("span", { class: "lbl" }, "My crafts"));
+const mineLabel = h("label", { class: "field vcheck", for: "f-mine", hidden: true }, mineBox, h("span", { class: "lbl", title: "Recipes your characters already know" }, "Known recipes"));
+const profBox = h("input", { type: "checkbox", id: "f-myprof" }) as HTMLInputElement;
+const profLabel = h("label", { class: "field vcheck", for: "f-myprof", hidden: true }, profBox, h("span", { class: "lbl", title: "Every recipe of the professions your characters have, learned or not" }, "My professions"));
 const tableWrap = h("div", { class: "tscroll" });
 const pager = h("div", { class: "pager" });
 const colHint = h("span", { class: "hint" });
@@ -98,6 +105,7 @@ function shell(): void {
 			h("label", { class: "field vcheck", for: "f-vendor" }, vendorBox, h("span", { class: "lbl" }, "Profit when sold to a vendor")),
 			h("label", { class: "field vcheck", for: "f-loops" }, loopBox, h("span", { class: "lbl" }, "Loops only")),
 			mineLabel,
+			profLabel,
 		),
 		h("div", { class: "inset" }, tableWrap),
 	);
@@ -136,6 +144,10 @@ function wire(): void {
 		st.mine = mineBox.checked;
 		changed();
 	});
+	profBox.addEventListener("change", () => {
+		st.myProf = profBox.checked;
+		changed();
+	});
 }
 
 // A filter changed: back to page 1, and price what the new scope needs.
@@ -149,7 +161,7 @@ function changed(price = true): void {
 // ---- Data ---------------------------------------------------------------------------------------
 
 function filter(): CraftFilter {
-	return { line: st.line, vendorOnly: st.vendorOnly, loopsOnly: st.loopsOnly, known: st.mine && known ? known : null, q: st.q };
+	return { line: st.line, vendorOnly: st.vendorOnly, loopsOnly: st.loopsOnly, known: st.mine && known ? known : null, ownLines: st.myProf && ownLines ? ownLines : null, q: st.q };
 }
 
 function remember(items: BrowseItem[]): void {
@@ -204,7 +216,7 @@ async function priceScope(): Promise<void> {
 	}
 }
 
-// "My crafts": the recipes the characters know, from the uploaded snapshots (private API). Anyone without the
+// "Known recipes" and "My professions": the recipes and skill lines the characters have, from the uploaded snapshots (private API). Anyone without the
 // Access login (a redirect or an error) just doesn't get the filter. Never throws.
 async function loadKnown(): Promise<void> {
 	try {
@@ -213,15 +225,27 @@ async function loadKnown(): Promise<void> {
 		if (!list.ok) return;
 		const keys = ((await list.json()) as { characters?: { key?: unknown }[] }).characters?.flatMap((c) => (typeof c.key === "string" ? [c.key] : [])) ?? [];
 		const all = new Set<number>();
+		const own = new Set<number>();
+		const listed = new Set<number>();
 		for (const key of keys) {
 			const res = await fetch(`/api/me/characters/${encodeURIComponent(key)}`, opts);
 			if (!res.ok) continue;
 			const snap = ((await res.json()) as { snapshot?: { data?: unknown } | null }).snapshot;
 			for (const id of knownSpells(snap?.data)) all.add(id);
+			const lines = snapshotLines(snap?.data);
+			for (const l of lines.own) own.add(l);
+			for (const l of lines.listed) listed.add(l);
 		}
-		if (!all.size) return; // no snapshot lists learned recipes yet: no filter, nothing guessed
-		known = all;
-		mineLabel.hidden = false;
+		if (!own.size && !all.size) return; // no snapshot lists professions or recipes yet: no filters, nothing guessed
+		if (own.size) {
+			ownLines = own;
+			profLabel.hidden = false;
+		}
+		if (all.size) {
+			known = all;
+			listedLines = listed;
+			mineLabel.hidden = false;
+		}
 		void priceScope(); // a known recipe costs nothing: the table is drawn again either way
 		renderTable();
 	} catch {
@@ -278,7 +302,7 @@ function rowsNow(): CraftRow[] {
 	if (!data) return [];
 	const f = filter();
 	return scopeOf(data, spells, f)
-		.map((sp) => toRow(data!, sp, quotes, fetched, nameOnly, known, st.vendorOnly))
+		.map((sp) => toRow(data!, sp, quotes, fetched, nameOnly, known, st.vendorOnly, listedLines))
 		.filter((r) => keep(r, f));
 }
 
@@ -295,6 +319,7 @@ function renderTable(): void {
 	vendorBox.checked = st.vendorOnly;
 	loopBox.checked = st.loopsOnly;
 	mineBox.checked = st.mine;
+	profBox.checked = st.myProf;
 	nameInput.value = st.q;
 	const head = h(
 		"tr",
@@ -389,7 +414,8 @@ function rowEl(r: CraftRow): HTMLElement {
 		h(
 			"td",
 			{ class: "c-name" },
-			h("a", { href: `/item/${out}`, class: `iname ${quality}` }, slot(name, quality), h("span", { class: "nm" }, name)),
+			h("a", { href: `/item/${out}`, class: `iname ${quality}${r.learned === false ? " unlearned" : ""}` }, slot(name, quality), h("span", { class: "nm" }, name)),
+			r.learned === false ? h("span", { class: "hint unlearned-tag", title: "None of your characters knows this recipe" }, " unlearned") : null,
 			r.spell.qty !== 1 ? h("span", { class: "hint" }, ` × ${Number.isInteger(r.spell.qty) ? r.spell.qty : r.spell.qty.toFixed(2)}`) : null,
 			r.loop ? " " : null,
 			r.loop ? loopTag() : null,
