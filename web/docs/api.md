@@ -20,7 +20,7 @@ Errors are `{ "error": "<code>", "message": "<text>" }` with the HTTP status:
 ## Uploads (companion app)
 
 `Authorization: Bearer cw_...` with a token created on the private page (`/me`, see "Private API").
-A token has the scopes `public` (`POST /api/upload`) and/or `private` (`POST /api/private/upload`).
+A token has the scopes `public` (`POST /api/upload`, `GET /api/sync/market`) and/or `private` (`POST /api/private/upload`).
 Only the token's SHA-256 is stored.
 
 Rules for the companion:
@@ -130,6 +130,63 @@ Response: `{ "ok": true, "received": { "houses", "scans", "items" (item IDs with
 The companion keeps what it sent (state file) and sends a class or subclass name only when it is new
 or changed, and an item's name and info only when one of them changed (the read time `t` alone is no
 change), so after the first upload names and sell prices cost no writes.
+
+### `GET /api/sync/market`: the merged market for a second machine (#238)
+
+For the companion of a second PC or Mac (#237): everything the uploads of **every** machine stored,
+in the shape of the `POST /api/upload` body above, so the companion turns it into `Market.lua`'s
+packed entry strings with the same `market.Encode` it uses elsewhere. Both machines scan the same
+house; the site is where their scans meet, so a price recorded on one machine shows on the other.
+
+`Authorization: Bearer cw_...`, scope **`public`** (the market data is public anyway; the token the
+companion uploads with works). Not behind Cloudflare Access. `GET` only.
+
+| Query | Meaning |
+|---|---|
+| `since` | Unix seconds, default `0` (everything). Entries whose stored data changed at or after it. |
+| `cursor` | The `next` of the previous page, with the same `since`. Omit on the first request. |
+| `limit` | Entries per page: price rows and packed-variant rows, default 200, at most 500. A page is also cut when its estimated size passes about 400 KB, so a page can hold fewer. |
+
+Response: `v`, `houses` (every house, on every page), `names` and `itemInfo` (of the items on the
+page), `items[<item key>][<house key>] = { last, raw, days }`, and on the **first page** (no
+`cursor`) `scans` (the newest 200), `classNames` and `subclassNames`; plus
+
+- `next`: the `cursor` of the next page, `null` on the last one.
+- `until`: what to send as `since` the next time (the server's clock minus 60 s, so a write that was
+  still running during this download comes back next time; re-sent entries are harmless). Take it
+  from the last page.
+
+Walk: `GET ?since=S`, then `GET ?since=S&cursor=<next>` until `next` is `null`, then store `until`.
+The first download is `since=0`: a few dozen requests for a house with ~2,700 scope items and its
+last-only entries (the 30 requests a minute per token apply: `429 rate_limited`, wait `Retry-After`).
+
+What an entry holds:
+- `last`: the newest observation of the house, whichever machine made it (an older upload never
+  replaces a newer one), `off` as stored.
+- `raw`: the stored points of the last 48 h (`RAW_SECONDS` in `Market.lua`) of every machine, tiers
+  as stored (`[{ price, qty }]`).
+- `days`: CraftWise's day aggregates (`src` 1) of the last 30 days (`KEEP_DAYS`), `{ "<day>": {...} }`.
+  Days built here from `last` (`src` 0) are never sent: the addon builds those itself.
+- Items outside the scope: `last` only, as the addon keeps them. Random-suffix variants
+  (`"<itemID>:<suffixID>"`) are separate entries, `last` only unless they are scope items.
+- An entry that changed is sent whole, not only the changed part. Nothing is computed or filled in.
+
+What counts as a change (`prices.updated`, `0005_sync.sql`): a newer `last` or a changed `off`, a new
+raw point (also an old one a machine uploads late, such as the first sync of a machine's history), a
+new or changed CraftWise day aggregate, a changed variant. An upload that changes nothing changes
+nothing here. Item info alone (a new sell price) comes with the item's next changed entry; the first
+download has every item that has a price.
+
+Same day, two machines: each records that day's aggregate (`lo`, `typ`, `hi`, `n`, ...) from its own
+scans. The site keeps **one** aggregate per item, house and day: the one that covers more points
+(`n`), on an equal `n` the later upload. The other machine's scans of that day still show in `raw`
+(48 h) and in `last`, but its aggregate is not blended in: it can't be rebuilt without guessing
+(`typ` and `gone` follow the addon's own rules). So every day either machine recorded is there,
+from the machine that scanned that day most. Tests: `web/test/sync.test.ts`.
+
+Cost: reads only; the token's rate-limit row is the one write per request (not counted in `usage`).
+A delta reads the changed price rows through the index `prices_updated` plus their points and days,
+and the packed variants table whole (one row per item and house).
 
 ### `POST /api/private/upload`: private data
 
@@ -349,7 +406,9 @@ Two levels, both `429 write_budget` with `Retry-After` until 00:00 UTC:
 - Bulk writes bind the rows as one JSON text and expand them in SQLite (`json_each`), so an upload
   is a few statements in one batch whatever its size, and the Worker's CPU time is parsing,
   checking and re-serializing the body.
-- Price tables are `WITHOUT ROWID` without secondary indexes (one upsert = one row written), houses
+- Price tables are `WITHOUT ROWID`; `prices` has one secondary index, `prices_updated` (#238, for the
+  download of the merged market: one more row written per changed price row, +5,000 rows on the
+  5,000-item test upload), the others none (one upsert = one row written). Houses
   are integer IDs. Upserts carry a `WHERE` that skips rows that would not change (D1 counts an
   updated row even when its values stay the same, measured locally), so re-sending costs nothing.
 - Random-suffix variants are packed per item (see "How it is stored"): a full browse is mostly gear
@@ -379,7 +438,8 @@ Two levels, both `429 write_budget` with `Retry-After` until 00:00 UTC:
   (item info and search words are written once). `test/budget.test.ts` checks the same shape with
   invented data (5,000 items, 500 of them scope items, plus 15,000 variants of 1,250 items):
   42,131 / 11,295 / 15,055 rows for the first upload, a second browse and the next day's (before
-  #118: 69,611 / 31,275 / 42,525).
+  #118: 69,611 / 31,275 / 42,525). With the `prices_updated` index of #238 (+1 row per changed price row):
+  47,141 / 16,305 / 20,045.
 
   Class names and sell prices (#120, `test/names-budget.test.ts`, invented data: 18,000 items already
   stored with names and info, 18 classes with 10 subclasses each, 11 requests as the companion splits

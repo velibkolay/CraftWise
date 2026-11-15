@@ -78,3 +78,12 @@ export const PUBLIC_MAX_AGE = 60; // Cache-Control for public reads, seconds
 // The same rules as CraftWise/Market.lua.
 export const TYPICAL_DAYS = 7;
 export const MIN_HISTORY_DAYS = 3;
+
+// Download of the merged market (#238, GET /api/sync/market).
+export const SYNC_LIMIT = 200; // entries (price rows and packed variant rows) per page
+export const SYNC_LIMIT_MAX = 500;
+export const SYNC_BYTES = 400_000; // a page is cut when its estimated size passes this (CPU, as MAX_PUBLIC_BYTES)
+export const SYNC_RAW_SECONDS = 48 * 3600; // CraftWise/Market.lua RAW_SECONDS
+export const SYNC_DAYS = 30; // CraftWise/Market.lua KEEP_DAYS
+export const SYNC_SCANS = 200; // newest scans on the first page
+export const SYNC_SAFETY = 60; // `until` lies this far behind now

@@ -43,11 +43,13 @@ const SUBCLASSES_SQL = `INSERT INTO item_subclasses (class, subclass, name)
 	SELECT value->>0, value->>1, value->>2 FROM json_each(?1) WHERE true
 	ON CONFLICT (class, subclass) DO UPDATE SET name = excluded.name WHERE item_subclasses.name IS NOT excluded.name`;
 
-const PRICES_SQL = `INSERT INTO prices (house, item, suffix, t, min, qty, listings, off, depth_t, depth_total, depth)
-	SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5, value->>6, value->>7, value->>8, value->>9, value->>10
+// `updated` (0005_sync.sql) is the database clock; the download of the merged market reads it.
+const NOW = "CAST(strftime('%s', 'now') AS INTEGER)";
+const PRICES_SQL = `INSERT INTO prices (house, item, suffix, t, min, qty, listings, off, depth_t, depth_total, depth, updated)
+	SELECT value->>0, value->>1, value->>2, value->>3, value->>4, value->>5, value->>6, value->>7, value->>8, value->>9, value->>10, ${NOW}
 	FROM json_each(?1) WHERE true
 	ON CONFLICT (house, item, suffix) DO UPDATE SET
-		t = excluded.t, min = excluded.min, qty = excluded.qty, listings = excluded.listings, off = excluded.off,
+		t = excluded.t, min = excluded.min, qty = excluded.qty, listings = excluded.listings, off = excluded.off, updated = excluded.updated,
 		depth_t = coalesce(excluded.depth_t, depth_t),
 		depth_total = CASE WHEN excluded.depth_t IS NULL THEN depth_total ELSE excluded.depth_total END,
 		depth = CASE WHEN excluded.depth_t IS NULL THEN depth ELSE excluded.depth END
@@ -90,9 +92,9 @@ const SCANS_SQL = `INSERT OR IGNORE INTO scans (house, t, kind, items, last_only
 // every variant: {"<suffix>": [t, min, qty, listings, off]}. Per variant the newer `t` wins, or the
 // same `t` with another `off` (as PRICES_SQL). The row is written only when a variant changes.
 const VARIANT_WINS = `n.value->>0 > o.value->>0 OR (n.value->>0 = o.value->>0 AND n.value->>4 IS NOT o.value->>4)`;
-const VARIANTS_SQL = `INSERT INTO variants (house, item, data)
-	SELECT value->>0, value->>1, value->>2 FROM json_each(?1) WHERE true
-	ON CONFLICT (house, item) DO UPDATE SET data = (
+const VARIANTS_SQL = `INSERT INTO variants (house, item, data, updated)
+	SELECT value->>0, value->>1, value->>2, ${NOW} FROM json_each(?1) WHERE true
+	ON CONFLICT (house, item) DO UPDATE SET updated = excluded.updated, data = (
 		SELECT json_group_object(k, json(v)) FROM (
 			SELECT o.key AS k, CASE WHEN n.key IS NOT NULL AND (${VARIANT_WINS}) THEN n.value ELSE o.value END AS v
 			FROM json_each(variants.data) o LEFT JOIN json_each(excluded.data) n ON n.key = o.key
