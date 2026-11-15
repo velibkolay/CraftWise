@@ -20,6 +20,7 @@ Data\Vendor.lua
 Data\DisenchantGuide.lua
 Data\CrateFavorGuide.lua
 Data\Sources.lua
+Data\RecipeVendors.lua
 Data\Thresholds.lua
 Money.lua
 Prices.lua
