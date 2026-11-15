@@ -29,19 +29,19 @@ type App struct {
 	work    sync.Mutex // one upload or download at a time: both change state.json
 	status  Status
 	trigger chan struct{}
-	clock func() time.Time // replaced in tests; nil = time.Now
+	clock   func() time.Time // replaced in tests; nil = time.Now
 	// newClient is replaced in tests.
 	newClient func(cfg Config) *upload.Client
 }
 
 // Status is the last upload attempt, for the tray and --status.
 type Status struct {
-	Attempt time.Time // last attempt
-	Success time.Time // last accepted request
-	OK      bool
-	Text    string // one line: what was sent, or the error
-	RetryAt time.Time
-	File    string // the SavedVariables file
+	Attempt  time.Time // last attempt
+	Success  time.Time // last accepted request
+	OK       bool
+	Text     string // one line: what was sent, or the error
+	RetryAt  time.Time
+	File     string // the SavedVariables file
 	Download string // the last download: what came, or the error (#239)
 }
 
