@@ -173,6 +173,82 @@ it("#90: pruning checks the age of last-only entries without decoding them; 30 d
 	M.DecodeEntry = decode
 end)
 
+------------------------------------------------------------------------------------- every profession (#232)
+
+-- A stored entry is a string on disk and a table once used.
+local function Decoded(M, stored)
+	return type(stored) == "string" and M.DecodeEntry(stored) or stored
+end
+
+-- An output of a bundled recipe of the profession `line`, nobody on this account has to know it.
+local function BundledOutput(ns, line)
+	local best
+	for _, data in pairs(ns.RecipeData) do
+		if data.skillLine == line and data.output and (not best or data.output.itemID < best) then
+			best = data.output.itemID
+		end
+	end
+	return best
+end
+
+it("#232: Alchemy items get history and disappeared counts although no character has Alchemy", function()
+	local M, stub, ns = Market({ data = true })
+	stub.Fire("PLAYER_LOGIN")
+	eq(ns.charDB.professions[171], nil, "no Alchemy here")
+	local elixir = BundledOutput(ns, 171)
+	eq(M.InScope(elixir), true)
+	OpenAH(stub)
+	Scan(stub, { { elixir, 10, 1000 }, { elixir, 90, 18000 }, { 7, 1, 100 } })
+	stub.clock = NOW + 3600
+	Scan(stub, { { elixir, 6, 600 }, { elixir, 90, 18000 }, { 7, 1, 100 } })
+	local entry = Decoded(M, CraftWiseMarketDB.items[elixir][HORDE])
+	eq(#entry.raw, 2, "two raw points")
+	eq(M.IsLastOnly(CraftWiseMarketDB.items[elixir][HORDE]), false)
+	eq(M.Disappeared(elixir, HORDE), 4, "4 units at the lowest price went")
+	eq(M.IsLastOnly(CraftWiseMarketDB.items[7][HORDE]), true, "an item no recipe uses is still last only")
+	for _, name in ipairs({ "Tailoring", "Blacksmithing", "Enchanting" }) do
+		eq(M.InScope(BundledOutput(ns, ns.ProfessionSkillLines[name])), true, name)
+	end
+end)
+
+it("#232: an older save widens its scope at login; last-only entries get history from the next scan", function()
+	local M0 = Market()
+	local elixir
+	do
+		local _, _, ns = Market({ data = true })
+		elixir = BundledOutput(ns, 171)
+	end
+	local db = CraftWiseMarketDB
+	db.scope.skillLines = { [165] = true }
+	db.items[elixir] = { [HORDE] = M0.EncodeEntry({ last = { t = NOW - 3600, min = 100, qty = 16, listings = 2 } }) }
+	local M, stub, ns = Market({ data = true, savedMarket = db })
+	stub.Fire("PLAYER_LOGIN")
+	eq(M.InScope(elixir), true, "widened at login")
+	eq(CraftWiseMarketDB.scope.skillLines[171], true)
+	eq(M.IsLastOnly(CraftWiseMarketDB.items[elixir][HORDE]), true, "nothing converted before a scan")
+	OpenAH(stub)
+	Scan(stub, { { elixir, 16, 1600 } })
+	local entry = Decoded(M, CraftWiseMarketDB.items[elixir][HORDE])
+	eq(#entry.raw, 1)
+	eq(entry.last.min, 100)
+end)
+
+it("#232: pruning treats the wider scope like the old one: 30 days, then the entry goes, the scope stays", function()
+	local M, stub, ns = Market({ data = true })
+	stub.Fire("PLAYER_LOGIN")
+	local elixir = BundledOutput(ns, 171)
+	OpenAH(stub)
+	Scan(stub, { { elixir, 5, 500 } })
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	stub.clock = NOW + 20 * DAY
+	M.Prune()
+	eq(type(CraftWiseMarketDB.items[elixir][HORDE]), "string", "still kept after 20 days")
+	stub.clock = NOW + 45 * DAY
+	M.Prune()
+	eq(CraftWiseMarketDB.items[elixir], nil, "no data for 30 days: dropped")
+	eq(M.InScope(elixir), true, "the scope only grows")
+end)
+
 it("#90: names come from the scan rows and the client cache; the file keeps IDs only in records", function()
 	local M, stub = Market()
 	OpenAH(stub)

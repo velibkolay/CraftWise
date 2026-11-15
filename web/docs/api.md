@@ -27,6 +27,13 @@ Rules for the companion:
 - **Body at most 500,000 bytes**, 2,000 item/house entries and 5,000 item IDs in `names` +
   `itemInfo`. Split larger uploads into several requests (by items); each request is stored on its
   own (one D1 transaction). `houses` goes into every request.
+- **Scope size (#232).** The addon records history (`raw`, `days`) for every reagent and output of the
+  bundled recipes of every profession, about 2,700 items (about 1,400 before), at each house it scans.
+  The limits above are unchanged: the companion's delta batches stay under 500,000 bytes and 2,000
+  entries, so a first upload after the update is a few more requests (the 1,300 added items come with
+  their `raw` points and up to 30 `days`), then the usual delta. Per added scope item and house an
+  upload that changes it writes about 4 rows (see "What a row costs" below: price 1, point 1, daily
+  aggregate 2), so about 5,000 more rows on a day with a scan at one house (an estimate from that cost table, not measured on D1); the budget default is 1,000,000.
 - **Re-sending is safe.** Every write is idempotent: the same body again changes nothing. A failed
   request can simply be retried.
 - **Send what changed.** Keep the last uploaded packed string per item and house (the entry strings in

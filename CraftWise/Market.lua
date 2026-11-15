@@ -89,9 +89,6 @@ local NEUTRAL_ZONES = {
 }
 local NEUTRAL_LABELS = { BootyBay = "Booty Bay", Gadgetzan = "Gadgetzan", Everlook = "Everlook" }
 
--- Veli's alt's professions, on another account, so no character cache here (decision 4 on #26).
-local EXTRA_SCOPE_PROFESSIONS = { "Engineering", "Mining" }
-
 local db -- CraftWiseMarketDB, set on DB_READY
 
 local function DayNumber(t)
@@ -645,8 +642,10 @@ function M.DetectHouse()
 end
 
 ----------------------------------------------------------------------------------------------------
--- Scope (decision 4): reagents and products of known and learnable recipes of the player's
--- professions, plus every item the player interacted with. Only scope items keep a history; the rest
+-- Scope (decision 4, widened by #232): reagents and products of the bundled recipes of every profession
+-- (ns.ProfessionSkillLines, gathering included: the data decides, not the professions a character of this
+-- account knows), the known and learnable recipes of the character's own professions, the recipes a
+-- trainer showed, plus every item the player interacted with. Only scope items keep a history; the rest
 -- of a full scan or browse list keeps `last` only (#90). The scope only grows. Buying and selling at
 -- a merchant and posting on the AH all pass through the bags.
 -- #67 adds the recipe items (recipe, pattern, plans, formula, schematic) of those professions:
@@ -756,11 +755,10 @@ function M.RefreshScope()
 			AddRecipeItems(recipe.reagents, recipe.output)
 		end
 	end
-	for _, name in ipairs(EXTRA_SCOPE_PROFESSIONS) do
-		local line = ns.ProfessionSkillLines and ns.ProfessionSkillLines[name]
-		if line then
-			lines[line] = true
-		end
+	-- Every profession of the bundled data, known by a character of this account or not (#232): the
+	-- history of an alt's future profession has to exist before the alt does.
+	for _, line in pairs(ns.ProfessionSkillLines or {}) do
+		lines[line] = true
 	end
 	local recipes = ns.RecipeData or {}
 	for _, data in pairs(recipes) do

@@ -483,7 +483,7 @@ it("scope: the character's recipe cache, known and learnable", function()
 	eq(M.InScope(24), true)
 end)
 
-it("scope: bundled recipes of own professions plus the alt's, nothing else", function()
+it("scope: bundled recipes of every profession, whether a character knows it or not (#232)", function()
 	local M, stub, ns = Market({ data = true })
 	ns.charDB.professions[165] = { name = "Leatherworking", recipes = {} }
 	stub.Fire("PLAYER_LOGIN")
@@ -492,55 +492,62 @@ it("scope: bundled recipes of own professions plus the alt's, nothing else", fun
 			if data.skillLine == skillLine and data.output then return data.reagents[1].itemID, data.output.itemID end
 		end
 	end
-	local reagent, output = sample(165)
-	eq(M.InScope(reagent), true); eq(M.InScope(output), true)
-	reagent, output = sample(202) -- Engineering, the alt's
-	eq(M.InScope(reagent), true); eq(M.InScope(output), true)
-	reagent, output = sample(186) -- Mining, the alt's
-	eq(M.InScope(reagent), true); eq(M.InScope(output), true)
-	-- The bundled recipe item of a Leatherworking recipe (#67).
-	for recipeID, source in pairs(ns.SourceData) do
-		if ns.RecipeData[recipeID] and ns.RecipeData[recipeID].skillLine == 165 then
-			eq(M.InScope(source.item), true, "bundled recipe item")
-			break
-		end
-	end
 	local lines = CraftWiseMarketDB.scope.skillLines
-	eq(lines[165], true); eq(lines[202], true); eq(lines[186], true); eq(lines[197], nil)
-	-- A Tailoring-only output stays out.
-	local own = {}
-	for _, data in pairs(ns.RecipeData) do
-		if lines[data.skillLine] then
-			own[data.output and data.output.itemID or 0] = true
-			for _, r in ipairs(data.reagents or {}) do own[r.itemID] = true end
+	for name, line in pairs(ns.ProfessionSkillLines) do
+		eq(lines[line], true, name .. " is a scope profession")
+		local reagent, output = sample(line)
+		if reagent then
+			eq(M.InScope(reagent), true, name .. " reagent"); eq(M.InScope(output), true, name .. " output")
 		end
 	end
-	for _, data in pairs(ns.RecipeData) do
-		if data.skillLine == 197 and data.output and not own[data.output.itemID] then
-			eq(M.InScope(data.output.itemID), false)
-			break
+	-- Alchemy, Tailoring, Blacksmithing and Enchanting: nobody on this account has them.
+	for _, name in ipairs({ "Alchemy", "Tailoring", "Blacksmithing", "Enchanting" }) do
+		local reagent, output = sample(ns.ProfessionSkillLines[name])
+		eq(M.InScope(reagent), true, name .. " reagent"); eq(M.InScope(output), true, name .. " output")
+	end
+	-- Every reagent and output of every bundled recipe, nothing missing.
+	for recipeID, data in pairs(ns.RecipeData) do
+		for _, r in ipairs(data.reagents or {}) do
+			eq(M.InScope(r.itemID), true, "reagent of recipe " .. recipeID)
+		end
+		if data.output then eq(M.InScope(data.output.itemID), true, "output of recipe " .. recipeID) end
+	end
+	-- The bundled recipe item of a Leatherworking recipe (#67) and of an Alchemy one.
+	local seenLines = {}
+	for recipeID, source in pairs(ns.SourceData) do
+		local line = ns.RecipeData[recipeID] and ns.RecipeData[recipeID].skillLine
+		if line and not seenLines[line] and source.item then
+			seenLines[line] = true
+			eq(M.InScope(source.item), true, "bundled recipe item of line " .. line)
 		end
 	end
+	eq(seenLines[165], true); eq(seenLines[171], true)
+	-- Not recipe data: an item no recipe uses stays out until the player meets it.
+	eq(M.InScope(1), false)
 end)
 
 -- #67: recipe items and profession books. Stub data only: item IDs here are not real ones.
-it("scope: recipe items of own professions from bundled and recorded data, not others'", function()
+it("scope: recipe items of every profession from bundled and recorded data (#232)", function()
 	local M, stub, ns = Market()
 	ns.ProfessionSkillLines = { Cooking = 185, Tailoring = 197, Engineering = 202, Mining = 186 }
 	ns.RecipeData = {
 		[501] = { skillLine = 185, reagents = { { itemID = 51, quantity = 1 } }, output = { itemID = 52, quantity = 1 } },
 		[502] = { skillLine = 197, reagents = { { itemID = 53, quantity = 1 } }, output = { itemID = 54, quantity = 1 } },
 		[503] = { skillLine = 185, reagents = { { itemID = 51, quantity = 2 } }, output = { itemID = 55, quantity = 1 } },
+		[504] = { skillLine = 999, reagents = { { itemID = 56, quantity = 1 } }, output = { itemID = 57, quantity = 1 } },
 	}
-	ns.SourceData = { [501] = { skill = 175, item = 601 }, [502] = { skill = 50, item = 602 } }
+	ns.SourceData = { [501] = { skill = 175, item = 601 }, [502] = { skill = 50, item = 602 }, [504] = { skill = 1, item = 605 } }
 	ns.db.sources[603] = { recipe = 503 } -- recorded in game (#37), no bundled item
 	ns.db.sources[604] = { recipe = 502 }
 	ns.charDB.professions[185] = { name = "Cooking", recipes = {} }
 	stub.Fire("PLAYER_LOGIN")
 	eq(M.InScope(601), true, "bundled recipe item of an own profession")
 	eq(M.InScope(603), true, "recorded recipe item of an own profession")
-	eq(M.InScope(602), false, "Tailoring is not a scope profession")
-	eq(M.InScope(604), false)
+	eq(M.InScope(602), true, "bundled recipe item of a profession nobody here knows")
+	eq(M.InScope(604), true, "recorded recipe item of a profession nobody here knows")
+	eq(M.InScope(54), true, "its output")
+	eq(M.InScope(605), false, "a skill line no profession of the bundled names has")
+	eq(M.InScope(57), false)
 end)
 
 it("scope: a recipe item and a profession book join from an Auctionator full scan", function()
@@ -552,8 +559,10 @@ it("scope: a recipe item and a profession book join from an Auctionator full sca
 	stub.Fire("PLAYER_LOGIN")
 	-- 701: a profession book the client files as Recipe / Cooking; not in any bundled table.
 	stub.itemClass[701], stub.itemSubclass[701] = 9, Enum.ItemRecipeSubclass.Cooking
-	-- 702: a Tailoring pattern; 703: a "Book" recipe (names no profession); 704: trade goods.
+	-- 702: a Tailoring pattern (a profession of the bundled data, so in scope although nobody here knows it, #232);
+	-- 705: a Jewelcrafting pattern (no bundled data); 703: a "Book" recipe (names no profession); 704: trade goods.
 	stub.itemClass[702], stub.itemSubclass[702] = 9, Enum.ItemRecipeSubclass.Tailoring
+	stub.itemClass[705], stub.itemSubclass[705] = 9, Enum.ItemRecipeSubclass.Jewelcrafting
 	stub.itemClass[703], stub.itemSubclass[703] = 9, Enum.ItemRecipeSubclass.Book
 	stub.itemClass[704], stub.itemSubclass[704] = 7, 5
 	eq(M.InScope(701), false, "the book is not in scope before the AH shows it")
@@ -565,20 +574,22 @@ it("scope: a recipe item and a profession book join from an Auctionator full sca
 		{ 702, 1, 500 },
 		{ 703, 1, 500 },
 		{ 704, 1, 500 },
+		{ 705, 1, 500 },
 	})
 	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
 	eq(M.Current(601, HORDE).min, 2500); eq(M.Current(601, HORDE).listings, 2)
 	eq(M.Current(701, HORDE).min, 90000)
 	eq(M.InScope(701), true, "the book stays in scope")
 	-- Outside the scope: latest price only (#90), no history.
-	eq(M.InScope(702), false, "another profession's pattern")
+	eq(M.InScope(702), true, "a Tailoring pattern: Tailoring is a scope profession now")
+	eq(M.InScope(705), false, "a profession CraftWise has no data for")
 	eq(M.InScope(703), false, "Book subclass names no profession")
 	eq(M.InScope(704), false)
-	for _, id in ipairs({ 702, 703, 704 }) do
+	for _, id in ipairs({ 705, 703, 704 }) do
 		eq(M.IsLastOnly(CraftWiseMarketDB.items[id][HORDE]), true, "last only: " .. id)
 	end
 	eq(CraftWiseMarketDB.items[601][HORDE].raw[1].total, 2, "raw point, like any in-scope item")
-	eq(CraftWiseMarketDB.scans[HORDE][1].items, 2)
+	eq(CraftWiseMarketDB.scans[HORDE][1].items, 3)
 	-- Learn cost (#16) reads the recorded price of the recipe item.
 	local cost, how, label = ns.LearnCost(501)
 	eq(cost, 2500); eq(how, "auction"); eq(label, "current lowest, too little history · Horde AH")
@@ -1182,6 +1193,16 @@ it("size: expected load stays under 5 MB", function()
 	local size = SeedSize(M, 1100, 4, 5, 4)
 	print(("       measured: 1100 items x 4 houses, 30 days, 2 scans/day, 5 tiers = %.2f MB"):format(size / MB))
 	assert(size < 5 * MB, ("%.2f MB is over the 5 MB budget"):format(size / MB))
+end)
+
+-- The scope of every profession (#232): 2,698 distinct reagents and outputs of the bundled recipes, rounded up
+-- for recipe items and what the player met, at all 4 houses, 30 days, 2 scans a day, 5 tiers. This is the load
+-- the history of all professions costs; the 5 MB budget above was for the professions of one account.
+it("size: the scope of every profession at 4 houses stays under 12 MB", function()
+	local M = Market()
+	local size = SeedSize(M, 2800, 4, 5, 4)
+	print(("       measured: 2800 items x 4 houses, 30 days, 2 scans/day, 5 tiers = %.2f MB"):format(size / MB))
+	assert(size < 12 * MB, ("%.2f MB is over the 12 MB budget"):format(size / MB))
 end)
 
 -- All professions at every house, 10 scans a day, 8 tiers. Can't fit 5 MB with this retention
