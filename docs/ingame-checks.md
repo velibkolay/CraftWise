@@ -946,3 +946,9 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 
 - No TOC change; `/reload` is enough. Open Sell › Auctions. Click "On its way · in the mail": the list shows only the sold auctions waiting in the mail, newest first, each with item, quantity, how long ago it sold, buyout and "You get" (after the cut, deposit back included); the card gets a white outline, the list bar says "N sold, waiting in the mail". The figure on the card equals the sum of the "You get" column (rows with a dash have no counted payout, as the card says). Click it again, or the All chip in the list bar: the whole list is back.
 - "If all listed sell" shows the listings (time left, buyout); "Returning" shows expired and cancelled auctions coming back by mail. Auctions marked Uncertain stay in the list under every filter. The cards keep their totals while a filter is on. Hover a card: "Click to show these". Dock the window: the cards stack as before; the All chip still clears the filter.
+
+## Make › Crafted: timed crafts and gold per active hour (#273)
+- After a long Create All on a day that already had crafts from before this version, the card says "· N min active (X of Y crafts timed)": X is the crafts since the update. Once every craft of the day was recorded by this version, the parenthesis is gone.
+- Gold per active hour is the profit of the timed crafts over the active time: check it against Profit today / crafts today x crafts per hour (about the same per-craft figure).
+- Hover the Today cell of a row: "Active time: the time between crafts up to 30 s; longer pauses don't count."
+- Active time per craft is about the Speed column's seconds (e.g. 3.1 s); a day recorded by the first #251 build shows no time until a craft is made (its old seconds are dropped).
