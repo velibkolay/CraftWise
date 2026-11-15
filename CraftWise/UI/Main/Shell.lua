@@ -617,8 +617,18 @@ end
 function M.ScanFailText(reason, detail)
 	local market = ns.Market
 	if reason == "timeout" then
-		return (L["No list arrived within %d s. Another addon may have scanned in the last 15 minutes (the server then sends nothing). Nothing was stored; try again after the countdown."])
+		local text = (L["No list arrived within %d s. Another addon may have scanned in the last 15 minutes (the server then sends nothing), the game's auction house throttle held the request back, or a slow or busy connection delayed the list (a list that still arrives within 15 minutes of the request is read and stored). Nothing has been stored yet; try again after the countdown, or use Try again anyway."])
 			:format(market and market.OWN_WAIT_SECONDS or 0)
+		if type(detail) == "table" then
+			text = text .. " " .. (L["Throttle events after the request: sent %d, queued %d, dropped %d."])
+				:format(detail.sent or 0, detail.queued or 0, detail.dropped or 0)
+		end
+		return text
+	elseif reason == "notready" then
+		return (L["The auction house wasn't ready for a request within %d s: other addons' queries were still going. Nothing was sent, so no waiting time was used; try again."])
+			:format(market and market.OWN_READY_SECONDS or 0)
+	elseif reason == "dropped" then
+		return L["The game dropped the request before it was sent (its auction house throttle). Nothing was stored and the 15 minutes were not used: click again."]
 	elseif reason == "closed" then
 		return L["The auction house closed before the list was read. Nothing was stored."]
 	elseif reason == "changed" then
@@ -631,6 +641,10 @@ end
 local function ScanFailShort(reason, timeout)
 	if reason == "timeout" then
 		return (L["no list within %s"]):format(M.Clock(timeout))
+	elseif reason == "notready" then
+		return L["the auction house wasn't ready"]
+	elseif reason == "dropped" then
+		return L["the game dropped the request"]
 	elseif reason == "closed" then
 		return L["the auction house was closed"]
 	elseif reason == "changed" then
@@ -664,12 +678,20 @@ function M.ScanModel(now)
 	local s = market.OwnScan(now)
 	local st = s.state
 	local model = { state = st }
-	if st == "requested" or st == "waiting" then
+	if st == "ready" then
+		local elapsed, timeout = s.elapsed or 0, s.readyTimeout or 0
+		model.kind = "scanning"
+		model.text = (L["Waiting for the auction house to be ready · %s / %s"]):format(M.Clock(elapsed), M.Clock(timeout))
+		model.fraction = timeout > 0 and math.min(elapsed / timeout, 1) or 0
+		model.hint = L["The game is still answering other addons' queries. Nothing has been sent yet."]
+	elseif st == "requested" or st == "waiting" then
 		local elapsed, timeout = s.elapsed or 0, s.timeout or 0
 		model.kind = "scanning"
-		model.text = (L["Waiting for the server · %s / %s"]):format(M.Clock(elapsed), M.Clock(timeout))
+		local format = s.queued and L["Queued by the game, not sent yet · %s / %s"] or L["Waiting for the server · %s / %s"]
+		model.text = format:format(M.Clock(elapsed), M.Clock(timeout))
 		model.fraction = timeout > 0 and math.min(elapsed / timeout, 1) or 0
-		model.hint = L["Keep the auction house open."]
+		model.hint = s.queued and L["The game's request throttle is holding it back. Keep the auction house open."]
+			or L["Keep the auction house open."]
 	elseif st == "reading" or st == "loading" or st == "storing" then
 		local p = market.ScanProgress and market.ScanProgress()
 		local done, total = p and p.done or 0, p and p.total or s.rows or 0
@@ -695,6 +717,7 @@ function M.ScanModel(now)
 		model.kind = "failed"
 		model.text = (L["Scan failed · %s"]):format(ScanFailShort(s.error, s.timeout))
 		model.hint = M.ScanFailText(s.error, s.detail)
+		model.retry = s.cooldown <= 0 -- a dropped or never sent request used no cooldown
 	else
 		return nil
 	end
@@ -721,7 +744,9 @@ function M.ScanButton(now)
 	local tip = model.tip
 	local scan = M.ScanModel(now)
 	tip[1] = L["Scan the auction house"]
-	if s.state == "requested" or s.state == "waiting" then
+	if s.state == "ready" then
+		model.label = (L["Getting ready · %s"]):format(M.Clock(s.elapsed or 0))
+	elseif s.state == "requested" or s.state == "waiting" then
 		model.label = (L["Waiting · %s / %s"]):format(M.Clock(s.elapsed or 0), M.Clock(s.timeout or 0))
 	elseif s.state == "reading" or s.state == "loading" or s.state == "storing" then
 		local pct = math.floor((scan and scan.fraction or 0) * 100)
@@ -751,6 +776,13 @@ function M.ScanButton(now)
 		if scan and scan.kind == "failed" then
 			tip[#tip + 1] = ns.Style.Hex("danger") .. scan.hint .. "|r"
 		end
+	end
+	if s.retryable and s.cooldown > 0 then
+		model.retry = {
+			label = L["Try again anyway"],
+			tip = { L["Try again anyway"],
+				L["Asks for the list again without waiting for the countdown. The server may send nothing if it counted the first request. If the first list still arrives, it is stored."] },
+		}
 	end
 	local last = s.last
 	if last then
