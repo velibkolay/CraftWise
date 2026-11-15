@@ -756,3 +756,99 @@ it("sale alert: two sales stack as two lines; the line opens Sell > Auctions", f
 	shown[1].onClick()
 	eq(opened, 1)
 end)
+
+-- Sold records that are no longer on their way (#278) -------------------------------------------------------
+
+local function SaleMailCount(stub, name, money, count)
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	stub.inbox = { { subject = "Auction successful: " .. name, money = money,
+		invoice = { type = "seller", itemName = name, buyer = "Someone Else", bid = money + 450, buyout = money + 450, deposit = 100, consignment = 450, count = count } } }
+	TakeInboxMoney(1)
+	stub.clock = NOW + 4000
+	stub.money = stub.money + money
+	stub.Fire("PLAYER_MONEY")
+end
+
+it("a full owned list drops sold records it no longer holds: their money is collected, the others stay on their way", function()
+	local ns, stub = Load()
+	AtHouse(stub)
+	local a = Post(stub, LEATHER, 20, 150)
+	local b = Post(stub, LEATHER, 5, 150)
+	local c = Post(stub, HIDE, 10, 300)
+	Sold(stub, "Light Leather", a); Sold(stub, "Light Leather", b); Sold(stub, "Light Hide", c)
+	stub.clock = NOW + 600
+	stub.ownedFull = true
+	stub.owned = { { auctionID = a, itemKey = { itemID = LEATHER }, quantity = 20, status = 1, timeLeftSeconds = 3600 } }
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(Find(ns, function(r) return r.id == a end).st, "sold", "Blizzard still lists it as sold: its money is waiting")
+	eq(Find(ns, function(r) return r.id == a end).pendingT, NOW + 600)
+	local gone = Find(ns, function(r) return r.id == b end)
+	eq(gone.st, "settled"); eq(gone.settledVia, "owned list"); eq(gone.why, "collected, matched by the owned list")
+	eq(Find(ns, function(r) return r.id == c end).st, "settled")
+	local s = ns.Auctions.Summary()
+	eq(#s.sold, 1, "only what Blizzard lists is on its way"); eq(s.sold[1].q, 20)
+	-- A partial list proves nothing; another house's list neither.
+	local d = Post(stub, PANTS, 1, 9000, { item = true })
+	Sold(stub, "Rugged Leather Pants", d)
+	stub.clock = NOW + 1200
+	stub.ownedFull = false
+	stub.owned = {}
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(Find(ns, function(r) return r.id == d end).st, "sold")
+	-- A sale newer than a minute isn't judged by a list fetched before it.
+	stub.ownedFull = true
+	stub.clock = NOW + 1200 + 20
+	Sold(stub, "Rugged Leather Pants", d)
+	local e = Post(stub, CLOAK, 1, 9000, { item = true })
+	Sold(stub, "Bandit Cloak", e)
+	stub.owned = {}
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(Find(ns, function(r) return r.id == e end).st, "sold", "sold seconds ago: the list may predate it")
+	stub.clock = NOW + 1200 + 20 + 61
+	stub.Fire("OWNED_AUCTIONS_UPDATED")
+	eq(Find(ns, function(r) return r.id == e end).st, "settled", "a minute later the list says it was paid")
+end)
+
+it("one sale mail that adds up several sold auctions settles them all, with one ledger entry", function()
+	local ns, stub = Load()
+	AtHouse(stub)
+	local a = Post(stub, LEATHER, 7, 150)
+	local b = Post(stub, LEATHER, 20, 150)
+	local c = Post(stub, LEATHER, 3, 150)
+	local d = Post(stub, LEATHER, 4, 150)
+	stub.clock = NOW + 10
+	Sold(stub, "Light Leather", a); stub.now = (stub.now or 0) + 10
+	stub.clock = NOW + 20
+	Sold(stub, "Light Leather", b)
+	stub.clock = NOW + 30
+	Sold(stub, "Light Leather", c)
+	SaleMailCount(stub, "Light Leather", 4000, 30) -- 7 + 20 + 3
+	for _, id in ipairs({ a, b, c }) do
+		eq(Find(ns, function(r) return r.id == id end).st, "settled")
+	end
+	eq(Find(ns, function(r) return r.id == d end).st, "active", "the unsold one is untouched")
+	local untracked = Find(ns, function(r) return r.untracked end)
+	eq(untracked, nil, "no phantom record for the mail")
+	local entries = 0
+	for _, e in ipairs(ns.db.ledger and ns.db.ledger.entries or {}) do
+		if e.kind == "ahsell" then entries = entries + 1 end
+	end
+	assert(entries <= 1, "one ledger entry for the one mail: " .. entries)
+	eq(#ns.Auctions.Summary().sold, 0)
+end)
+
+it("sold records nothing shows pending for hours are probably collected and not counted on their way", function()
+	local ns, stub = Load()
+	AtHouse(stub)
+	local fresh = Post(stub, PANTS, 1, 9000, { item = true })
+	local old = Post(stub, CLOAK, 1, 9000, { item = true })
+	local kept = Post(stub, LEATHER, 5, 150)
+	Sold(stub, "Rugged Leather Pants", fresh); Sold(stub, "Bandit Cloak", old); Sold(stub, "Light Leather", kept)
+	Find(ns, function(r) return r.id == old end).soldT = NOW - 5 * 3600
+	local keptRec = Find(ns, function(r) return r.id == kept end)
+	keptRec.soldT, keptRec.pendingT = NOW - 9 * 3600, NOW - 600 -- Blizzard listed it as pending ten minutes ago
+	local s = ns.Auctions.Summary()
+	eq(#s.sold, 2); eq(#s.stale, 1); eq(s.stale[1].name or s.stale[1].n, "Bandit Cloak")
+	local totals = ns.HeroCards.AuctionTotals()
+	eq(totals.onItsWay.count, 2, "the card counts the pending ones only")
+end)

@@ -28,6 +28,8 @@ P.STATUS = {
 	gone = { key = "uncertain", text = L["Uncertain"], color = "text3", order = 3 },
 	expired = { key = "returning", text = L["Returning"], color = "text2", order = 4 },
 	cancelled = { key = "returning", text = L["Returning"], color = "text2", order = 4 },
+	-- A sold record nothing has shown pending for hours: its money was most likely taken (#278).
+	stale = { key = "collected", text = L["Probably collected"], color = "text3", order = 5 },
 }
 
 -- A click on a card shows that group's auctions only (#269): the card's key -> the list's status key, and
@@ -123,6 +125,9 @@ function P.Rows(list, now)
 	local rows, ids = {}, {}
 	for index, rec in ipairs(list or {}) do
 		local st = P.STATUS[rec.st]
+		if rec.st == "sold" and ns.Auctions and ns.Auctions.IsStale(rec, now) then
+			st = P.STATUS.stale
+		end
 		if st then
 			local name, quality = S.ItemName(rec.i, { name = rec.n, link = rec.l })
 			local youGet, why, depositKnown = P.YouGet(rec)
@@ -136,7 +141,7 @@ function P.Rows(list, now)
 			end
 			rows[#rows + 1] = {
 				key = rec.id and ("id" .. rec.id) or ("rec" .. index), itemID = rec.i, name = name, quality = quality,
-				qty = rec.q, state = rec.st, status = st.key, statusText = st.text, statusColor = st.color, live = st.live, order = st.order,
+				qty = rec.q, state = st == P.STATUS.stale and "stale" or rec.st, status = st.key, statusText = st.text, statusColor = st.color, live = st.live, order = st.order,
 				when = P.WhenText(rec, now), at = rec.exp or rec.soldT or rec.expT or rec.cancelT or rec.goneT or rec.t or 0,
 				buyout = buyout, buyoutNote = buyoutNote, youGet = youGet, youGetWhy = why, depositKnown = depositKnown,
 				deposit = rec.dep, uncertain = rec.uncertain and rec.candidates or nil, why = rec.why,

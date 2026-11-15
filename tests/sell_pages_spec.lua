@@ -440,6 +440,18 @@ it("Auctions: the card frame itself takes the click; the chosen card is outlined
 	P.filter = nil
 end)
 
+it("Auctions: a sold record nothing shows pending for hours reads Probably collected and leaves the On its way card (#278)", function()
+	local ns, _, M = Auctions()
+	ns.Auctions.List()[1].soldT = NOW - 5 * 3600 -- Test Pants, sold five hours ago
+	M.Open("auctions")
+	local got = {}
+	for _, fr in ipairs(Rows(M, "auctions")) do got[#got + 1] = fr.cells[2].text .. "/" .. fr.cells[4].text end
+	eq(table.concat(got, ","), "Test Cloak/Sold,Test Hide/Listed,Test Leather/Listed,Test Bracers/Returning,Test Pants/Probably collected")
+	local card = M.SlotsOf("auctions").hero.cards[1]
+	eq(card.stat.figure.text, ns.FormatCoins(18620), "only the pending sale is on its way")
+	eq(card.stat.caption.text, "1 sold, after cut and deposit back")
+end)
+
 it("Auctions: nothing recorded: no cards, the empty line", function()
 	local _, _, M = Load()
 	M.Open("auctions")

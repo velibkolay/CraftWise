@@ -964,3 +964,9 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 ## Sell › Auctions cards: highlight and filter bar (#270 follow-up)
 
 - No TOC change; `/reload` is enough. Click "On its way · in the mail": the card gets a double orange outline and a brighter fill, and the bar above the list reads "Showing: On its way · N auctions · <what they pay>". With no filter the bar reads "All auctions · N sold · N listed · N returning". Click the card again or "All": back to the full list (a Status column names each row's group). If the click still does nothing in game, note whether the tooltip "Click to show these" shows and whether the bar changes.
+
+## "On its way" only counts what is still pending (#278)
+
+- No TOC change; `/reload` is enough. At the auction house, open Blizzard's Auctions tab and CraftWise's Sell › Auctions side by side (the owned list is read when you open the AH). The "On its way · in the mail" count should equal the number of Sold rows with an "Incoming Amount" in Blizzard's list (auctions of the same item sold in one batch may show as several rows on either side, the count of auctions is what must agree). Sold auctions whose money you already took are gone from the card, and from the list when you filter it.
+- Records with no confirmation for three hours that Blizzard still lists them read "Probably collected" in the list, are not counted on the card and are not claimed as collected. The three hours are a label heuristic, not the mail delay (not verified for Forever): note here the real delay between a sale message and its mail.
+- Take the money of several sale mails of one item at once (e.g. Cooked Crab Claw sold in 4 auctions): after taking them, none of those auctions stays "Sold". A sale mail's count is the sum of its auctions' quantities (Hot Spices ×200 for several 20-unit sales).

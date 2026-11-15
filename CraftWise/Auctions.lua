@@ -51,6 +51,10 @@ local KEEP_DAYS = 30
 local DAY_SECONDS = 86400
 local PENDING_SECONDS = 30 -- a mail take waits this long for its money or items
 local NOTE_SECONDS = 2 -- the same sold/expired message from two sources arrives within this
+-- A sold record whose money nothing has confirmed as pending for this long is shown as "probably collected"
+-- and is not counted as on its way (#278). A heuristic for the label only: the mail delay itself is not
+-- verified for Forever, and the owned list (below) is what settles a record.
+local STALE_SOLD_SECONDS = 3 * 3600
 local INFER_AFTER_SECONDS = 60 -- a fresh post may not be in an owned list the client fetched earlier
 local MAIL_ATTACHMENTS = 16
 local CUT_SAMPLES_KEPT = 50
@@ -369,6 +373,7 @@ local function ApplyKnown(list, rec, info, now)
 			if newly then
 				rec.soldT, rec.soldVia = now, "owned list"
 			end
+			rec.pendingT = now -- Blizzard still lists it as sold: its money is waiting (#278)
 			rec.st, rec.why = "sold", nil
 			if quantity and quantity < rec.q then
 				-- The sold entry covers part of what was posted; the rest waits for the list to name it
@@ -466,6 +471,14 @@ function A.ReadOwned()
 	end
 	if full and house then
 		for _, rec in ipairs(c.list) do
+			-- The owned list holds every sold auction whose money is still pending (status Sold). A sold record
+			-- of this house that it doesn't hold has been paid out: it is no longer on its way (#278). The
+			-- amount stays what the sale mail said, or unknown; nothing is guessed.
+			if rec.st == "sold" and rec.id and rec.h == house and not seen[rec.id]
+				and now - (rec.soldT or 0) >= INFER_AFTER_SECONDS then
+				rec.st, rec.settledT, rec.settledVia, rec.why = "settled", now, "owned list", "collected, matched by the owned list"
+				rec.qtyUnknown, rec.uncertain, rec.candidates = nil, nil, nil
+			end
 			local listedLongEnough = not rec.t or now - rec.t >= INFER_AFTER_SECONDS
 			if rec.st == "active" and rec.h == house and listedLongEnough and not (rec.id and seen[rec.id]) then
 				if rec.exp and now >= rec.exp then
@@ -734,6 +747,43 @@ local function AddCutSample(rec, t, count)
 	end
 end
 
+-- The sold records of an item (by name) whose quantities add up to `count`, oldest first, or nil. The
+-- client sends one sale mail per item and batch, so its count is often the sum of several auctions (#278).
+function A.SoldSet(list, name, count)
+	local cands = Candidates(list, function(r)
+		return r.st == "sold" and not r.qtyUnknown and NameOf(r) == name and r.q and r.q <= count
+	end)
+	if #cands < 2 then
+		return nil
+	end
+	table.sort(cands, function(a, b)
+		return (a.soldT or 0) < (b.soldT or 0)
+	end)
+	local failed = {}
+	local function find(i, left)
+		if left == 0 then
+			return {}
+		end
+		if i > #cands or failed[i .. ":" .. left] then
+			return nil
+		end
+		if cands[i].q <= left then
+			local rest = find(i + 1, left - cands[i].q)
+			if rest then
+				table.insert(rest, 1, cands[i])
+				return rest
+			end
+		end
+		local rest = find(i + 1, left)
+		if not rest then
+			failed[i .. ":" .. left] = true
+		end
+		return rest
+	end
+	local set = find(1, count)
+	return set and #set >= 2 and set or nil
+end
+
 -- One sale mail's money arrived: settle the auction it paid for.
 function A.SettleSale(t)
 	local c = Char()
@@ -749,7 +799,15 @@ function A.SettleSale(t)
 		function(r) return (r.st == "gone" or r.st == "active") and r.q > count end,
 	}
 	local found = {}
-	for _, test in ipairs(tests) do
+	local set -- sold records whose quantities add up to the mail's count (one mail per item and sale batch)
+	for i, test in ipairs(tests) do
+		if i == 3 and not found[1] then
+			set = A.SoldSet(c.list, t.name, count)
+			if set then
+				found = set
+				break
+			end
+		end
 		found = Candidates(c.list, function(r)
 			return NameOf(r) == t.name and test(r)
 		end)
@@ -763,8 +821,17 @@ function A.SettleSale(t)
 	for _, r in ipairs(found) do
 		oneHouse = oneHouse and r.h == rec.h
 	end
-	if rec and rec.q > count then
+	if rec and not set and rec.q > count then
 		rec = Split(c.list, rec, count)
+	end
+	if set then
+		-- The mail paid for several auctions at once: the first carries the money, the rest are settled with it.
+		for i = 2, #set do
+			local part = set[i]
+			part.st, part.settledT, part.soldVia, part.why = "settled", time(), part.soldVia or "mail", nil
+			part.settledWith = set[1].id or true
+			part.qtyUnknown, part.uncertain, part.candidates = nil, nil, nil
+		end
 	end
 	if not rec then
 		rec = { n = t.name, q = count, untracked = true }
@@ -918,6 +985,12 @@ function A.Row(rec, now)
 end
 
 -- What is listed, sold awaiting mail (with expected gold), expired awaiting mail, and uncertain.
+-- A sold record whose money probably left the mailbox long ago: nothing has shown it pending (the owned list,
+-- or the sale itself) for STALE_SOLD_SECONDS. Not on its way any more, but not proven collected either.
+function A.IsStale(rec, now)
+	return rec.st == "sold" and now - (rec.pendingT or rec.soldT or now) > STALE_SOLD_SECONDS
+end
+
 function A.Summary(charKey)
 	local c = Char(charKey)
 	if not c then
@@ -926,7 +999,7 @@ function A.Summary(charKey)
 	local now = time()
 	local s = { active = {}, sold = {}, returning = {}, uncertain = {}, expectedTotal = 0, expectedMissing = 0,
 		listedTotal = 0, listedCounted = 0, listedNoBuyout = 0, listedUnknownCut = 0, listedUnpriced = 0,
-		ownedListAt = c.ownedAt, ownedListHouse = c.ownedHouse }
+		ownedListAt = c.ownedAt, ownedListHouse = c.ownedHouse, stale = {} }
 	local notes = {}
 	for _, rec in ipairs(c.list) do
 		local row
@@ -944,6 +1017,8 @@ function A.Summary(charKey)
 			else
 				s.listedUnknownCut = s.listedUnknownCut + 1
 			end
+		elseif rec.st == "sold" and A.IsStale(rec, now) then
+			s.stale[#s.stale + 1] = A.Row(rec, now) -- probably collected: not on its way (#278)
 		elseif rec.st == "sold" then
 			row = A.Row(rec, now)
 			s.sold[#s.sold + 1] = row
