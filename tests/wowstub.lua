@@ -38,7 +38,27 @@ function frameMeta.SetEndPoint(self, ...) self.endPoint = { ... } end
 function frameMeta.SetThickness(self, n) self.thickness = n end
 function frameMeta.SetColorTexture(self, r, g, b, a) self.colorTexture = { r, g, b, a } end
 -- Anchors and sizes are recorded so specs can work out where a region sits (tests/style_spec.lua).
+-- The client refuses an anchor that makes a loop (SetPoint: "Cannot anchor to a region dependent on it"):
+-- so does the stub, which is how #224 would have been caught.
+local function dependsOn(region, target, seen)
+	if region == target then return true end
+	if type(region) ~= "table" or (seen and seen[region]) then return false end
+	seen = seen or {}
+	seen[region] = true
+	for _, p in ipairs(region.points or {}) do
+		if type(p[2]) == "table" and dependsOn(p[2], target, seen) then return true end
+	end
+	return false
+end
+function frameMeta.GetPoint(self, n)
+	local p = self.points and self.points[n or 1]
+	if p then return unpack(p) end
+end
 function frameMeta.SetPoint(self, ...)
+	local rel = select(2, ...)
+	if type(rel) == "table" and dependsOn(rel, self) then
+		error("SetPoint: Cannot anchor to a region dependent on it", 2)
+	end
 	self.lastPoint = { ... }
 	self.points = self.points or {}
 	table.insert(self.points, { ... })
