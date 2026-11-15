@@ -63,6 +63,8 @@ return {
 		GetTrainerServiceAbilityReq = UI .. "Mainline/Blizzard_TrainerUI.lua (ClassTrainerFrame_InitServiceButton: ability name and whether you have it)",
 		["UiMapPoint.CreateFromCoordinates"] = UI .. "Blizzard_ObjectAPI/Mainline/UiMapPoint.lua (defines it); Blizzard_SharedMapDataProviders/WaypointLocationDataProvider.lua (UiMapPoint.CreateFromCoordinates(mapID, x, y) then C_Map.SetUserWaypoint)",
 		PlaySound = UI .. "Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseBuyDialog.lua (PlaySound(SOUNDKIT.LOOT_WINDOW_COIN_SOUND)); sale alert (#235)",
+		ClickTradeButton = UI .. "Blizzard_UIPanels_Game/Mainline/TradeFrame.xml (TradePlayerItemButton OnClick, OnDragStart and OnReceiveDrag: ClickTradeButton(self:GetParent():GetID())), TradeFrame.lua (TradeFrame_OnMouseUp: elseif CursorHasItem() then ... ClickTradeButton(slot)). Needs an item on the cursor.",
+		GetTradePlayerItemInfo = UI .. "Blizzard_UIPanels_Game/Mainline/TradeFrame.lua (TradeFrame_UpdatePlayerItem: name, texture, numItems, quality, enchantment, canLoseTransmog, isBound, itemID = GetTradePlayerItemInfo(id); slots 1..MAX_TRADABLE_ITEMS = 6, 7 is the enchant slot)",
 		PlaySoundFile = GAME .. " (Music tab songs, 2026-10-01)",
 		StopSound = UI .. "Blizzard_HousingDashboardInitiatives.lua; " .. GAME .. " (music stops with the cast)",
 		debugstack = UI .. "Blizzard_ScriptErrors/Blizzard_ScriptErrors.lua (local stack = debugstack(debugStackLevel)); Core.lua uses it once per handler at load for the label in the Debug performance report (#194), falls back to a counter if absent",
