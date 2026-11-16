@@ -405,7 +405,7 @@ it("Flip per purchase: a commodity is one purchase and the rule is unchanged; an
 	eq(L.EachText({}), nil, "a flip stored before the figures existed shows nothing")
 end)
 
-it("FlipFinds: ranked by profit per purchase, ties by the higher total", function()
+it("FlipFinds: commodities first by total, then one-at-a-time items by profit per purchase, ties by the higher total", function()
 	local ns = Load()
 	local L = ns.Loops
 	local rows = {
@@ -419,7 +419,7 @@ it("FlipFinds: ranked by profit per purchase, ties by the higher total", functio
 	local finds = L.FlipFinds(rows, sell, 100, stack, 100)
 	local ids = {}
 	for _, f in ipairs(finds) do ids[#ids + 1] = f.itemID end
-	eq(table.concat(ids, ","), SILK .. "," .. BLADE .. "," .. CLOTH .. "," .. ARMOR, "1500 per purchase, 500, the +400 commodity, then 300 each")
+	eq(table.concat(ids, ","), SILK .. "," .. CLOTH .. "," .. BLADE .. "," .. ARMOR, "commodities first by total (1500, 400), then the items by margin (500, 300)")
 	local tie = L.FlipFinds({ { itemID = 7, total = 1, tiers = { 500, 1 } }, { itemID = 8, total = 4, tiers = { 500, 4 } } }, function() return 1000 end,
 		0, function() return 1 end, 100)
 	eq(tie[1].itemID, 8, "the same margin: the higher total first")
@@ -466,4 +466,19 @@ it("Flip per purchase: the scan keeps only the good auctions of a one-at-a-time 
 		end
 	end
 	assert(found and found.get() == 1, "the stepper reads the setting")
+end)
+
+it("Flip order (#344): a commodity with a small total comes before an item with a bigger profit per purchase, everywhere", function()
+	local ns, stub = Load()
+	stub.items[BLADE] = { name = "Fine Blade", sellPrice = 1000, stack = 1 }
+	Seed(ns, BLADE, { tiers = { 500, 1 }, total = 1 }) -- one auction, +500 in one purchase
+	Seed(ns, CLOTH, { tiers = { 90, 12 }, total = 12 }) -- commodity: +120 in all
+	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	local flips = ns.Basket.Flips()
+	eq(#flips, 2); eq(flips[1].itemID, CLOTH, "the commodity first, though its total is smaller"); eq(flips[2].itemID, BLADE)
+	local list = ns.AHBuy.Lines()
+	eq(list[1].itemID, CLOTH); eq(list[2].itemID, BLADE)
+	local m = ns.AHPanel.Model(list)
+	eq(m.groups.flip[1].sub, "bulk"); eq(m.groups.flip[2].sub, "one")
+	eq(ns.AHPanel.FlipHeading("bulk", 1), "Flips · bulk (1)"); eq(ns.AHPanel.FlipHeading("one", 2), "Flips · one by one (2)")
 end)
