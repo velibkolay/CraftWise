@@ -596,6 +596,10 @@ local function Groups()
 			get = function() return ns.UnitTooltip.Settings().tipTarget == true end, set = function(v) ns.UnitTooltip.Set("tipTarget", v) end },
 		{ key = "tipGuildRank", kind = "check", label = L["Unit tooltip: guild rank"], text = L["Show the guild rank after the guild name"],
 			get = function() return ns.UnitTooltip.Settings().tipGuildRank == true end, set = function(v) ns.UnitTooltip.Set("tipGuildRank", v) end },
+		{ key = "dressStrip", kind = "check", label = L["Dressing room: undress"], text = L["Buttons to undress the model and to show only the items you tried on"],
+			get = function() return ns.DressingRoom.Settings().dressStrip == true end, set = function(v) ns.DressingRoom.Set("dressStrip", v) end },
+		{ key = "dressAnim", kind = "check", label = L["Dressing room: animation"], text = L["A button to pause and play the model's animation"],
+			get = function() return ns.DressingRoom.Settings().dressAnim == true end, set = function(v) ns.DressingRoom.Set("dressAnim", v) end },
 	} }
 	local Fl = ns.Flights
 	local interfaceRows = {
