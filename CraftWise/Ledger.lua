@@ -12,7 +12,8 @@
 --     reset   = { t, money },   since the last `/craftwise ledger reset` (or since the log started)
 --     session = { t, money },   since login (kept across /reload)
 --     days    = { ["YYYY-MM-DD"] = money at the start of that day },  30 days
---     pos     = { [itemID] = { held, known, cost, transit } },  paid cost of the units still held
+--     pos     = { [itemID] = { held, known, cost, transit, ahKnown, ahCost } },  paid cost of the units still held
+--               (ahKnown and ahCost: the part of known and cost that came from AH purchases, for the flips, #330)
 --   }
 --
 -- Paid cost (decision 2): quantity-weighted average of what was paid for the units still held.
@@ -124,6 +125,8 @@ local function Sync(p, count)
 		local leaving = knownHeld * (held - count) / held
 		if p.known > 0 then
 			p.cost = p.cost * (p.known - leaving) / p.known
+			local keep = (p.known - leaving) / p.known
+			p.ahKnown, p.ahCost = (p.ahKnown or 0) * keep, (p.ahCost or 0) * keep
 		end
 		p.known = p.known - leaving
 	end
@@ -133,7 +136,7 @@ end
 local function Position(c, itemID, before)
 	local p = c.pos[itemID]
 	if not p then
-		p = { held = before or 0, known = 0, cost = 0, transit = 0 }
+		p = { held = before or 0, known = 0, cost = 0, transit = 0, ahKnown = 0, ahCost = 0 }
 		c.pos[itemID] = p
 	elseif before then
 		Sync(p, before)
@@ -156,6 +159,35 @@ function L.SyncAll(force)
 			end
 		end
 	end
+end
+
+-- The units of a vendor sale that have a logged AH cost (#330): `quantity` units leave, the position says how
+-- many of them were bought at the AH and what those cost (the average of the AH purchases still held). Read
+-- only (the position itself moves with the next count). Returns units, cost; nil when none has an AH cost.
+function L.FlipShare(itemID, quantity, charKey)
+	local c = store and store.chars[charKey or L.CharKey() or ""]
+	local p = c and c.pos and c.pos[itemID]
+	if not (p and quantity and quantity > 0) or (p.ahKnown or 0) <= 1e-6 or p.known <= 1e-6 or (p.held or 0) <= 0 then
+		return nil
+	end
+	local leaving = math.max(p.known - (p.transit or 0), 0) * math.min(quantity, p.held) / p.held
+	local units = math.min(math.floor(p.ahKnown * leaving / p.known + 0.5), quantity)
+	if units <= 0 then
+		return nil
+	end
+	return units, math.floor(p.ahCost / p.ahKnown * units + 0.5)
+end
+
+-- Puts units with a known AH cost back into the position (a buyback of a sale that was a flip, #330).
+function L.RestoreAH(itemID, units, cost, before)
+	local c = Char()
+	if not (c and units and units > 0 and cost) then
+		return
+	end
+	local p = Position(c, itemID, before or L.HeldCount(itemID))
+	p.known, p.cost, p.transit = p.known + units, p.cost + cost, (p.transit or 0) + units
+	p.ahKnown, p.ahCost = (p.ahKnown or 0) + units, (p.ahCost or 0) + cost
+	Sync(p, L.HeldCount(itemID))
 end
 
 -- Paid cost of one unit: { copper, known, units, complete, partial } or nil when nothing logged is
@@ -190,6 +222,9 @@ function L.Record(kind, itemID, quantity, copper, where, before)
 	if kind == "ahbuy" or kind == "vbuy" then
 		local p = Position(c, itemID, before or L.HeldCount(itemID))
 		p.known, p.cost, p.transit = p.known + quantity, p.cost + copper, (p.transit or 0) + quantity
+		if kind == "ahbuy" then
+			p.ahKnown, p.ahCost = (p.ahKnown or 0) + quantity, (p.ahCost or 0) + copper
+		end
 		if not busy[itemID] then
 			Sync(p, L.HeldCount(itemID))
 		end
@@ -655,11 +690,23 @@ local function Settle()
 			if buyback or not m.extended[ch.itemID] then -- items paid with currency or tokens are no gold trade
 				local before = L.HeldCount(ch.itemID) - ch.quantity
 				L.Record(buyback and "buyback" or "vbuy", ch.itemID, ch.quantity, ch.copper, m.name, before)
+				if buyback and ns.Flips then -- a flip taken back is no flip (#330)
+					local units, cost = ns.Flips.Undo(ch.itemID, ch.quantity)
+					if units then
+						L.RestoreAH(ch.itemID, units, cost, before)
+					end
+				end
 			end
 		end
 	elseif dMoney > 0 and #losses > 0 and #gains == 0 then
 		logged = L.Attribute(losses, dMoney, ns.GetVendorSellPrice)
 		for _, ch in ipairs(logged or {}) do
+			if ns.Flips then -- before the record: the position still holds the units (#330)
+				local units, cost = L.FlipShare(ch.itemID, ch.quantity)
+				if units then
+					ns.Flips.Record(ch.itemID, ch.quantity, ch.copper, m.name, units, cost)
+				end
+			end
 			L.Record("vsell", ch.itemID, ch.quantity, ch.copper, m.name)
 		end
 	end

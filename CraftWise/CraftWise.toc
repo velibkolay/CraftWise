@@ -26,6 +26,7 @@ Money.lua
 Prices.lua
 Market.lua
 Ledger.lua
+Flips.lua
 Auctions.lua
 Profit.lua
 Recipes.lua
@@ -85,6 +86,7 @@ UI\Main\Pages\Sell.lua
 UI\Main\Pages\Bags.lua
 UI\Main\Pages\Auctions.lua
 UI\Main\Pages\Ledger.lua
+UI\Main\Pages\Flips.lua
 UI\Main\Pages\Farm.lua
 UI\Main\Pages\Fishing.lua
 UI\Main\Pages\Crates.lua

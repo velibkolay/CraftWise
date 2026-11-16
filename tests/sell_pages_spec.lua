@@ -601,7 +601,7 @@ it("Sell pages replace their bridges; the profit window has no Bags view, Record
 	end
 	local order = {}
 	for _, p in ipairs(M.SectionPages("sell")) do order[#order + 1] = p.key end
-	eq(table.concat(order, ","), "bags,auctions,ledger")
+	eq(table.concat(order, ","), "bags,auctions,ledger,flips")
 	eq(ns.PF, nil, "the profit window is gone (#154)")
 	eq(ns.RW, nil, "the Records window is gone (#157)"); eq(CraftWiseRecordsFrame, nil)
 end)
