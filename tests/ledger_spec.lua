@@ -403,3 +403,113 @@ it("#123: at logout the ledger uses the money last seen; a new day doesn't start
 	eq(days[1].endMoney, 90000); eq(days[2].startMoney, 100000); eq(days[2].change, -10000)
 	eq(ns.Ledger.Summary("login").money, 90000)
 end)
+
+-- Issue #337: item purchases are priced from the item search rows; GetAuctionInfoByID is only the fallback.
+local KEY = { itemID = BOOTS, itemLevel = 5, itemSuffix = 0 }
+
+local function OneRow(stub)
+	stub.auctions = {} -- GetAuctionInfoByID knows nothing: only the search rows tell the price
+	stub.itemSearch[BOOTS] = { rows = { { auctionID = 77, quantity = 1, buyoutAmount = 5000, itemKey = KEY },
+		{ auctionID = 78, quantity = 1, buyoutAmount = 6000, itemKey = KEY } } }
+end
+
+local function Trace(ns) return table.concat(ns.Ledger.TraceLines(), "\n") end
+
+it("item buy through Blizzard's ItemBuyFrame key: logged without GetAuctionInfoByID", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	AuctionHouseFrame = { ItemBuyFrame = { itemKey = KEY } }
+	C_AuctionHouse.PlaceBid(77, 5000)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	AuctionHouseFrame = nil
+	eq(Kinds(ns), "ahbuy 400 x1 5000 " .. HORDE)
+	has(Trace(ns), "in Blizzard ItemBuyFrame item 400 found")
+	has(Trace(ns), "logged ahbuy item 400")
+end)
+
+it("item buy from CraftWise's panel: the AHBuy target gives the key", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	C_AuctionHouse.MakeItemKey = function(id) return { itemID = id, itemLevel = 5, itemSuffix = 0 } end
+	ns.AHBuy = ns.AHBuy or {}
+	local saved = ns.AHBuy.state
+	ns.AHBuy.state = { target = { kind = "flip", itemID = BOOTS } }
+	C_AuctionHouse.PlaceBid(78, 6000)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	ns.AHBuy.state = saved
+	eq(Kinds(ns), "ahbuy 400 x1 6000 " .. HORDE)
+	has(Trace(ns), "in CraftWise buy target item 400 found")
+end)
+
+it("item buy by another addon (hook only): the last item search key is enough", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+	C_AuctionHouse.PlaceBid(77, 5000)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(Kinds(ns), "ahbuy 400 x1 5000 " .. HORDE)
+	has(Trace(ns), "in last item search item 400 found")
+end)
+
+it("item buy: GetAuctionInfoByID still works as the fallback", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.auctions[77] = { itemKey = KEY, buyoutAmount = 5000 }
+	C_AuctionHouse.PlaceBid(77, 5000)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(Kinds(ns), "ahbuy 400 x1 5000 " .. HORDE)
+	has(Trace(ns), "GetAuctionInfoByID item 400")
+end)
+
+it("item buy: a bid below the buyout, an unknown auction and a failed purchase log nothing", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+	C_AuctionHouse.PlaceBid(77, 3000) -- a bid
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	C_AuctionHouse.PlaceBid(999, 5000) -- in no result we can read
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 999)
+	C_AuctionHouse.PlaceBid(78, 6000) -- buyout, then the server refuses
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	eq(#ns.Ledger.Entries(), 0)
+	has(Trace(ns), "not logged")
+	has(Trace(ns), "no pending PlaceBid")
+end)
+
+it("item buy, then the vendor sale: one flip with the profit", function()
+	local ns, stub = Load()
+	stub.items[BOOTS].sellPrice = 7000
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+	C_AuctionHouse.PlaceBid(77, 5000)
+	stub.money = stub.money - 5000
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	stub.SetBags({ [LINEN] = 20, [BOOTS] = 1 })
+	stub.Fire("BAG_UPDATE_DELAYED")
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 7000)
+	local rows = ns.Flips.Rows()
+	eq(#rows, 1)
+	eq(rows[1].i, BOOTS); eq(rows[1].cost, 5000); eq(rows[1].got, 7000)
+	eq(ns.Flips.Stats("all").profit, 2000)
+end)
+
+it("/craftwise debug prints the purchase trace; debug ledger toggles the live echo", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+	C_AuctionHouse.PlaceBid(77, 5000)
+	has(Printed(function() SlashCmdList.CRAFTWISE("debug") end), "AH purchase trace")
+	has(Printed(function() SlashCmdList.CRAFTWISE("debug") end), "PlaceBid 77 bid 5000")
+	has(Printed(function() SlashCmdList.CRAFTWISE("debug ledger") end), "echo: on")
+	has(Printed(function() C_AuctionHouse.PlaceBid(78, 6000) end), "ledger: ")
+end)
