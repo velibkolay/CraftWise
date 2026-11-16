@@ -89,6 +89,9 @@ function P.Model(list)
 		local group = P.GroupOf(l)
 		local row = { line = l, group = group }
 		if group == "flip" then
+			row.sub = l.single and "one" or "bulk" -- two headings: bulk flips first, then one by one (#344)
+		end
+		if group == "flip" then
 			local depth = house and ns.Market and ns.Market.Depth and ns.Market.Depth(l.itemID, house, 8)
 			row.atLeast = atLeast[l.itemID] and true or false
 			row.figures = ns.Loops.FlipLine(l.need, ns.Loops.TiersOf(depth), l.sell, row.atLeast)
@@ -137,6 +140,11 @@ end
 function P.GroupHeading(group, n)
 	local name = ({ snipe = L["Snipes"], flip = L["Flips"], basket = L["Basket"] })[group]
 	return ("%s (%d)"):format(name, n)
+end
+
+-- The heading of a flip sub-group: "Flips · bulk (3)" and "Flips · one by one (2)".
+function P.FlipHeading(sub, n)
+	return ("%s · %s (%d)"):format(L["Flips"], sub == "one" and L["one by one"] or L["bulk"], n)
 end
 
 -- Right end of a flip's first line (#339): "+3c each · 52 buys" or "1 buy"; nil for other rows.
@@ -346,18 +354,24 @@ function P.Update()
 		end
 	end
 	local lastGroup
+	local sizes = {}
+	for _, row in ipairs(order) do
+		local key = row.group .. (row.sub or "")
+		sizes[key] = (sizes[key] or 0) + 1
+	end
 	for i = 1, math.max(#order, #lines) do
 		local row = order[i]
 		local shownRow = row and i <= P.LINES
 		if row and i <= P.LINES then
-			if row.group ~= lastGroup then
-				lastGroup, h = row.group, h + 1
+			local key = row.group .. (row.sub or "")
+			if key ~= lastGroup then
+				lastGroup, h = key, h + 1
 				local fs = headings[h]
 				if not fs then
 					fs = Style.Text(panel, "Small", "text3")
 					headings[h] = fs
 				end
-				fs:SetText(P.GroupHeading(row.group, #model.groups[row.group]))
+				fs:SetText(row.sub and P.FlipHeading(row.sub, sizes[key]) or P.GroupHeading(row.group, #model.groups[row.group]))
 				fs:ClearAllPoints()
 				fs:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
 				fs:Show()
