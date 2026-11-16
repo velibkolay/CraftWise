@@ -475,8 +475,7 @@ it("item buy: a bid below the buyout, an unknown auction and a failed purchase l
 	C_AuctionHouse.PlaceBid(999, 5000) -- in no result we can read
 	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 999)
 	C_AuctionHouse.PlaceBid(78, 6000) -- buyout, then the server refuses
-	stub.Fire("AUCTION_HOUSE_SHOW_ERROR")
-	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 10) -- an error with no completion
 	eq(#ns.Ledger.Entries(), 0)
 	has(Trace(ns), "not logged")
 	has(Trace(ns), "no pending PlaceBid")
@@ -512,4 +511,36 @@ it("/craftwise debug prints the purchase trace; debug ledger toggles the live ec
 	has(Printed(function() SlashCmdList.CRAFTWISE("debug") end), "PlaceBid 77 bid 5000")
 	has(Printed(function() SlashCmdList.CRAFTWISE("debug ledger") end), "echo: on")
 	has(Printed(function() C_AuctionHouse.PlaceBid(78, 6000) end), "ledger: ")
+end)
+
+-- Issue #340: Forever sends AUCTION_HOUSE_SHOW_ERROR (10, DatabaseError) between PlaceBid and the completion.
+it("PlaceBid, error 10, then PURCHASE_COMPLETED for the same auction: one ahbuy", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+	C_AuctionHouse.PlaceBid(77, 5000)
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 10)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(Kinds(ns), "ahbuy 400 x1 5000 " .. HORDE)
+	has(Trace(ns), "AUCTION_HOUSE_SHOW_ERROR error 10")
+end)
+
+it("a pending bid is dropped when the AH closes or after 60 seconds, not by an error", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	OneRow(stub)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+	C_AuctionHouse.PlaceBid(77, 5000)
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(#ns.Ledger.Entries(), 0)
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	stub.now = (stub.now or 0) + 1
+	C_AuctionHouse.PlaceBid(78, 6000)
+	stub.now = stub.now + 61
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	eq(#ns.Ledger.Entries(), 0)
+	has(Trace(ns), "dropped after 60 s")
 end)

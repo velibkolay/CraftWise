@@ -1231,3 +1231,9 @@ No new files. Item auctions only (gear, recipes); commodities buy their quantity
 - [ ] After three buys the status reads "Bought 3 for <total>". Picking another line or closing the AH starts a new count.
 - [ ] A price above the max or a vanished auction: nothing is bought, the panel says why. The auction you just bought is never offered again, even if the list still shows it.
 - [ ] An error ("Internal auction error"): the status line names it ("... (error N). Search again."), nothing is retried, and a list that arrives afterwards does not re-enable Buy. Note the error number and what you were doing.
+
+## AH item buys that answer with error 10 (#340)
+- Buy one item auction from the CraftWise panel. The server may send "Internal auction error (error 10)" and still complete the purchase. The panel then reads "Bought 1 for X (the server also sent error 10). Search again.", never "failed"; the auction is not offered again.
+- `/craftwise ledger` has the `ahbuy` entry; `/craftwise debug` shows `AUCTION_HOUSE_SHOW_ERROR error 10 (pending bids kept)` and `logged ahbuy`.
+- Sell the units to a vendor: Sell › Flips shows the flip.
+- An error with no completion logs nothing; closing the AH or waiting 60 s drops a pending bid.

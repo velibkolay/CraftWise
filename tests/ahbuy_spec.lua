@@ -155,6 +155,39 @@ it("Buy: an error frees the button and is not retried", function()
 	eq(#ah.calls, 1)
 end)
 
+it("Buy: error 10 first, then the completion for the same auction still counts as bought (#340)", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 800, 1, 78 } })
+	PickAndSearch(ns, stub, { kind = "basket", itemID = SWORD, need = 2 }, "item")
+	AB.Refresh()
+	AB.Click()
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 10)
+	eq(AB.state.busy, false)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78) -- not the shown auction: ignored
+	eq(AB.state.bought[78], nil)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(AB.state.bought[77], true)
+	eq(AB.state.run.units, 1); eq(AB.state.run.total, 700)
+	assert(AB.state.message:find("Bought 1", 1, true) and AB.state.message:find("error 10", 1, true), AB.state.message)
+	eq(#ah.calls, 1, "nothing retried")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77) -- a second event counts nothing more
+	eq(AB.state.run.units, 1)
+end)
+
+it("Buy: an error with no completion buys nothing and counts nothing", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 } })
+	PickAndSearch(ns, stub, { kind = "basket", itemID = SWORD, need = 1 }, "item")
+	AB.Refresh()
+	AB.Click()
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 10)
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(next(AB.state.bought), nil); eq(AB.state.run, nil)
+end)
+
 ----------------------------------------------------------------------------------------------- fresh list (#335)
 
 local FLIPSWORD = { kind = "flip", itemID = SWORD, need = 3, maxUnit = 800, sell = 1000 }
