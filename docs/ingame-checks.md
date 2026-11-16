@@ -1166,3 +1166,11 @@ New file `UnitTooltip.lua` in the TOC: needs a full game restart once. Settings 
 - [ ] In combat and in a raid with secret values: no Lua errors from hovering units.
 - [ ] CraftWise's item tooltip lines are unchanged (item post call is separate).
 - Left out on purpose: "hold Shift to see a tooltip hidden in combat": CraftWise hides no tooltips in combat.
+## Interface › Dressing room (#321, part 4)
+New file `DressingRoom.lua` in the TOC: needs a full game restart once. Settings > Interface: "Dressing room: undress" and "Dressing room: animation", both off by default.
+- [ ] Both off: the dressing room has no extra buttons.
+- [ ] Undress on: open the dressing room (try on an item from the bags or a link). "Undress" and "Try-ons only" sit at the top left of the model. Do they overlap anything of Blizzard's frame? Undress strips everything, weapons too.
+- [ ] Try on two items (shift-click links, Ctrl-click bag items): "Try-ons only" strips the model and puts back just those two. Click Blizzard's Reset: "Try-ons only" has nothing to show until you try on something new. Close and reopen the room: the list starts empty.
+- [ ] Items tried on from the wardrobe or a set are **not** tracked (they do not come through `DressUpVisualLink`): note whether they are kept or dropped by "Try-ons only".
+- [ ] Animation on: a "Pause" button; it freezes the model's animation and reads "Play"; Play resumes. Does the pause stay when you try on another item or zoom? Does it also pause the character frame's model (`SetPaused(paused, false)` should not touch the global pause)?
+- [ ] Off again: the buttons disappear without a reload.
