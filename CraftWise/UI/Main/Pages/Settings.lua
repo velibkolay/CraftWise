@@ -407,6 +407,10 @@ local function Groups()
 			sub = L["When an auction runs out and the item is on its way back by mail."],
 			get = function() return ns.AuctionAlert.ExpiredEnabled() end,
 			set = function(v) S().expiredToast = v and true or false end },
+		{ key = "expiredWarn", kind = "check", label = L["Expired before"], text = L["Warn when posting"],
+			sub = L["When the item you put into the auction house sell frame expired unsold before (last 30 days, this house): a line with the date, duration and price. The item tooltip shows it too."],
+			get = function() return ns.Auctions.ExpiredWarn.Enabled() end,
+			set = function(v) S().expiredWarn = v and true or false end },
 	} }
 
 	groups[#groups + 1] = { key = "loops", label = L["Vendor loops"], rows = {

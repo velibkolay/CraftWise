@@ -12,6 +12,7 @@ ns.TOOLTIP_LINES = {
 	{ key = "tracked", label = "Tracked recipe: reagents you hold" },
 	{ key = "soldBy", label = "Sold by (merchants you opened)" },
 	{ key = "maxBuy", label = "Max price to pay for a reagent" },
+	{ key = "expired", label = "Expired unsold before (auction house open)" },
 }
 
 local MUTED = "|cff8c95a6"
@@ -436,6 +437,12 @@ function ns.AddTooltipLines(tooltip, itemID)
 	if s.lines.maxBuy then
 		for _, line in ipairs(MaxBuyLines(itemID)) do
 			lines[#lines + 1] = line
+		end
+	end
+	if s.lines.expired ~= false and ns.Auctions and ns.Auctions.ExpiredWarn.Enabled() then
+		local info = ns.Auctions.ExpiredBefore(itemID) -- needs the open house: nil when the AH is closed (#327)
+		if info then
+			lines[#lines + 1] = { "Expired before", WARN .. ns.Auctions.ExpiredWarn.Text(info) .. "|r" }
 		end
 	end
 	if s.lines.market then

@@ -1276,3 +1276,91 @@ ns.Listen("JUNK_CHANGED", function()
 		KW.Refresh(frame)
 	end
 end)
+
+-- Expired before (#327): when the item picked into Blizzard's sell frame expired unsold earlier, a label on
+-- the frame says when it was posted, for how long and at what unit price, and the item tooltip carries the
+-- same facts (the cue for Auctionator's Selling tab, which is not hooked). Read only, like the Keep warning.
+-- Only this character's records (the store keeps one list per character) that have `expT` (expired, or
+-- returned after expiring) on the current house count; "gone" (unsure) and "cancelled" never do. Records go
+-- back KEEP_DAYS days, so that is the reach.
+A.ExpiredWarn = A.ExpiredWarn or { labels = {} }
+local EW = A.ExpiredWarn
+
+function EW.Enabled()
+	local s = ns.db and ns.db.settings
+	return not (s and s.expiredWarn == false)
+end
+
+-- { latest = record, count = n } for an item on the current house, nil when none (or no house known).
+function A.ExpiredBefore(itemID, house)
+	house = house or (ns.Market and ns.Market.CurrentHouse())
+	local list = itemID and house and A.List()
+	if not list then
+		return nil
+	end
+	local latest, count
+	for _, rec in ipairs(list) do
+		if rec.i == itemID and rec.h == house and rec.expT and (rec.st == "expired" or rec.st == "returned") then
+			count = (count or 0) + 1
+			if not latest or rec.expT > latest.expT then
+				latest = rec
+			end
+		end
+	end
+	return latest and { latest = latest, count = count } or nil
+end
+
+-- "07/11/26 14:30, 12 Hours, 5g 20s each (x3)", plus " and 2 more" for older ones.
+function EW.Text(info, withQuantity)
+	local rec = info.latest
+	local parts = { date("%x %H:%M", rec.t or rec.expT) }
+	if rec.durText then
+		parts[#parts + 1] = rec.durText
+	end
+	if rec.unit then
+		local price = ns.FormatMoney(rec.unit)
+		parts[#parts + 1] = (withQuantity and (rec.q or 1) > 1) and ("%s each (x%d)"):format(price, rec.q) or price
+	end
+	local text = table.concat(parts, ", ")
+	if info.count > 1 then
+		text = text .. (" and %d more"):format(info.count - 1)
+	end
+	return text
+end
+
+function EW.Refresh(frame)
+	local label = EW.labels[frame]
+	if not label then
+		return
+	end
+	local loc = frame.GetItem and frame:GetItem()
+	local ok, itemID = pcall(C_Item.GetItemID, loc)
+	local info = ok and itemID and EW.Enabled() and A.ExpiredBefore(itemID) or nil
+	if info then
+		label:SetText(ns.Style.Hex("danger") .. "Expired before:|r " .. EW.Text(info, true))
+		label:Show()
+	else
+		label:Hide()
+	end
+end
+
+local function AttachExpired(frame)
+	if type(frame) ~= "table" or not frame.CreateFontString or EW.labels[frame] or not hooksecurefunc then
+		return
+	end
+	local label = ns.Style.Text(frame, "Small", "nokta", "OVERLAY")
+	label:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -18) -- under the Keep label; provisional spot
+	label:Hide()
+	EW.labels[frame] = label
+	if frame.SetItem then
+		hooksecurefunc(frame, "SetItem", ns.Timed("Auctions: Expired warning", function() EW.Refresh(frame) end))
+	end
+end
+
+ns.On("AUCTION_HOUSE_SHOW", function()
+	local ah = _G.AuctionHouseFrame
+	if ah then
+		AttachExpired(ah.ItemSellFrame)
+		AttachExpired(ah.CommoditiesSellFrame)
+	end
+end)
