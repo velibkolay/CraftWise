@@ -31,6 +31,8 @@ local OPTIONS = {
 	{ key = "rule" },
 	{ key = "where", label = "Where to buy", note = "Merchants you opened that sell it" },
 	{ key = "history", label = "Price history", note = "Shows the link to the item's page on the site, with its price history" },
+	-- Interface (#321): only with Settings > Interface > Wowhead link; opens the box with the item's link.
+	{ key = "wowhead", label = "Wowhead link", wowhead = true, note = "Shows the item's Wowhead link in a box to copy (Ctrl+C)" },
 	-- Watch list (#165): the label flips once the item is watched; same toggle as the Items card.
 	{ key = "watch", label = "Watch", undo = "Stop watching", watch = true,
 		note = "Adds it to Look up › Items › Watched" },
@@ -179,7 +181,8 @@ end
 function ns.ItemMenuRows(quest, gear)
 	local keys = {}
 	for _, opt in ipairs(OPTIONS) do
-		if not (quest and opt.sells) and not (opt.quest and not quest) and not (opt.gear and not gear) then
+		if not (quest and opt.sells) and not (opt.quest and not quest) and not (opt.gear and not gear)
+			and not (opt.wowhead and not (ns.InterfaceExtras and ns.InterfaceExtras.Settings().wowheadLink)) then
 			keys[#keys + 1] = opt.key
 		end
 	end
@@ -208,6 +211,8 @@ local function Choose(opt)
 			ns.ShowRecipesUsing(itemID)
 		elseif opt.key == "where" or opt.key == "history" then
 			ns.OpenItemLookup(itemID, opt.key)
+		elseif opt.key == "wowhead" and ns.InterfaceExtras then
+			ns.InterfaceExtras.ShowLink("item", itemID, (ns.ItemInfoNow(itemID)))
 		elseif opt.key == "watch" and ns.ItemWatch then
 			ns.ItemWatch.Toggle(itemID)
 		elseif opt.key == "dismiss" and ns.ToggleDismissed then

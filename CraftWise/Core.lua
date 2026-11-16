@@ -185,7 +185,7 @@ local DB_DEFAULTS = {
 	-- bagsMatsOnly; Settings › Bags and loot: showDismissed. The main window keeps its own state (section,
 	-- pages, layout) in settings.ui.
 	settings = { includeUnlearned = true, hideUnpriced = false, vendorCheck = false, disenchantCheck = false, disenchantMinSamples = 10, loopAlert = true, loopAlertMin = 0, flipAlert = true, flipAlertMin = 100, flipJunk = true, flipList = true, ahBuyConfirm = 100000, snipeAlert = true, trainAll = true, saleToast = true, saleSound = true, expiredToast = false, learnFitsSkill = false, showKept = true,
-		showDismissed = false, interface = { squareMinimap = false, hideButtons = false, hideCompartment = false, flightTimes = false, flightBar = false, flightBig = false, flightScale = 1.25, tipTarget = false, tipGuildRank = false, dressStrip = false, dressAnim = false, volumeSlider = false, wowheadLink = false, audioSync = false }, ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
+		showDismissed = false, interface = { squareMinimap = false, hideButtons = false, hideCompartment = false, flightTimes = false, flightBar = false, flightBig = false, flightScale = 1.25, tipTarget = false, tipGuildRank = false, dressStrip = false, dressAnim = false, volumeSlider = false, wowheadLink = false }, ahMinPercent = 20, ahMinCopper = 10, bagsMatsOnly = false,
 		alpha = { main = 0.96, farm = 0.86, toast = 0.70 }, -- background alpha per window (#162), Settings > Look
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
 		slotMarks = true, -- marks on bag slots (BagIcons.lua, #160); Settings › Bags and loot (#157)

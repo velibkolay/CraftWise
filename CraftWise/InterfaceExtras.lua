@@ -1,6 +1,7 @@
--- Interface › small ones (#321 part 5): a master volume slider on the minimap, a Wowhead link box and
--- "keep audio synced". Every switch is off by default (db.settings.interface: volumeSlider, wowheadLink,
--- audioSync); while off nothing is hooked, registered or built.
+-- Interface › small ones (#321 part 5): a master volume slider on the minimap and a Wowhead link box.
+-- Every switch is off by default (db.settings.interface: volumeSlider, wowheadLink); while off nothing is
+-- hooked, registered or built. (Keep audio synced is not here: it waits for evidence of a sound-restart
+-- function, #321.)
 --
 -- Built from Blizzard's Forever UI source (Gethe/wow-ui-source, branch `forever`), nothing from another
 -- addon:
@@ -8,22 +9,16 @@
 --     Sound_MasterVolume, range 0 to 1, step 0.05 (volumeMinValue, volumeMaxValue, volumeStep);
 --     Blizzard_SharedXML/Mainline/Sound.lua (AdjustMasterVolume) reads and writes the same CVar.
 --     The slider sits on the minimap (at its bottom edge, inside it).
---   Wowhead link: the client has no clipboard API, so the URL is in a selectable edit box (Ctrl+C).
---     Item: the Item tooltip post call (TooltipDataProcessor.AddTooltipPostCall, data.id); quest: the
---     selected quest, C_QuestLog.SetSelectedQuest(questID), which QuestMapFrame_ShowQuestDetails calls
---     (Blizzard_UIPanels_Game/Mainline/QuestMapFrame.lua).
+--   Wowhead link: the client has no clipboard API, so the URL is in a selectable edit box (Ctrl+C). It opens
+--     only on a click: the "Wowhead link" entry of CraftWise's item menu (UI/ItemMenu.lua), and a
+--     "Wowhead" button on the quest log's quest details (QuestMapFrame.DetailsFrame, its .questID field:
+--     Blizzard_UIPanels_Game/Mainline/QuestMapFrame.lua/.xml). Nothing is hooked on tooltips or on
+--     C_QuestLog.SetSelectedQuest. The box hides when the quest log closes.
 --     URL: https://www.wowhead.com/forever/item=<id> and .../quest=<id>.
---   Keep audio synced: Audio.lua's output device option is the CVar Sound_OutputDriverIndex and it refreshes
---     on VOICE_CHAT_OUTPUT_DEVICES_UPDATED; SOUND_DEVICE_UPDATE is the sound event of SoundDocumentation.
---     On either event the CVar is set to its default (C_CVar.GetCVarDefault: the system's default device),
---     the same change the options dropdown makes. Blizzard's UI has no function that restarts the sound
---     system, so none is called; whether setting the CVar is enough is an in-game check.
 local _, ns = ...
 
 local X = {}
 ns.InterfaceExtras = X
-
-local installed = {}
 
 local function Settings()
 	local s = ns.db and ns.db.settings
@@ -159,70 +154,36 @@ function X.ShowLink(kind, id, name)
 	if not box then
 		BuildBox()
 	end
-	box.url = url
+	box.url, box.kind = url, kind
 	box.label:SetText("Wowhead · " .. (kind == "quest" and ns.L["Quest"] or ns.L["Item"]) .. (name and (" · " .. name) or ""))
 	box.edit:SetText(url)
 	box:Show()
 	return url
 end
 
-local function OnItemTooltip(tooltip, data)
-	if tooltip == GameTooltip and data and data.id and On("wowheadLink") then
-		local name = ns.ItemInfoNow(data.id)
-		X.ShowLink("item", data.id, name)
-	end
-end
+-- The quest log's quest details get a small "Wowhead" button: a click opens the box for the quest shown.
+local questButton
 
-local function OnQuestSelected(questID)
-	if questID and questID ~= 0 and On("wowheadLink") then
-		X.ShowLink("quest", questID, C_QuestLog.GetTitleForQuestID(questID))
-	end
-end
-
-local function HookLink()
-	if installed.link then
+local function BuildQuestButton()
+	local details = QuestMapFrame and QuestMapFrame.DetailsFrame
+	if questButton or not details then
 		return
 	end
-	installed.link = true
-	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
-		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnItemTooltip)
-	end
-	if C_QuestLog and C_QuestLog.SetSelectedQuest then
-		hooksecurefunc(C_QuestLog, "SetSelectedQuest", OnQuestSelected)
-	end
-end
-
-----------------------------------------------------------------------------------------------------
--- Keep audio synced
-----------------------------------------------------------------------------------------------------
-
-local sync
-
--- The output device changed: set the device option to its default again (the system's default device).
-function X.SyncAudio()
-	if not On("audioSync") then
-		return false
-	end
-	if (CinematicFrame and CinematicFrame:IsShown()) or (MovieFrame and MovieFrame:IsShown()) then
-		return false -- never in the middle of a cinematic
-	end
-	local default = C_CVar.GetCVarDefault("Sound_OutputDriverIndex")
-	if default == nil then
-		return false
-	end
-	C_CVar.SetCVar("Sound_OutputDriverIndex", default)
-	return true
-end
-
-local function HookSync()
-	if not sync then
-		sync = CreateFrame("Frame")
-		sync:SetScript("OnEvent", function()
-			X.SyncAudio()
-		end)
-	end
-	sync:RegisterEvent("VOICE_CHAT_OUTPUT_DEVICES_UPDATED")
-	sync:RegisterEvent("SOUND_DEVICE_UPDATE")
+	questButton = ns.Style.LineButton(details, "Wowhead", nil, 20)
+	questButton:SetPoint("TOPRIGHT", details, "TOPRIGHT", -8, -6)
+	questButton:SetFrameLevel(details:GetFrameLevel() + 10)
+	questButton:SetScript("OnClick", function()
+		local questID = details.questID
+		if questID then
+			X.ShowLink("quest", questID, C_QuestLog.GetTitleForQuestID(questID))
+		end
+	end)
+	-- The box for a quest goes when the quest log closes.
+	QuestMapFrame:HookScript("OnHide", function()
+		if box and box.kind == "quest" then
+			box:Hide()
+		end
+	end)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -233,14 +194,12 @@ function X.Apply()
 	end
 	RefreshSlider()
 	if On("wowheadLink") then
-		HookLink()
+		BuildQuestButton()
 	elseif box then
 		box:Hide()
 	end
-	if On("audioSync") then
-		HookSync()
-	elseif sync then
-		sync:UnregisterAllEvents()
+	if questButton then
+		questButton:SetShown(On("wowheadLink"))
 	end
 end
 
@@ -250,7 +209,14 @@ function X.Set(key, value)
 end
 
 ns.On("PLAYER_LOGIN", function()
-	if On("volumeSlider") or On("wowheadLink") or On("audioSync") then
+	if On("volumeSlider") or On("wowheadLink") then
 		X.Apply()
+	end
+end)
+
+-- The map frame (and the quest log in it) may load after us.
+ns.On("ADDON_LOADED", function(_, name)
+	if name == "Blizzard_WorldMap" and On("wowheadLink") then
+		BuildQuestButton()
 	end
 end)
