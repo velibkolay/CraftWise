@@ -593,6 +593,23 @@ local function Groups()
 		InterfaceCheck("hideButtons", L["Minimap buttons"], L["Hide addon buttons until the mouse is over the minimap"]),
 		InterfaceCheck("hideCompartment", L["Addon compartment"], L["Hide the addon compartment button"]),
 	} }
+	local Fl = ns.Flights
+	local interfaceRows = {
+		{ key = "flightTimes", kind = "check", label = L["Flight times"], text = L["Record each flight; show the time on the flight map"],
+			sub = L["Only flights you flew; an unknown route says not recorded."],
+			get = function() return Fl.Settings().flightTimes == true end, set = function(v) Fl.Set("flightTimes", v) end },
+		{ key = "flightBar", kind = "check", label = L["Flight bar"], text = L["Show the destination, next stop and time left while flying"],
+			get = function() return Fl.Settings().flightBar == true end, set = function(v) Fl.Set("flightBar", v) end },
+		{ key = "flightBig", kind = "check", label = L["Bigger flight map"], text = L["Scale the flight map"],
+			get = function() return Fl.Settings().flightBig == true end, set = function(v) Fl.Set("flightBig", v) end },
+		{ key = "flightScale", kind = "slider", label = L["Flight map size"], min = 1, max = 1.5, step = 0.05, onRelease = true,
+			disabled = function() return Fl.Settings().flightBig ~= true end,
+			get = function() return Fl.Scale() end, set = function(v) Fl.Set("flightScale", v) end, format = Pct },
+	}
+	local interfaceGroup = groups[#groups]
+	for _, row in ipairs(interfaceRows) do
+		interfaceGroup.rows[#interfaceGroup.rows + 1] = row
+	end
 
 	groups[#groups + 1] = { key = "snapshot", label = L["Snapshot"], rows = {
 		{ key = "buttons", kind = "buttons", label = L["Character snapshot"], buttons = {
