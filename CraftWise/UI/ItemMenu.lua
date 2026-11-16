@@ -38,6 +38,7 @@ local OPTIONS = {
 	{ key = "dismiss", label = "Don't suggest as upgrade", undo = "Suggest as upgrade again", gear = true,
 		note = "Look up › Upgrades leaves it out (Settings › Bags and loot › Show dismissed upgrades lists it again)" },
 	{ key = "basket", label = "Open basket", note = "Make › Basket: what to buy for the crafts you added" },
+	{ key = "snipe", label = "Add to snipe list", note = "Fills the form of CraftWise's AH panel: type the max price per unit there and save" },
 	{ key = "recipes", label = "Recipes using this", note = "Opens Make › Craft with every recipe of yours that uses it" },
 }
 ns.ItemMenuOptions = OPTIONS
@@ -200,6 +201,9 @@ local function Choose(opt)
 			if ns.Main and ns.Main.Open then
 				ns.Main.Open("basket")
 			end
+		elseif opt.key == "snipe" and ns.AHPanel then
+			ns.AHPanel.Prefill(itemID)
+			ns.Print("Open the auction house, type the max price per unit in CraftWise's snipe list and save.")
 		elseif opt.key == "recipes" then
 			ns.ShowRecipesUsing(itemID)
 		elseif opt.key == "where" or opt.key == "history" then

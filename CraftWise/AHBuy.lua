@@ -4,8 +4,9 @@
 -- Safety (Veli's rules, #315). Gold is at stake, so the buying is kept small and in one place:
 --   * C_AuctionHouse.PlaceBid, StartCommoditiesPurchase and ConfirmCommoditiesPurchase are each called once, in
 --     this file (AHBuy.Execute and AHBuy.Confirm), and these two are reached only from AHBuy.Click and
---     AHBuy.Accept, which only the panel's Buy button (OnClick) and the client's confirm dialog (OnAccept)
---     call. Both are clicks. Nothing here runs on an event, a timer or a loop; no retry, no queue. A spec reads
+--     AHBuy.Accept, which only the panel's Buy button (OnClick), the client's confirm dialog (OnAccept) and,
+--     since part 2, the "AH: buy best" key (AHBuy.KeyBuy) call. All three are a click or a key press. Nothing
+--     here runs on an event, a timer or a loop; no retry, no queue. A spec reads
 --     the source and fails if the calls or their callers appear anywhere else.
 --   * Right before each call the auction is read again: same item, unit price at most the line's max, total
 --     at most what the button showed, enough gold. If anything differs nothing is bought and the panel says
@@ -18,6 +19,13 @@
 --     (COMMODITY_PRICE_UPDATED), the second (a button of its own showing that price) confirms it. A price
 --     above what the first click showed, or above the line's max, is never confirmed: it is cancelled and shown.
 --   * After a purchase the results are old: the buy button stays off until the player searches again.
+--
+-- Keys (#315, part 2): two key bindings, "AH: search next" and "AH: buy best" (Bindings.xml, runOnUp so the body
+-- also hears the release). A press is one action: the search key is AHBuy.Next (one search), the buy key is
+-- AHBuy.Click, the same path as the button, with the same checks. A commodity needs two presses (start, then
+-- confirm), an item auction one. A press while the key is still held down is ignored (there is no repeat);
+-- nothing is queued: a press while the server is busy says "wait" and does nothing. The press is the hardware
+-- event the restricted calls need (Blizzard's docs mark PlaceBid and StartCommoditiesPurchase restricted).
 --
 -- How Blizzard's Forever AH UI does it (wow-ui-source, branch forever, Blizzard_AuctionHouseUI/Shared/):
 --   Blizzard_AuctionHouseFrame.lua QueryItem: C_AuctionHouse.SendSearchQuery(itemKey, sorts, separateOwnerItems)
@@ -50,6 +58,7 @@ local S = {
 	message = nil, -- what the panel says
 }
 AHBuy.state = S
+local held = {} -- [key] = true from a key press until its release (#315 part 2)
 
 local function Settings()
 	return ns.db and ns.db.settings or {}
@@ -216,11 +225,19 @@ local function Sorts(isCommodity)
 	return { { sortOrder = O.Price, reverseSort = false }, { sortOrder = O.Name, reverseSort = false } }
 end
 
+-- Gives up a commodity quote that was started and not confirmed (a new pick or search replaces it).
+local function DropQuote()
+	if S.phase == "confirm" or S.phase == "quoting" then
+		C_AuctionHouse.CancelCommoditiesPurchase()
+	end
+end
+
 -- Picks a line to buy; nothing is sent.
 function AHBuy.Pick(line)
 	if S.busy then
 		return false
 	end
+	DropQuote()
 	S.target, S.shown, S.quote, S.phase, S.isCommodity = line, nil, nil, "idle", nil
 	S.message = nil
 	Changed()
@@ -242,6 +259,7 @@ function AHBuy.Search()
 	if Throttled() then
 		return false, Say("Wait: the auction house is busy")
 	end
+	DropQuote()
 	local key = C_AuctionHouse.MakeItemKey(t.itemID)
 	local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(key)
 	S.isCommodity = info and info.isCommodity or nil -- unknown until the answer says which kind it is
@@ -249,6 +267,44 @@ function AHBuy.Search()
 	C_AuctionHouse.SendSearchQuery(key, Sorts(S.isCommodity), false)
 	Changed()
 	return true
+end
+
+-- The next line to search (a key press, #315 part 2): one line further down the lines (snipes, flips, basket),
+-- round to the first; the picked line again after a purchase or an error (its results are old), when it was
+-- picked and not searched yet, or when it is the only one. One search, nothing more. Returns true or false, why.
+function AHBuy.Next()
+	if S.busy then
+		return false, Say("Wait for the purchase")
+	end
+	if not S.open then
+		return false, Say("Open the auction house first")
+	end
+	if Throttled() then
+		return false, Say("Wait: the auction house is busy")
+	end
+	local list = AHBuy.Lines()
+	if #list == 0 then
+		return false, Say("Nothing to search: add a snipe, or a flip or basket line")
+	end
+	local t = S.target
+	local index
+	for i, l in ipairs(list) do
+		if t and l.itemID == t.itemID and l.kind == t.kind then
+			index = i
+		end
+	end
+	local pick
+	if not index then
+		pick = list[1]
+	elseif S.phase == "stale" or S.phase == "idle" then
+		pick = list[index]
+	else
+		pick = list[index % #list + 1]
+	end
+	if not AHBuy.Pick(pick) then
+		return false, Say("Wait for the purchase")
+	end
+	return AHBuy.Search()
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -428,6 +484,7 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 end)
 ns.On("AUCTION_HOUSE_CLOSED", function()
 	S.open, S.busy, S.phase, S.shown, S.quote, S.asking = false, false, "idle", nil, nil, nil
+	held.search, held.buy = nil, nil
 	Changed()
 end)
 ns.On("COMMODITY_SEARCH_RESULTS_RECEIVED", function()
@@ -528,5 +585,60 @@ function AHBuy.Lines(plan)
 	for _, l in ipairs((plan or ns.Basket.Plan()).split.auction) do
 		out[#out + 1] = { kind = "basket", itemID = l.itemID, need = l.quantity }
 	end
+	if ns.Snipe then
+		out = ns.Snipe.Merge(out) -- his typed max price wins; the snipe list comes first
+	end
 	return out
 end
+
+----------------------------------------------------------------------------------------------------
+-- The keys (#315, part 2)
+----------------------------------------------------------------------------------------------------
+
+-- One press = one action: runs fn on "down" only, and ignores a "down" while the key is still held. keystate is
+-- nil when something calls the global without a key (a macro): that is a press too and keeps no state.
+local function Press(key, keystate, fn)
+	if keystate == "up" then
+		held[key] = nil
+		return false
+	end
+	if keystate ~= nil and keystate ~= "down" then
+		return false
+	end
+	if keystate == "down" then
+		if held[key] then
+			return false
+		end
+		held[key] = true
+	end
+	return fn()
+end
+
+function AHBuy.KeySearch(keystate)
+	return Press("search", keystate, AHBuy.Next)
+end
+
+function AHBuy.KeyBuy(keystate)
+	return Press("buy", keystate, AHBuy.Click)
+end
+
+_G.BINDING_NAME_CRAFTWISE_AH_SEARCH = "AH: search next"
+_G.BINDING_NAME_CRAFTWISE_AH_BUY = "AH: buy best"
+function CraftWise_AHSearchKey(keystate)
+	return AHBuy.KeySearch(keystate)
+end
+function CraftWise_AHBuyKey(keystate)
+	return AHBuy.KeyBuy(keystate)
+end
+
+-- The snipe list changed (a max price, a limit or a removal): what the picked line was bought for is out of date,
+-- so it is dropped and has to be picked and searched again. A purchase that is already out is left alone.
+ns.Listen("SNIPE_CHANGED", function()
+	if S.busy or not S.target then
+		return
+	end
+	DropQuote()
+	S.target, S.shown, S.quote, S.phase, S.isCommodity = nil, nil, nil, "idle", nil
+	S.message = "The snipe list changed: pick the line again"
+	Changed()
+end)

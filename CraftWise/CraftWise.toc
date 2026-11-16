@@ -48,6 +48,7 @@ Balance.lua
 Loops.lua
 Basket.lua
 AHBuy.lua
+Snipe.lua
 SendList.lua
 Disenchant.lua
 BagSort.lua
