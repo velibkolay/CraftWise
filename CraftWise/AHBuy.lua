@@ -613,7 +613,20 @@ ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", function(_, auctionID)
 		local run = S.run or { units = 0, total = 0 }
 		run.units, run.total = run.units + late.units, run.total + late.total
 		S.run = run
-		Say(("Bought %d for %s (the server also sent error %s). Search again."):format(run.units, Money(run.total), tostring(late.err)))
+		local text = ("Bought %d for %s (the server also sent error %s)"):format(run.units, Money(run.total), tostring(late.err))
+		Say(text .. ". The list is old: search again.")
+		-- The #336 flow as after a normal buy: the next fresh list makes the panel ready, or the one that
+		-- already arrived does when it no longer holds this auction.
+		S.afterBuy = true
+		if S.target and S.listSeq > S.bidSeq then
+			for _, r in ipairs(AHBuy.ReadRows(S.target.itemID, false)) do
+				if r.auctionID == late.auctionID then
+					return
+				end
+			end
+			S.phase, S.afterBuy = "ready", false
+			Say(text)
+		end
 		return
 	end
 	if S.phase ~= "buying" then
@@ -679,7 +692,8 @@ function AHBuy.Lines(plan)
 	for _, f in ipairs(ns.Basket.Flips()) do
 		local missing = f.units - ns.Basket.FlipHeld(f)
 		if missing > 0 then
-			out[#out + 1] = { kind = "flip", itemID = f.itemID, need = missing, maxUnit = f.maxUnit, sell = f.sell }
+			out[#out + 1] = { kind = "flip", itemID = f.itemID, need = missing, maxUnit = f.maxUnit, sell = f.sell,
+				each = f.each, buys = f.single and missing or f.buys, single = f.single } -- #339: shown on the line only
 		end
 	end
 	for _, l in ipairs((plan or ns.Basket.Plan()).split.auction) do

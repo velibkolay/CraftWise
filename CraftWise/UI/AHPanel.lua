@@ -92,7 +92,7 @@ function P.Model(list)
 			local depth = house and ns.Market and ns.Market.Depth and ns.Market.Depth(l.itemID, house, 8)
 			row.atLeast = atLeast[l.itemID] and true or false
 			row.figures = ns.Loops.FlipLine(l.need, ns.Loops.TiersOf(depth), l.sell, row.atLeast)
-			flipLines[#flipLines + 1] = { need = l.need, sell = l.sell or 0, figures = row.figures }
+			flipLines[#flipLines + 1] = { need = l.need, sell = l.sell or 0, figures = row.figures, buys = l.buys }
 		elseif group == "basket" then
 			local quote = ns.AuctionQuote and ns.AuctionQuote(l.itemID)
 			row.figures = ns.Loops.BasketLine(l.need, quote and quote.copper)
@@ -123,19 +123,25 @@ function P.SummaryText(totals, scanT, now)
 	end
 	local t = L["Flips"] .. ": " .. L["cost"] .. " " .. Mark(totals.costMark, Money(totals.cost)) .. " · " .. L["vendor"] .. " "
 		.. Mark(totals.vendorMark, Money(totals.vendor)) .. " · " .. L["profit"] .. " " .. Gain(totals.profit, totals.profitMark)
+	local buys = totals.buys and totals.buys > 0 and ((totals.buysKnown and "" or "≥ ") .. totals.buys .. (totals.buys == 1 and " buy" or " buys") .. " · ") or ""
 	local age
 	if scanT and ns.Market and ns.Market.FormatAge then
 		age = (L["from the scan %s ago; the live search may differ"]):format(ns.Market.FormatAge(math.max(0, (now or time()) - scanT)))
 	else
 		age = L["scan age unknown; the live search may differ"]
 	end
-	return t, age
+	return t, buys .. age
 end
 
 -- The heading of a group: "Flips (3)".
 function P.GroupHeading(group, n)
 	local name = ({ snipe = L["Snipes"], flip = L["Flips"], basket = L["Basket"] })[group]
 	return ("%s (%d)"):format(name, n)
+end
+
+-- Right end of a flip's first line (#339): "+3c each · 52 buys" or "1 buy"; nil for other rows.
+function P.RowEach(row)
+	return row.group == "flip" and ns.Loops.EachText(row.line) or nil
 end
 
 -- First line of a row: "Linen Cloth ×15" (≥ when the flip lists more than the tiers show).
@@ -264,6 +270,9 @@ local function LineRow(i)
 	r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -3)
 	r.text:SetWidth(P.WIDTH - 60)
 	r.text:SetJustifyH("LEFT")
+	r.each = Style.Text(r, "Small", "text3")
+	r.each:SetPoint("TOPRIGHT", r, "TOPRIGHT", -4, -3)
+	r.each:SetJustifyH("RIGHT")
 	r.detail = Style.Text(r, "Small", "text2")
 	r.detail:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -17)
 	r.detail:SetWidth(P.WIDTH - 30)
@@ -360,6 +369,7 @@ function P.Update()
 			r:Show()
 			r.text:SetText(P.RowName(row))
 			r.detail:SetText(P.RowDetail(row))
+			r.each:SetText(P.RowEach(row) or "")
 			r.remove:SetShown(l.snipe and true or false)
 			r.mark:SetShown(S.target and S.target.itemID == l.itemID and S.target.kind == l.kind)
 			r:ClearAllPoints()

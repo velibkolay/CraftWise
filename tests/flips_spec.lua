@@ -369,3 +369,101 @@ it("Basket page (#314): the count is written out and the line has a tooltip", fu
 	eq(rows[2].ownTip[2], "5 units are listed below the vendor price.")
 	eq(ns.LootToast.Lines()[1].detail, "Silk Cloth, 8 or more")
 end)
+
+----------------------------------------------------------------------------------------------- per purchase (#339)
+
+local ARMOR, BLADE = 500, 600 -- items that do not stack
+
+it("Flip per purchase: Toughened-Leather-like tiers (every margin 3c) are no flip at a 1s minimum", function()
+	local ns = Load()
+	local L = ns.Loops
+	eq(L.Flip({ 740, 52 }, 52, 743, 1, 100), nil, "52 purchases at 3c each are not worth the presses")
+	local f = L.Flip({ 740, 52 }, 52, 743, 1) -- no minimum: any margin counts, as before
+	eq(f.units, 52); eq(f.profit, 156); eq(f.each, 3); eq(f.buys, 52); eq(f.single, true); eq(f.maxUnit, 742)
+	eq(L.EachText(f), "+" .. ns.FormatMoney(3, true) .. " each · 52 buys")
+end)
+
+it("Flip per purchase: a mixed item keeps only the auctions that earn enough each; the max price is vendor minus the minimum", function()
+	local ns = Load()
+	local L = ns.Loops
+	local f = L.Flip({ 800, 2, 997, 10 }, 12, 1000, 1, 100)
+	eq(f.units, 2); eq(f.profit, 400); eq(f.each, 200); eq(f.buys, 2); eq(f.maxUnit, 900)
+	eq(f.atLeast, false, "the list went on past the cut: not 'at least'")
+	eq(L.Flip({ 900, 1 }, 1, 1000, 1, 100).units, 1, "a margin equal to the minimum counts")
+	eq(L.Flip({ 901, 1 }, 1, 1000, 1, 100), nil)
+	eq(L.EachText(L.Flip({ 800, 1 }, 1, 1000, 1, 100)), "+" .. ns.FormatMoney(200, true) .. " each · 1 buy")
+end)
+
+it("Flip per purchase: a commodity is one purchase and the rule is unchanged; an unknown stack is not guessed", function()
+	local ns = Load()
+	local L = ns.Loops
+	local f = L.Flip({ 40, 5, 90, 10 }, 15, 100, 20, 100)
+	eq(f.units, 15); eq(f.profit, 400); eq(f.maxUnit, 99); eq(f.buys, 1); eq(f.each, 400); eq(f.single, false)
+	eq(L.EachText(f), "1 buy")
+	f = L.Flip({ 40, 5 }, 5, 100, nil, 100)
+	eq(f.units, 5); eq(f.buys, nil, "stack size not cached: the purchases are not known"); eq(L.EachText(f), "buys not known")
+	eq(L.EachText({}), nil, "a flip stored before the figures existed shows nothing")
+end)
+
+it("FlipFinds: ranked by profit per purchase, ties by the higher total", function()
+	local ns = Load()
+	local L = ns.Loops
+	local rows = {
+		{ itemID = ARMOR, total = 52, tiers = { 700, 52 } }, -- stack 1, margin 300 each, 52 units = 15600
+		{ itemID = BLADE, total = 1, tiers = { 500, 1 } }, -- stack 1, margin 500
+		{ itemID = CLOTH, total = 15, tiers = { 40, 5, 90, 10 } }, -- commodity: +400 in one purchase
+		{ itemID = SILK, total = 3, tiers = { 500, 3 } }, -- commodity: +1500 in one purchase
+	}
+	local sell = function(id) return ({ [ARMOR] = 1000, [BLADE] = 1000, [CLOTH] = 100, [SILK] = 1000 })[id] end
+	local stack = function(id) return (id == ARMOR or id == BLADE) and 1 or 20 end
+	local finds = L.FlipFinds(rows, sell, 100, stack, 100)
+	local ids = {}
+	for _, f in ipairs(finds) do ids[#ids + 1] = f.itemID end
+	eq(table.concat(ids, ","), SILK .. "," .. BLADE .. "," .. CLOTH .. "," .. ARMOR, "1500 per purchase, 500, the +400 commodity, then 300 each")
+	local tie = L.FlipFinds({ { itemID = 7, total = 1, tiers = { 500, 1 } }, { itemID = 8, total = 4, tiers = { 500, 4 } } }, function() return 1000 end,
+		0, function() return 1 end, 100)
+	eq(tie[1].itemID, 8, "the same margin: the higher total first")
+end)
+
+it("Flip per purchase: the scan keeps only the good auctions of a one-at-a-time item, ranks and shows them; the setting moves the cut", function()
+	local ns, stub = Load()
+	stub.items[ARMOR] = { name = "Toughened Leather Armor", sellPrice = 743, stack = 1 }
+	stub.items[BLADE] = { name = "Fine Blade", sellPrice = 1000, stack = 1 }
+	Seed(ns, ARMOR, { tiers = { 740, 52 }, total = 52 }) -- 3c each, 156 in all
+	Seed(ns, BLADE, { tiers = { 800, 2, 997, 10 }, total = 12 }) -- two auctions 20s... 2g each, the rest 3c
+	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5 }) -- commodity +300
+	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	local flips = ns.Basket.Flips()
+	eq(#flips, 2, "the armor at 3c each is gone")
+	eq(flips[1].itemID, CLOTH, "+300 in one purchase beats 200 each")
+	eq(flips[2].itemID, BLADE); eq(flips[2].units, 2); eq(flips[2].maxUnit, 990); eq(flips[2].buys, 2); eq(flips[2].each, 200)
+	-- the panel's lines carry the figures and the summary counts purchases
+	local list = ns.AHBuy.Lines()
+	eq(list[1].itemID, CLOTH); eq(list[2].buys, 2); eq(list[2].single, true)
+	local row = { group = "flip", line = list[2] }
+	eq(ns.AHPanel.RowEach(row), "+" .. ns.FormatMoney(200, true) .. " each · 2 buys")
+	eq(ns.AHPanel.RowEach({ group = "flip", line = list[1] }), "1 buy")
+	local totals = ns.Loops.FlipTotals({ { need = 5, sell = 100, buys = 1 }, { need = 2, sell = 1000, buys = 2 } })
+	eq(totals.buys, 3); eq(totals.buysKnown, true)
+	assert(ns.AHPanel.SummaryText(totals, nil, 0) ~= nil)
+	local _, age = ns.AHPanel.SummaryText(totals, nil, 0)
+	assert(age:find("3 buys", 1, true), age)
+	totals = ns.Loops.FlipTotals({ { need = 5, sell = 100, buys = 1 }, { need = 2, sell = 1000 } })
+	eq(totals.buys, 1); eq(totals.buysKnown, false)
+	-- the setting: a minimum of 0 lets the 3c auctions of the blade in again; a higher one drops the blade's good ones
+	eq(ns.Loops.FlipEachMin(), 10, "the default is 10c")
+	ns.db.settings.flipEachMin = 250
+	Scan(ns, stub)
+	eq(#ns.Basket.Flips(), 1, "nothing of the blade earns 2s50c each")
+	ns.db.settings.flipEachMin = 1
+	Scan(ns, stub)
+	eq(#ns.Basket.Flips(), 3, "at 1c the armor is back: all items count")
+	-- the row is on the Settings page
+	local found
+	for _, g in ipairs(ns.Main.Settings.Groups()) do
+		for _, r in ipairs(g.rows or {}) do
+			if r.key == "each" and g.key == "flips" then found = r end
+		end
+	end
+	assert(found and found.get() == 1, "the stepper reads the setting")
+end)

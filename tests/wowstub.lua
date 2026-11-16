@@ -216,7 +216,7 @@ function GetItemInfo(id)
 	if type(id) == "string" then id = tonumber(id:match("item:(%d+)")) end
 	local item = stub.items[id]
 	if not item then return nil end
-	return item.name, item.link or ("item:" .. id), item.quality or 1, item.level or 1, item.minLevel or 1, "", "", 20,
+	return item.name, item.link or ("item:" .. id), item.quality or 1, item.level or 1, item.minLevel or 1, "", "", item.stack or 20,
 		item.equipLoc or "", nil, item.sellPrice, item.classID, item.subClassID, item.bindType
 end
 C_Item = { GetItemInfo = GetItemInfo, RequestLoadItemDataByID = noop }

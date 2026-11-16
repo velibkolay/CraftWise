@@ -175,6 +175,30 @@ it("Buy: error 10 first, then the completion for the same auction still counts a
 	eq(AB.state.run.units, 1)
 end)
 
+it("Buy: error 10, late completion, a fresh list: the panel is ready for the next auction without a search (#340)", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 800, 1, 78 } })
+	PickAndSearch(ns, stub, { kind = "basket", itemID = SWORD, need = 2 }, "item")
+	AB.Refresh()
+	AB.Click()
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 10)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(AB.state.phase, "stale"); assert(AB.state.message:find("search again", 1, true), AB.state.message)
+	ItemAuctions(stub, { { 800, 1, 78 } }) -- the client's new list: the bought auction is gone
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	eq(AB.state.phase, "ready")
+	assert(AB.state.message:find("Bought 1", 1, true) and not AB.state.message:find("earch again", 1, true), AB.state.message)
+	eq(#ah.calls, 1, "no search or buy by itself")
+	-- the list arrived before the completion: ready at once
+	AB.Refresh(); AB.Click()
+	ItemAuctions(stub, {})
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 10)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	assert(AB.state.bought[78])
+end)
+
 it("Buy: an error with no completion buys nothing and counts nothing", function()
 	local ns, stub, ah = Setup()
 	local AB = ns.AHBuy
