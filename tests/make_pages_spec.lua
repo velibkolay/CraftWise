@@ -591,6 +591,7 @@ end)
 
 it("Loops: PRICES_CHANGED runs one debounced check, one toast per check, click opens Make › Craft with Vendor check", function()
 	local ns, stub, M = Load()
+	ns.db.settings.flipAlert = false -- the flips have their own specs (flips_spec.lua)
 	ns.db.vendor[HIDE] = 1
 	ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED")
 	eq(#ns.LootToast.Lines(), 0, "nothing before the debounce ends")

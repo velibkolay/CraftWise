@@ -427,6 +427,26 @@ local function Groups()
 			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
 	} }
 
+	groups[#groups + 1] = { key = "flips", label = L["AH to vendor flips"], rows = {
+		{ key = "on", kind = "check", label = L["Flip alert"], text = L["On"],
+			sub = L["After a scan, items that cost less at the AH than a vendor pays: a toast for new or clearly better ones (shared with the loop alert), a section in Make › Basket and the Auctionator list \"CraftWise vendor flips\". Buying stays your click."],
+			get = function() return ns.Loops.FlipEnabled() end,
+			set = function(v) S().flipAlert = v and true or false end },
+		{ key = "min", kind = "stepper", label = L["Smallest profit per item"],
+			sub = L["Flips earning less in total are neither announced nor listed; 0 allows anything above 0."],
+			disabled = function() return not ns.Loops.FlipEnabled() end,
+			get = function() return ns.Loops.FlipMin() end,
+			down = function()
+				S().flipAlertMin = Set.StepCopper(ns.Loops.FlipMin(), -1)
+				Changed()
+			end,
+			up = function()
+				S().flipAlertMin = Set.StepCopper(ns.Loops.FlipMin(), 1)
+				Changed()
+			end,
+			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
+	} }
+
 	groups[#groups + 1] = { key = "disenchant", label = L["Disenchant"], rows = {
 		{ key = "source", kind = "text", label = L["Values from"], text = function()
 			if ns.Disenchant.Samples() then

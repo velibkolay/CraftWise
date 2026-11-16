@@ -11,6 +11,13 @@
 --   * Vendor: Basket.Buy(line) buys one line's quantity from the open merchant; the merchant window's
 --     control (UI/MerchantBuy.lua, #201) buys a typed quantity through the same Basket.Purchase. Both run
 --     only from a click on a Buy button; nothing here buys, lists or confirms on its own.
+--   * AH → vendor flips (#312): the section "AH → vendor" (Loops.lua finds items whose cheapest AH buyouts are
+--     below what a vendor pays and hands them to Basket.SetFlips after each scan). db.flips = { t, items =
+--     { { itemID, units, atLeast, profit, price, sell, maxUnit } } } is replaced on every scan; a line the
+--     player dismisses (db.flipDismissed[itemID] = its profit then) stays away until it gets clearly better
+--     (Loops.BETTER) or goes away and comes back. Lines tick off from the bags. The Auctionator list "CraftWise
+--     vendor flips" is rebuilt with each check, a max price per unit in every search string. Nothing is bought,
+--     bid on or confirmed here.
 -- Pure parts (Add, Remove, Combine, Split, Expected) take plain data so the specs can feed them.
 local _, ns = ...
 
@@ -18,6 +25,7 @@ local Basket = {}
 ns.Basket = Basket
 
 Basket.LIST_NAME = "CraftWise basket"
+Basket.FLIP_LIST_NAME = "CraftWise vendor flips"
 Basket.CALLER = "CraftWise"
 Basket.MAX_COUNT = 9999
 
@@ -198,7 +206,7 @@ end
 -- { crafts = { { entry, row, count } }, need = combined reagents, buy = lines, split, done = { { itemID,
 --   quantity, held } } (needed and already in the bags), sale, profit, missing = entries without a row }
 function Basket.Plan()
-	local plan = { crafts = {}, missing = {}, need = {}, buy = {}, done = {} }
+	local plan = { crafts = {}, missing = {}, need = {}, buy = {}, done = {}, flips = {} }
 	if not ns.db then
 		return plan
 	end
@@ -250,6 +258,7 @@ function Basket.Plan()
 		end
 	end
 	plan.split = Basket.Split(plan.buy)
+	plan.flips = Basket.Flips()
 	plan.sale, plan.profit = Basket.Expected(expected)
 	return plan
 end
@@ -293,28 +302,142 @@ function Basket.SearchString(line)
 	return ('"%s";;;;;;;;;;;;;%d'):format(t.searchString, t.quantity)
 end
 
--- Builds (replaces) the shopping list "CraftWise basket" from the AH lines. Returns the number of lines
--- or nil, why. Called from a button; it only creates the list, searching and buying stay with the player.
-function Basket.CreateAuctionatorList(lines)
+-- Builds (replaces) an Auctionator shopping list from lines through `term(line)`. Returns the number of lines
+-- or nil, why (allowEmpty: no lines at all empties the list). It only creates the list, searching and buying stay with the player.
+local function CreateList(name, lines, term, allowEmpty)
 	local api = AuctionatorAPI()
 	if not api then
 		return nil, "Auctionator isn't loaded"
 	end
 	local strings = {}
 	for _, l in ipairs(lines or {}) do
-		local term = Basket.Term(l)
-		if term then
-			strings[#strings + 1] = api.ConvertToSearchString(Basket.CALLER, term)
+		local t = term(l)
+		if t then
+			strings[#strings + 1] = api.ConvertToSearchString(Basket.CALLER, t)
 		end
 	end
-	if #strings == 0 then
+	if #strings == 0 and not (allowEmpty and #(lines or {}) == 0) then
 		return nil, "No AH lines with a known item name yet"
 	end
-	local ok, err = pcall(api.CreateShoppingList, Basket.CALLER, Basket.LIST_NAME, strings)
+	local ok, err = pcall(api.CreateShoppingList, Basket.CALLER, name, strings)
 	if not ok then
 		return nil, tostring(err)
 	end
 	return #strings
+end
+
+-- Builds (replaces) the shopping list "CraftWise basket" from the AH lines. Called from a button.
+function Basket.CreateAuctionatorList(lines)
+	return CreateList(Basket.LIST_NAME, lines, Basket.Term)
+end
+
+----------------------------------------------------------------------------------------------------
+-- AH → vendor flips (#312)
+----------------------------------------------------------------------------------------------------
+
+function Basket.ItemName(itemID)
+	return SearchName(itemID) or ("item:" .. tostring(itemID))
+end
+
+-- The lines of the section: the flips of the last check that are not dismissed.
+function Basket.Flips()
+	local flips = ns.db and ns.db.flips
+	return flips and flips.items or {}
+end
+
+-- Replaces the section with the flips of a check (Loops.FlipCheck order). Dismissals of items that are no
+-- flip any more are forgotten; a dismissed one comes back when it is clearly better. Returns the lines shown.
+function Basket.SetFlips(finds)
+	if not ns.db then
+		return {}
+	end
+	local dismissed = ns.db.flipDismissed or {}
+	local isFlip, shown = {}, {}
+	for _, f in ipairs(finds or {}) do
+		isFlip[f.itemID] = true
+		local was = dismissed[f.itemID]
+		if was and f.profit >= was * (ns.Loops and ns.Loops.BETTER or 1.5) then
+			dismissed[f.itemID] = nil
+			was = nil
+		end
+		if not was then
+			shown[#shown + 1] = f
+		end
+	end
+	for itemID in pairs(dismissed) do
+		if not isFlip[itemID] then
+			dismissed[itemID] = nil
+		end
+	end
+	ns.db.flipDismissed = dismissed
+	ns.db.flips = { t = time(), items = shown }
+	Changed()
+	return shown
+end
+
+-- Takes a line out until it gets clearly better, and rebuilds the Auctionator list without it.
+function Basket.DismissFlip(itemID)
+	local flips = ns.db and ns.db.flips
+	if not flips then
+		return
+	end
+	for i, f in ipairs(flips.items) do
+		if f.itemID == itemID then
+			ns.db.flipDismissed = ns.db.flipDismissed or {}
+			ns.db.flipDismissed[itemID] = f.profit
+			table.remove(flips.items, i)
+			break
+		end
+	end
+	Basket.RefreshFlipList()
+	Changed()
+end
+
+-- Units still to buy of a flip line: what is listed below the vendor price minus what the bags hold.
+function Basket.FlipHeld(line)
+	return ns.Holdings and ns.Holdings.Counter()(line.itemID) or 0
+end
+
+-- The term of a flip line: its name, a max price per unit (what still earns) and the units.
+function Basket.FlipTerm(line)
+	local name = SearchName(line.itemID)
+	if not name then
+		return nil
+	end
+	return { searchString = name, isExact = true, maxPrice = line.maxUnit, quantity = line.units }
+end
+
+-- Search string of a flip line, for when Auctionator's API isn't there. Auctionator's fields (Source/Search/
+-- Advanced.lua SplitAdvancedSearch): name; category; item level min, max; level min, max; crafted level min,
+-- max; price min, max (in gold, as Auctionator writes them); quality; tier; expansion; quantity.
+function Basket.FlipSearchString(line)
+	local t = Basket.FlipTerm(line)
+	if not t then
+		return nil
+	end
+	return ('"%s";;;;;;;;;%s;;;;%d'):format(t.searchString, tostring(t.maxPrice / 10000), t.quantity)
+end
+
+-- Builds (replaces) the shopping list "CraftWise vendor flips" from the flip lines.
+function Basket.CreateFlipList(lines, allowEmpty)
+	return CreateList(Basket.FLIP_LIST_NAME, lines, Basket.FlipTerm, allowEmpty)
+end
+
+-- After each check: the list follows the section when Auctionator is there (the list exists once it was
+-- made, so it is also emptied of flips that are gone; nothing is made while there are none yet).
+function Basket.RefreshFlipList()
+	if not (ns.db and Basket.HasAuctionator()) then
+		return nil
+	end
+	local lines = Basket.Flips()
+	if #lines == 0 and not ns.db.flipListMade then
+		return nil
+	end
+	local n = Basket.CreateFlipList(lines, true)
+	if n then
+		ns.db.flipListMade = true
+	end
+	return n
 end
 
 ----------------------------------------------------------------------------------------------------

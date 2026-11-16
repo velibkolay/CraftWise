@@ -4,6 +4,11 @@
 -- already in your bags. Lines tick off as the bags fill (BAGS_CHANGED). Data and maths: Basket.lua.
 --   AH lines: "Auctionator list" in the list bar builds the shopping list "CraftWise basket" (Auctionator
 --   loaded); without Auctionator an AH line opens to its search string.
+--   AH → vendor (#312): after each scan Loops.lua puts the items cheaper at the AH than a vendor pays here
+--   (units below the vendor price, the max price per unit to pay, the expected profit). The section is
+--   replaced on every scan; open a line to dismiss it until it gets clearly better. Auctionator loaded:
+--   the shopping list "CraftWise vendor flips" is rebuilt with each check, without it a line opens to its
+--   search string. Lines tick off from the bags. Buying is yours: nothing here buys, bids or confirms.
 --   Vendor lines: open the line while a merchant that sells it is open: one Buy button, one click, that
 --   line's quantity (Basket.Buy). Nothing is bought, listed or confirmed without that click.
 local _, ns = ...
@@ -14,7 +19,7 @@ local Style, L = ns.Style, ns.L
 local B = {}
 M.BasketPage = B
 
-local ORDER = { craft = 0, auction = 1, vendor = 2, unknown = 3, done = 4 }
+local ORDER = { craft = 0, flip = 0.5, auction = 1, vendor = 2, unknown = 3, done = 4 }
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
@@ -73,6 +78,21 @@ function B.Rows(plan)
 			rows[#rows + 1] = r
 		end
 	end
+	for i, f in ipairs(plan.flips or {}) do
+		local held = ns.Basket.FlipHeld(f)
+		local bought = held >= f.units
+		local r = NewRow("flip", "flip:" .. f.itemID, MK.ItemName(f.itemID), f.itemID, Icon(f.itemID))
+		r.line, r.rank = f, i
+		r.order = ORDER.flip + i * 1e-6 -- the list sorts by order, then name: best profit first
+		if bought then
+			r.view.nameColor = "text3"
+			r.view.colors.name = "text3"
+		end
+		local total, color = MK.Signed(f.profit)
+		Fill(r, "×" .. f.units .. (f.atLeast and "+" or ""), bought and L["in bags"] or L["AH → vendor"],
+			"≤ " .. ns.FormatCoins(f.maxUnit), total, bought and "text3" or color, bought and "text3" or "text")
+		rows[#rows + 1] = r
+	end
 	ItemRows(plan.split.auction, "auction", L["AH"])
 	ItemRows(plan.split.vendor, "vendor", L["vendor"])
 	ItemRows(plan.split.unknown, "unknown", L["no price"])
@@ -96,6 +116,17 @@ end
 
 function B.Hero(plan)
 	local label = L["Basket"]
+	local flips = plan.flips or {}
+	if #plan.crafts == 0 and #flips > 0 then
+		local profit = 0
+		for _, f in ipairs(flips) do
+			profit = profit + f.profit
+		end
+		local figure, color = MK.Signed(profit)
+		return { label = label, name = (#flips == 1 and L["1 AH → vendor flip"] or (L["%d AH → vendor flips"]):format(#flips)),
+			nameColor = "text", sub = L["buy at the AH, sell to a vendor"],
+			figureLabel = L["Expected flip profit"], figure = figure, figureColor = color }
+	end
 	if #plan.crafts == 0 then
 		return MK.NoHero(label, L["nothing in it yet. Open an entry in Make › Craft and add it."])
 	end
@@ -132,7 +163,7 @@ function B.Model(ctx)
 		rows = rows,
 		hero = B.Hero(plan),
 		listTitle = (L["%d lines"]):format(#rows),
-		listNote = L["crafts, then AH, vendor, in bags"],
+		listNote = L["crafts, AH → vendor, then AH, vendor, in bags"],
 		empty = L["The basket is empty. Open a recipe in Make › Craft and use Add to basket."],
 		footer = L["To buy = reagents of the crafts minus what is in your bags, each at the cheaper of the AH and a vendor"]
 			.. " · " .. L["Prices"] .. ": " .. MK.PriceBasisText(),
@@ -146,6 +177,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 B.OPEN_HEIGHT = 34
+B.FLIP_OPEN_HEIGHT = 56 -- the flip line has a second row of text (#312)
 
 local function EditBox(owner)
 	local box = CreateFrame("EditBox", nil, owner)
@@ -216,6 +248,28 @@ function B.Open(content, r, ctx)
 			Bk.Remove(c.entry.recipeID)
 		end, { L["Remove from basket"] }, 24)
 		remove:SetPoint("LEFT", last, "RIGHT", 12, 0)
+	elseif r.kind == "flip" then
+		local f = r.line
+		local held = Bk.FlipHeld(f)
+		local dismiss = pool:Button(L["Dismiss"], function()
+			Bk.DismissFlip(f.itemID)
+		end, { L["Dismiss"], L["Takes the line out until it gets clearly better. Buying it is up to you."] }, 24)
+		dismiss:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -4)
+		local text = (L["%d of %d in your bags."]):format(math.min(held, f.units), f.units)
+		if Bk.HasAuctionator() then
+			text = text .. " " .. (L["Search it in the Auctionator list \"%s\" (max price per unit set)."]):format(Bk.FLIP_LIST_NAME)
+		else
+			local s = Bk.FlipSearchString(f)
+			if s then
+				local box = pool:Take("edit", EditBox)
+				box.cwText = s
+				box:SetText(s)
+				box:SetPoint("LEFT", dismiss, "RIGHT", 12, 0)
+				text = L["Auctionator isn't loaded. Search string to copy:"]
+			end
+		end
+		local fs = pool:Text("Small", "text3", text)
+		fs:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -34)
 	elseif r.kind == "auction" then
 		if Bk.HasAuctionator() then
 			Say(L["Use Auctionator list in the list bar: it builds the shopping list \"CraftWise basket\" from the AH lines."])
@@ -258,8 +312,8 @@ function B.Open(content, r, ctx)
 	end
 end
 
-function B.OpenHeight()
-	return B.OPEN_HEIGHT
+function B.OpenHeight(r)
+	return r and r.kind == "flip" and B.FLIP_OPEN_HEIGHT or B.OPEN_HEIGHT
 end
 
 ----------------------------------------------------------------------------------------------------
