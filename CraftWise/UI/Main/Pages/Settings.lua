@@ -576,6 +576,24 @@ local function Groups()
 		} },
 	} }
 
+	-- Interface (#321): the Leatrix Plus features he uses, built into CraftWise. Every switch is off by default;
+	-- while Leatrix Plus is loaded both would act at once, so a note says so (MinimapStyle.lua).
+	local Mini = ns.MinimapStyle
+	local function InterfaceCheck(key, label, text, sub)
+		return { key = key, kind = "check", label = label, text = text, sub = sub,
+			get = function() return Mini.Settings()[key] == true end,
+			set = function(v) Mini.Set(key, v) end }
+	end
+	groups[#groups + 1] = { key = "interface", label = L["Interface"], rows = {
+		{ key = "leatrix", kind = "text", label = "",
+			text = function() return L["Leatrix Plus is loaded: its options act on the same things. Turn one of the two off."], C.live end,
+			visible = function() return Mini.LeatrixLoaded() end },
+		InterfaceCheck("squareMinimap", L["Square minimap"], L["Square instead of round"],
+			L["Mask, border and blips follow the square."]),
+		InterfaceCheck("hideButtons", L["Minimap buttons"], L["Hide addon buttons until the mouse is over the minimap"]),
+		InterfaceCheck("hideCompartment", L["Addon compartment"], L["Hide the addon compartment button"]),
+	} }
+
 	groups[#groups + 1] = { key = "snapshot", label = L["Snapshot"], rows = {
 		{ key = "buttons", kind = "buttons", label = L["Character snapshot"], buttons = {
 			{ key = "save", text = L["Save snapshot"], onClick = Set.SaveSnapshot,
