@@ -39,18 +39,19 @@ SIZES = (16, 20, 24, 32, 40, 48, 64, 256)
 
 GOLD, FACE, WHITE = "#E8B94B", "#141517", "#F4F4F1"
 
-W16 = ("XX......XX",
-       "XX......XX",
-       "XX..XX..XX",
-       "XX.XXXX.XX",
-       ".XXX..XXX.")
-W20 = ("XX......XX",
-       "XX......XX",
-       "XX......XX",
-       "XX..XX..XX",
-       "XX.XXXX.XX",
-       ".XXX..XXX.",
-       "..XX..XX..")
+# Angular pixel-font W: straight outer strokes, the middle stroke rises to about half height, the two V
+# bottoms are single pixels on the baseline.
+W16 = ("X...X",
+       "X...X",
+       "X.X.X",
+       "X.X.X",
+       ".X.X.")
+W20 = ("X.....X",
+       "X.....X",
+       "X..X..X",
+       "X.X.X.X",
+       "X.X.X.X",
+       ".X...X.")
 
 
 def rects(c, boxes, colour):
@@ -63,14 +64,17 @@ def bitmap(c, rows, x0, y0, colour):
 
 
 def small_key(n):
-    """16 or 20 px: gold body without its top-right corner (3 or 4 px diagonal), dark face, pixel W."""
+    """16 or 20 px: gold body without its top-right corner, a dark face with a 2 px gold rim on the left and
+    top (3 px right and bottom: the key's thickness), pixel W at the height the 24 px key has it (about 40 to
+    77 % of the face)."""
     c = tex.Canvas(n, n)
     cut = 3 if n == 16 else 4
     c.fill([[(0, 0), (n - cut, 0), (n, cut), (n, n), (0, n)]], tex.hex_rgb(GOLD))
-    inset = 2 if n == 16 else 3
-    rects(c, [(inset, inset, n - inset, n - inset)], FACE)
+    fx0, fy0, fx1, fy1 = 2, 2, n - 3, n - 3
+    rects(c, [(fx0, fy0, fx1, fy1)], FACE)
     w = W16 if n == 16 else W20
-    bitmap(c, w, (n - len(w[0])) // 2, inset + (n - 2 * inset - len(w) + 1) // 2, WHITE)
+    face_w, face_h = fx1 - fx0, fy1 - fy0
+    bitmap(c, w, fx0 + (face_w - len(w[0])) // 2, fy0 + round(face_h * 0.4), WHITE)
     return c
 
 

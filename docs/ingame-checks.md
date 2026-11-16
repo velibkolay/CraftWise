@@ -1082,7 +1082,7 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - Baganator: the dim also shows on marked items (the corner widget no longer needs the button as its parent).
 
 ## Companion: W key logo (#310)
-- [ ] Tray at 100 % and at 150 % display scale: the gold W key shows crisp (not blurry, not cut off); at 100 % the 16 px drawing with the blocky W, at 150 % the 24 px one.
+- [ ] Tray at 100 % and at 150 % display scale: the gold W key shows crisp (not blurry, not cut off); at 100 % the 16 px drawing with the angular pixel W, at 150 % the 24 px one.
 - [ ] Light and dark taskbar: the key is readable on both (the gold border holds it against either).
 - [ ] The exe (`craftwise-companion.exe`, built with `-H=windowsgui`) shows the key in Explorer (small, medium and large icons views), in the taskbar while the settings run and in Settings > Apps > Startup.
 - [ ] The tray icon still comes back after restarting Explorer.
