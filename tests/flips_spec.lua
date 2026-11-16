@@ -108,7 +108,7 @@ end)
 
 local function Scan(ns, stub)
 	stub.clock = stub.clock + 10
-	ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED")
+	ns.Notify("FULL_PRICES"); ns.Notify("FULL_PRICES")
 	stub.RunTimers()
 end
 
@@ -116,7 +116,7 @@ it("Loops: a scan puts flips into the basket, one toast, the same flips again no
 	local ns, stub, M = Load()
 	Seed(ns, CLOTH, { tiers = { 40, 5, 90, 10 }, total = 15 }) -- +400, 15 units
 	Seed(ns, SILK, { tiers = { 990, 1 }, total = 1 }) -- +10: below the smallest profit (1s)
-	ns.Notify("PRICES_CHANGED")
+	ns.Notify("FULL_PRICES")
 	eq(#ns.LootToast.Lines(), 0, "nothing before the debounce ends")
 	stub.RunTimers()
 	local lines = ns.LootToast.Lines()
@@ -145,7 +145,7 @@ it("Loops: loops and flips of one scan share one toast", function()
 	local ns, stub = Load()
 	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5 })
 	ns.Loops.Check = function() return { { recipeID = 1, professionID = 1, name = "Test Gloves", profit = 21, loop = true } } end
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	local lines = ns.LootToast.Lines()
 	eq(#lines, 1); eq(lines[1].text, "1 vendor loop · 1 AH → vendor flip"); eq(lines[1].detail, "Test Gloves")
 end)
@@ -154,7 +154,7 @@ it("Loops: Settings switch the flips off, and a higher smallest profit hides the
 	local ns, stub = Load()
 	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5 }) -- +300
 	ns.db.settings.flipAlert = false
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.LootToast.Lines(), 0); eq(#ns.Basket.Flips(), 0)
 	ns.db.settings.flipAlert = true
 	ns.db.settings.flipAlertMin = 301
@@ -170,7 +170,7 @@ it("Loops: unknown or 0 vendor price, no prices known: never a flip", function()
 	local ns, stub = Load()
 	Seed(ns, JUNKY, { tiers = { 5, 1 }, total = 1 })
 	Seed(ns, FREE, { tiers = { 5, 1 }, total = 1 })
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.Basket.Flips(), 0); eq(#ns.LootToast.Lines(), 0)
 end)
 
@@ -432,7 +432,7 @@ it("Flip per purchase: the scan keeps only the good auctions of a one-at-a-time 
 	Seed(ns, ARMOR, { tiers = { 740, 52 }, total = 52 }) -- 3c each, 156 in all
 	Seed(ns, BLADE, { tiers = { 800, 2, 997, 10 }, total = 12 }) -- two auctions 20s... 2g each, the rest 3c
 	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5 }) -- commodity +300
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	local flips = ns.Basket.Flips()
 	eq(#flips, 2, "the armor at 3c each is gone")
 	eq(flips[1].itemID, CLOTH, "+300 in one purchase beats 200 each")

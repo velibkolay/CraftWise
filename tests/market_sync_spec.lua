@@ -103,6 +103,8 @@ it("#241: the file is merged at login, while the loading screen is up: nothing i
 	InScope({ 100 })
 	local seen = 0
 	ns.Listen("PRICES_CHANGED", function(source) if source == "sync" then seen = seen + 1 end end)
+	local full = 0
+	ns.Listen("FULL_PRICES", function() full = full + 1 end) -- #345: the check Loops runs after a sync
 	CraftWiseSync = File({ [100] = { [HORDE] = M.EncodeEntry({ last = { t = NOW - 100, min = 90, qty = 12, listings = 3 } }) } })
 	local v0 = M.DataVersion()
 	local hooks = {}
@@ -115,6 +117,7 @@ it("#241: the file is merged at login, while the loading screen is up: nothing i
 	eq(M.Current(100, HORDE).min, 90)
 	assert(M.DataVersion() ~= v0, "caches keyed on the data version restart")
 	eq(seen, 1)
+	eq(full, 1, "a sync is a full price set: FULL_PRICES once")
 	eq(M.SyncStatus().state, "done")
 	eq(M.SyncStatus().machine, "MacBook")
 	eq(M.SyncBusy(), false)

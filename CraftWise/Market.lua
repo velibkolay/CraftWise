@@ -1450,6 +1450,7 @@ local function FinishScan(scan)
 	end
 	M.FillItemInfo(scan.info)
 	ns.Notify("PRICES_CHANGED")
+	ns.Notify("FULL_PRICES") -- a full scan is stored: the vendor/flip/snipe check may run (Loops.lua, #345)
 	if not currentHouse then
 		M.Prune()
 	end
@@ -3339,6 +3340,7 @@ local function FinishSync(job)
 	if job.changed > 0 then
 		syncVersion = syncVersion + 1
 		ns.Notify("PRICES_CHANGED", "sync")
+		ns.Notify("FULL_PRICES") -- a sync brings a full price set (#345)
 	end
 end
 
