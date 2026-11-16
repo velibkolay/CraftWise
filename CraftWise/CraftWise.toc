@@ -103,3 +103,4 @@ UI\Main\Pages\Train.lua
 UI\MinimapButton.lua
 MinimapStyle.lua
 FlightTimes.lua
+UnitTooltip.lua

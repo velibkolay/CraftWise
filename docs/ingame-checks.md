@@ -1158,3 +1158,11 @@ New file `FlightTimes.lua` in the TOC: needs a full game restart once. Settings 
 - [ ] `UnitOnTaxi("player")` is true when `PLAYER_CONTROL_LOST` fires at takeoff? (If not, the second check one second later should catch it; note if the bar then starts late.)
 - [ ] Flight bar on: at takeoff a bar appears at the top ("To <destination>"); a route flown before shows the time left counting down, then "arriving"; a route never flown says "Time not recorded". With a multi-leg route the "next stop" is the first leg's stop and stays so for the whole flight (the client gives no progress): is that acceptable, or does the flight land there?
 - [ ] Bigger flight map on: the flight map opens at the chosen size (1.0 to 1.5); does it stay on screen and keep clicking correctly? Turn it off: back to normal size without a reload.
+## Interface › Tooltips (#321, part 3)
+New file `UnitTooltip.lua` in the TOC: needs a full game restart once. Settings > Interface: "Unit tooltip: target" and "Unit tooltip: guild rank", both off by default.
+- [ ] Both off: unit tooltips look as before.
+- [ ] Target on: hover a player or mob that is targeting something: a line "Target: <name>" under the tooltip, the name in the class colour for players; "you" when it targets you. A unit with no target: no line. Hover for a while: the line follows the target and is never doubled.
+- [ ] Guild rank on: hover a guilded player: the "<Guild>" line reads "<Guild> - Rank"; hover a player without a guild and an NPC: unchanged. Is the guild name on the second line (the module looks in lines 2 to 4)? Does the rank show for players who are not in your group (GetGuildInfo(unit) needs the unit inspected/in range)?
+- [ ] In combat and in a raid with secret values: no Lua errors from hovering units.
+- [ ] CraftWise's item tooltip lines are unchanged (item post call is separate).
+- Left out on purpose: "hold Shift to see a tooltip hidden in combat": CraftWise hides no tooltips in combat.

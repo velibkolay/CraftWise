@@ -592,6 +592,10 @@ local function Groups()
 			L["Mask, border and blips follow the square."]),
 		InterfaceCheck("hideButtons", L["Minimap buttons"], L["Hide addon buttons until the mouse is over the minimap"]),
 		InterfaceCheck("hideCompartment", L["Addon compartment"], L["Hide the addon compartment button"]),
+		{ key = "tipTarget", kind = "check", label = L["Unit tooltip: target"], text = L["Show what the unit is targeting"],
+			get = function() return ns.UnitTooltip.Settings().tipTarget == true end, set = function(v) ns.UnitTooltip.Set("tipTarget", v) end },
+		{ key = "tipGuildRank", kind = "check", label = L["Unit tooltip: guild rank"], text = L["Show the guild rank after the guild name"],
+			get = function() return ns.UnitTooltip.Settings().tipGuildRank == true end, set = function(v) ns.UnitTooltip.Set("tipGuildRank", v) end },
 	} }
 	local Fl = ns.Flights
 	local interfaceRows = {
