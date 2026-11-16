@@ -1249,3 +1249,7 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 ## Ledger: one unit per item PlaceBid, repair of #338 data (#343)
 - On login after this build, chat prints "Ledger repair (#343): ..." once (only if the old data had inflated item buys). `/craftwise ledger` then shows those AH purchases as x1, and Sell › Flips shows the real profit (about +1c for the 12s 49c plans sold for 12s 50c).
 - Buy a plan from a grouped row (row quantity above 1) with one press: the ledger logs x1 at the row's buyout. A stackable item bought this way is not logged (`/craftwise debug` says "units of one purchase unknown").
+
+## AH buy: grouped item rows are one purchase (#343)
+- [ ] Find an item search row with quantity above 1 (several identical auctions, e.g. a plan or pattern listed by many sellers). The panel's "Listed now" shows "1 × price · N listed, one per purchase" and the Buy button says "Buy 1 for <the buyout>", never the quantity.
+- [ ] With the line's max under that buyout nothing is bought, whatever N is. At or above it one press buys one item and the amount taken is exactly the buyout (check the gold). Compare with Blizzard's own AH list: quantity column = N, buyout column = the same price.
