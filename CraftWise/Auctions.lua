@@ -1224,3 +1224,55 @@ if hooksecurefunc then
 		hooksecurefunc("TakeInboxItem", function(...) A.OnTakeItem(...) end)
 	end
 end
+
+-- Keep warning at the AH (#318): when an item marked Keep is picked into Blizzard's sell frame (the item
+-- one or the commodities one) a small "Marked Keep" label sits on the frame. Read only: post-hooks on the
+-- frames' SetItem (hooksecurefunc, as Blizzard_AuctionHouseSellFrame.lua / ...ItemSellFrame.lua /
+-- ...CommoditiesSellFrame.lua define it, Forever branch) read GetItem() and set our own label. Nothing of
+-- Blizzard's frame state is written, the post is never blocked or changed. Auctionator's Selling tab is not
+-- hooked (no public API to read its selected item); there the item tooltip's "Marked: Keep" line is the cue.
+A.KeepWarn = A.KeepWarn or { labels = {} }
+local KW = A.KeepWarn
+
+function KW.Refresh(frame)
+	local label = KW.labels[frame]
+	if not label then
+		return
+	end
+	local loc = frame.GetItem and frame:GetItem()
+	local ok, itemID = pcall(C_Item.GetItemID, loc)
+	local keep = ok and itemID and ns.SlotMarksOn() and ns.db and ns.db.keep and ns.db.keep[itemID]
+	if keep then
+		label:Show()
+	else
+		label:Hide()
+	end
+end
+
+local function Attach(frame)
+	if type(frame) ~= "table" or not frame.CreateFontString or KW.labels[frame] or not hooksecurefunc then
+		return
+	end
+	local label = ns.Style.Text(frame, "Small", "nokta", "OVERLAY")
+	label:SetText("Marked Keep")
+	label:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -4)
+	label:Hide()
+	KW.labels[frame] = label
+	if frame.SetItem then
+		hooksecurefunc(frame, "SetItem", ns.Timed("Auctions: Keep warning", function() KW.Refresh(frame) end))
+	end
+end
+
+ns.On("AUCTION_HOUSE_SHOW", function()
+	local ah = _G.AuctionHouseFrame
+	if ah then
+		Attach(ah.ItemSellFrame)
+		Attach(ah.CommoditiesSellFrame)
+	end
+end)
+
+ns.Listen("JUNK_CHANGED", function()
+	for frame in pairs(KW.labels) do
+		KW.Refresh(frame)
+	end
+end)
