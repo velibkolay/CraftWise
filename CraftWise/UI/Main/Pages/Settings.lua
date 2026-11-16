@@ -600,6 +600,11 @@ local function Groups()
 			get = function() return ns.DressingRoom.Settings().dressStrip == true end, set = function(v) ns.DressingRoom.Set("dressStrip", v) end },
 		{ key = "dressAnim", kind = "check", label = L["Dressing room: animation"], text = L["A button to pause and play the model's animation"],
 			get = function() return ns.DressingRoom.Settings().dressAnim == true end, set = function(v) ns.DressingRoom.Set("dressAnim", v) end },
+		{ key = "volumeSlider", kind = "check", label = L["Master volume"], text = L["A volume slider on the minimap"],
+			get = function() return ns.InterfaceExtras.Settings().volumeSlider == true end, set = function(v) ns.InterfaceExtras.Set("volumeSlider", v) end },
+		{ key = "wowheadLink", kind = "check", label = L["Wowhead link"], text = L["Wowhead link in the item menu and on the quest details"],
+			sub = L["Click the box and press Ctrl+C."],
+			get = function() return ns.InterfaceExtras.Settings().wowheadLink == true end, set = function(v) ns.InterfaceExtras.Set("wowheadLink", v) end },
 	} }
 	local Fl = ns.Flights
 	local interfaceRows = {
