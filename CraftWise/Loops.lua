@@ -233,7 +233,8 @@ function Loops.BasketLine(need, unit)
 end
 
 -- rows: Market.FreshBelow rows. Returns the flips (Flip plus itemID), those with a total profit of at least `min`
--- (and above 0), best first: by profit per purchase (`each`), ties by the higher total (#339). stackOf(itemID) is
+-- (and above 0), best first: commodities (and items of unknown stack) first by total profit, then the one-at-a-time
+-- items by profit per purchase (`each`), ties by the higher total (#339, #344). stackOf(itemID) is
 -- the item's stack size and minEach the smallest margin of a one-at-a-time auction (both optional).
 function Loops.FlipFinds(rows, sellOf, min, stackOf, minEach)
 	local out = {}
@@ -245,6 +246,9 @@ function Loops.FlipFinds(rows, sellOf, min, stackOf, minEach)
 		end
 	end
 	table.sort(out, function(a, b)
+		if (a.single or false) ~= (b.single or false) then
+			return not a.single -- commodities (bought in bulk, by total) first, one-at-a-time items after (#344)
+		end
 		if a.each ~= b.each then
 			return a.each > b.each
 		end
