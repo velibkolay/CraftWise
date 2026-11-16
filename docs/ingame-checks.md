@@ -1181,3 +1181,12 @@ New file `InterfaceExtras.lua` in the TOC: needs a full game restart once. Setti
 - [ ] Wowhead link on: hovering items opens nothing. Middle-click an item in the bags: the item menu has a "Wowhead link" entry (after Price history); click it: a box at the bottom of the screen shows `https://www.wowhead.com/forever/item=<id>`. Click the box: the text is selected; Ctrl+C, paste into the browser: does the page open? Typing in the box does not change the text; "x" hides it.
 - [ ] Open the quest log (map) and a quest's details: a small "Wowhead" button at the top right of the details. Is it where it should be (does it cover the back button or the title)? Click it: the box shows `.../forever/quest=<id>` with the quest title. Close the quest log: the box for a quest goes; one for an item stays. Does the details frame exist in Forever as `QuestMapFrame.DetailsFrame` (if no button appears, it does not)?
 - [ ] Is the `forever/` path right for items and quests, and does a localized client need another prefix?
+## Auctions: expired before warning (#327)
+No new file, `/reload` is enough. Settings > Sale alert > "Expired before" (on by default) and Settings > Tooltip > "Expired unsold before" (on by default).
+- [ ] Let an auction of one item expire (12 hours), or use an item that expired earlier (records go back 30 days; `/craftwise auctions` lists them). Open the AH, Sell tab, put that item into Blizzard's sell frame: a red "Expired before:" line with date and time, duration, unit price and (x quantity) sits at the top left, under "Marked Keep" if the item is also marked Keep. Does it overlap the item slot or the frame's title? Does it fit on one line for a long price? Check both the item sell frame (gear) and the commodities one (stack item).
+- [ ] The date follows your client's date format (`%x`), the duration is the client's own text.
+- [ ] Two expired posts of the same item: "and 1 more" at the end, the newest one is shown. A cancelled auction, a sold one, and an expiry at the other faction's house do not count.
+- [ ] Pick another item or clear the slot: the line goes. Settings off: no line. Posting works as before, no taint error in chat.
+- [ ] Hover the item with the AH open: a "Expired before" row in the CraftWise tooltip section. With the AH closed: no row (the house is unknown). Auctionator's Selling tab is not hooked: the tooltip row is the cue there.
+- [ ] Does `GetItem()` of Blizzard's sell frame return the picked item after `SetItem` in Forever, so the label appears?
+
