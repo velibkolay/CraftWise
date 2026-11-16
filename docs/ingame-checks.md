@@ -1250,6 +1250,15 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 - On login after this build, chat prints "Ledger repair (#343): ..." once (only if the old data had inflated item buys). `/craftwise ledger` then shows those AH purchases as x1, and Sell › Flips shows the real profit (about +1c for the 12s 49c plans sold for 12s 50c).
 - Buy a plan from a grouped row (row quantity above 1) with one press: the ledger logs x1 at the row's buyout. A stackable item bought this way is not logged (`/craftwise debug` says "units of one purchase unknown").
 
+## Loops: the check after a full scan, and "Check now" (#345)
+- [ ] Put an item up at the auction house (sell frame search, post): no toast, no CPU spike in Settings > Debug > Record under "Loops.lua check".
+- [ ] Run our own full scan (the header button) with a vendor loop, flip or snipe available: the check runs about 4 seconds after the scan is stored and one toast shows what is new; "Loops.lua check" is in the recorder.
+- [ ] Settings > Vendor loops > "Check now": prints "Check done: N new." or "nothing new" at once; a toast only for what is new since the last notice. The window layout of that row is provisional (docked and normal).
+- [ ] After the companion's merged market is synced in at login with new prices: one check runs, not one per item.
+- [ ] Everything off (Loop alert, Flip alert, Snipe alert): a full scan runs no check.
+## Flips: commodities first, one by one after (#344)
+- [ ] A scan with a commodity flip (small total) and a one-at-a-time item flip (bigger margin per purchase): panel, toast detail, Make > Basket and the Auctionator list all show the commodity first. The AH panel has two headings, "Flips · bulk" and "Flips · one by one". Do the headings read well at 340 wide?
+
 ## AH buy: grouped item rows are one purchase (#343)
 - [ ] Find an item search row with quantity above 1 (several identical auctions, e.g. a plan or pattern listed by many sellers). The panel's "Listed now" shows "1 × price · N listed, one per purchase" and the Buy button says "Buy 1 for <the buyout>", never the quantity.
 - [ ] With the line's max under that buyout nothing is bought, whatever N is. At or above it one press buys one item and the amount taken is exactly the buyout (check the gold). Compare with Blizzard's own AH list: quantity column = N, buyout column = the same price.

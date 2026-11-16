@@ -901,18 +901,26 @@ end)
 -- units; the row groups identical auctions, so one purchase of a non-stackable item was logged as many.
 -- Sets those `ahbuy` entries to 1 unit, removes the phantom units still in transit from the position, and
 -- re-prices the flip rows recorded from them at the corrected cost. Touches nothing else.
+-- An entry is repaired when its item's stack size is known and 1; a repaired entry has q = 1 and is no longer
+-- a candidate, so position and flips are corrected once per entry. An item whose stack size the client
+-- doesn't know yet is requested and the pass runs again on ITEM_DATA_LOAD_RESULT or at the next login; the
+-- flag is set only when no candidate was left undecided.
 local FIX343_SINCE = 1794842474
+local pending343 = false
+local asked343 = {} -- items already asked for this session: an answer re-runs the pass, it must not ask again
 
 function L.Migrate343()
 	if not store or store.fix343 then
 		return nil
 	end
-	store.fix343 = true
 	local fixed = {} -- [charKey][itemID] = { phantom, units, copper, since }
-	local entries = 0
+	local entries, unknown = 0, {}
 	for _, e in ipairs(store.entries) do
-		local stack = e.k == "ahbuy" and e.q > 1 and e.t >= FIX343_SINCE
-			and C_Item and C_Item.GetItemMaxStackSizeByID and C_Item.GetItemMaxStackSizeByID(e.i)
+		local candidate = e.k == "ahbuy" and e.q > 1 and e.t >= FIX343_SINCE
+		local stack = candidate and C_Item and C_Item.GetItemMaxStackSizeByID and C_Item.GetItemMaxStackSizeByID(e.i)
+		if candidate and not stack then
+			unknown[e.i] = true
+		end
 		if stack == 1 then
 			local per = fixed[e.c] or {}
 			fixed[e.c] = per
@@ -948,6 +956,18 @@ function L.Migrate343()
 			end
 		end
 	end
+	pending343 = next(unknown) ~= nil
+	if pending343 then
+		for itemID in pairs(unknown) do
+			if not asked343[itemID] then
+				asked343[itemID] = true
+				ns.RequestItemData(itemID, "Ledger.lua #343", true)
+			end
+		end
+		L.Trace("migration #343: stack size not known yet for", (function() local n = 0 for _ in pairs(unknown) do n = n + 1 end return n end)(), "items, asked the client")
+	else
+		store.fix343 = true
+	end
 	if entries > 0 then
 		L.Trace("migration #343: ahbuy entries set to 1 unit", entries, "positions fixed", positions, "flip rows re-priced", rows)
 		ns.Print(("Ledger repair (#343): %d AH purchases set to 1 unit, %d positions, %d flips re-priced."):format(entries, positions, rows))
@@ -955,6 +975,12 @@ function L.Migrate343()
 	end
 	return entries, positions, rows
 end
+
+ns.On("ITEM_DATA_LOAD_RESULT", function()
+	if pending343 then
+		L.Migrate343()
+	end
+end)
 
 ns.On("PLAYER_ENTERING_WORLD", function(_, isInitialLogin)
 	L.Migrate343()

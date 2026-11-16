@@ -620,3 +620,30 @@ it("#343 migration: phantom units and flip rows of non-stackable AH buys are rep
 	eq(rows[1].cost, 1249); eq(rows[2].cost, 10)
 	eq(ns.Ledger.Migrate343(), nil) -- one time
 end)
+
+it("#343 migration: a stack size unknown at the first run is asked for and repaired once when it arrives", function()
+	local ns, stub = Load()
+	local S = CraftWiseMarketDB.ledger
+	local key = ns.CharKey()
+	local T = 1794842474 + 3600
+	S.entries = { { t = T, c = key, k = "ahbuy", i = BOOTS, q = 26, m = 1249, w = HORDE } }
+	S.chars[key].pos = { [BOOTS] = { held = 0, known = 26, cost = 1249, transit = 25, ahKnown = 26, ahCost = 1249 } }
+	ns.Flips.Rows()[1] = { t = T + 60, c = key, i = BOOTS, q = 1, cost = 48, got = 1250, skip = 0 }
+	S.fix343 = nil
+	stub.items[BOOTS].stack = nil -- the client has not cached the item
+	stub.loadRequests = {}
+	eq(ns.Ledger.Migrate343(), 0)
+	eq(S.fix343, nil, "not done while a stack size is unknown")
+	eq(S.entries[1].q, 26)
+	eq(#stub.loadRequests, 1); eq(stub.loadRequests[1], BOOTS)
+	stub.Fire("ITEM_DATA_LOAD_RESULT", BOOTS, true) -- still unknown: no new request, no loop
+	eq(#stub.loadRequests, 1)
+	stub.items[BOOTS].stack = 1
+	stub.Fire("ITEM_DATA_LOAD_RESULT", BOOTS, true)
+	eq(S.fix343, true); eq(S.entries[1].q, 1)
+	eq(ns.Flips.Rows()[1].cost, 1249)
+	eq(S.chars[key].pos[BOOTS], nil)
+	eq(ns.Ledger.Migrate343(), nil)
+	stub.Fire("ITEM_DATA_LOAD_RESULT", BOOTS, true)
+	eq(S.entries[1].q, 1); eq(ns.Flips.Rows()[1].cost, 1249)
+end)

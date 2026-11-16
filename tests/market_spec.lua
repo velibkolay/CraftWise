@@ -1221,3 +1221,14 @@ it("the TOC declares the market SavedVariables and loads Market after Prices", f
 	assert(toc:find("## SavedVariables: CraftWiseDB, CraftWiseMarketDB", 1, true), "SavedVariables line")
 	assert(toc:find("Prices.lua", 1, true) < toc:find("Market.lua", 1, true), "load order")
 end)
+
+it("#345: a single-item search sends PRICES_CHANGED, never FULL_PRICES (the vendor/flip/snipe check waits for a full scan)", function()
+	local M, stub, ns = Market()
+	InScope({ 5 })
+	OpenAH(stub)
+	local changed, full = 0, 0
+	ns.Listen("PRICES_CHANGED", function() changed = changed + 1 end)
+	ns.Listen("FULL_PRICES", function() full = full + 1 end)
+	CommoditySearch(stub, 5, { { unitPrice = 100, quantity = 3 } }, 3)
+	eq(changed, 1); eq(full, 0)
+end)

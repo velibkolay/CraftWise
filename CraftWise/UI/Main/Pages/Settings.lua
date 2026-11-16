@@ -415,7 +415,7 @@ local function Groups()
 
 	groups[#groups + 1] = { key = "loops", label = L["Vendor loops"], rows = {
 		{ key = "on", kind = "check", label = L["Loop alert"], text = L["On"],
-			sub = L["After prices change, one toast for vendor profits and loops that are new or clearly better. Click opens Make › Craft with Vendor check."],
+			sub = L["After a full scan or a sync, one toast for vendor profits and loops that are new or clearly better. Click opens Make › Craft with Vendor check."],
 			get = function() return ns.Loops.Enabled() end,
 			set = function(v) S().loopAlert = v and true or false end },
 		{ key = "min", kind = "stepper", label = L["Smallest profit per craft"],
@@ -431,6 +431,10 @@ local function Groups()
 				Changed()
 			end,
 			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
+		-- Provisional (#345): the check runs by itself only after a full scan or a sync; this runs it now.
+		{ key = "checkNow", kind = "buttons", label = L["Check now"],
+			sub = L["The vendor loop, flip and snipe check runs by itself after a full scan or a sync; this runs it now."],
+			buttons = { { key = "checkNow", text = L["Check now"], onClick = function() ns.Loops.CheckNow() end } } },
 	} }
 
 	groups[#groups + 1] = { key = "flips", label = L["AH to vendor flips"], rows = {

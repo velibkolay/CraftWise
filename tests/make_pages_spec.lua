@@ -589,17 +589,17 @@ it("Loops: Fresh keeps what was announced, repeats only new or clearly better fi
 	eq(L.Summary({}), nil)
 end)
 
-it("Loops: PRICES_CHANGED runs one debounced check, one toast per check, click opens Make › Craft with Vendor check", function()
+it("Loops: FULL_PRICES runs one debounced check, one toast per check, click opens Make › Craft with Vendor check", function()
 	local ns, stub, M = Load()
 	ns.db.settings.flipAlert = false -- the flips have their own specs (flips_spec.lua)
 	ns.db.vendor[HIDE] = 1
-	ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED")
+	ns.Notify("FULL_PRICES"); ns.Notify("FULL_PRICES"); ns.Notify("FULL_PRICES")
 	eq(#ns.LootToast.Lines(), 0, "nothing before the debounce ends")
 	stub.RunTimers()
 	local lines = ns.LootToast.Lines()
 	eq(#lines, 1); eq(lines[1].text, "2 vendor loops"); eq(lines[1].detail, "Test Gloves"); eq(lines[1].copper, 21)
 	eq(ns.LootToast.LineParts(lines[1]).source, "per craft")
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.LootToast.Lines(), 1, "the same finds: no second toast")
 	ns.db.settings.vendorCheck = false
 	lines[1].onClick(lines[1])
@@ -607,7 +607,7 @@ it("Loops: PRICES_CHANGED runs one debounced check, one toast per check, click o
 	ns.db.settings.loopAlert = false
 	ns.db.loopNotice = {}
 	ns.LootToast.Clear()
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.LootToast.Lines(), 0, "switched off in Settings")
 end)
 
@@ -1188,4 +1188,31 @@ it("Learn: our own record wins over QuestieDB too; without QuestieDB or when it 
 	eq(table.concat(texts, " | "), "Vendor: NPC 8145 (Feralas) | Vendor: NPC 12246 (Desolace)")
 	NpcDB = { name = function() error("boom") end, spawns = function() error("boom") end }
 	for _, w in ipairs(ns.RecipeWhere(R_HAT)) do if w.origin == "wt" then assert(w.text:find("NPC", 1, true), w.text) end end
+end)
+
+it("Loops (#345): a single-item price change does not run the check; a full scan, a sync and the button do; the switches still turn it off", function()
+	local ns, stub = Load()
+	ns.db.settings.flipAlert = false
+	ns.db.vendor[HIDE] = 1
+	ns.Notify("PRICES_CHANGED"); ns.Notify("PRICES_CHANGED", "sync"); ns.Notify("PRICES_CHANGED", "vendor")
+	eq(#stub.timers, 0, "PRICES_CHANGED schedules nothing")
+	stub.RunTimers()
+	eq(#ns.LootToast.Lines(), 0)
+	ns.Notify("FULL_PRICES")
+	eq(#stub.timers, 1, "a full scan or sync schedules the check")
+	stub.RunTimers()
+	eq(#ns.LootToast.Lines(), 1)
+	-- the button runs it at once, with no timer
+	ns.LootToast.Clear(); ns.db.loopNotice = {}
+	local printed
+	local oldPrint = ns.Print
+	ns.Print = function(m) printed = m end
+	eq(ns.Loops.CheckNow(), 2, "the two vendor loops")
+	ns.Print = oldPrint
+	eq(#stub.timers, 0)
+	eq(#ns.LootToast.Lines(), 1); eq(printed, "Check done: 2 new.")
+	-- all three checks off: nothing is scheduled
+	ns.db.settings.loopAlert = false; ns.db.settings.flipAlert = false; ns.db.settings.snipeAlert = false
+	ns.Notify("FULL_PRICES")
+	eq(#stub.timers, 0, "switched off")
 end)
