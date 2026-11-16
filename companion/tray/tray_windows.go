@@ -32,6 +32,10 @@ var (
 	pSetForegroundWindow    = user32.NewProc("SetForegroundWindow")
 	pLoadIconW              = user32.NewProc("LoadIconW")
 	pCreateIcon             = user32.NewProc("CreateIcon")
+	pCreateIconFromResource = user32.NewProc("CreateIconFromResourceEx")
+	pGetSystemMetrics       = user32.NewProc("GetSystemMetrics")
+	pGetDpiForSystem        = user32.NewProc("GetDpiForSystem")
+	pGetSysMetricsForDpi    = user32.NewProc("GetSystemMetricsForDpi")
 	pSetTimer               = user32.NewProc("SetTimer")
 	pRegisterWindowMessageW = user32.NewProc("RegisterWindowMessageW")
 	pShellNotifyIconW       = shell32.NewProc("Shell_NotifyIconW")
@@ -192,7 +196,10 @@ func Run(spec Spec) error {
 	s.hwnd = hwnd
 	tc, _, _ := pRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(utf16("TaskbarCreated"))))
 	s.taskbarCreated = uint32(tc)
-	s.icon = makeIcon(inst)
+	s.icon = loadIcon()
+	if s.icon == 0 {
+		s.icon = makeIcon(inst)
+	}
 	if err := s.notify(nimAdd); err != nil {
 		pDestroyWindow.Call(hwnd)
 		return err
@@ -313,6 +320,41 @@ func (s *state) showMenu() {
 		return
 	}
 	go it.Action()
+}
+
+// loadIcon builds the tray icon from the embedded .ico at the system's small icon size (SM_CXSMICON, for
+// the system DPI when the process is DPI aware); 0 if anything fails, then makeIcon is the fallback.
+func loadIcon() uintptr {
+	entries, err := parseICO(iconICO)
+	if err != nil {
+		return 0
+	}
+	const smCxSmIcon = 49
+	want := 0
+	if pGetDpiForSystem.Find() == nil && pGetSysMetricsForDpi.Find() == nil {
+		if dpi, _, _ := pGetDpiForSystem.Call(); dpi != 0 {
+			m, _, _ := pGetSysMetricsForDpi.Call(smCxSmIcon, dpi)
+			want = int(m)
+			if want == 0 {
+				want = trayIconPixels(int(dpi))
+			}
+		}
+	}
+	if want == 0 {
+		m, _, _ := pGetSystemMetrics.Call(smCxSmIcon)
+		want = int(m)
+	}
+	if want <= 0 {
+		want = 16
+	}
+	e, ok := pickIcon(entries, want)
+	if !ok {
+		return 0
+	}
+	// 0x00030000: the version CreateIconFromResourceEx wants; fIcon = TRUE; the image is scaled to want x want.
+	h, _, _ := pCreateIconFromResource.Call(uintptr(unsafe.Pointer(&e.Data[0])), uintptr(len(e.Data)), 1, 0x00030000,
+		uintptr(want), uintptr(want), 0)
+	return h
 }
 
 // makeIcon draws a 16x16 gold coin; the stock application icon if that fails.

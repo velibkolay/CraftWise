@@ -31,6 +31,25 @@ GOOS=windows GOARCH=amd64 go build -o craftwise-companion-cli.exe ./cmd/craftwis
 GOOS=darwin GOARCH=arm64 go build -o craftwise-companion ./cmd/craftwise-companion
 ```
 
+## Icon (#310)
+
+The tray icon and the exe's icon are the W key brand mark (the site's app key, `web/public/img/key-wow-32.svg`).
+`python3 tools/gen_companion_icon.py` (stdlib only) writes, all committed:
+
+- `companion/tray/craftwise.ico`: 16, 20, 24, 32, 40, 48, 64 and 256 px. 24 px and up are the key rendered with
+  the rasteriser of `tools/gen_addon_textures.py`; 16 and 20 px are drawn for their pixel grid (no nokta, a
+  pixel-art W). Embedded with `go:embed`; the tray takes the smallest image at least as big as the system's small
+  icon size (`GetSystemMetricsForDpi(SM_CXSMICON)`), so it is only ever scaled down. The old drawn coin is the
+  fallback if loading fails.
+- `companion/cmd/craftwise-companion/rsrc_windows_amd64.syso`: the same images as Windows resources
+  (RT_ICON, RT_GROUP_ICON), linked by `go build` for windows/amd64 with no extra step. Explorer, the taskbar and
+  Startup apps show it.
+- `companion/tray/icon-preview.png`: every size on a light and a dark ground, 1x and 8x.
+
+Rerun the script after changing the key or the pixel W, and commit the three files. macOS: the companion has no
+menu bar icon and is no app bundle (a plain binary run in the terminal), so there is nothing to put an icon on;
+a `.app` bundle with an `.icns` is a later step if one is ever wanted.
+
 ## Use
 
 1. Start it once: it creates the settings file and looks for WoW.
