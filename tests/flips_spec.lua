@@ -473,7 +473,7 @@ it("Flip order (#344): a commodity with a small total comes before an item with 
 	stub.items[BLADE] = { name = "Fine Blade", sellPrice = 1000, stack = 1 }
 	Seed(ns, BLADE, { tiers = { 500, 1 }, total = 1 }) -- one auction, +500 in one purchase
 	Seed(ns, CLOTH, { tiers = { 90, 12 }, total = 12 }) -- commodity: +120 in all
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	local flips = ns.Basket.Flips()
 	eq(#flips, 2); eq(flips[1].itemID, CLOTH, "the commodity first, though its total is smaller"); eq(flips[2].itemID, BLADE)
 	local list = ns.AHBuy.Lines()
