@@ -445,6 +445,10 @@ local function Groups()
 				Changed()
 			end,
 			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
+		{ key = "junk", kind = "check", label = L["Mark bought flips as junk"], text = L["On"],
+			sub = L["A flip item that arrives in your bags (from the AH or the mail) gets the junk mark, so Sell junk sells it at a vendor. Not for items already in your bags when they became a flip, or that you marked or watch yourself; a mark you take off stays off."],
+			get = function() return ns.Basket.MarkEnabled() end,
+			set = function(v) S().flipJunk = v and true or false end },
 	} }
 
 	groups[#groups + 1] = { key = "disenchant", label = L["Disenchant"], rows = {
