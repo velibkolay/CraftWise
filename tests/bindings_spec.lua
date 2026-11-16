@@ -18,11 +18,11 @@ it("#306: every binding header in Bindings.xml is declared once", function()
 	assert(count >= 1, "no binding header found")
 end)
 
-it("#306: the three bindings are still there, the first one carries CRAFTWISE", function()
+it("#306: the bindings are still there, the first one carries CRAFTWISE", function()
 	local names = {}
 	for name in xml:gmatch('<Binding%s+name%s*=%s*"([^"]*)"') do
 		names[#names + 1] = name
 	end
-	eq(table.concat(names, ","), "CRAFTWISE_PARTY,CRAFTWISE_MAIN,CRAFTWISE_FARM")
+	eq(table.concat(names, ","), "CRAFTWISE_PARTY,CRAFTWISE_MAIN,CRAFTWISE_FARM,CRAFTWISE_AH_SEARCH,CRAFTWISE_AH_BUY")
 	assert(xml:match('<Binding%s+name="CRAFTWISE_PARTY"%s+header="CRAFTWISE"'), "first binding lost the header")
 end)

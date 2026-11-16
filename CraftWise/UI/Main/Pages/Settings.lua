@@ -470,6 +470,10 @@ local function Groups()
 			sub = L["With Auctionator loaded, rebuild its shopping list \"CraftWise vendor flips\" after each check. CraftWise's own AH panel does not need it."],
 			get = function() return S().flipList ~= false end,
 			set = function(v) S().flipList = v and true or false end },
+		{ key = "snipe", kind = "check", label = L["Snipe alert"], text = L["Tell me when a snipe-list item is listed at or below my max"],
+			sub = L["After a scan or search, items on the snipe list (AH panel) listed at or below the max price you typed go into the same toast as the flips. Nothing is bought by the toast."],
+			get = function() return S().snipeAlert ~= false end,
+			set = function(v) S().snipeAlert = v and true or false end },
 	} }
 
 	groups[#groups + 1] = { key = "disenchant", label = L["Disenchant"], rows = {

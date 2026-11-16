@@ -8,4 +8,10 @@
 	<Binding name="CRAFTWISE_FARM" category="ADDONS">
 		CraftWise_FarmToggle()
 	</Binding>
+	<Binding name="CRAFTWISE_AH_SEARCH" category="ADDONS" runOnUp="true">
+		CraftWise_AHSearchKey(keystate)
+	</Binding>
+	<Binding name="CRAFTWISE_AH_BUY" category="ADDONS" runOnUp="true">
+		CraftWise_AHBuyKey(keystate)
+	</Binding>
 </Bindings>

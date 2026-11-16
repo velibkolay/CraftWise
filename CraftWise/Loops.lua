@@ -12,6 +12,12 @@
 --   * Click on the toast: Make › Craft with the Vendor check chip on (and the best find's profession).
 -- Pure parts (Finds, Fresh, Summary) take plain data so the specs can feed them.
 --
+-- Snipes (#315, part 2): the same check for the snipe list (Snipe.lua). Items on it whose cheapest listings at the
+-- profit house, in our own fresh data, are at or below his max price (equal counts) go into the same toast
+-- ("3 snipes under your max"); a click opens the AH panel when the auction house is open. What was announced is
+-- kept in db.snipeNotice: an item is announced again only when it is new or its cheapest price fell. Nothing is
+-- bought or searched by the toast.
+--
 -- AH → vendor flips (#312): the item version of the same check. After the same triggers, items whose cheapest
 -- buyouts at the profit house are below what a vendor pays for one unit (ns.GetVendorSellPrice).
 --   * Only this account's own listings at the profit house, from Market.FreshBelow: the stored tiers (first 8
@@ -48,6 +54,10 @@ Loops.FLIP_MIN = 100 -- copper: default smallest total profit per item (provisio
 
 function Loops.FlipEnabled()
 	return Settings().flipAlert ~= false
+end
+
+function Loops.SnipeEnabled()
+	return Settings().snipeAlert ~= false
 end
 
 function Loops.FlipMin()
@@ -132,6 +142,39 @@ function Loops.FlipCheck()
 	end
 	local rows = ns.Market.FreshBelow(house, time(), Loops.FLIP_FRESH, ns.GetVendorSellPrice)
 	return Loops.FlipFinds(rows, ns.GetVendorSellPrice, Loops.FlipMin())
+end
+
+-- The snipes at the profit house right now, in list order. Read only.
+function Loops.SnipeCheck()
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	if not (house and ns.Snipe and ns.Market and ns.Market.FreshBelow and #ns.Snipe.Entries() > 0) then
+		return {}
+	end
+	return ns.Snipe.Finds(ns.Market.FreshBelow(house, time(), Loops.FLIP_FRESH, ns.Snipe.LimitOf))
+end
+
+-- Snipes worth a notice against `notice` ([itemID] = { price } announced before): new, or cheaper than announced.
+-- Returns them and the notice to keep (what is not listed cheap any more is forgotten).
+function Loops.SnipeFresh(finds, notice)
+	local fresh, keep = {}, {}
+	for _, f in ipairs(finds) do
+		local old = notice and notice[f.itemID]
+		if not old or f.price < (old.price or 0) then
+			fresh[#fresh + 1] = f
+			keep[f.itemID] = { price = f.price }
+		else
+			keep[f.itemID] = old
+		end
+	end
+	return fresh, keep
+end
+
+-- "3 snipes under your max"; nil without any.
+function Loops.SnipeSummary(fresh)
+	if #fresh == 0 then
+		return nil
+	end
+	return ("%d %s under your max"):format(#fresh, #fresh == 1 and "snipe" or "snipes")
 end
 
 -- rows: ns.BuildRows rows. Returns the finds, best first: { recipeID, professionID, name, profit, loop,
@@ -239,12 +282,27 @@ function Loops.RunFlips()
 	return fresh
 end
 
--- Runs the checks and shows one toast for what is fresh. Returns the fresh crafts and the fresh flips.
+-- Checks the snipe list; returns the fresh finds (new or cheaper than announced).
+function Loops.RunSnipes()
+	if not (ns.db and Loops.SnipeEnabled()) then
+		return {}
+	end
+	local ok, finds = pcall(Loops.SnipeCheck)
+	if not ok then
+		return {}
+	end
+	local fresh, keep = Loops.SnipeFresh(finds, ns.db.snipeNotice)
+	ns.db.snipeNotice = keep
+	return fresh
+end
+
+-- Runs the checks and shows one toast for what is fresh. Returns the fresh crafts, the fresh flips and the
+-- fresh snipes.
 function Loops.Run()
 	if not ns.db then
-		return {}, {}
+		return {}, {}, {}
 	end
-	local fresh, flips = {}, Loops.RunFlips()
+	local fresh, flips, snipes = {}, Loops.RunFlips(), Loops.RunSnipes()
 	if Loops.Enabled() then
 		local ok, finds = pcall(Loops.Check)
 		if ok then
@@ -254,24 +312,34 @@ function Loops.Run()
 		end
 	end
 	local parts = {}
-	for _, t in ipairs({ Loops.Summary(fresh) or false, Loops.FlipSummary(flips) or false }) do
+	for _, t in ipairs({ Loops.Summary(fresh) or false, Loops.FlipSummary(flips) or false, Loops.SnipeSummary(snipes) or false }) do
 		if t then
 			parts[#parts + 1] = t
 		end
 	end
 	local text = #parts > 0 and table.concat(parts, " · ") or nil
 	if text and ns.LootToast and ns.LootToast.ShowCustom then
-		local best, flip = fresh[1], flips[1]
-		local itemID = best and best.outputItemID or flip.itemID
+		local best, flip, snipe = fresh[1], flips[1], snipes[1]
+		local other = flip or snipe -- the item shown when there is no craft
+		local itemID = best and best.outputItemID or other and other.itemID
+		local detail = best and best.name
+		if not detail then
+			local name = ns.Basket and ns.Basket.ItemName(other.itemID) or tostring(other.itemID)
+			detail = (other.atLeast and "%s, %d or more" or "%s ×%d"):format(name, other.units)
+		end
 		ns.LootToast.ShowCustom({
 			key = "loops", icon = itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID) or nil,
-			itemID = not best and flip.itemID or nil, text = text,
-			detail = best and best.name or ((flip.atLeast and "%s, %d or more" or "%s ×%d"):format(ns.Basket and ns.Basket.ItemName(flip.itemID) or tostring(flip.itemID),
-				flip.units)),
-			copper = best and best.profit or flip.profit, sourceText = not best and "AH → vendor" or nil, duration = 10,
+			itemID = not best and other.itemID or nil, text = text, detail = detail,
+			copper = best and best.profit or flip and flip.profit or nil,
+			sourceText = not best and (flip and "AH → vendor" or "Snipe list") or nil, duration = 10,
 			onClick = function()
-				if not best then
-					-- Only flips: the list is in the basket.
+				if not best and not flip then
+					-- Only snipes: the list is in the AH panel, next to the open auction house.
+					if not (ns.AHPanel and ns.AHPanel.Show and ns.AHPanel.Show()) then
+						ns.Print("Open the auction house: the snipe list is in CraftWise's panel next to it.")
+					end
+				elseif not best then
+					-- Only flips (and maybe snipes): the list is in the basket.
 					if ns.Main and ns.Main.Open then
 						ns.Main.Open("basket")
 					end
@@ -287,12 +355,12 @@ function Loops.Run()
 			end,
 		})
 	end
-	return fresh, flips
+	return fresh, flips, snipes
 end
 
 local pending = false
 local function Schedule()
-	if pending or not (ns.db and (Loops.Enabled() or Loops.FlipEnabled())) then
+	if pending or not (ns.db and (Loops.Enabled() or Loops.FlipEnabled() or Loops.SnipeEnabled())) then
 		return
 	end
 	pending = true
