@@ -105,3 +105,4 @@ MinimapStyle.lua
 FlightTimes.lua
 UnitTooltip.lua
 DressingRoom.lua
+InterfaceExtras.lua
