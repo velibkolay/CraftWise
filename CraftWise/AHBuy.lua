@@ -18,7 +18,13 @@
 --   * A commodity needs two clicks: the first starts the purchase and the server answers with the price
 --     (COMMODITY_PRICE_UPDATED), the second (a button of its own showing that price) confirms it. A price
 --     above what the first click showed, or above the line's max, is never confirmed: it is cancelled and shown.
---   * After a purchase the results are old: the buy button stays off until the player searches again.
+--   * After a purchase the results are old, with one exception (#335, item auctions only): the client sends the
+--     item's results again after a purchase (ITEM_SEARCH_RESULTS_UPDATED); a list that arrives AFTER the purchase
+--     completed (or, when it came first, one that no longer holds the bought auction) marks the list fresh and
+--     the next press can buy the next auction. Every press still reads the auction again and applies all the
+--     checks above, once, for one auction; an event only marks the list fresh and never buys; auction IDs bought
+--     this session are skipped; an error or a commodity purchase leaves the list old (search again). No fresh
+--     list: the button stays off until the player searches again, as before.
 --
 -- Keys (#315, part 2): two key bindings, "AH: search next" and "AH: buy best" (Bindings.xml, runOnUp so the body
 -- also hears the release). A press is one action: the search key is AHBuy.Next (one search), the buy key is
@@ -26,6 +32,14 @@
 -- confirm), an item auction one. A press while the key is still held down is ignored (there is no repeat);
 -- nothing is queued: a press while the server is busy says "wait" and does nothing. The press is the hardware
 -- event the restricted calls need (Blizzard's docs mark PlaceBid and StartCommoditiesPurchase restricted).
+--
+-- Does the client resend item results after PlaceBid? Blizzard's UI code (Blizzard_AuctionHouseUI/Shared/) only
+-- reacts to ITEM_SEARCH_RESULTS_UPDATED(itemKey, newAuctionID) / ITEM_SEARCH_RESULTS_ADDED by redrawing its list
+-- (Blizzard_AuctionHouseItemBuyFrame.lua OnEvent, lines 60-73); it never sends the query again after a purchase
+-- (the BUYOUT_AUCTION dialog only waits for AUCTION_HOUSE_PURCHASE_COMPLETED(auctionID) or AUCTION_HOUSE_SHOW_ERROR,
+-- Frame.lua lines 10-27), so a refreshed list after a purchase comes from the client itself, not from Lua code we
+-- can read. Whether and when it comes is checked in game (docs/ingame-checks.md, #335); if it does not, nothing
+-- changes: the list stays old.
 --
 -- How Blizzard's Forever AH UI does it (wow-ui-source, branch forever, Blizzard_AuctionHouseUI/Shared/):
 --   Blizzard_AuctionHouseFrame.lua QueryItem: C_AuctionHouse.SendSearchQuery(itemKey, sorts, separateOwnerItems)
@@ -56,6 +70,11 @@ local S = {
 	shown = nil, -- the plan the button showed last
 	quote = nil, -- { unit, total } the server's price of a started commodity purchase
 	message = nil, -- what the panel says
+	bought = {}, -- [auctionID] = true: item auctions bought since the AH opened; never planned again (#335)
+	run = nil, -- { units, total } bought on the picked line in this run (item auctions, #335)
+	afterBuy = false, -- an item purchase just finished: the next item list that arrives is fresh (#335)
+	listSeq = 0, -- counts item result events; bidSeq = its value when PlaceBid went out
+	bidSeq = 0,
 }
 AHBuy.state = S
 local held = {} -- [key] = true from a key press until its release (#315 part 2)
@@ -100,14 +119,26 @@ end
 function AHBuy.Plan(rows, isCommodity, need, maxUnit)
 	need = math.max(1, math.floor(tonumber(need) or 1))
 	local units, total, top, id = 0, 0, 0, nil
-	for _, r in ipairs(rows or {}) do
+	rows = rows or {}
+	for i, r in ipairs(rows) do
 		if not r.own then
 			if maxUnit and r.unit > maxUnit then
 				break
 			end
 			if not isCommodity then
+				-- `more`: the auctions after this one that are also at or below the max price (#335)
+				local more = 0
+				for j = i + 1, maxUnit and #rows or 0 do
+					local q = rows[j]
+					if not q.own then
+						if q.unit > maxUnit then
+							break
+						end
+						more = more + 1
+					end
+				end
 				return { units = r.qty, total = r.unit * r.qty, unitMax = r.unit, partial = r.qty < need, auctionID = r.auctionID,
-					buyout = r.buyout or r.unit * r.qty }
+					buyout = r.buyout or r.unit * r.qty, more = more }
 			end
 			local take = math.min(r.qty, need - units)
 			units, total, top = units + take, total + take * r.unit, r.unit
@@ -137,7 +168,8 @@ function AHBuy.Describe(plan, why, phase, busy, money)
 	if phase == "confirm" then
 		return ("Confirm: buy %d for %s"):format(plan.units, Money(plan.total)), true
 	end
-	return ("Buy %d for %s"):format(plan.units, Money(plan.total)), true
+	local more = plan.more and plan.more > 0 and (" (%d more under max)"):format(plan.more) or ""
+	return ("Buy %d for %s%s"):format(plan.units, Money(plan.total), more), true
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -184,7 +216,17 @@ function AHBuy.Live()
 	if S.isCommodity == nil then
 		return nil, "Search first"
 	end
-	local plan = AHBuy.Plan(AHBuy.ReadRows(t.itemID, S.isCommodity), S.isCommodity, t.need, t.maxUnit)
+	local rows = AHBuy.ReadRows(t.itemID, S.isCommodity)
+	if next(S.bought) then -- an auction bought this session is never planned again, even if the list still shows it
+		local keep = {}
+		for _, r in ipairs(rows) do
+			if not (r.auctionID and S.bought[r.auctionID]) then
+				keep[#keep + 1] = r
+			end
+		end
+		rows = keep
+	end
+	local plan = AHBuy.Plan(rows, S.isCommodity, t.need, t.maxUnit)
 	if not plan then
 		return nil, t.maxUnit and "Nothing is listed at or below the max price" or "Nothing is listed"
 	end
@@ -238,7 +280,11 @@ function AHBuy.Pick(line)
 		return false
 	end
 	DropQuote()
-	S.target, S.shown, S.quote, S.phase, S.isCommodity = line, nil, nil, "idle", nil
+	local t = S.target
+	if not (t and line and t.itemID == line.itemID and t.kind == line.kind) then
+		S.run = nil -- another line: a new run
+	end
+	S.target, S.shown, S.quote, S.phase, S.isCommodity, S.afterBuy = line, nil, nil, "idle", nil, false
 	S.message = nil
 	Changed()
 	return true
@@ -263,7 +309,7 @@ function AHBuy.Search()
 	local key = C_AuctionHouse.MakeItemKey(t.itemID)
 	local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(key)
 	S.isCommodity = info and info.isCommodity or nil -- unknown until the answer says which kind it is
-	S.phase, S.shown, S.quote, S.message = "searching", nil, nil, nil
+	S.phase, S.shown, S.quote, S.message, S.afterBuy = "searching", nil, nil, nil, false
 	C_AuctionHouse.SendSearchQuery(key, Sorts(S.isCommodity), false)
 	Changed()
 	return true
@@ -360,13 +406,16 @@ function AHBuy.Execute(shown)
 	if not plan then
 		return Refuse(why)
 	end
+	if not S.isCommodity and S.bought[plan.auctionID] then
+		return Refuse("That auction was already bought")
+	end
 	S.busy = true
 	S.message = nil
 	if S.isCommodity then
 		S.shown, S.phase = plan, "quoting"
 		C_AuctionHouse.StartCommoditiesPurchase(plan.itemID, plan.units)
 	else
-		S.shown, S.phase = plan, "buying"
+		S.shown, S.phase, S.bidSeq = plan, "buying", S.listSeq
 		C_AuctionHouse.PlaceBid(plan.auctionID, plan.buyout)
 	end
 	Changed()
@@ -472,8 +521,16 @@ local function Results(isCommodity, itemID)
 		return
 	end
 	S.isCommodity = isCommodity
+	S.listSeq = S.listSeq + 1
 	if S.phase == "searching" then
 		S.phase = "ready"
+	elseif S.phase == "stale" and S.afterBuy and not isCommodity then
+		-- The client sent the item's results again after our purchase completed (#335): the list is fresh. This
+		-- only marks it; the next press buys (or not) after the same checks as any press.
+		S.phase, S.afterBuy = "ready", false
+		if S.run then
+			S.message = ("Bought %d for %s"):format(S.run.units, Money(S.run.total))
+		end
 	end
 	Changed()
 end
@@ -484,6 +541,7 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 end)
 ns.On("AUCTION_HOUSE_CLOSED", function()
 	S.open, S.busy, S.phase, S.shown, S.quote, S.asking = false, false, "idle", nil, nil, nil
+	S.bought, S.run, S.afterBuy = {}, nil, false
 	held.search, held.buy = nil, nil
 	Changed()
 end)
@@ -532,7 +590,7 @@ ns.On("COMMODITY_PRICE_UNAVAILABLE", function()
 end)
 
 local function Done(text)
-	S.busy, S.phase, S.quote, S.shown = false, "stale", nil, nil
+	S.busy, S.phase, S.quote, S.shown, S.afterBuy = false, "stale", nil, nil, false
 	Say(text)
 end
 ns.On("COMMODITY_PURCHASE_SUCCEEDED", function()
@@ -545,13 +603,41 @@ ns.On("COMMODITY_PURCHASE_FAILED", function()
 		Done("The purchase failed. Search again.")
 	end
 end)
-ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", function()
-	if S.phase == "buying" then
+ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", function(_, auctionID)
+	local shown = S.shown
+	if S.phase ~= "buying" then
+		return
+	end
+	if S.isCommodity or not (shown and shown.auctionID) then
 		Done("Bought. The list is old: search again.")
+		return
+	end
+	if auctionID and auctionID ~= shown.auctionID then
+		return -- another purchase finished (Blizzard's own window); not ours
+	end
+	-- An item auction: remember it, count the run, and wait for the client's new list (#335).
+	S.bought[shown.auctionID] = true
+	local run = S.run or { units = 0, total = 0 }
+	run.units, run.total = run.units + shown.units, run.total + shown.total
+	S.run = run
+	local came = S.listSeq > S.bidSeq -- a list arrived between PlaceBid and this event
+	Done(("Bought %d for %s. The list is old: search again."):format(run.units, Money(run.total)))
+	S.afterBuy = true
+	if came then
+		for _, r in ipairs(AHBuy.ReadRows(S.target.itemID, false)) do
+			if r.auctionID == shown.auctionID then
+				return -- that list still holds the bought auction: it is the old one
+			end
+		end
+		S.phase, S.afterBuy = "ready", false
+		S.message = ("Bought %d for %s"):format(run.units, Money(run.total))
+		Changed()
 	end
 end)
+-- An error never retries anything. While a purchase is out or a search is waiting it frees the panel and says
+-- which error it was; at any other time it belongs to something else and is ignored.
 ns.On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
-	if not (S.busy or S.phase == "quoting") then
+	if not (S.busy or S.phase == "quoting" or S.phase == "searching") then
 		return
 	end
 	local text
@@ -562,7 +648,7 @@ ns.On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
 	if S.phase == "quoting" and C_AuctionHouse.CancelCommoditiesPurchase then
 		C_AuctionHouse.CancelCommoditiesPurchase()
 	end
-	Done((text or ("The auction house refused (error " .. tostring(err) .. ")")) .. ". Search again.")
+	Done(("%s (error %s). Search again."):format(text or "The auction house refused", tostring(err)))
 end)
 
 ----------------------------------------------------------------------------------------------------
