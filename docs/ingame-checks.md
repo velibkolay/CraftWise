@@ -1222,3 +1222,12 @@ New files `Flips.lua` and `UI/Main/Pages/Flips.lua` in the TOC: needs a full gam
 - `/craftwise debug` prints the AH purchase trace: `PlaceBid <id> bid <copper>`, `auction <id> in <source> ... found`, `pending: item ... from <source>`, then `AUCTION_HOUSE_PURCHASE_COMPLETED ... logged ahbuy`. Which line is missing tells which step failed. `/craftwise debug ledger` echoes lines live.
 - Sell the bought units to a vendor: Sell › Flips shows one flip with cost, vendor paid and profit.
 - A bid below the buyout, or a buyout the server refuses, logs nothing.
+
+## AH buy: the next profitable auction on each press, no search in between (#335)
+No new files. Item auctions only (gear, recipes); commodities buy their quantity in one purchase as before. Try it with cheap items first, a flip or snipe line with several auctions under the max price.
+- [ ] **Does the client resend item results after a purchase?** Blizzard's UI code does not send a new query after PlaceBid (it only redraws on ITEM_SEARCH_RESULTS_UPDATED / _ADDED), so this comes from the client: buy one auction of an item with several listed (Toughened Leather Armor), then `/etrace` or watch the panel. Note: does ITEM_SEARCH_RESULTS_UPDATED arrive, before or after AUCTION_HOUSE_PURCHASE_COMPLETED, and with the bought auction already gone from the list?
+- [ ] If it arrives: the status line says "Bought 1 for X", the button shows the next one ("Buy 1 for X (N more under max)") with no search. Press again: the next auction is bought. Each press is one purchase; a held key buys one.
+- [ ] If it does not arrive: the status says "Bought 1 for X. The list is old: search again." and the button stays off, as before.
+- [ ] After three buys the status reads "Bought 3 for <total>". Picking another line or closing the AH starts a new count.
+- [ ] A price above the max or a vanished auction: nothing is bought, the panel says why. The auction you just bought is never offered again, even if the list still shows it.
+- [ ] An error ("Internal auction error"): the status line names it ("... (error N). Search again."), nothing is retried, and a list that arrives afterwards does not re-enable Buy. Note the error number and what you were doing.

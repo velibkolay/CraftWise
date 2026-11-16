@@ -155,6 +155,145 @@ it("Buy: an error frees the button and is not retried", function()
 	eq(#ah.calls, 1)
 end)
 
+----------------------------------------------------------------------------------------------- fresh list (#335)
+
+local FLIPSWORD = { kind = "flip", itemID = SWORD, need = 3, maxUnit = 800, sell = 1000 }
+
+it("Fresh list: after a purchase the client's new item list lets the next press buy the next auction, no search in between", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 720, 1, 78 }, { 740, 1, 79 } })
+	PickAndSearch(ns, stub, FLIPSWORD, "item")
+	local plan = AB.Refresh()
+	eq(plan.more, 2)
+	eq((AB.Describe(plan, nil, AB.state.phase, AB.state.busy, GetMoney())), "Buy 1 for " .. ns.FormatMoney(700, true) .. " (2 more under max)")
+	eq(AB.Click(), true); eq(table.concat(ah.calls, ","), "bid:77:700")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(AB.state.phase, "stale"); eq(AB.Click(), false); eq(#ah.calls, 1, "no list yet: nothing is bought")
+	ItemAuctions(stub, { { 720, 1, 78 }, { 740, 1, 79 } })
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD }, 78)
+	eq(AB.state.phase, "ready")
+	eq(AB.state.message, "Bought 1 for " .. ns.FormatMoney(700, true))
+	plan = AB.Refresh()
+	eq(plan.auctionID, 78); eq(plan.more, 1)
+	eq(#ah.searches, 1, "no second search")
+	eq(AB.Click(), true); eq(ah.calls[2], "bid:78:720")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	ItemAuctions(stub, { { 740, 1, 79 } })
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	plan = AB.Refresh()
+	eq((AB.Describe(plan, nil, AB.state.phase, AB.state.busy, GetMoney())), "Buy 1 for " .. ns.FormatMoney(740, true), "the last one: no more")
+	eq(AB.Click(), true); eq(ah.calls[3], "bid:79:740")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 79)
+	ItemAuctions(stub, {})
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	eq(AB.state.message, "Bought 3 for " .. ns.FormatMoney(2160, true))
+	local p, why = AB.Refresh()
+	eq(p, nil); eq(why, "Nothing is listed at or below the max price")
+	eq(AB.Click(), false); eq(#ah.calls, 3); eq(#ah.searches, 1)
+end)
+
+it("Fresh list: a list from before the purchase is not fresh; one that arrived during it counts only without the bought auction", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 720, 1, 78 } })
+	PickAndSearch(ns, stub, FLIPSWORD, "item")
+	AB.Refresh(); AB.Click()
+	-- a list during the purchase that still holds auction 77: the old one
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(AB.state.phase, "stale", "that list still held the bought auction")
+	eq(AB.Click(), false); eq(#ah.calls, 1)
+	-- a list that came during the purchase and no longer holds the bought auction
+	AB.state.bought = {}
+	AB.Search(); stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	AB.Refresh(); AB.Click()
+	eq(#ah.calls, 2)
+	ItemAuctions(stub, { { 720, 1, 78 } })
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	eq(AB.state.phase, "buying", "events never buy and never end the purchase")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(AB.state.phase, "ready"); eq(AB.Refresh().auctionID, 78)
+	-- another item's list does not make a finished purchase fresh
+	AB.Click(); stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
+	eq(AB.state.phase, "stale")
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = CLOTH })
+	eq(AB.state.phase, "stale")
+	-- a purchase finishing in Blizzard's own window is not ours
+	AB.state.phase, AB.state.busy = "buying", true
+	AB.state.shown = { auctionID = 78, units = 1, total = 720, itemID = SWORD }
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 999)
+	eq(AB.state.phase, "buying")
+end)
+
+it("Fresh list: an auction bought this session is skipped even when the list still shows it; a price above the max is refused", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 720, 1, 78 } })
+	PickAndSearch(ns, stub, FLIPSWORD, "item")
+	AB.Refresh(); AB.Click()
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD }) -- the server still listed 77
+	eq(AB.state.phase, "ready")
+	eq(AB.Refresh().auctionID, 78, "77 was bought: skipped")
+	-- the next list holds only an auction above his max
+	ItemAuctions(stub, { { 900, 1, 90 } })
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	AB.Refresh()
+	local ok = AB.Click()
+	eq(ok, false); eq(#ah.calls, 1, "above his max: nothing bought")
+	-- a bought id is never sent again, even through Execute
+	ItemAuctions(stub, { { 720, 1, 78 } })
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	AB.Refresh()
+	AB.state.bought[78] = true
+	ok = AB.Execute({ itemID = SWORD, units = 1, total = 720, unitMax = 720, auctionID = 78, buyout = 720 })
+	eq(ok, false); eq(#ah.calls, 1)
+	-- closing the AH forgets the run
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	eq(next(AB.state.bought), nil); eq(AB.state.run, nil)
+end)
+
+it("Fresh list: the buy key takes the same path, one auction per press", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 720, 1, 78 } })
+	PickAndSearch(ns, stub, FLIPSWORD, "item")
+	AB.Refresh()
+	local K = AB.KeyBuy
+	eq(K("down"), true); K("up")
+	eq(K("down"), false, "a press while the result is out buys nothing"); K("up")
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	ItemAuctions(stub, { { 720, 1, 78 } })
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	AB.Refresh()
+	eq(K("down"), true); eq(table.concat(ah.calls, ","), "bid:77:700,bid:78:720")
+	eq(K("down"), false); eq(#ah.calls, 2, "held: nothing more")
+end)
+
+it("Errors: shown with their number, never retried, and a list after an error is not fresh; a search that errors is freed", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 700, 1, 77 }, { 720, 1, 78 } })
+	PickAndSearch(ns, stub, FLIPSWORD, "item")
+	AB.Refresh(); AB.Click()
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 5)
+	eq(AB.state.phase, "stale"); eq(AB.state.busy, false)
+	assert(AB.state.message:find("error 5", 1, true) and AB.state.message:find("Search again", 1, true), AB.state.message)
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	eq(AB.state.phase, "stale", "after an error the list stays old")
+	eq(AB.Click(), false); eq(#ah.calls, 1, "nothing retried"); eq(#ah.searches, 1, "no search by itself")
+	-- an error while a search is waiting frees the panel; it does not search again
+	AB.Search()
+	eq(AB.state.phase, "searching"); eq(#ah.searches, 2)
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 12)
+	eq(AB.state.phase, "stale"); assert(AB.state.message:find("error 12", 1, true), AB.state.message)
+	eq(#ah.searches, 2, "no retry"); eq(#ah.calls, 1)
+	-- an error with nothing pending is not ours
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 3)
+	eq(AB.state.phase, "stale"); assert(AB.state.message:find("error 12", 1, true), AB.state.message)
+end)
+
 it("Buy: the auction is read again right before the call: a higher price, a vanished auction, no gold: nothing is bought", function()
 	local ns, stub, ah = Setup()
 	local AB = ns.AHBuy
