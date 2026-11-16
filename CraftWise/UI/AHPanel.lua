@@ -29,9 +29,18 @@ local function Money(copper)
 	return ns.FormatMoney(copper, true)
 end
 
+-- The item's name, never its ID (#328): an item the client hasn't cached is asked for (one load request, the
+-- shared throttle in ns.RequestItemData) and shows "…" until ITEM_DATA_LOAD_RESULT redraws the panel.
+P.PLACEHOLDER = "…"
 local function ItemName(itemID)
-	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
-	return name or ("item " .. tostring(itemID))
+	local name = ns.ItemInfoNow and ns.ItemInfoNow(itemID)
+	if name then
+		return name
+	end
+	if ns.RequestItemData then
+		ns.RequestItemData(itemID, "AHPanel")
+	end
+	return P.PLACEHOLDER
 end
 
 function P.Lines()
@@ -155,6 +164,21 @@ function P.RowDetail(row)
 end
 
 -- The text of a result row: "12 × 3s 40c = 40s 80c" is built by ResultText below.
+
+-- What the line under the buttons says: AHBuy's message first, else the profit of the plan, else why there is no
+-- plan (a button that is off must say why): no line picked, searching, nothing listed.
+function P.StatusText(S, plan, why)
+	if S.message then
+		return S.message
+	end
+	if plan then
+		return plan.profit and (L["Profit %s"]):format(Money(plan.profit)) or nil
+	end
+	if not S.target then
+		return L["Click a line to search it first"]
+	end
+	return why
+end
 
 -- The form below the lines: fills it from a line or an item ID (nothing is saved or searched).
 function P.Prefill(what)
@@ -387,13 +411,11 @@ function P.Update()
 	panel.buy:ClearAllPoints()
 	panel.buy:SetPoint("LEFT", panel.search, "RIGHT", 8, 0)
 	local text, enabled = AB.Describe(plan, why, S.phase, S.busy, GetMoney and GetMoney() or nil)
+	panel.buy:SetLabel(text) -- the folded button's label: SetText alone would leave "Buy" on the face
 	panel.buy:SetText(text)
 	panel.buy:SetEnabled(enabled)
 	y = y - 30
-	local status = S.message
-	if not status and plan and plan.profit then
-		status = (L["Profit %s"]):format(Money(plan.profit))
-	end
+	local status = P.StatusText(S, plan, why)
 	panel.status:ClearAllPoints()
 	panel.status:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
 	panel.status:SetText(status or "")
@@ -507,6 +529,20 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 end)
 ns.Listen("AHBUY_CHANGED", P.Update)
 -- The basket, the bags or the prices changed: the kept lines are out of date.
+-- An item name that was not cached arrived: draw the rows again (only the rows' own items).
+local function NameArrived(_, itemID)
+	if not (panel and panel:IsShown()) then
+		return
+	end
+	for _, l in ipairs(P.Lines()) do
+		if l.itemID == itemID then
+			P.Update()
+			return
+		end
+	end
+end
+ns.On("ITEM_DATA_LOAD_RESULT", NameArrived)
+ns.On("GET_ITEM_INFO_RECEIVED", NameArrived)
 for _, name in ipairs({ "BASKET_CHANGED", "BAGS_CHANGED", "PRICES_CHANGED", "SNIPE_CHANGED" }) do
 	ns.Listen(name, function()
 		cached = nil

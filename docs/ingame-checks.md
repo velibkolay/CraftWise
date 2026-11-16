@@ -1145,6 +1145,9 @@ No new files. Display only: nothing here searches or buys by itself. Needs a fli
 - [ ] A flip that reads "×≥N" (the list may hold more): cost, vendor and profit all read "≥".
 - [ ] Totals add up to the lines by hand; with a line whose prices aren't stored the profit total shows "?".
 - [ ] After a click or search, "Listed now (units × price = row total)" heads the live results, each row "12 × 3s 40c = 40s 80c" with the right total.
+- [ ] Item names: after opening the AH no row shows "item 1234"; an uncached item shows "…" and its name replaces it within a moment, without clicking.
+- [ ] Buy button: with no line picked it looks clearly off (faded, grey text), its text is what AHBuy says, and the line under the buttons reads "Click a line to search it first".
+- [ ] Click a gear item (not a commodity, e.g. Barbaric Shoulders): the status line says "Searching...", then either the listed rows or "Nothing is listed"/"Nothing is listed at or below the max price". If it stays on "Searching..." the client sent no item results for a search by item ID with item level 0: note what the Blizzard frame shows for the same item.
 - [ ] With 12+ lines the "+N more" note still shows and the panel stays on screen (the headings take room: does the panel grow past the bottom of the screen?).
 
 ## Interface › Minimap (#321, part 1)

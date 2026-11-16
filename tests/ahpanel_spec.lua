@@ -174,3 +174,57 @@ it("Listed now: a result row shows units x price = the row total", function()
 	local text = ns.AHPanel.ResultText({ qty = 12, unit = 340 }, true)
 	assert(text:find("12 × " .. ns.FormatMoney(340, true) .. " = " .. ns.FormatMoney(4080, true), 1, true), text)
 end)
+
+----------------------------------------------------------------------------------------------- names and status
+
+it("Names: an item the client hasn't cached never shows its ID; it is requested once and the row redraws when the name arrives", function()
+	local ns, stub = Setup()
+	local ID = 5964
+	ns.Snipe.Set(ID, 700, 4)
+	ns.Notify("SNIPE_CHANGED")
+	local panel = CraftWiseAHPanel
+	local function Texts()
+		local out = {}
+		for _, fr in ipairs(stub.frames) do
+			if fr.line and fr.text and fr.text.text then out[#out + 1] = fr.text.text end
+		end
+		return out
+	end
+	local before = Texts()
+	eq(#before, 1)
+	assert(not before[1]:find("5964", 1, true) and not before[1]:find("item ", 1, true), before[1])
+	assert(before[1]:find(ns.AHPanel.PLACEHOLDER, 1, true), before[1])
+	local asked = 0
+	for _, id in ipairs(stub.loadRequests) do if id == ID then asked = asked + 1 end end
+	assert(asked >= 1, "the name was requested")
+	ns.Notify("SNIPE_CHANGED")
+	local again = 0
+	for _, id in ipairs(stub.loadRequests) do if id == ID then again = again + 1 end end
+	eq(again, asked, "drawing again doesn't ask again (the shared throttle)")
+	-- the name arrives
+	stub.items[ID] = { name = "Barbaric Shoulders", sellPrice = 0 }
+	stub.Fire("ITEM_DATA_LOAD_RESULT", ID, true)
+	local after = Texts()
+	assert(after[1]:find("Barbaric Shoulders", 1, true), after[1])
+end)
+
+it("Status line: no line picked says so; a searched item with nothing listed says why; a message wins", function()
+	local ns = Setup()
+	local P = ns.AHPanel
+	eq(P.StatusText({ target = nil }, nil, "Pick a line"), "Click a line to search it first")
+	eq(P.StatusText({ target = { itemID = 1 } }, nil, "Nothing is listed"), "Nothing is listed")
+	eq(P.StatusText({ target = { itemID = 1 } }, nil, "Searching..."), "Searching...")
+	eq(P.StatusText({ target = { itemID = 1 }, message = "Wait: the auction house is busy" }, nil, "x"), "Wait: the auction house is busy")
+	eq(P.StatusText({ target = { itemID = 1 } }, { profit = 330 }, nil), "Profit " .. ns.FormatMoney(330, true))
+end)
+
+it("Buy button: its text is what AHBuy.Describe says, and it looks disabled when it is off", function()
+	local ns, stub = Setup()
+	ns.db.flips = { t = NOW, items = { { itemID = CLOTH, units = 5, atLeast = false, profit = 300, price = 40, sell = 100, maxUnit = 99, t = NOW } } }
+	ns.Notify("BASKET_CHANGED")
+	local buy = CraftWiseAHPanel.buy
+	eq(buy.enabled, false)
+	eq(buy.face.alpha, 0.4, "a disabled button fades")
+	eq(buy.label.text, "Pick a line", "the label is what Describe returns for no plan")
+	eq(CraftWiseAHPanel.status.text, "Click a line to search it first")
+end)
