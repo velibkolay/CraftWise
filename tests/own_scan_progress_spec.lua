@@ -268,7 +268,7 @@ it("#297 the bar sits above the auction house window, never over its tabs, and t
 	end
 	-- the bar is the only thing CraftWise anchors to the AH frame
 	for _, fr in ipairs(stub.frames) do
-		if fr ~= bar then
+		if fr ~= bar and fr ~= _G.CraftWiseAHPanel then -- the buy panel (#315) docks to it by design
 			for _, p in ipairs(fr.points or {}) do
 				assert(p[2] ~= host or fr == bar, "only the scan bar is anchored to the AH frame")
 			end

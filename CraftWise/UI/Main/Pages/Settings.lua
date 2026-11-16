@@ -109,10 +109,12 @@ local DEFAULT_PERCENT, DEFAULT_COPPER, PERCENT_STEP = 20, 10, 5
 Set.AH_RULE_DEFAULTS = { percent = DEFAULT_PERCENT, copper = DEFAULT_COPPER }
 Set.COPPER_STEPS = { 0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000 }
 
--- The next copper step up (dir 1) or down (dir -1) from current.
-function Set.StepCopper(current, dir)
+Set.GOLD_STEPS = { 0, 10000, 50000, 100000, 200000, 500000, 1000000, 5000000 } -- 0, 1g, 5g, 10g ... 500g (#315)
+
+-- The next copper step up (dir 1) or down (dir -1) from current (in `steps`, default COPPER_STEPS).
+function Set.StepCopper(current, dir, steps)
 	current = current or 0
-	local steps = Set.COPPER_STEPS
+	steps = steps or Set.COPPER_STEPS
 	if dir > 0 then
 		for _, v in ipairs(steps) do
 			if v > current then
@@ -449,6 +451,25 @@ local function Groups()
 			sub = L["A flip item that arrives in your bags (from the AH or the mail) gets the junk mark, so Sell junk sells it at a vendor. Not for items already in your bags when they became a flip, or that you marked or watch yourself; a mark you take off stays off."],
 			get = function() return ns.Basket.MarkEnabled() end,
 			set = function(v) S().flipJunk = v and true or false end },
+	} }
+
+	groups[#groups + 1] = { key = "ahbuy", label = L["Buying at the AH"], rows = {
+		{ key = "confirm", kind = "stepper", label = L["Ask above"],
+			sub = L["A purchase of CraftWise's AH panel above this total asks once more in the client's confirm dialog. Below it one click buys."],
+			get = function() return ns.AHBuy.ConfirmAbove() end,
+			down = function()
+				S().ahBuyConfirm = Set.StepCopper(ns.AHBuy.ConfirmAbove(), -1, Set.GOLD_STEPS)
+				Changed()
+			end,
+			up = function()
+				S().ahBuyConfirm = Set.StepCopper(ns.AHBuy.ConfirmAbove(), 1, Set.GOLD_STEPS)
+				Changed()
+			end,
+			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
+		{ key = "list", kind = "check", label = L["Auctionator list"], text = L["Keep \"CraftWise vendor flips\""],
+			sub = L["With Auctionator loaded, rebuild its shopping list \"CraftWise vendor flips\" after each check. CraftWise's own AH panel does not need it."],
+			get = function() return S().flipList ~= false end,
+			set = function(v) S().flipList = v and true or false end },
 	} }
 
 	groups[#groups + 1] = { key = "disenchant", label = L["Disenchant"], rows = {

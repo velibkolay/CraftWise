@@ -503,7 +503,7 @@ end
 -- After each check: the list follows the section when Auctionator is there (the list exists once it was
 -- made, so it is also emptied of flips that are gone; nothing is made while there are none yet).
 function Basket.RefreshFlipList()
-	if not (ns.db and Basket.HasAuctionator()) then
+	if not (ns.db and Basket.HasAuctionator() and ns.db.settings.flipList ~= false) then
 		return nil
 	end
 	local lines = Basket.Flips()
