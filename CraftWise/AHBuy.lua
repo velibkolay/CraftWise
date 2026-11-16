@@ -665,7 +665,8 @@ function AHBuy.Lines(plan)
 	for _, f in ipairs(ns.Basket.Flips()) do
 		local missing = f.units - ns.Basket.FlipHeld(f)
 		if missing > 0 then
-			out[#out + 1] = { kind = "flip", itemID = f.itemID, need = missing, maxUnit = f.maxUnit, sell = f.sell }
+			out[#out + 1] = { kind = "flip", itemID = f.itemID, need = missing, maxUnit = f.maxUnit, sell = f.sell,
+				each = f.each, buys = f.single and missing or f.buys, single = f.single } -- #339: shown on the line only
 		end
 	end
 	for _, l in ipairs((plan or ns.Basket.Plan()).split.auction) do

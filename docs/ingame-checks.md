@@ -1231,3 +1231,11 @@ No new files. Item auctions only (gear, recipes); commodities buy their quantity
 - [ ] After three buys the status reads "Bought 3 for <total>". Picking another line or closing the AH starts a new count.
 - [ ] A price above the max or a vanished auction: nothing is bought, the panel says why. The auction you just bought is never offered again, even if the list still shows it.
 - [ ] An error ("Internal auction error"): the status line names it ("... (error N). Search again."), nothing is retried, and a list that arrives afterwards does not re-enable Buy. Note the error number and what you were doing.
+
+## Flips: profit per purchase (#339)
+No new files. Display and selection only; the buy path is untouched. Needs a scan with a one-at-a-time item (gear that does not stack) and a commodity below the vendor price.
+- [ ] A gear item that does not stack, listed a few copper under its vendor price (e.g. Toughened Leather Armor): it is no flip at the default 10c minimum. Settings > AH to vendor flips > "Smallest profit per purchase" down to 0 or 1c brings it back.
+- [ ] Mixed: a gear item with a few auctions well under the vendor price and many a few copper under: only the good auctions count; the line's max price is the vendor price minus the minimum (not minus 1c); the Auctionator list search has that max.
+- [ ] Order: panel, toast, Make > Basket and the Auctionator list all list the flips by profit per purchase (an item's best margin, a commodity's total), not by total profit.
+- [ ] The AH panel's flip lines show "+3c each · N buys" (items) or "1 buy" (commodities) at the right of the name; the summary's second line starts with the number of purchases. Does it fit at 340 wide?
+- [ ] The client's stack size: does C_Item.GetItemInfo return 1 for gear, a larger number for cloth/herbs? A line that says "buys not known" means the item was not cached at the scan; it fills in on the next scan. Are there stackable items that are not commodities (one purchase per auction)? Note them: they are counted as one purchase now.

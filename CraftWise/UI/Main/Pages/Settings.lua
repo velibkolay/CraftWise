@@ -451,6 +451,19 @@ local function Groups()
 				Changed()
 			end,
 			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
+		{ key = "each", kind = "stepper", label = L["Smallest profit per purchase"],
+			sub = L["Items that do not stack are bought one auction per press. Only auctions earning at least this much each count as a flip, and the flips are ranked by it. Items that stack (bought in bulk) keep the total above."],
+			disabled = function() return not ns.Loops.FlipEnabled() end,
+			get = function() return ns.Loops.FlipEachMin() end,
+			down = function()
+				S().flipEachMin = Set.StepCopper(ns.Loops.FlipEachMin(), -1)
+				Changed()
+			end,
+			up = function()
+				S().flipEachMin = Set.StepCopper(ns.Loops.FlipEachMin(), 1)
+				Changed()
+			end,
+			format = function(v) return v > 0 and ns.FormatCoins(v) or "0" end },
 		{ key = "junk", kind = "check", label = L["Mark bought flips as junk"], text = L["On"],
 			sub = L["A flip item that arrives in your bags (from the AH or the mail) gets the junk mark, so Sell junk sells it at a vendor. Not for items already in your bags when they became a flip, or that you marked or watch yourself; a mark you take off stays off."],
 			get = function() return ns.Basket.MarkEnabled() end,
