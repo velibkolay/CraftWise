@@ -56,7 +56,7 @@ function Loops.FlipEnabled()
 	return Settings().flipAlert ~= false
 end
 
-Loops.FLIP_EACH_MIN = 100 -- copper: default smallest profit per purchase of a one-at-a-time item (provisional, #339)
+Loops.FLIP_EACH_MIN = 10 -- copper: default smallest profit per purchase of a one-at-a-time item (Veli, #339)
 
 -- The smallest margin (vendor price - the auction's unit price) an auction of a one-at-a-time item needs to count
 -- as a flip: each such auction is one purchase (one PlaceBid per press), so a few copper is not worth the press.

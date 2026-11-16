@@ -436,7 +436,7 @@ it("Flip per purchase: the scan keeps only the good auctions of a one-at-a-time 
 	local flips = ns.Basket.Flips()
 	eq(#flips, 2, "the armor at 3c each is gone")
 	eq(flips[1].itemID, CLOTH, "+300 in one purchase beats 200 each")
-	eq(flips[2].itemID, BLADE); eq(flips[2].units, 2); eq(flips[2].maxUnit, 900); eq(flips[2].buys, 2); eq(flips[2].each, 200)
+	eq(flips[2].itemID, BLADE); eq(flips[2].units, 2); eq(flips[2].maxUnit, 990); eq(flips[2].buys, 2); eq(flips[2].each, 200)
 	-- the panel's lines carry the figures and the summary counts purchases
 	local list = ns.AHBuy.Lines()
 	eq(list[1].itemID, CLOTH); eq(list[2].buys, 2); eq(list[2].single, true)
@@ -451,7 +451,7 @@ it("Flip per purchase: the scan keeps only the good auctions of a one-at-a-time 
 	totals = ns.Loops.FlipTotals({ { need = 5, sell = 100, buys = 1 }, { need = 2, sell = 1000 } })
 	eq(totals.buys, 1); eq(totals.buysKnown, false)
 	-- the setting: a minimum of 0 lets the 3c auctions of the blade in again; a higher one drops the blade's good ones
-	eq(ns.Loops.FlipEachMin(), 100, "the provisional default is 1s")
+	eq(ns.Loops.FlipEachMin(), 10, "the default is 10c")
 	ns.db.settings.flipEachMin = 250
 	Scan(ns, stub)
 	eq(#ns.Basket.Flips(), 1, "nothing of the blade earns 2s50c each")
