@@ -1217,6 +1217,12 @@ New files `Flips.lua` and `UI/Main/Pages/Flips.lua` in the TOC: needs a full gam
 - [ ] Chips Today / 7 days / 30 days / All change hero and list. After /reload the history is still there. Docked layouts (left, right) draw the page too.
 - [ ] Does the hero caption with the best items fit on one line in the window and in the dock?
 
+## Ledger: AH item purchases (#337)
+- Buy one item auction (not a commodity) at the AH with Blizzard's own Buy tab, then one from CraftWise's buy panel. Each gives one `ahbuy` entry in `/craftwise ledger` with the row's buyout (stack of 1 or more).
+- `/craftwise debug` prints the AH purchase trace: `PlaceBid <id> bid <copper>`, `auction <id> in <source> ... found`, `pending: item ... from <source>`, then `AUCTION_HOUSE_PURCHASE_COMPLETED ... logged ahbuy`. Which line is missing tells which step failed. `/craftwise debug ledger` echoes lines live.
+- Sell the bought units to a vendor: Sell › Flips shows one flip with cost, vendor paid and profit.
+- A bid below the buyout, or a buyout the server refuses, logs nothing.
+
 ## AH buy: the next profitable auction on each press, no search in between (#335)
 No new files. Item auctions only (gear, recipes); commodities buy their quantity in one purchase as before. Try it with cheap items first, a flip or snipe line with several auctions under the max price.
 - [ ] **Does the client resend item results after a purchase?** Blizzard's UI code does not send a new query after PlaceBid (it only redraws on ITEM_SEARCH_RESULTS_UPDATED / _ADDED), so this comes from the client: buy one auction of an item with several listed (Toughened Leather Armor), then `/etrace` or watch the panel. Note: does ITEM_SEARCH_RESULTS_UPDATED arrive, before or after AUCTION_HOUSE_PURCHASE_COMPLETED, and with the bought auction already gone from the list?

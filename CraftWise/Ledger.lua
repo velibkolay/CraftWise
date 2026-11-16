@@ -551,41 +551,140 @@ function L.OnCommodityFailed()
 	commodity = nil
 end
 
--- The auction row the player bought from: item and quantity from the current item search.
-local function FindAuction(auctionID)
-	local info = C_AuctionHouse.GetAuctionInfoByID(auctionID)
-	local key = info and info.itemKey
-	if not key then
+-- Trace of the item purchase path (#337): every step of a buy is kept (newest last) so the next buy in game
+-- shows which step failed. `/craftwise debug` prints it, `/craftwise debug ledger` echoes new lines live.
+local TRACE_LINES = 40
+
+function L.Trace(...)
+	local d = ns.db and ns.db.debug
+	if not d then
+		return
+	end
+	local parts = {}
+	for i = 1, select("#", ...) do
+		parts[i] = tostring((select(i, ...)))
+	end
+	local line = date("%H:%M:%S ") .. table.concat(parts, " ")
+	d.ledgerTrace = d.ledgerTrace or {}
+	d.ledgerTrace[#d.ledgerTrace + 1] = line
+	while #d.ledgerTrace > TRACE_LINES do
+		table.remove(d.ledgerTrace, 1)
+	end
+	if d.ledgerLive then
+		ns.Print("ledger: " .. line)
+	end
+end
+
+function L.TraceLines()
+	local d = ns.db and ns.db.debug
+	return d and d.ledgerTrace or {}
+end
+
+function L.ToggleTraceLive()
+	local d = ns.db and ns.db.debug
+	if not d then
 		return nil
 	end
-	local quantity
-	for i = 1, C_AuctionHouse.GetNumItemSearchResults(key) or 0 do
-		local row = C_AuctionHouse.GetItemSearchResultInfo(key, i)
-		if row and row.auctionID == auctionID then
-			quantity = row.quantity
+	d.ledgerLive = not d.ledgerLive
+	return d.ledgerLive
+end
+
+-- Where an item buyout's price comes from: the item search rows. Blizzard's ItemBuyFrame lists
+-- GetItemSearchResultInfo rows (auctionID, quantity, buyoutAmount) and calls PlaceBid with the selected
+-- row's auctionID and buyoutAmount (Blizzard_AuctionHouseBuyDialog / Frame.lua, BUYOUT_AUCTION). The
+-- keys to read them with: CraftWise's own buy target, Blizzard's ItemBuyFrame key, the latest searches.
+local recentKeys = {} -- item keys of the latest ITEM_SEARCH_RESULTS_UPDATED / _ADDED, newest first
+local MAX_KEYS = 8
+
+local function SameKey(a, b)
+	return a.itemID == b.itemID and (a.itemLevel or 0) == (b.itemLevel or 0) and (a.itemSuffix or 0) == (b.itemSuffix or 0)
+end
+
+local function NoteKey(_, key)
+	if type(key) ~= "table" or not key.itemID then
+		return
+	end
+	for i, k in ipairs(recentKeys) do
+		if SameKey(k, key) then
+			table.remove(recentKeys, i)
 			break
 		end
 	end
-	return key.itemID, quantity, info.buyoutAmount
+	table.insert(recentKeys, 1, key)
+	while #recentKeys > MAX_KEYS do
+		table.remove(recentKeys)
+	end
+end
+
+local function Candidates()
+	local out = {}
+	local target = ns.AHBuy and ns.AHBuy.state and ns.AHBuy.state.target
+	if target and target.itemID and C_AuctionHouse.MakeItemKey then
+		out[#out + 1] = { src = "CraftWise buy target", key = C_AuctionHouse.MakeItemKey(target.itemID) }
+	end
+	local frame = _G.AuctionHouseFrame and _G.AuctionHouseFrame.ItemBuyFrame
+	if frame and frame.itemKey then
+		out[#out + 1] = { src = "Blizzard ItemBuyFrame", key = frame.itemKey }
+	end
+	for _, key in ipairs(recentKeys) do
+		out[#out + 1] = { src = "last item search", key = key }
+	end
+	return out
+end
+
+local function RowIn(key, auctionID)
+	for i = 1, C_AuctionHouse.GetNumItemSearchResults(key) or 0 do
+		local row = C_AuctionHouse.GetItemSearchResultInfo(key, i)
+		if row and row.auctionID == auctionID then
+			return row
+		end
+	end
+end
+
+-- The auction row the player bought from: itemID, quantity, buyout, where it was found. The search rows
+-- come first; GetAuctionInfoByID is the fallback (it has no quantity: the row of its key supplies it).
+local function FindAuction(auctionID)
+	for _, c in ipairs(Candidates()) do
+		local row = RowIn(c.key, auctionID)
+		L.Trace("auction", auctionID, "in", c.src, "item", c.key.itemID, row and "found" or "not found")
+		if row and row.quantity and row.buyoutAmount then
+			return c.key.itemID, row.quantity, row.buyoutAmount, c.src
+		end
+	end
+	local info = C_AuctionHouse.GetAuctionInfoByID and C_AuctionHouse.GetAuctionInfoByID(auctionID)
+	local key = info and info.itemKey
+	L.Trace("auction", auctionID, "GetAuctionInfoByID", key and ("item " .. tostring(key.itemID)) or "nil")
+	if not key then
+		return nil
+	end
+	local row = RowIn(key, auctionID)
+	return key.itemID, row and row.quantity, info.buyoutAmount or (row and row.buyoutAmount), "GetAuctionInfoByID"
 end
 
 function L.OnPlaceBid(auctionID, bidAmount)
-	local itemID, quantity, buyout = FindAuction(auctionID)
+	L.Trace("PlaceBid", auctionID, "bid", bidAmount)
+	local itemID, quantity, buyout, src = FindAuction(auctionID)
 	if not (itemID and quantity and buyout and bidAmount and bidAmount >= buyout) then
-		return -- a bid, or the auction isn't in the current results: nothing to log
+		-- a bid, or the auction isn't in any results we can read: nothing to log, no price is guessed
+		L.Trace("PlaceBid", auctionID, "not logged: item", itemID, "quantity", quantity, "buyout", buyout)
+		return
 	end
-	bids[auctionID] = { itemID = itemID, quantity = quantity, copper = bidAmount, before = L.HeldCount(itemID) }
+	-- The row's buyout is what the server takes for a bid at or above it.
+	bids[auctionID] = { itemID = itemID, quantity = quantity, copper = buyout, before = L.HeldCount(itemID) }
 	busy[itemID] = true
+	L.Trace("PlaceBid", auctionID, "pending: item", itemID, "x", quantity, "for", buyout, "from", src)
 end
 
 function L.OnPurchaseCompleted(_, auctionID)
 	local b = bids[auctionID]
 	if not b then
+		L.Trace("AUCTION_HOUSE_PURCHASE_COMPLETED", auctionID, "no pending PlaceBid for it")
 		return
 	end
 	bids[auctionID] = nil
 	busy[b.itemID] = nil
 	L.Record("ahbuy", b.itemID, b.quantity, b.copper, House(), b.before)
+	L.Trace("AUCTION_HOUSE_PURCHASE_COMPLETED", auctionID, "logged ahbuy item", b.itemID, "x", b.quantity, "for", b.copper)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -802,9 +901,12 @@ ns.On("COMMODITY_PRICE_UPDATED", L.OnCommodityPrice)
 ns.On("COMMODITY_PURCHASE_SUCCEEDED", L.OnCommoditySucceeded)
 ns.On("COMMODITY_PURCHASE_FAILED", L.OnCommodityFailed)
 ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", L.OnPurchaseCompleted)
+ns.On("ITEM_SEARCH_RESULTS_UPDATED", NoteKey)
+ns.On("ITEM_SEARCH_RESULTS_ADDED", NoteKey)
 -- A buyout that failed, or the AH closed with a purchase unanswered: forget what was pending.
 local function ForgetPending()
 	for auctionID, b in pairs(bids) do
+		L.Trace("pending purchase of auction", auctionID, "forgotten (error or AH closed)")
 		busy[b.itemID] = nil
 		bids[auctionID] = nil
 	end

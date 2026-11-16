@@ -827,6 +827,10 @@ SlashCmdList.CRAFTWISE = function(input)
 		ns.Style.Preview()
 		return
 	end
+	if msg == "debug ledger" and ns.Ledger then
+		ns.Print("ledger trace echo: " .. (ns.Ledger.ToggleTraceLive() and "on" or "off"))
+		return
+	end
 	if msg == "debug" then
 		local n = 0
 		for _, prof in pairs(ns.charDB and ns.charDB.professions or {}) do
@@ -849,6 +853,13 @@ SlashCmdList.CRAFTWISE = function(input)
 		end
 		if ns.Merchant then
 			ns.Print(("merchants recorded: %d"):format(ns.Merchant.Count()))
+		end
+		if ns.Ledger and ns.Ledger.TraceLines then
+			local lines = ns.Ledger.TraceLines()
+			ns.Print(("AH purchase trace: %d lines (/craftwise debug ledger echoes new ones)"):format(#lines))
+			for i = math.max(1, #lines - 11), #lines do
+				ns.Print("  " .. lines[i])
+			end
 		end
 		local d = ns.db and ns.db.debug and ns.db.debug.trainer
 		if d then
