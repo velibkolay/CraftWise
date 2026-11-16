@@ -265,7 +265,8 @@ it("Keep warning at the AH sell frame (#318): shown for a kept item, hidden for 
 		function f:GetItem() return self.itemLocation end
 		return f
 	end
-	AuctionHouseFrame = { ItemSellFrame = sellFrame(), CommoditiesSellFrame = sellFrame() }
+	AuctionHouseFrame = CreateFrame("Frame", "AuctionHouseFrame", UIParent)
+	AuctionHouseFrame.ItemSellFrame, AuctionHouseFrame.CommoditiesSellFrame = sellFrame(), sellFrame()
 	stub.Fire("AUCTION_HOUSE_SHOW")
 	stub.Fire("AUCTION_HOUSE_SHOW") -- hooked once
 	ns.db.keep[100] = true
@@ -287,4 +288,5 @@ it("Keep warning at the AH sell frame (#318): shown for a kept item, hidden for 
 		ns.db.settings.slotMarks = nil
 	end
 	eq(AuctionHouseFrame.ItemSellFrame:GetItem().itemID, 100) -- the frame's own state is untouched
+	AuctionHouseFrame = nil
 end)
