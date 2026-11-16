@@ -661,6 +661,19 @@ local function FindAuction(auctionID)
 	return key.itemID, row and row.quantity, info.buyoutAmount or (row and row.buyoutAmount), "GetAuctionInfoByID"
 end
 
+-- Pending bids older than this are dropped (clean-up only: a bid is logged when its completion arrives).
+local BID_TIMEOUT = 60
+
+function L.ExpireBids()
+	for id, b in pairs(bids) do
+		if GetTime() - (b.at or 0) > BID_TIMEOUT then
+			L.Trace("pending purchase of auction", id, "dropped after", BID_TIMEOUT, "s")
+			busy[b.itemID] = nil
+			bids[id] = nil
+		end
+	end
+end
+
 function L.OnPlaceBid(auctionID, bidAmount)
 	L.Trace("PlaceBid", auctionID, "bid", bidAmount)
 	local itemID, quantity, buyout, src = FindAuction(auctionID)
@@ -670,12 +683,14 @@ function L.OnPlaceBid(auctionID, bidAmount)
 		return
 	end
 	-- The row's buyout is what the server takes for a bid at or above it.
-	bids[auctionID] = { itemID = itemID, quantity = quantity, copper = buyout, before = L.HeldCount(itemID) }
+	L.ExpireBids()
+	bids[auctionID] = { itemID = itemID, quantity = quantity, copper = buyout, before = L.HeldCount(itemID), at = GetTime() }
 	busy[itemID] = true
 	L.Trace("PlaceBid", auctionID, "pending: item", itemID, "x", quantity, "for", buyout, "from", src)
 end
 
 function L.OnPurchaseCompleted(_, auctionID)
+	L.ExpireBids()
 	local b = bids[auctionID]
 	if not b then
 		L.Trace("AUCTION_HOUSE_PURCHASE_COMPLETED", auctionID, "no pending PlaceBid for it")
@@ -903,7 +918,7 @@ ns.On("COMMODITY_PURCHASE_FAILED", L.OnCommodityFailed)
 ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", L.OnPurchaseCompleted)
 ns.On("ITEM_SEARCH_RESULTS_UPDATED", NoteKey)
 ns.On("ITEM_SEARCH_RESULTS_ADDED", NoteKey)
--- A buyout that failed, or the AH closed with a purchase unanswered: forget what was pending.
+-- The AH closed with a purchase unanswered: forget what was pending.
 local function ForgetPending()
 	for auctionID, b in pairs(bids) do
 		L.Trace("pending purchase of auction", auctionID, "forgotten (error or AH closed)")
@@ -911,7 +926,17 @@ local function ForgetPending()
 		bids[auctionID] = nil
 	end
 end
-ns.On("AUCTION_HOUSE_SHOW_ERROR", ForgetPending)
+-- An error does not forget a pending bid: Forever sends error 10 (Enum.AuctionHouseError.DatabaseError,
+-- "Internal auction error") between PlaceBid and AUCTION_HOUSE_PURCHASE_COMPLETED and the purchase still
+-- completes (#340). The bid is logged only when its completion arrives with its auctionID.
+ns.On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
+	local ids = {}
+	for id in pairs(bids) do
+		ids[#ids + 1] = id
+	end
+	table.sort(ids)
+	L.Trace("AUCTION_HOUSE_SHOW_ERROR error", err, #ids > 0 and ("pending bids kept: " .. table.concat(ids, ",")) or "no bid pending")
+end)
 ns.On("AUCTION_HOUSE_CLOSED", function()
 	ForgetPending()
 	L.OnCommodityFailed()

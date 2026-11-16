@@ -71,6 +71,7 @@ local S = {
 	quote = nil, -- { unit, total } the server's price of a started commodity purchase
 	message = nil, -- what the panel says
 	bought = {}, -- [auctionID] = true: item auctions bought since the AH opened; never planned again (#335)
+	errored = nil, -- { auctionID, units, total, err }: an item buy the server answered with an error; it can still complete (#340)
 	run = nil, -- { units, total } bought on the picked line in this run (item auctions, #335)
 	afterBuy = false, -- an item purchase just finished: the next item list that arrives is fresh (#335)
 	listSeq = 0, -- counts item result events; bidSeq = its value when PlaceBid went out
@@ -410,7 +411,7 @@ function AHBuy.Execute(shown)
 		return Refuse("That auction was already bought")
 	end
 	S.busy = true
-	S.message = nil
+	S.message, S.errored = nil, nil
 	if S.isCommodity then
 		S.shown, S.phase = plan, "quoting"
 		C_AuctionHouse.StartCommoditiesPurchase(plan.itemID, plan.units)
@@ -541,7 +542,7 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 end)
 ns.On("AUCTION_HOUSE_CLOSED", function()
 	S.open, S.busy, S.phase, S.shown, S.quote, S.asking = false, false, "idle", nil, nil, nil
-	S.bought, S.run, S.afterBuy = {}, nil, false
+	S.bought, S.run, S.afterBuy, S.errored = {}, nil, false, nil
 	held.search, held.buy = nil, nil
 	Changed()
 end)
@@ -605,6 +606,29 @@ ns.On("COMMODITY_PURCHASE_FAILED", function()
 end)
 ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", function(_, auctionID)
 	local shown = S.shown
+	local late = S.errored -- an error came first, the purchase still completed (Forever sends error 10 before it, #340)
+	if late and auctionID == late.auctionID and S.phase ~= "buying" then
+		S.errored = nil
+		S.bought[late.auctionID] = true
+		local run = S.run or { units = 0, total = 0 }
+		run.units, run.total = run.units + late.units, run.total + late.total
+		S.run = run
+		local text = ("Bought %d for %s (the server also sent error %s)"):format(run.units, Money(run.total), tostring(late.err))
+		Say(text .. ". The list is old: search again.")
+		-- The #336 flow as after a normal buy: the next fresh list makes the panel ready, or the one that
+		-- already arrived does when it no longer holds this auction.
+		S.afterBuy = true
+		if S.target and S.listSeq > S.bidSeq then
+			for _, r in ipairs(AHBuy.ReadRows(S.target.itemID, false)) do
+				if r.auctionID == late.auctionID then
+					return
+				end
+			end
+			S.phase, S.afterBuy = "ready", false
+			Say(text)
+		end
+		return
+	end
 	if S.phase ~= "buying" then
 		return
 	end
@@ -644,6 +668,9 @@ ns.On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
 	if AuctionHouseUtil and AuctionHouseUtil.GetErrorText then
 		local ok, res = pcall(AuctionHouseUtil.GetErrorText, err)
 		text = ok and res or nil
+	end
+	if S.phase == "buying" and not S.isCommodity and S.shown and S.shown.auctionID then
+		S.errored = { auctionID = S.shown.auctionID, units = S.shown.units, total = S.shown.total, err = err }
 	end
 	if S.phase == "quoting" and C_AuctionHouse.CancelCommoditiesPurchase then
 		C_AuctionHouse.CancelCommoditiesPurchase()
