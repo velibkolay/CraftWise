@@ -1245,3 +1245,7 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 - [ ] Order: panel, toast, Make > Basket and the Auctionator list all list the flips by profit per purchase (an item's best margin, a commodity's total), not by total profit.
 - [ ] The AH panel's flip lines show "+3c each · N buys" (items) or "1 buy" (commodities) at the right of the name; the summary's second line starts with the number of purchases. Does it fit at 340 wide?
 - [ ] The client's stack size: does C_Item.GetItemInfo return 1 for gear, a larger number for cloth/herbs? A line that says "buys not known" means the item was not cached at the scan; it fills in on the next scan. Are there stackable items that are not commodities (one purchase per auction)? Note them: they are counted as one purchase now.
+
+## AH buy: grouped item rows are one purchase (#343)
+- [ ] Find an item search row with quantity above 1 (several identical auctions, e.g. a plan or pattern listed by many sellers). The panel's "Listed now" shows "1 × price · N listed, one per purchase" and the Buy button says "Buy 1 for <the buyout>", never the quantity.
+- [ ] With the line's max under that buyout nothing is bought, whatever N is. At or above it one press buys one item and the amount taken is exactly the buyout (check the gold). Compare with Blizzard's own AH list: quantity column = N, buyout column = the same price.
