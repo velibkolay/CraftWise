@@ -182,6 +182,15 @@ local function Throttled()
 end
 
 -- The listed rows of an item now, sorted as the client sends them, up to MAX_ROWS: { unit, qty, auctionID, own, left }.
+-- An ITEM row is not a stack (#343, gold safety): in Forever a search row groups identical auctions, `quantity` is
+-- how many are listed and `buyoutAmount` is the price of ONE purchase; one PlaceBid(auctionID, buyoutAmount) buys one.
+-- Blizzard's UI never divides it: the buyout column shows buyoutAmount as is and the quantity column shows only the
+-- count of auctions (Blizzard_AuctionHouseTableBuilder.lua, AuctionHouseTableCellItemQuantityMixin:Populate and
+-- AuctionHouseTableCellBuyoutMixin; Blizzard_AuctionHouseItemBuyFrame.lua OnAuctionSelected passes
+-- auctionData.buyoutAmount to the BUYOUT_AUCTION dialog, Frame.lua lines 10-12). So an item row is priced at its
+-- buyout for one unit: unit = buyoutAmount, qty = 1 (an item that does not stack is one unit per purchase; for any
+-- other item the units per purchase are not known and one is the gold-safe reading: the max check never lets a
+-- purchase through that costs more than the max). `listed` keeps the count the client reported, for display only.
 function AHBuy.ReadRows(itemID, isCommodity)
 	local rows = {}
 	if not (C_AuctionHouse and itemID) then
@@ -199,8 +208,8 @@ function AHBuy.ReadRows(itemID, isCommodity)
 		local key = C_AuctionHouse.MakeItemKey(itemID)
 		for i = 1, math.min(C_AuctionHouse.GetNumItemSearchResults(key) or 0, AHBuy.MAX_ROWS) do
 			local info = C_AuctionHouse.GetItemSearchResultInfo(key, i)
-			if info and info.buyoutAmount and info.buyoutAmount > 0 and (info.quantity or 0) > 0 then
-				rows[#rows + 1] = { unit = math.ceil(info.buyoutAmount / info.quantity), qty = info.quantity, auctionID = info.auctionID,
+			if info and info.buyoutAmount and info.buyoutAmount > 0 and (info.quantity or 1) > 0 then
+				rows[#rows + 1] = { unit = info.buyoutAmount, qty = 1, listed = info.quantity or 1, auctionID = info.auctionID,
 					buyout = info.buyoutAmount, own = info.containsOwnerItem or false, left = info.timeLeftSeconds, band = info.timeLeft }
 			end
 		end

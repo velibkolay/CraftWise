@@ -351,6 +351,51 @@ it("Errors: shown with their number, never retried, and a list after an error is
 	eq(AB.state.phase, "stale"); assert(AB.state.message:find("error 12", 1, true), AB.state.message)
 end)
 
+----------------------------------------------------------------------------------------------- grouped item rows (#343)
+
+-- A search row groups identical auctions: quantity is how many are listed, buyoutAmount is ONE purchase.
+it("Grouped item row: one purchase is priced at the buyout, never divided by the quantity", function()
+	local ns, stub = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 1249, 26, 77 } })
+	local rows = AB.ReadRows(SWORD, false)
+	eq(#rows, 1); eq(rows[1].unit, 1249, "the price of one purchase, not 48c"); eq(rows[1].qty, 1); eq(rows[1].listed, 26); eq(rows[1].buyout, 1249)
+	local text = ns.AHPanel.ResultText(rows[1], false)
+	assert(text:find("1 × " .. ns.FormatMoney(1249, true), 1, true) and text:find("26 listed", 1, true), text)
+end)
+
+it("Grouped item row: at a max under the buyout nothing is bought, whatever the quantity", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 1249, 26, 77 } })
+	-- vendor 12s 50c, the 10c minimum per purchase: max 1240
+	local line = { kind = "flip", itemID = SWORD, need = 26, maxUnit = 1240, sell = 1250 }
+	PickAndSearch(ns, stub, line, "item")
+	local plan, why = AB.Refresh()
+	eq(plan, nil); eq(why, "Nothing is listed at or below the max price")
+	local ok = AB.Click()
+	eq(ok, false); eq(#ah.calls, 0, "no PlaceBid")
+	ItemAuctions(stub, { { 5000, 1000, 78 } }) -- a huge group, far above the max
+	AB.Search(); stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = SWORD })
+	plan = AB.Refresh()
+	eq(plan, nil); eq(AB.Click(), false); eq(#ah.calls, 0)
+end)
+
+it("Grouped item row: at or under the max the button says Buy 1 for the buyout and one PlaceBid pays exactly that", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	ItemAuctions(stub, { { 1249, 26, 77 } })
+	local line = { kind = "flip", itemID = SWORD, need = 26, maxUnit = 1249, sell = 1250 }
+	PickAndSearch(ns, stub, line, "item")
+	local plan = AB.Refresh()
+	eq(plan.units, 1); eq(plan.total, 1249); eq(plan.unitMax, 1249); eq(plan.auctionID, 77)
+	eq((AB.Describe(plan, nil, AB.state.phase, AB.state.busy, GetMoney())), "Buy 1 for " .. ns.FormatMoney(1249, true))
+	eq(AB.Click(), true); eq(table.concat(ah.calls, ","), "bid:77:1249")
+	-- the price moved up under the button: refused as before
+	AB.Click()
+	eq(#ah.calls, 1)
+end)
+
 it("Buy: the auction is read again right before the call: a higher price, a vanished auction, no gold: nothing is bought", function()
 	local ns, stub, ah = Setup()
 	local AB = ns.AHBuy
