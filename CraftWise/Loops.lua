@@ -91,6 +91,98 @@ function Loops.Flip(tiers, total, sell)
 	return { units = units, profit = profit, atLeast = atLeast, price = tiers[1], sell = sell, maxUnit = sell - 1 }
 end
 
+-- The buying panel's figures (#328). Pure: they read nothing and only add up what the stored tiers say.
+-- Cost of the cheapest `need` units from tiers = { p1, q1, ... } ascending: returns the copper and the units
+-- the tiers covered (less than `need` when the stored tiers end first).
+function Loops.TierCost(tiers, need)
+	local cost, got = 0, 0
+	for i = 1, #(tiers or {}), 2 do
+		local price, qty = tiers[i], tiers[i + 1]
+		if not (price and qty) or got >= need then
+			break
+		end
+		local take = math.min(qty, need - got)
+		cost, got = cost + price * take, got + take
+	end
+	return cost, got
+end
+
+-- Stored depth rows ({ price, qty } ...) as the flat tier list.
+function Loops.TiersOf(depth)
+	local tiers = {}
+	for _, d in ipairs(depth or {}) do
+		tiers[#tiers + 1], tiers[#tiers + 2] = d.price, d.qty
+	end
+	return tiers
+end
+
+-- The figures of a flip line for `need` units (what is still missing: the bags count) at `sell` per unit from a
+-- vendor. { cost, vendor, profit, costMark, profitMark }; a mark is "≥" or "≤" where the figure is only a bound:
+--   * atLeast (the flip lists "N or more" units): more units only add profit, so all three are "≥";
+--   * the tiers hold fewer than `need` units: the cost is a lower bound ("≥") and so the profit an upper one ("≤").
+-- nil without tiers or need: nothing is guessed.
+function Loops.FlipLine(need, tiers, sell, atLeast)
+	if not (need and need > 0 and sell and tiers and #tiers >= 2) then
+		return nil
+	end
+	local cost, got = Loops.TierCost(tiers, need)
+	local f = { cost = cost, vendor = sell * need, profit = sell * need - cost }
+	if got < need then
+		f.costMark, f.profitMark = "≥", "≤"
+	elseif atLeast then
+		f.costMark, f.profitMark, f.vendorMark = "≥", "≥", "≥"
+	end
+	return f
+end
+
+-- Totals of the flip lines: figures = FlipLine results (false/nil for a line without figures). Returns
+-- { cost, vendor, profit, costMark, profitMark, unknown }. `vendor` needs no tiers (the vendor price is known) so
+-- it is passed in with the line's units: lines = { { need, sell, figures } }. The profit is nil when a line has
+-- no figures or the lines' bounds point both ways.
+function Loops.FlipTotals(lines)
+	local t = { cost = 0, vendor = 0, profit = 0, unknown = 0 }
+	local ge, le, anyCost, anyVendor = false, false, false, false
+	for _, l in ipairs(lines or {}) do
+		t.vendor = t.vendor + l.sell * l.need
+		local f = l.figures
+		if f then
+			t.cost, t.profit = t.cost + f.cost, t.profit + f.profit
+			anyCost = anyCost or f.costMark ~= nil
+			anyVendor = anyVendor or f.vendorMark ~= nil
+			ge = ge or f.profitMark == "≥"
+			le = le or f.profitMark == "≤"
+		else
+			t.unknown = t.unknown + 1
+		end
+	end
+	if t.unknown > 0 then
+		t.costMark = "≥" -- the lines without figures add cost that is not in the sum
+		t.profit = nil
+	elseif ge and le then
+		t.profit = nil
+	elseif le then
+		t.profitMark = "≤"
+	elseif ge then
+		t.profitMark = "≥"
+	end
+	if anyCost then
+		t.costMark = "≥"
+	end
+	if anyVendor then
+		t.vendorMark = "≥"
+	end
+	return t
+end
+
+-- A basket line: `need` units at one known unit price (the market price CraftWise has). No price, no figure.
+-- The mark is "about": one price for every unit, the listing's depth is not looked at.
+function Loops.BasketLine(need, unit)
+	if not (need and need > 0 and unit and unit > 0) then
+		return nil
+	end
+	return { cost = need * unit, mark = "~" }
+end
+
 -- rows: Market.FreshBelow rows. Returns the flips (Flip plus itemID), best profit first, those with a total
 -- profit of at least `min` (and above 0).
 function Loops.FlipFinds(rows, sellOf, min)
