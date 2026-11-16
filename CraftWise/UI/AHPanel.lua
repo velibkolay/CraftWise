@@ -250,6 +250,9 @@ end
 -- The text of a result row: "12 × 3s 40c · 2h" (units, price per unit, time left when the client says).
 function P.ResultText(r, isCommodity)
 	local t = ("%d × %s = %s"):format(r.qty, Money(r.unit), Money(r.qty * r.unit))
+	if r.listed and r.listed > 1 then
+		t = t .. " · " .. (L["%d listed, one per purchase"]):format(r.listed) -- an item row groups identical auctions (#343)
+	end
 	if r.left and ns.Market and ns.Market.FormatAge then
 		t = t .. " · " .. ns.Market.FormatAge(r.left)
 	end
