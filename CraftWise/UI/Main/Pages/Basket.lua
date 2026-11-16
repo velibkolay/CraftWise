@@ -320,7 +320,7 @@ function B.FlipTip(f)
 		or (L["%d units are listed below the vendor price."]):format(f.units)
 	return { MK.ItemName(f.itemID), count,
 		(L["Pay at most %s each: a vendor pays %s. The profit is what you keep selling them all to a vendor."]):format(ns.FormatCoins(f.maxUnit), ns.FormatCoins(f.sell)),
-		L["Profit: for each unit below the vendor price, the vendor price minus its AH price."] }
+		L["Profit: for each unit below the vendor price, the vendor price minus its AH price."], ns.Loops.EachText(f) }
 end
 
 function B.OpenHeight(r)

@@ -56,6 +56,25 @@ function Loops.FlipEnabled()
 	return Settings().flipAlert ~= false
 end
 
+Loops.FLIP_EACH_MIN = 100 -- copper: default smallest profit per purchase of a one-at-a-time item (provisional, #339)
+
+-- The smallest margin (vendor price - the auction's unit price) an auction of a one-at-a-time item needs to count
+-- as a flip: each such auction is one purchase (one PlaceBid per press), so a few copper is not worth the press.
+function Loops.FlipEachMin()
+	local min = tonumber(Settings().flipEachMin)
+	return min or Loops.FLIP_EACH_MIN
+end
+
+-- The most units an item stacks to, from the client's item info; nil while the item is not cached. 1 = it does not
+-- stack: every auction of it is one unit and one purchase.
+function Loops.StackOf(itemID)
+	if not (C_Item and C_Item.GetItemInfo and itemID) then
+		return nil
+	end
+	local stack = select(8, C_Item.GetItemInfo(itemID))
+	return tonumber(stack)
+end
+
 function Loops.SnipeEnabled()
 	return Settings().snipeAlert ~= false
 end
@@ -68,14 +87,22 @@ end
 -- The flip in stored tiers: tiers = { p1, q1, ... } ascending, total = units listed, sell = what a vendor pays
 -- per unit. nil when no tier is below it. { units, profit, atLeast, price (cheapest), sell, maxUnit }: maxUnit
 -- is the highest unit price that still earns (one copper under the vendor price).
-function Loops.Flip(tiers, total, sell)
+-- Purchases (#339): `stack` is the item's stack size. An item that does not stack (stack 1) is bought one auction
+-- (= one unit) per purchase, so only the tiers whose own margin reaches `minEach` count (default 1c), maxUnit is
+-- the vendor price minus that margin, `each` is the best margin and `buys` the units. Anything else (stack above
+-- 1: a commodity, one purchase for any quantity; stack nil: not known) keeps the rule above, `each` is the total
+-- profit and `buys` is 1 for a known stack above 1, nil when unknown (nothing is guessed). `single` marks the
+-- one-at-a-time items.
+function Loops.Flip(tiers, total, sell, stack, minEach)
 	if not (sell and sell > 0 and tiers) then
 		return nil
 	end
+	local single = stack == 1
+	local margin = single and math.max(1, minEach or 1) or 1
 	local units, profit, n = 0, 0, 0
 	for i = 1, #tiers, 2 do
 		local price, qty = tiers[i], tiers[i + 1]
-		if not (price and qty and price < sell) then
+		if not (price and qty and price <= sell - margin) then
 			break
 		end
 		units = units + qty
@@ -88,7 +115,11 @@ function Loops.Flip(tiers, total, sell)
 	-- Every stored tier is below the vendor price and the list may go on: eight tiers are all that is stored,
 	-- or the units listed are more than the tiers hold.
 	local atLeast = n * 2 == #tiers and (#tiers >= 16 or units < (total or 0))
-	return { units = units, profit = profit, atLeast = atLeast, price = tiers[1], sell = sell, maxUnit = sell - 1 }
+	local f = { units = units, profit = profit, atLeast = atLeast, price = tiers[1], sell = sell, maxUnit = sell - margin }
+	f.single = single
+	f.each = single and sell - tiers[1] or profit
+	f.buys = single and units or (stack and stack > 1 and 1 or nil)
+	return f
 end
 
 -- The buying panel's figures (#328). Pure: they read nothing and only add up what the stored tiers say.
@@ -135,6 +166,18 @@ function Loops.FlipLine(need, tiers, sell, atLeast)
 	return f
 end
 
+-- "+3c each · 52 buys" for a one-at-a-time item, "1 buy" for a commodity (stack above 1), "buys not known" when the
+-- stack size was not cached; nil for a flip stored before the figures existed. f: a flip or a line made from one.
+function Loops.EachText(f)
+	if not (f and f.each) then
+		return nil
+	end
+	if f.single then
+		return ("+%s each · %d %s"):format(ns.FormatMoney(f.each, true), f.buys or 0, (f.buys or 0) == 1 and "buy" or "buys")
+	end
+	return f.buys == 1 and "1 buy" or "buys not known"
+end
+
 -- Totals of the flip lines: figures = FlipLine results (false/nil for a line without figures). Returns
 -- { cost, vendor, profit, costMark, profitMark, unknown }. `vendor` needs no tiers (the vendor price is known) so
 -- it is passed in with the line's units: lines = { { need, sell, figures } }. The profit is nil when a line has
@@ -142,8 +185,14 @@ end
 function Loops.FlipTotals(lines)
 	local t = { cost = 0, vendor = 0, profit = 0, unknown = 0 }
 	local ge, le, anyCost, anyVendor = false, false, false, false
+	t.buys, t.buysKnown = 0, true
 	for _, l in ipairs(lines or {}) do
 		t.vendor = t.vendor + l.sell * l.need
+		if l.buys then
+			t.buys = t.buys + l.buys
+		else
+			t.buysKnown = false -- a line whose purchases are not known: the count is a lower bound
+		end
 		local f = l.figures
 		if f then
 			t.cost, t.profit = t.cost + f.cost, t.profit + f.profit
@@ -183,18 +232,22 @@ function Loops.BasketLine(need, unit)
 	return { cost = need * unit, mark = "~" }
 end
 
--- rows: Market.FreshBelow rows. Returns the flips (Flip plus itemID), best profit first, those with a total
--- profit of at least `min` (and above 0).
-function Loops.FlipFinds(rows, sellOf, min)
+-- rows: Market.FreshBelow rows. Returns the flips (Flip plus itemID), those with a total profit of at least `min`
+-- (and above 0), best first: by profit per purchase (`each`), ties by the higher total (#339). stackOf(itemID) is
+-- the item's stack size and minEach the smallest margin of a one-at-a-time auction (both optional).
+function Loops.FlipFinds(rows, sellOf, min, stackOf, minEach)
 	local out = {}
 	for _, r in ipairs(rows or {}) do
-		local f = Loops.Flip(r.tiers, r.total, sellOf(r.itemID))
+		local f = Loops.Flip(r.tiers, r.total, sellOf(r.itemID), stackOf and stackOf(r.itemID), minEach)
 		if f and f.profit > 0 and f.profit >= (min or 0) then
 			f.itemID, f.t = r.itemID, r.t
 			out[#out + 1] = f
 		end
 	end
 	table.sort(out, function(a, b)
+		if a.each ~= b.each then
+			return a.each > b.each
+		end
 		if a.profit ~= b.profit then
 			return a.profit > b.profit
 		end
@@ -233,7 +286,7 @@ function Loops.FlipCheck()
 		return {}
 	end
 	local rows = ns.Market.FreshBelow(house, time(), Loops.FLIP_FRESH, ns.GetVendorSellPrice)
-	return Loops.FlipFinds(rows, ns.GetVendorSellPrice, Loops.FlipMin())
+	return Loops.FlipFinds(rows, ns.GetVendorSellPrice, Loops.FlipMin(), Loops.StackOf, Loops.FlipEachMin())
 end
 
 -- The snipes at the profit house right now, in list order. Read only.
