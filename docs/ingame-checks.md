@@ -1190,3 +1190,12 @@ No new file, `/reload` is enough. Settings > Sale alert > "Expired before" (on b
 - [ ] Hover the item with the AH open: a "Expired before" row in the CraftWise tooltip section. With the AH closed: no row (the house is unknown). Auctionator's Selling tab is not hooked: the tooltip row is the cue there.
 - [ ] Does `GetItem()` of Blizzard's sell frame return the picked item after `SetItem` in Forever, so the label appears?
 
+
+## Sell › Flips (#330)
+New files `Flips.lua` and `UI/Main/Pages/Flips.lua` in the TOC: needs a full game restart once. No setting; the page is Sell › Flips.
+- [ ] Buy 10 of an item at the AH (commodity), take them from the mail/AH delivery, sell all to a vendor (right-click). Sell › Flips shows one row: when, the item name, 10 units, AH cost, what the vendor paid, the profit (red when negative). The hero shows the same profit, the flip and unit count, and "best: <item> +X".
+- [ ] Sell part of a stack: the row covers only those units, cost is their share of the average AH price. Buy a second batch at another price: the average of both applies.
+- [ ] Sell units you looted or bought from a vendor: no row. Sell a stack where some units came from the AH and some from loot: one row for the AH units, tooltip on the name says how many units were left out.
+- [ ] Buy the sale back from the vendor's buyback tab: the row goes, the profit goes down. Sell the units again: the old AH cost is used again.
+- [ ] Chips Today / 7 days / 30 days / All change hero and list. After /reload the history is still there. Docked layouts (left, right) draw the page too.
+- [ ] Does the hero caption with the best items fit on one line in the window and in the dock?
