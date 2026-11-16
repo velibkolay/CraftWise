@@ -101,3 +101,4 @@ UI\Main\Pages\Basket.lua
 UI\Main\Pages\Crafted.lua
 UI\Main\Pages\Train.lua
 UI\MinimapButton.lua
+MinimapStyle.lua

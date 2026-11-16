@@ -1134,3 +1134,15 @@ New files (`Snipe.lua`) and Bindings.xml: needs a full game restart once. Esc > 
 - [ ] His max wins: put a flip item or a basket item on the list with a lower max: the line shows his max and the Buy button never buys above it. Change the max while results are shown: the picked line is dropped and has to be searched again.
 - [ ] Toast: after a scan or search with a snipe-list item listed at or below the max, the toast says "N snipes under your max" (with the flips if there are some); a click opens the panel when the AH is open. Nothing is bought or searched by the toast. A listing exactly at the max counts.
 - [ ] Item level: a snipe of gear with an item level: does the search by item ID (level 0 key) list the gear? Note what is found.
+
+## Interface › Minimap (#321, part 1)
+New file `MinimapStyle.lua` in the TOC: needs a full game restart once. Settings > Interface has three switches, all off by default.
+- [ ] All three off: the minimap, its buttons and the addon compartment look exactly as before; `/reload` with Leatrix Plus and MinimapButtonButton loaded changes nothing.
+- [ ] Square minimap on: the minimap is square (white mask), Blizzard's round frame art is gone and a thin Origami border sits on the edge. Do the map, the quest and POI blips, the player arrow and the ping stay inside and line up with the map? Is the border straight and the right size (Minimap is 198 units)? Zoom buttons, the clock, the zone text, mail and queue icons: do they still sit sensibly? Note anything that floats off the square.
+- [ ] Square: toggle Esc > Options > "Rotate Minimap" (the `rotateMinimap` CVar). The square must stay (the hook on `MinimapCluster:UpdateMinimapConfig` re-applies it); in rotate mode the compass pointer is hidden, which is expected.
+- [ ] Square off again (no reload): the round mask and Blizzard's frame art are back.
+- [ ] Is the white texture `Interface\Buttons\WHITE8x8` accepted as a mask (a solid square, not an empty minimap)? If the minimap goes blank, the mask path is wrong: note it.
+- [ ] Minimap buttons on: the addon buttons (LibDBIcon ones, CraftWise's own) fade out; Blizzard's own (zoom, tracking, mail, calendar, landing page button) stay. Moving the mouse onto the minimap shows them, moving onto one of them keeps them, leaving hides them again. Buttons made late (after `/reload`, a few seconds in) are caught too.
+- [ ] Minimap buttons with MinimapButtonButton loaded: its own button and its bar work as before; a button it has collected is no longer faded; no Lua errors. Switching the option off again gives every faded button back at full alpha.
+- [ ] Addon compartment on: the compartment button is gone and stays gone after `/reload`, zoning and the next addon registration. Off: it is back.
+- [ ] Leatrix Plus loaded: Settings > Interface shows the note that both act on the same things.
