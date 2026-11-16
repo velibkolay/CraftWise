@@ -1146,3 +1146,15 @@ New file `MinimapStyle.lua` in the TOC: needs a full game restart once. Settings
 - [ ] Minimap buttons with MinimapButtonButton loaded: its own button and its bar work as before; a button it has collected is no longer faded; no Lua errors. Switching the option off again gives every faded button back at full alpha.
 - [ ] Addon compartment on: the compartment button is gone and stays gone after `/reload`, zoning and the next addon registration. Off: it is back.
 - [ ] Leatrix Plus loaded: Settings > Interface shows the note that both act on the same things.
+
+## Interface › Flight map (#321, part 2)
+New file `FlightTimes.lua` in the TOC: needs a full game restart once. Settings > Interface: Flight times, Flight bar, Bigger flight map (+ size); all off by default.
+- [ ] All off: the flight map, its tooltips and flights are exactly as before; no Lua errors.
+- [ ] Which frame does Forever open: `TaxiFrame` (`/dump TaxiFrame:IsShown()` with the map open) or `FlightMapFrame`? Both are hooked; note which one shows the tooltip line.
+- [ ] Flight times on, open a flight master: hover a reachable node: a grey line "Flight time: not recorded". Fly there. After landing, `/dump CraftWiseDB.flights` has `[start][destination] = { secs, n = 1, t }` and the hover line reads "Flight time: m:ss". Nothing is shown on the current or an unreachable node. Hover several times: the line is there once.
+- [ ] Is the time right? Compare with a stopwatch from the takeoff to the landing (within a second or two). Fly the same route again: n = 2, the time updates.
+- [ ] A route with a stop on the way (destination reached over two or more legs): does the flight land at the stop (PLAYER_CONTROL_GAINED fires) or fly through? If it lands at the stop, the first landing is **not** a whole route: check that it is not recorded under the final destination (a flight is recorded only when control comes back after the last leg; note what happens).
+- [ ] Cut short: take a new destination in the air, or use the "Request stop" button; after landing nothing new is recorded. Choose a destination and close the map without flying: nothing is recorded.
+- [ ] `UnitOnTaxi("player")` is true when `PLAYER_CONTROL_LOST` fires at takeoff? (If not, the second check one second later should catch it; note if the bar then starts late.)
+- [ ] Flight bar on: at takeoff a bar appears at the top ("To <destination>"); a route flown before shows the time left counting down, then "arriving"; a route never flown says "Time not recorded". With a multi-leg route the "next stop" is the first leg's stop and stays so for the whole flight (the client gives no progress): is that acceptable, or does the flight land there?
+- [ ] Bigger flight map on: the flight map opens at the chosen size (1.0 to 1.5); does it stay on screen and keep clicking correctly? Turn it off: back to normal size without a reload.
