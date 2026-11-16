@@ -95,6 +95,22 @@ function F.Undo(itemID, quantity, charKey)
 	return units, cost
 end
 
+-- #343: re-prices the flip rows of an item (this character, from `since`) at `perUnit` AH cost per unit; the
+-- rows were priced from phantom units. Returns how many rows changed.
+function F.Reprice(itemID, charKey, since, perUnit)
+	local n = 0
+	for _, r in ipairs(F.Rows()) do
+		if r.i == itemID and r.c == charKey and r.t >= since then
+			r.cost = Round(perUnit * r.q)
+			n = n + 1
+		end
+	end
+	if n > 0 then
+		ns.Notify("FLIPS_CHANGED")
+	end
+	return n
+end
+
 local function DayKey(t)
 	return date("%Y-%m-%d", t)
 end
