@@ -5,7 +5,7 @@
 --    Baganator draws its coin from the plugin's answer and has no way to hide it per item, so the
 --    coin of a CraftWise-marked item is hidden by BagIcons.lua (ns.SetSlotCoin): fold + dim only (#308)
 --  * corner widget "CraftWise: marks": the folded corner of BagIcons.lua on the slot's top right
---    (gold: sell on AH; grey: junk, and the slot's icon dimmed). Baganator settings > Icons: place
+--    (gold: sell on AH; grey: junk, and the slot's icon dimmed; teal: Keep, #318). Baganator settings > Icons: place
 --    it in a corner if it isn't shown
 --  * sort mode "CraftWise": Baganator's sort button sorts the backpack the CraftWise way
 local _, ns = ...
@@ -45,7 +45,7 @@ local function Register()
 			if not mark then
 				return false
 			end
-			local c = ns.Style.Color(mark == "junk" and "text3" or "coinGold")
+			local c = ns.Style.Color(ns.SLOT_MARK_COLOR[mark])
 			corner:SetVertexColor(c[1], c[2], c[3], 1)
 			return true
 		end), function(itemButton)

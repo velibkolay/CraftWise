@@ -234,8 +234,57 @@ it("bag slot corners: 13 units top right, gold for Sell on AH, grey for junk (ic
 	ns.ApplySlotMark(btn, 100) -- back to AH: no longer dimmed
 	eq(btn.icon.desaturated, false); eq(btn.icon.alpha, 1)
 	ns.ToggleKeep(100)
-	ns.ApplySlotMark(btn, 100) -- keep has no mark
-	eq(c.shown, false)
+	ns.ApplySlotMark(btn, 100) -- keep (#318): teal corner, icon not dimmed
+	eq(c.shown, true)
+	eq(c.vertexColor[1], ns.Style.C.nokta[1]); eq(c.vertexColor[3], ns.Style.C.nokta[3])
+	eq(btn.icon.desaturated, false); eq(btn.icon.alpha, 1)
 	ns.ApplySlotMark(btn, 999) -- unmarked
 	eq(c.shown, false)
+end)
+
+it("Keep mark (#318): only kept items, off with the setting, junk and AH win", function()
+	local ns = setup()
+	eq(ns.SlotMark(100), nil)
+	ns.db.keep[100] = true
+	eq(ns.SlotMark(100), "keep")
+	ns.db.junk = { [100] = true }
+	eq(ns.SlotMark(100), "junk")
+	ns.db.junk = {}
+	ns.db.sellAH = { [100] = true }
+	eq(ns.SlotMark(100), "ah")
+	ns.db.sellAH = {}
+	ns.db.settings.slotMarks = false
+	eq(ns.SlotMark(100), nil)
+end)
+
+it("Keep warning at the AH sell frame (#318): shown for a kept item, hidden for others, nothing written", function()
+	local ns, stub = setup()
+	local function sellFrame()
+		local f = CreateFrame("Frame")
+		function f:SetItem(loc) self.itemLocation = loc end
+		function f:GetItem() return self.itemLocation end
+		return f
+	end
+	AuctionHouseFrame = { ItemSellFrame = sellFrame(), CommoditiesSellFrame = sellFrame() }
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	stub.Fire("AUCTION_HOUSE_SHOW") -- hooked once
+	ns.db.keep[100] = true
+	for _, f in ipairs({ AuctionHouseFrame.ItemSellFrame, AuctionHouseFrame.CommoditiesSellFrame }) do
+		local label = ns.Auctions.KeepWarn.labels[f]
+		assert(label, "label")
+		eq(label.text, "Marked Keep")
+		f:SetItem({ itemID = 100 })
+		eq(label.shown, true)
+		f:SetItem({ itemID = 400 })
+		eq(label.shown, false)
+		f:SetItem({ itemID = 100 })
+		f:SetItem(nil)
+		eq(label.shown, false)
+		f:SetItem({ itemID = 100 })
+		ns.db.settings.slotMarks = false
+		ns.Notify("JUNK_CHANGED")
+		eq(label.shown, false)
+		ns.db.settings.slotMarks = nil
+	end
+	eq(AuctionHouseFrame.ItemSellFrame:GetItem().itemID, 100) -- the frame's own state is untouched
 end)

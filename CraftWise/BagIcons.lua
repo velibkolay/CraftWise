@@ -1,6 +1,6 @@
 -- Marks on bag slots (issues #12, #160): a folded corner on the slot's top right, 13 units.
 -- Sell on AH: C.coinGold corner. Junk: C.text3 corner and the slot's icon desaturated and dimmed to 55 %.
--- Keep has no mark (it is the default). Works on the game's bags, Bagnon and Baganator (Baganator.lua
+-- Keep (#318, only items marked Keep, not quest items): C.nokta corner, icon not dimmed. Works on the game's bags, Bagnon and Baganator (Baganator.lua
 -- calls ns.ApplySlotMark too). Only marks are added; the client's slot art is left alone,
 -- except that the junk coin is hidden on items marked junk (#308: one symbol per concept).
 local _, ns = ...
@@ -12,6 +12,10 @@ local function IsAH(itemID)
 	return itemID and ns.db and ns.db.sellAH and ns.db.sellAH[itemID] or false
 end
 
+local function IsKeep(itemID)
+	return itemID and ns.db and ns.db.keep and ns.db.keep[itemID] or false
+end
+
 local function IsJunk(itemID)
 	return itemID and ns.db and ns.db.junk and ns.db.junk[itemID] or false
 end
@@ -21,7 +25,7 @@ function ns.SlotMarksOn()
 	return not (ns.db and ns.db.settings and ns.db.settings.slotMarks == false)
 end
 
--- "ah", "junk" or nil for an item (nil for every item while the marks are off).
+-- "ah", "junk", "keep" or nil for an item (nil for every item while the marks are off).
 function ns.SlotMark(itemID)
 	if not ns.SlotMarksOn() then
 		return nil
@@ -30,10 +34,14 @@ function ns.SlotMark(itemID)
 		return "junk"
 	elseif IsAH(itemID) then
 		return "ah"
+	elseif IsKeep(itemID) then
+		return "keep"
 	end
 end
 
-local MARK_COLOR = { ah = "coinGold", junk = "text3" }
+local MARK_COLOR = { ah = "coinGold", junk = "text3", keep = "nokta" }
+
+ns.SLOT_MARK_COLOR = MARK_COLOR
 
 local corners = setmetatable({}, { __mode = "k" }) -- [button] = corner texture
 ns.SlotCorners = corners
@@ -115,7 +123,7 @@ function ns.SetSlotCoin(button, hide)
 	end
 end
 
--- Mark a slot for `mark` ("ah", "junk" or nil), or clear it.
+-- Mark a slot for `mark` ("ah", "junk", "keep" or nil), or clear it.
 function ns.SetSlotMark(button, mark)
 	if not button then
 		return
