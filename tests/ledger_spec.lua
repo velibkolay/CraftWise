@@ -14,7 +14,7 @@ local function Load()
 	stub.items[SALT] = { name = "Salt", sellPrice = 12 }
 	stub.items[HIDE] = { name = "Light Hide", sellPrice = 50 }
 	stub.items[LINEN] = { name = "Linen Cloth", sellPrice = 13 }
-	stub.items[BOOTS] = { name = "Old Boots", sellPrice = 70 }
+	stub.items[BOOTS] = { name = "Old Boots", sellPrice = 70, stack = 1 }
 	stub.items[CLH] = { name = "Cured Light Hide", sellPrice = 100 }
 	stub.bank = {}
 	-- Bags as { [itemID] = count }, one stack per item; bank counts in stub.bank.
@@ -547,4 +547,103 @@ it("a pending bid is dropped when the AH closes or after 60 seconds, not by an e
 	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 78)
 	eq(#ns.Ledger.Entries(), 0)
 	has(Trace(ns), "dropped after 60 s")
+end)
+
+-- Issue #343: a Forever item search row groups identical auctions; `quantity` is how many are listed at that
+-- price, one PlaceBid buys ONE and pays buyoutAmount.
+local function Grouped(stub, quantity)
+	stub.auctions = {}
+	stub.itemSearch[BOOTS] = { rows = { { auctionID = 77, quantity = quantity, buyoutAmount = 1249, itemKey = KEY } } }
+	stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", KEY)
+end
+
+it("a grouped row (quantity 26) logs one unit at the buyout; stackable or unknown stack sizes log nothing", function()
+	local ns, stub = Load()
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	Grouped(stub, 26)
+	C_AuctionHouse.PlaceBid(77, 1249)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(Kinds(ns), "ahbuy 400 x1 1249 " .. HORDE)
+	eq(ns.Ledger.PaidCost(BOOTS).units, 1)
+	stub.items[BOOTS].stack = 20 -- stackable: the units of one purchase are not known
+	C_AuctionHouse.PlaceBid(77, 1249)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	stub.items[BOOTS].stack = nil -- no item info
+	C_AuctionHouse.PlaceBid(77, 1249)
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	eq(#ns.Ledger.Entries(), 1)
+	has(Trace(ns), "units of one purchase unknown")
+end)
+
+it("a grouped-row buy then the vendor sale: one unit in transit, one flip with the real profit", function()
+	local ns, stub = Load()
+	stub.items[BOOTS].sellPrice = 1250
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	Grouped(stub, 26)
+	C_AuctionHouse.PlaceBid(77, 1249)
+	stub.money = stub.money - 1249
+	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
+	stub.SetBags({ [LINEN] = 20, [BOOTS] = 1 })
+	stub.Fire("BAG_UPDATE_DELAYED")
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 1250)
+	local rows = ns.Flips.Rows()
+	eq(#rows, 1); eq(rows[1].q, 1); eq(rows[1].cost, 1249); eq(rows[1].got, 1250)
+	eq(ns.Flips.Stats("all").profit, 1)
+	eq(ns.Ledger.PaidCost(BOOTS), nil)
+end)
+
+it("#343 migration: phantom units and flip rows of non-stackable AH buys are repaired once, nothing else", function()
+	local ns, stub = Load()
+	local S = CraftWiseMarketDB.ledger
+	local key = ns.CharKey()
+	local T = 1794842474 + 3600
+	stub.items[SALT].stack = 20
+	S.entries = {
+		{ t = T, c = key, k = "ahbuy", i = BOOTS, q = 26, m = 1249, w = HORDE },   -- repaired
+		{ t = T + 60, c = key, k = "vsell", i = BOOTS, q = 1, m = 1250 },           -- left alone
+		{ t = T, c = key, k = "ahbuy", i = SALT, q = 13, m = 900, w = HORDE },     -- stackable: left alone
+		{ t = 1794842474 - 10, c = key, k = "ahbuy", i = BOOTS, q = 13, m = 500 },  -- before #338: left alone
+	}
+	S.chars[key].pos = { [BOOTS] = { held = 0, known = 25, cost = 1249 * 25 / 26, transit = 25, ahKnown = 25, ahCost = 1249 * 25 / 26 },
+		[SALT] = { held = 0, known = 13, cost = 900, transit = 13, ahKnown = 13, ahCost = 900 } }
+	local rows = ns.Flips.Rows()
+	rows[#rows + 1] = { t = T + 60, c = key, i = BOOTS, q = 1, cost = 48, got = 1250, skip = 0 }
+	rows[#rows + 1] = { t = T + 60, c = key, i = CLH, q = 1, cost = 10, got = 20, skip = 0 } -- another item
+	S.fix343 = nil
+	local e, p, r = ns.Ledger.Migrate343()
+	eq(e, 1); eq(p, 1); eq(r, 1)
+	eq(S.entries[1].q, 1); eq(S.entries[3].q, 13); eq(S.entries[4].q, 13)
+	eq(S.chars[key].pos[BOOTS], nil) -- only phantom units were left: the position is gone
+	eq(S.chars[key].pos[SALT].transit, 13)
+	eq(rows[1].cost, 1249); eq(rows[2].cost, 10)
+	eq(ns.Ledger.Migrate343(), nil) -- one time
+end)
+
+it("#343 migration: a stack size unknown at the first run is asked for and repaired once when it arrives", function()
+	local ns, stub = Load()
+	local S = CraftWiseMarketDB.ledger
+	local key = ns.CharKey()
+	local T = 1794842474 + 3600
+	S.entries = { { t = T, c = key, k = "ahbuy", i = BOOTS, q = 26, m = 1249, w = HORDE } }
+	S.chars[key].pos = { [BOOTS] = { held = 0, known = 26, cost = 1249, transit = 25, ahKnown = 26, ahCost = 1249 } }
+	ns.Flips.Rows()[1] = { t = T + 60, c = key, i = BOOTS, q = 1, cost = 48, got = 1250, skip = 0 }
+	S.fix343 = nil
+	stub.items[BOOTS].stack = nil -- the client has not cached the item
+	stub.loadRequests = {}
+	eq(ns.Ledger.Migrate343(), 0)
+	eq(S.fix343, nil, "not done while a stack size is unknown")
+	eq(S.entries[1].q, 26)
+	eq(#stub.loadRequests, 1); eq(stub.loadRequests[1], BOOTS)
+	stub.Fire("ITEM_DATA_LOAD_RESULT", BOOTS, true) -- still unknown: no new request, no loop
+	eq(#stub.loadRequests, 1)
+	stub.items[BOOTS].stack = 1
+	stub.Fire("ITEM_DATA_LOAD_RESULT", BOOTS, true)
+	eq(S.fix343, true); eq(S.entries[1].q, 1)
+	eq(ns.Flips.Rows()[1].cost, 1249)
+	eq(S.chars[key].pos[BOOTS], nil)
+	eq(ns.Ledger.Migrate343(), nil)
+	stub.Fire("ITEM_DATA_LOAD_RESULT", BOOTS, true)
+	eq(S.entries[1].q, 1); eq(ns.Flips.Rows()[1].cost, 1249)
 end)

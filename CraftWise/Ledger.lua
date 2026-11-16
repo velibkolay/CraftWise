@@ -676,7 +676,21 @@ end
 
 function L.OnPlaceBid(auctionID, bidAmount)
 	L.Trace("PlaceBid", auctionID, "bid", bidAmount)
-	local itemID, quantity, buyout, src = FindAuction(auctionID)
+	local itemID, rowQuantity, buyout, src = FindAuction(auctionID)
+	-- One PlaceBid buys ONE purchase and pays the row's buyoutAmount, whatever the row's `quantity` says: in
+	-- Forever a row groups identical auctions and `quantity` counts how many are listed at that price (#343,
+	-- Plans: Shadow Crescent Axe, row 26, one PlaceBid, one plan). Blizzard's list shows the same number in
+	-- its own Quantity column beside the buyout (Blizzard_AuctionHouseTableBuilder.lua, ItemQuantity cell).
+	-- An item that doesn't stack is 1 unit; for a stackable the units of one purchase are unknown: not logged.
+	local quantity
+	if itemID and rowQuantity then
+		local stack = C_Item and C_Item.GetItemMaxStackSizeByID and C_Item.GetItemMaxStackSizeByID(itemID)
+		if stack == 1 then
+			quantity = 1
+		else
+			L.Trace("PlaceBid", auctionID, "item", itemID, "max stack", stack, ": units of one purchase unknown")
+		end
+	end
 	if not (itemID and quantity and buyout and bidAmount and bidAmount >= buyout) then
 		-- a bid, or the auction isn't in any results we can read: nothing to log, no price is guessed
 		L.Trace("PlaceBid", auctionID, "not logged: item", itemID, "quantity", quantity, "buyout", buyout)
@@ -883,7 +897,93 @@ ns.Listen("DB_READY", function()
 	store.chars = store.chars or {}
 end)
 
+-- #343, one time: from #338 (merged 2026-11-16 15:21 UTC) an item PlaceBid logged the row's `quantity` as
+-- units; the row groups identical auctions, so one purchase of a non-stackable item was logged as many.
+-- Sets those `ahbuy` entries to 1 unit, removes the phantom units still in transit from the position, and
+-- re-prices the flip rows recorded from them at the corrected cost. Touches nothing else.
+-- An entry is repaired when its item's stack size is known and 1; a repaired entry has q = 1 and is no longer
+-- a candidate, so position and flips are corrected once per entry. An item whose stack size the client
+-- doesn't know yet is requested and the pass runs again on ITEM_DATA_LOAD_RESULT or at the next login; the
+-- flag is set only when no candidate was left undecided.
+local FIX343_SINCE = 1794842474
+local pending343 = false
+local asked343 = {} -- items already asked for this session: an answer re-runs the pass, it must not ask again
+
+function L.Migrate343()
+	if not store or store.fix343 then
+		return nil
+	end
+	local fixed = {} -- [charKey][itemID] = { phantom, units, copper, since }
+	local entries, unknown = 0, {}
+	for _, e in ipairs(store.entries) do
+		local candidate = e.k == "ahbuy" and e.q > 1 and e.t >= FIX343_SINCE
+		local stack = candidate and C_Item and C_Item.GetItemMaxStackSizeByID and C_Item.GetItemMaxStackSizeByID(e.i)
+		if candidate and not stack then
+			unknown[e.i] = true
+		end
+		if stack == 1 then
+			local per = fixed[e.c] or {}
+			fixed[e.c] = per
+			local f = per[e.i] or { phantom = 0, units = 0, copper = 0, since = e.t }
+			per[e.i] = f
+			f.phantom, f.units, f.copper = f.phantom + e.q - 1, f.units + 1, f.copper + e.m
+			f.since = math.min(f.since, e.t)
+			e.q = 1
+			entries = entries + 1
+		end
+	end
+	local positions, rows = 0, 0
+	for charKey, per in pairs(fixed) do
+		local c = store.chars[charKey]
+		for itemID, f in pairs(per) do
+			local p = c and c.pos and c.pos[itemID]
+			if p then
+				local d = math.min(f.phantom, p.transit or 0)
+				p.transit, p.known = (p.transit or 0) - d, math.max(p.known - d, 0)
+				p.ahKnown = math.max((p.ahKnown or 0) - d, 0)
+				if p.known <= 1e-6 then
+					p.known, p.cost, p.ahKnown, p.ahCost = 0, 0, 0, 0
+				end
+				if d > 0 then
+					positions = positions + 1
+				end
+				if p.held == 0 and (p.transit or 0) <= 1e-6 then
+					c.pos[itemID] = nil
+				end
+			end
+			if ns.Flips and ns.Flips.Reprice then
+				rows = rows + ns.Flips.Reprice(itemID, charKey, f.since, f.copper / f.units)
+			end
+		end
+	end
+	pending343 = next(unknown) ~= nil
+	if pending343 then
+		for itemID in pairs(unknown) do
+			if not asked343[itemID] then
+				asked343[itemID] = true
+				ns.RequestItemData(itemID, "Ledger.lua #343", true)
+			end
+		end
+		L.Trace("migration #343: stack size not known yet for", (function() local n = 0 for _ in pairs(unknown) do n = n + 1 end return n end)(), "items, asked the client")
+	else
+		store.fix343 = true
+	end
+	if entries > 0 then
+		L.Trace("migration #343: ahbuy entries set to 1 unit", entries, "positions fixed", positions, "flip rows re-priced", rows)
+		ns.Print(("Ledger repair (#343): %d AH purchases set to 1 unit, %d positions, %d flips re-priced."):format(entries, positions, rows))
+		ns.Notify("LEDGER_CHANGED")
+	end
+	return entries, positions, rows
+end
+
+ns.On("ITEM_DATA_LOAD_RESULT", function()
+	if pending343 then
+		L.Migrate343()
+	end
+end)
+
 ns.On("PLAYER_ENTERING_WORLD", function(_, isInitialLogin)
+	L.Migrate343()
 	local c = Char()
 	if not c then
 		return
