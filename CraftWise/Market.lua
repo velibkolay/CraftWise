@@ -2267,6 +2267,44 @@ function M.Depth(itemKey, house, n)
 	return depth
 end
 
+-- Items whose latest observation at a house is fresh, listed, and priced below `limitOf(itemID)` (#312).
+-- Read only. Plain item keys only (no suffix variants), items with tiers only (last-only records have none).
+-- maxAge: seconds since the observation; limitOf returns copper or nil (nil/0 = skip the item, nothing is
+-- guessed). Returns { { itemID, t, total, tiers = { p1, q1, ... } } }, the tiers as stored (first 8 prices).
+-- `off` (a later full scan didn't list it) and a `last` newer than the tiers (a browse updated only the
+-- price) both skip the item: its tiers aren't what is listed now.
+function M.FreshBelow(houseKey, now, maxAge, limitOf)
+	local out = {}
+	if not (db and houseKey) then
+		return out
+	end
+	for itemID in pairs(M.RecordedItemIDs()) do
+		local perItem = db.items[itemID]
+		local stored = perItem and perItem[houseKey]
+		if stored ~= nil then
+			local head
+			if type(stored) == "string" then
+				local f = Split(stored:match("^[^|]*"), ",")
+				head = { t = Num(f[1]), min = Num(f[2]), off = Num(f[5]) }
+			else
+				head = stored.last
+			end
+			if head and head.t and head.min and now - head.t <= maxAge and not (head.off and head.off >= head.t) then
+				local limit = limitOf(itemID)
+				if limit and limit > 0 and head.min < limit then
+					local entry = GetEntry(itemID, houseKey)
+					local point = entry and entry.raw[#entry.raw]
+					if point and point.total > 0 and point.tiers[1] and now - point.t <= maxAge
+						and entry.last and entry.last.t <= point.t + 60 then
+						out[#out + 1] = { itemID = itemID, t = point.t, total = point.total, tiers = point.tiers }
+					end
+				end
+			end
+		end
+	end
+	return out
+end
+
 -- Houses with data for an item, faction house first, then by name: { { key, label, kind }, ... }.
 function M.Houses(itemKey)
 	local out = {}

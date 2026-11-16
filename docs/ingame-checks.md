@@ -1087,3 +1087,14 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - [ ] The exe (`craftwise-companion.exe`, built with `-H=windowsgui`) shows the key in Explorer (small, medium and large icons views), in the taskbar while the settings run and in Settings > Apps > Startup.
 - [ ] The tray icon still comes back after restarting Explorer.
 
+
+## AH → vendor flips (#312)
+- [ ] Run a full AH scan at your profit house (Make > Basket, Settings > Prices to see which). In the minute after, if any item is listed below the price a vendor pays for it, one toast "N AH → vendor flip(s)" shows with the best item, its units and the profit (gold toast, source word "AH → vendor"). Click opens Make > Basket.
+- [ ] Make > Basket has the section "AH → vendor": item, units ("×12+" when every stored tier is below the vendor price), "≤ <max per unit>", and the expected profit. Pick one flip by hand at the AH: is its cheapest buyout per unit really below the vendor price in the item's tooltip? Does the number of units match the AH's own list?
+- [ ] A second scan with the same flips gives no second toast; a flip that was bought out (or relisted higher) leaves the section.
+- [ ] Dismiss a line (open it, Dismiss): it stays away on the next scans until its profit is 1.5 times the dismissed one.
+- [ ] With Auctionator loaded: after a scan with flips, Auctionator has the shopping list "CraftWise vendor flips" with one line per flip. Open it at the AH: does the max price (the line shows it in gold, `0.0099` = 99 copper) filter by the buyout **per unit** for stackable items and commodities? Does it still show the cheapest listings? Making the list while the AH is open starts its search right away (Auctionator's own behaviour); nothing is bought.
+- [ ] Without Auctionator: opening a flip line shows a search string to copy; paste it into Auctionator's Shopping tab (or an empty list) and check it parses with max price and quantity.
+- [ ] Buy some of a flip item: the line shows "in bags" and dims when the bags hold the units.
+- [ ] Settings > AH to vendor flips: "Flip alert" off stops the toast, the section and the list; "Smallest profit per item" steps like the loop alert (default 1s).
+- [ ] A full scan of an Everlook-sized house: the check right after the scan does not freeze the client (it reads every recorded item once; note the time in Settings > Debug > performance, "Loops.lua check").

@@ -11,6 +11,18 @@
 --     debounced so a run of page reads gives one check. The check only reads prices and recipes.
 --   * Click on the toast: Make › Craft with the Vendor check chip on (and the best find's profession).
 -- Pure parts (Finds, Fresh, Summary) take plain data so the specs can feed them.
+--
+-- AH → vendor flips (#312): the item version of the same check. After the same triggers, items whose cheapest
+-- buyouts at the profit house are below what a vendor pays for one unit (ns.GetVendorSellPrice).
+--   * Only this account's own listings at the profit house, from Market.FreshBelow: the stored tiers (first 8
+--     prices) of an observation not older than Loops.FLIP_FRESH, not marked off by a later full scan. Never
+--     Auctionator's mixed-house prices. An unknown or 0 vendor price, or no tiers, is never a flip.
+--   * units = the units in the tiers priced below the vendor price; profit = sum of (vendor price - tier
+--     price) x units (vendors take no cut). "at least": every stored tier is below, so more may be listed.
+--   * The toast is shared with the loop alert (one line per check); what was announced is kept in
+--     db.flipNotice (same Loops.BETTER rule). The flips are put into the basket (Basket.SetFlips) and the
+--     Auctionator list "CraftWise vendor flips" is refreshed from them (Basket.CreateFlipList). Nothing is
+--     bought, bid on or confirmed: that stays the player's click.
 local _, ns = ...
 
 local Loops = {}
@@ -29,6 +41,97 @@ end
 
 function Loops.MinProfit()
 	return tonumber(Settings().loopAlertMin) or 0
+end
+
+Loops.FLIP_FRESH = 30 * 60 -- seconds: an observation older than this is not "this scan" (#312)
+Loops.FLIP_MIN = 100 -- copper: default smallest total profit per item (provisional, #312)
+
+function Loops.FlipEnabled()
+	return Settings().flipAlert ~= false
+end
+
+function Loops.FlipMin()
+	local min = tonumber(Settings().flipAlertMin)
+	return min or Loops.FLIP_MIN
+end
+
+-- The flip in stored tiers: tiers = { p1, q1, ... } ascending, total = units listed, sell = what a vendor pays
+-- per unit. nil when no tier is below it. { units, profit, atLeast, price (cheapest), sell, maxUnit }: maxUnit
+-- is the highest unit price that still earns (one copper under the vendor price).
+function Loops.Flip(tiers, total, sell)
+	if not (sell and sell > 0 and tiers) then
+		return nil
+	end
+	local units, profit, n = 0, 0, 0
+	for i = 1, #tiers, 2 do
+		local price, qty = tiers[i], tiers[i + 1]
+		if not (price and qty and price < sell) then
+			break
+		end
+		units = units + qty
+		profit = profit + (sell - price) * qty
+		n = n + 1
+	end
+	if units == 0 then
+		return nil
+	end
+	-- Every stored tier is below the vendor price and the list may go on: eight tiers are all that is stored,
+	-- or the units listed are more than the tiers hold.
+	local atLeast = n * 2 == #tiers and (#tiers >= 16 or units < (total or 0))
+	return { units = units, profit = profit, atLeast = atLeast, price = tiers[1], sell = sell, maxUnit = sell - 1 }
+end
+
+-- rows: Market.FreshBelow rows. Returns the flips (Flip plus itemID), best profit first, those with a total
+-- profit of at least `min` (and above 0).
+function Loops.FlipFinds(rows, sellOf, min)
+	local out = {}
+	for _, r in ipairs(rows or {}) do
+		local f = Loops.Flip(r.tiers, r.total, sellOf(r.itemID))
+		if f and f.profit > 0 and f.profit >= (min or 0) then
+			f.itemID, f.t = r.itemID, r.t
+			out[#out + 1] = f
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.profit ~= b.profit then
+			return a.profit > b.profit
+		end
+		return a.itemID < b.itemID
+	end)
+	return out
+end
+
+-- Flips worth a notice against `notice` ([itemID] = { profit } announced before), and the notice to keep.
+function Loops.FlipFresh(finds, notice)
+	local fresh, keep = {}, {}
+	for _, f in ipairs(finds) do
+		local old = notice and notice[f.itemID]
+		if not old or f.profit >= (old.profit or 0) * Loops.BETTER then
+			fresh[#fresh + 1] = f
+			keep[f.itemID] = { profit = f.profit }
+		else
+			keep[f.itemID] = old
+		end
+	end
+	return fresh, keep
+end
+
+-- "5 AH → vendor flips"; nil without any.
+function Loops.FlipSummary(fresh)
+	if #fresh == 0 then
+		return nil
+	end
+	return ("%d AH → vendor %s"):format(#fresh, #fresh == 1 and "flip" or "flips")
+end
+
+-- The flips at the profit house right now, best first. Read only.
+function Loops.FlipCheck()
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	if not (house and ns.Market and ns.Market.FreshBelow) then
+		return {}
+	end
+	local rows = ns.Market.FreshBelow(house, time(), Loops.FLIP_FRESH, ns.GetVendorSellPrice)
+	return Loops.FlipFinds(rows, ns.GetVendorSellPrice, Loops.FlipMin())
 end
 
 -- rows: ns.BuildRows rows. Returns the finds, best first: { recipeID, professionID, name, profit, loop,
@@ -117,26 +220,63 @@ function Loops.Open(find)
 	end
 end
 
--- Runs a check and shows the toast for what is fresh. Returns the fresh finds.
-function Loops.Run()
-	if not (ns.db and Loops.Enabled()) then
+-- Checks the flips, puts them into the basket and refreshes the Auctionator list; returns the fresh ones
+-- (new or clearly better, and not dismissed).
+function Loops.RunFlips()
+	if not (ns.db and Loops.FlipEnabled()) then
 		return {}
 	end
-	local ok, finds = pcall(Loops.Check)
+	local ok, finds = pcall(Loops.FlipCheck)
 	if not ok then
 		return {}
 	end
-	local fresh, keep = Loops.Fresh(finds, ns.db.loopNotice)
-	ns.db.loopNotice = keep
-	local text = Loops.Summary(fresh)
+	local shown = ns.Basket and ns.Basket.SetFlips(finds) or finds
+	local fresh, keep = Loops.FlipFresh(shown, ns.db.flipNotice)
+	ns.db.flipNotice = keep
+	if ns.Basket then
+		ns.Basket.RefreshFlipList()
+	end
+	return fresh
+end
+
+-- Runs the checks and shows one toast for what is fresh. Returns the fresh crafts and the fresh flips.
+function Loops.Run()
+	if not ns.db then
+		return {}, {}
+	end
+	local fresh, flips = {}, Loops.RunFlips()
+	if Loops.Enabled() then
+		local ok, finds = pcall(Loops.Check)
+		if ok then
+			local keep
+			fresh, keep = Loops.Fresh(finds, ns.db.loopNotice)
+			ns.db.loopNotice = keep
+		end
+	end
+	local parts = {}
+	for _, t in ipairs({ Loops.Summary(fresh) or false, Loops.FlipSummary(flips) or false }) do
+		if t then
+			parts[#parts + 1] = t
+		end
+	end
+	local text = #parts > 0 and table.concat(parts, " · ") or nil
 	if text and ns.LootToast and ns.LootToast.ShowCustom then
-		local best = fresh[1]
+		local best, flip = fresh[1], flips[1]
+		local itemID = best and best.outputItemID or flip.itemID
 		ns.LootToast.ShowCustom({
-			key = "loops", icon = best.outputItemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(best.outputItemID) or nil,
-			text = text, detail = best.name, copper = best.profit, duration = 10,
+			key = "loops", icon = itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID) or nil,
+			itemID = not best and flip.itemID or nil, text = text,
+			detail = best and best.name or (("%s ×%d%s"):format(ns.Basket and ns.Basket.ItemName(flip.itemID) or tostring(flip.itemID),
+				flip.units, flip.atLeast and "+" or "")),
+			copper = best and best.profit or flip.profit, sourceText = not best and "AH → vendor" or nil, duration = 10,
 			onClick = function()
-				-- Shift-click puts the best find into the basket (one craft) and opens Make › Basket.
-				if IsShiftKeyDown and IsShiftKeyDown() and ns.Basket then
+				if not best then
+					-- Only flips: the list is in the basket.
+					if ns.Main and ns.Main.Open then
+						ns.Main.Open("basket")
+					end
+				elseif IsShiftKeyDown and IsShiftKeyDown() and ns.Basket then
+					-- Shift-click puts the best find into the basket (one craft) and opens Make › Basket.
 					ns.Basket.Add(best.recipeID, best.professionID, 1)
 					if ns.Main and ns.Main.Open then
 						ns.Main.Open("basket")
@@ -147,12 +287,12 @@ function Loops.Run()
 			end,
 		})
 	end
-	return fresh
+	return fresh, flips
 end
 
 local pending = false
 local function Schedule()
-	if pending or not (ns.db and Loops.Enabled()) then
+	if pending or not (ns.db and (Loops.Enabled() or Loops.FlipEnabled())) then
 		return
 	end
 	pending = true
