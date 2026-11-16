@@ -336,3 +336,16 @@ it("#6 the window layout puts the button left of the status; docked it sits in t
 	sp = f.head.status.points
 	eq(sp[#sp][2], f.head.gear, "without the button the status goes back to the gear")
 end)
+
+it("#345: a stored full scan sends FULL_PRICES once, at the end", function()
+	local ns, stub, M = Load()
+	local full = 0
+	ns.Listen("FULL_PRICES", function() full = full + 1 end)
+	OpenAH(stub)
+	M.RequestScan()
+	eq(full, 0, "not on the click")
+	stub.clock = NOW + 7
+	stub.replicate = Rows(LIST)
+	stub.Fire("REPLICATE_ITEM_LIST_UPDATE")
+	eq(full, 1)
+end)

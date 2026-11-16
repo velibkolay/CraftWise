@@ -280,21 +280,21 @@ it("Snipe toast: items at or below his max after a scan, one toast with the flip
 	ns.Snipe.Set(SWORD, 90, nil); ns.Snipe.Set(CLOTH, 100, nil)
 	Seed(ns, SWORD, { tiers = { 90, 2, 120, 4 }, total = 6 }) -- 90 equals the max: a find
 	Seed(ns, CLOTH, { tiers = { 101, 9 }, total = 9 }) -- 1c above the max (and above the vendor price): not a find
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	local lines = ns.LootToast.Lines()
 	eq(#lines, 1); eq(lines[1].text, "1 snipe under your max"); eq(lines[1].detail, "Test Sword ×2")
 	eq(lines[1].sourceText, "Snipe list")
 	stub.clock = stub.clock + 10
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.LootToast.Lines(), 1, "the same find: no second toast")
 	-- cheaper: new notice
 	Seed(ns, SWORD, { tiers = { 80, 2 }, total = 2, t = stub.clock })
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.LootToast.Lines(), 1)
 	-- a second snipe with the flips in one toast
 	ns.LootToast.Clear()
 	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5, t = stub.clock }) -- a snipe at 40 <= 50, and a flip (vendor 100)
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	lines = ns.LootToast.Lines()
 	eq(#lines, 1); eq(lines[1].text, "1 AH → vendor flip · 1 snipe under your max")
 	-- the toast buys and searches nothing
@@ -306,11 +306,11 @@ it("Snipe toast: the setting turns it off, no list means no check, a click opens
 	ns.Snipe.Set(SWORD, 90, nil)
 	Seed(ns, SWORD, { tiers = { 90, 2 }, total = 2 })
 	ns.db.settings.snipeAlert = false
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	eq(#ns.LootToast.Lines(), 0)
 	ns.db.settings.snipeAlert = true
 	stub.clock = stub.clock + 10
-	ns.Notify("PRICES_CHANGED"); stub.RunTimers()
+	ns.Notify("FULL_PRICES"); stub.RunTimers()
 	local lines = ns.LootToast.Lines()
 	eq(#lines, 1)
 	lines[1].onClick(lines[1])

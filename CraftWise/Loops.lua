@@ -7,8 +7,11 @@
 --     before, a loop that was not one before, or a profit at least 50 % above the announced one. What was
 --     announced is kept in db.loopNotice; a find that goes away is forgotten, so it counts as new if it
 --     comes back.
---   * Triggers: PRICES_CHANGED (a full scan ends, a search or browse updated prices, a merchant was seen),
---     debounced so a run of page reads gives one check. The check only reads prices and recipes.
+--   * Triggers (#345): FULL_PRICES only, which Market.lua sends when a full scan has been stored (FinishScan,
+--     the ReplicateItems path) or a sync/import changed prices; debounced so a run of them gives one check.
+--     Single-item searches (the sell frame, the AH panel's line searches, a browse), a merchant being seen and
+--     every other PRICES_CHANGED do not run it. A click on "Check now" (Settings > Vendor loops) runs it at
+--     once (Loops.CheckNow). The check only reads prices and recipes.
 --   * Click on the toast: Make › Craft with the Vendor check chip on (and the best find's profession).
 -- Pure parts (Finds, Fresh, Summary) take plain data so the specs can feed them.
 --
@@ -520,4 +523,18 @@ local function Schedule()
 end
 Loops.Schedule = Schedule
 
-ns.Listen("PRICES_CHANGED", Schedule)
+-- Only a stored full scan or a sync brings a full price set (#345); PRICES_CHANGED, which every single-item
+-- search sends too, does not start the check any more.
+ns.Listen("FULL_PRICES", Schedule)
+
+-- The button: the same check now, whatever the debounce says. Says what it found, as a toast shows only what is new.
+function Loops.CheckNow()
+	if not ns.db then
+		return 0
+	end
+	local fresh, flips, snipes = Loops.Run()
+	local n = #fresh + #flips + #snipes
+	ns.Print(n > 0 and ("Check done: %d new."):format(n) or "Check done: nothing new.")
+	return n
+end
+Loops.CheckNow = ns.Timed("Loops.lua check now", Loops.CheckNow)

@@ -1246,6 +1246,12 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 - [ ] The AH panel's flip lines show "+3c each · N buys" (items) or "1 buy" (commodities) at the right of the name; the summary's second line starts with the number of purchases. Does it fit at 340 wide?
 - [ ] The client's stack size: does C_Item.GetItemInfo return 1 for gear, a larger number for cloth/herbs? A line that says "buys not known" means the item was not cached at the scan; it fills in on the next scan. Are there stackable items that are not commodities (one purchase per auction)? Note them: they are counted as one purchase now.
 
+## Loops: the check after a full scan, and "Check now" (#345)
+- [ ] Put an item up at the auction house (sell frame search, post): no toast, no CPU spike in Settings > Debug > Record under "Loops.lua check".
+- [ ] Run our own full scan (the header button) with a vendor loop, flip or snipe available: the check runs about 4 seconds after the scan is stored and one toast shows what is new; "Loops.lua check" is in the recorder.
+- [ ] Settings > Vendor loops > "Check now": prints "Check done: N new." or "nothing new" at once; a toast only for what is new since the last notice. The window layout of that row is provisional (docked and normal).
+- [ ] After the companion's merged market is synced in at login with new prices: one check runs, not one per item.
+- [ ] Everything off (Loop alert, Flip alert, Snipe alert): a full scan runs no check.
 ## Flips: commodities first, one by one after (#344)
 - [ ] A scan with a commodity flip (small total) and a one-at-a-time item flip (bigger margin per purchase): panel, toast detail, Make > Basket and the Auctionator list all show the commodity first. The AH panel has two headings, "Flips · bulk" and "Flips · one by one". Do the headings read well at 340 wide?
 
