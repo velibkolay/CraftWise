@@ -39,19 +39,25 @@ SIZES = (16, 20, 24, 32, 40, 48, 64, 256)
 
 GOLD, FACE, WHITE = "#E8B94B", "#141517", "#F4F4F1"
 
-# Angular pixel-font W: straight outer strokes, the middle stroke rises to about half height, the two V
-# bottoms are single pixels on the baseline.
-W16 = ("X...X",
-       "X...X",
-       "X.X.X",
-       "X.X.X",
-       ".X.X.")
-W20 = ("X.....X",
-       "X.....X",
-       "X..X..X",
-       "X.X.X.X",
-       "X.X.X.X",
-       ".X...X.")
+# Bold angular pixel W: straight 2 px outer strokes (3 px at 20), a 1 px middle peak, single pixel V bottoms
+# on the baseline; it fills the face the way the W of the 24 px key does.
+W16 = ("XX.......XX",
+       "XX.......XX",
+       "XX...X...XX",
+       "XX...X...XX",
+       "XX..X.X..XX",
+       "XX..X.X..XX",
+       ".XX.X.X.XX.",
+       "..XX...XX..")
+W20 = ("XXX.......XXX",
+       "XXX.......XXX",
+       "XXX...X...XXX",
+       "XXX...X...XXX",
+       "XXX..X.X..XXX",
+       "XXX..X.X..XXX",
+       "XXX.X...X.XXX",
+       ".XXXX...XXXX.",
+       "..XXX...XXX..")
 
 
 def rects(c, boxes, colour):
@@ -64,17 +70,17 @@ def bitmap(c, rows, x0, y0, colour):
 
 
 def small_key(n):
-    """16 or 20 px: gold body without its top-right corner, a dark face with a 2 px gold rim on the left and
-    top (3 px right and bottom: the key's thickness), pixel W at the height the 24 px key has it (about 40 to
-    77 % of the face)."""
+    """16 or 20 px: gold body without its top-right corner (2 or 3 px), a dark face with a 1 px gold rim on the
+    left and top (2 px right and bottom at 20) and the pixel W centred in the face."""
     c = tex.Canvas(n, n)
-    cut = 3 if n == 16 else 4
+    cut = 2 if n == 16 else 3
     c.fill([[(0, 0), (n - cut, 0), (n, cut), (n, n), (0, n)]], tex.hex_rgb(GOLD))
-    fx0, fy0, fx1, fy1 = 2, 2, n - 3, n - 3
+    fx0, fy0 = 1, 1
+    fx1 = fy1 = n - 2 if n == 16 else n - 2
     rects(c, [(fx0, fy0, fx1, fy1)], FACE)
     w = W16 if n == 16 else W20
     face_w, face_h = fx1 - fx0, fy1 - fy0
-    bitmap(c, w, fx0 + (face_w - len(w[0])) // 2, fy0 + round(face_h * 0.4), WHITE)
+    bitmap(c, w, fx0 + (face_w - len(w[0])) // 2, fy0 + (face_h - len(w)) // 2, WHITE)
     return c
 
 
