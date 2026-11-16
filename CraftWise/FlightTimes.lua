@@ -188,14 +188,29 @@ local function Takeoff()
 	end
 end
 
+-- The time is from takeoff to the first PLAYER_CONTROL_GAINED (f.gained), not to a later recheck.
 local function Landed()
 	local f = flight
 	flight = nil
 	Fl.HideBar()
-	if f and not f.aborted and f.from and f.to and On("flightTimes") then
-		Fl.Record(f.from, f.to, GetTime() - f.takeoff)
+	if f and not f.aborted and f.from and f.to and f.gained and On("flightTimes") then
+		Fl.Record(f.from, f.to, f.gained - f.takeoff)
 	end
 end
+
+-- The client may still report UnitOnTaxi while control comes back (#333): the landing is looked for again
+-- a few times, and while the bar is up on every tick. A landing seen without PLAYER_CONTROL_GAINED has no
+-- trustworthy time: the bar goes, nothing is recorded.
+local function CheckLanded()
+	if flight and not UnitOnTaxi("player") then
+		Landed()
+		return true
+	end
+	return false
+end
+Fl.CheckLanded = CheckLanded
+
+local RECHECK = { 0.5, 1, 2 }
 
 ns.On("PLAYER_CONTROL_LOST", function()
 	if pending then
@@ -205,8 +220,18 @@ ns.On("PLAYER_CONTROL_LOST", function()
 end)
 
 ns.On("PLAYER_CONTROL_GAINED", function()
-	if flight and not UnitOnTaxi("player") then
-		Landed()
+	if flight then
+		flight.gained = flight.gained or GetTime()
+		if not CheckLanded() then
+			local f = flight
+			for _, secs in ipairs(RECHECK) do
+				C_Timer.After(secs, function()
+					if flight == f then
+						CheckLanded()
+					end
+				end)
+			end
+		end
 	end
 	pending = nil
 end)
@@ -257,6 +282,9 @@ local function OnBarUpdate(_, dt)
 	elapsed = elapsed + dt
 	if elapsed >= 0.5 then
 		elapsed = 0
+		if CheckLanded() then
+			return
+		end
 		UpdateBar()
 	end
 end

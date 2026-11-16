@@ -1173,6 +1173,8 @@ New file `FlightTimes.lua` in the TOC: needs a full game restart once. Settings 
 - [ ] `UnitOnTaxi("player")` is true when `PLAYER_CONTROL_LOST` fires at takeoff? (If not, the second check one second later should catch it; note if the bar then starts late.)
 - [ ] Flight bar on: at takeoff a bar appears at the top ("To <destination>"); a route flown before shows the time left counting down, then "arriving"; a route never flown says "Time not recorded". With a multi-leg route the "next stop" is the first leg's stop and stays so for the whole flight (the client gives no progress): is that acceptable, or does the flight land there?
 - [ ] Bigger flight map on: the flight map opens at the chosen size (1.0 to 1.5); does it stay on screen and keep clicking correctly? Turn it off: back to normal size without a reload.
+- [ ] #333, landing: does `UnitOnTaxi("player")` turn false before or after `PLAYER_CONTROL_GAINED` in Forever? Fly with the bar on and after landing `/dump UnitOnTaxi("player")` at once and again a second later; note which. Either way the bar must be gone within about two seconds of landing and the flight recorded (`/dump CraftWiseDB.flights`), with a time from takeoff to the moment control came back (stopwatch to the landing, within a second or two).
+- [ ] #333, walking out of the flight master with a pet out right after landing: the bar does not stay on screen.
 ## Interface › Tooltips (#321, part 3)
 New file `UnitTooltip.lua` in the TOC: needs a full game restart once. Settings > Interface: "Unit tooltip: target" and "Unit tooltip: guild rank", both off by default.
 - [ ] Both off: unit tooltips look as before.
