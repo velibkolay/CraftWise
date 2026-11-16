@@ -115,6 +115,67 @@ it("flights: the bar names the destination and next stop, counts down, and says 
 	eq(select(2, Fl.BarText()), "arriving")
 end)
 
+-- #333: the client may still say UnitOnTaxi when control comes back.
+local function queueTimers()
+	local queue, orig = {}, C_Timer.After
+	C_Timer.After = function(secs, fn) queue[#queue + 1] = { secs = secs, fn = fn } end
+	return queue, function() C_Timer.After = orig end
+end
+
+it("flights: control back while UnitOnTaxi is still true: a recheck lands it once, with the time of the first moment", function()
+	local ns, stub, _, _, setTaxi = setup()
+	local Fl = ns.Flights
+	Fl.Set("flightTimes", true); Fl.Set("flightBar", true)
+	local queue, restore = queueTimers()
+	TakeTaxiNode(2); setTaxi(true); stub.Fire("PLAYER_CONTROL_LOST")
+	for _, t in ipairs(queue) do t.fn() end -- the takeoff check one second later
+	queue = {}; C_Timer.After = function(secs, fn) queue[#queue + 1] = { secs = secs, fn = fn } end
+	eq(CraftWiseFlightBar.shown, true)
+	stub.now = stub.now + 90
+	stub.Fire("PLAYER_CONTROL_GAINED") -- UnitOnTaxi still true
+	eq(CraftWiseFlightBar.shown, true, "not landed yet")
+	eq(#queue, 3, "three rechecks are planned")
+	stub.now = stub.now + 1.5; setTaxi(false)
+	for _, t in ipairs(queue) do t.fn() end -- all three fire; the first lands it, the others find nothing
+	restore()
+	eq(CraftWiseFlightBar.shown, false)
+	eq(Fl.Flying(), nil)
+	local rec = Fl.Lookup("Testburg", "Fakehold")
+	eq(rec.secs, 90, "the time up to control gained, not to the recheck")
+	eq(rec.n, 1, "one record")
+end)
+
+it("flights: the bar's own tick notices a flight that is no longer on a taxi", function()
+	local ns, stub, _, _, setTaxi = setup()
+	local Fl = ns.Flights
+	Fl.Set("flightTimes", true); Fl.Set("flightBar", true)
+	local queue, restore = queueTimers()
+	TakeTaxiNode(2); setTaxi(true); stub.Fire("PLAYER_CONTROL_LOST")
+	for _, t in ipairs(queue) do t.fn() end
+	queue = {}; C_Timer.After = function(secs, fn) queue[#queue + 1] = { secs = secs, fn = fn } end
+	stub.now = stub.now + 60
+	stub.Fire("PLAYER_CONTROL_GAINED") -- still on a taxi; the rechecks never come
+	local tick = CraftWiseFlightBar:GetScript("OnUpdate")
+	tick(CraftWiseFlightBar, 0.6)
+	eq(CraftWiseFlightBar.shown, true, "still flying while the client says so")
+	stub.now = stub.now + 5; setTaxi(false)
+	tick(CraftWiseFlightBar, 0.6)
+	restore()
+	eq(CraftWiseFlightBar.shown, false)
+	eq(Fl.Lookup("Testburg", "Fakehold").secs, 60)
+end)
+
+it("flights: off the taxi without control gained (a loading screen, a cut): the bar goes, nothing is recorded", function()
+	local ns, stub, _, _, setTaxi = setup()
+	local Fl = ns.Flights
+	Fl.Set("flightTimes", true); Fl.Set("flightBar", true)
+	TakeTaxiNode(2); setTaxi(true); stub.Fire("PLAYER_CONTROL_LOST")
+	stub.now = stub.now + 40; setTaxi(false)
+	CraftWiseFlightBar:GetScript("OnUpdate")(CraftWiseFlightBar, 0.6)
+	eq(CraftWiseFlightBar.shown, false)
+	eq(next(ns.db.flights), nil)
+end)
+
 it("flights: the bigger flight map scales the frame and gives it back", function()
 	local ns = setup()
 	local Fl = ns.Flights
