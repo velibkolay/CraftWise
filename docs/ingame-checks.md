@@ -1135,6 +1135,21 @@ New files (`Snipe.lua`) and Bindings.xml: needs a full game restart once. Esc > 
 - [ ] Toast: after a scan or search with a snipe-list item listed at or below the max, the toast says "N snipes under your max" (with the flips if there are some); a click opens the panel when the AH is open. Nothing is bought or searched by the toast. A listing exactly at the max counts.
 - [ ] Item level: a snipe of gear with an item level: does the search by item ID (level 0 key) list the gear? Note what is found.
 
+## AH panel: lines with cost, vendor return and profit, totals on top (#328)
+No new files. Display only: nothing here searches or buys by itself. Needs a flip list (a full scan, Make > Basket), a snipe-list item and a basket item with an AH line.
+- [ ] The panel is 340 wide and docks to the right of the AH window without covering it. Is the text readable at the default UI scale; does the summary line fit on one line?
+- [ ] Top: "Flips: cost X · vendor Y · profit +Z" and under it "from the scan N m ago; the live search may differ". The age matches the last full scan (Settings > Debug or the scan time shown elsewhere).
+- [ ] Groups in order with small headings: "Snipes (n)", "Flips (n)", "Basket (n)". A group without lines has no heading.
+- [ ] Each row is two lines: item and quantity, then "cost · vendor · profit" (flip), "max X each · up to N" (snipe), "cost about X (market price)" or "no market price" (basket). The × of a snipe still removes it; a click still picks and searches once.
+- [ ] Flip with bags holding part of it: the cost is for the units still missing (the cheapest ones), not the whole list. Compare one line by hand with the tiers (`/craftwise market <id>`).
+- [ ] A flip that reads "×≥N" (the list may hold more): cost, vendor and profit all read "≥".
+- [ ] Totals add up to the lines by hand; with a line whose prices aren't stored the profit total shows "?".
+- [ ] After a click or search, "Listed now (units × price = row total)" heads the live results, each row "12 × 3s 40c = 40s 80c" with the right total.
+- [ ] Item names: after opening the AH no row shows "item 1234"; an uncached item shows "…" and its name replaces it within a moment, without clicking.
+- [ ] Buy button: with no line picked it looks clearly off (faded, grey text), its text is what AHBuy says, and the line under the buttons reads "Click a line to search it first".
+- [ ] Click a gear item (not a commodity, e.g. Barbaric Shoulders): the status line says "Searching...", then either the listed rows or "Nothing is listed"/"Nothing is listed at or below the max price". If it stays on "Searching..." the client sent no item results for a search by item ID with item level 0: note what the Blizzard frame shows for the same item.
+- [ ] With 12+ lines the "+N more" note still shows and the panel stays on screen (the headings take room: does the panel grow past the bottom of the screen?).
+
 ## Interface › Minimap (#321, part 1)
 New file `MinimapStyle.lua` in the TOC: needs a full game restart once. Settings > Interface has three switches, all off by default.
 - [ ] All three off: the minimap, its buttons and the addon compartment look exactly as before; `/reload` with Leatrix Plus and MinimapButtonButton loaded changes nothing.

@@ -803,6 +803,16 @@ local function FoldedButton(parent, text, width, height, fill, flap, ink, lift)
 			self:SetWidth(math.floor((self.label:GetStringWidth() or 0) + 28 + 0.5))
 		end
 	end
+	-- A disabled button looks it (provisional, #328): the face fades and the label turns grey, so a button
+	-- that does nothing is not mistaken for one that is broken.
+	local setEnabled = b.SetEnabled
+	function b:SetEnabled(on)
+		setEnabled(self, on)
+		local off = not on
+		self.face:SetAlpha(off and 0.4 or 1)
+		local c = off and C.text3 or ink
+		self.label:SetTextColor(c[1], c[2], c[3], 1)
+	end
 	local function press(self, down)
 		local from = self.offset or 0
 		local to = down and -2 or 0
