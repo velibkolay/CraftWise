@@ -524,7 +524,11 @@ it("PlaceBid, error 10, then PURCHASE_COMPLETED for the same auction: one ahbuy"
 	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
 	stub.Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 77)
 	eq(Kinds(ns), "ahbuy 400 x1 5000 " .. HORDE)
-	has(Trace(ns), "AUCTION_HOUSE_SHOW_ERROR error 10")
+	has(Trace(ns), "AUCTION_HOUSE_SHOW_ERROR error 10 pending bids kept: 77")
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 7)
+	has(Trace(ns), "error 7 no bid pending")
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 7)
+	has(Trace(ns), "error 7 no bid pending")
 end)
 
 it("a pending bid is dropped when the AH closes or after 60 seconds, not by an error", function()

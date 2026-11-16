@@ -930,7 +930,12 @@ end
 -- "Internal auction error") between PlaceBid and AUCTION_HOUSE_PURCHASE_COMPLETED and the purchase still
 -- completes (#340). The bid is logged only when its completion arrives with its auctionID.
 ns.On("AUCTION_HOUSE_SHOW_ERROR", function(_, err)
-	L.Trace("AUCTION_HOUSE_SHOW_ERROR error", err, "(pending bids kept)")
+	local ids = {}
+	for id in pairs(bids) do
+		ids[#ids + 1] = id
+	end
+	table.sort(ids)
+	L.Trace("AUCTION_HOUSE_SHOW_ERROR error", err, #ids > 0 and ("pending bids kept: " .. table.concat(ids, ",")) or "no bid pending")
 end)
 ns.On("AUCTION_HOUSE_CLOSED", function()
 	ForgetPending()
