@@ -21,7 +21,9 @@ local OPEN_PAD_X, OPEN_PAD_Y = 14, 10
 local List = {}
 
 local function ShowRowTip(list, owner, data)
-	if list.page.RowTooltip then
+	if data.ownTip then -- a row that explains itself instead of showing its item (Make › Basket flips, #314)
+		Style.ShowTip(owner, unpack(data.ownTip))
+	elseif list.page.RowTooltip then
 		local ok, err = M.Call(list.page.RowTooltip, owner, data, list.ctx)
 		if not ok and list.onError then
 			list.onError(err)

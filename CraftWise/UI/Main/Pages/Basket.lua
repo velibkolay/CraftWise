@@ -83,13 +83,14 @@ function B.Rows(plan)
 		local bought = held >= f.units
 		local r = NewRow("flip", "flip:" .. f.itemID, MK.ItemName(f.itemID), f.itemID, Icon(f.itemID))
 		r.line, r.rank = f, i
+		r.ownTip = B.FlipTip(f)
 		r.order = ORDER.flip + i * 1e-6 -- the list sorts by order, then name: best profit first
 		if bought then
 			r.view.nameColor = "text3"
 			r.view.colors.name = "text3"
 		end
 		local total, color = MK.Signed(f.profit)
-		Fill(r, "×" .. f.units .. (f.atLeast and "+" or ""), bought and L["in bags"] or L["AH → vendor"],
+		Fill(r, f.atLeast and (L["%d or more"]):format(f.units) or "×" .. f.units, bought and L["in bags"] or L["AH → vendor"],
 			"≤ " .. ns.FormatCoins(f.maxUnit), total, bought and "text3" or color, bought and "text3" or "text")
 		rows[#rows + 1] = r
 	end
@@ -310,6 +311,16 @@ function B.Open(content, r, ctx)
 	else
 		Say(L["No AH price at the profit house and no vendor price: nothing to buy it with is known."], "text3")
 	end
+end
+
+-- What a flip line says when hovered: its count and its price (Style tip: title, lines).
+function B.FlipTip(f)
+	local count = f.atLeast
+		and (L["%d or more units are listed below the vendor price. Only the cheapest eight price steps are stored, so there may be more."]):format(f.units)
+		or (L["%d units are listed below the vendor price."]):format(f.units)
+	return { MK.ItemName(f.itemID), count,
+		(L["Pay at most %s each: a vendor pays %s. The profit is what you keep selling them all to a vendor."]):format(ns.FormatCoins(f.maxUnit), ns.FormatCoins(f.sell)),
+		L["Profit: for each unit below the vendor price, the vendor price minus its AH price."] }
 end
 
 function B.OpenHeight(r)

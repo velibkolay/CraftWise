@@ -266,8 +266,8 @@ function Loops.Run()
 		ns.LootToast.ShowCustom({
 			key = "loops", icon = itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID) or nil,
 			itemID = not best and flip.itemID or nil, text = text,
-			detail = best and best.name or (("%s ×%d%s"):format(ns.Basket and ns.Basket.ItemName(flip.itemID) or tostring(flip.itemID),
-				flip.units, flip.atLeast and "+" or "")),
+			detail = best and best.name or ((flip.atLeast and "%s, %d or more" or "%s ×%d"):format(ns.Basket and ns.Basket.ItemName(flip.itemID) or tostring(flip.itemID),
+				flip.units)),
 			copper = best and best.profit or flip.profit, sourceText = not best and "AH → vendor" or nil, duration = 10,
 			onClick = function()
 				if not best then

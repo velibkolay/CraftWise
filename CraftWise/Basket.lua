@@ -353,6 +353,13 @@ function Basket.SetFlips(finds)
 	end
 	local dismissed = ns.db.flipDismissed or {}
 	local isFlip, shown = {}, {}
+	local now = time()
+	local recent, carried = ns.db.flipRecent or {}, ns.Holdings and ns.Holdings.Carried() or {}
+	for itemID, r in pairs(recent) do
+		if now - r.t > Basket.FLIP_RECENT then
+			recent[itemID] = nil
+		end
+	end
 	for _, f in ipairs(finds or {}) do
 		isFlip[f.itemID] = true
 		local was = dismissed[f.itemID]
@@ -362,18 +369,85 @@ function Basket.SetFlips(finds)
 		end
 		if not was then
 			shown[#shown + 1] = f
+			-- What the bags held when it first was a flip (kept while it stays one or was one lately).
+			local r = recent[f.itemID]
+			recent[f.itemID] = { held0 = r and r.held0 or carried[f.itemID] or 0, t = now }
+		else
+			recent[f.itemID] = nil
 		end
 	end
+	ns.db.flipRecent = recent
 	for itemID in pairs(dismissed) do
 		if not isFlip[itemID] then
 			dismissed[itemID] = nil
 		end
 	end
 	ns.db.flipDismissed = dismissed
-	ns.db.flips = { t = time(), items = shown }
+	ns.db.flips = { t = now, items = shown }
 	Changed()
 	return shown
 end
+
+----------------------------------------------------------------------------------------------------
+-- Bought flips become junk (#314)
+----------------------------------------------------------------------------------------------------
+-- An item that arrives in the bags while it is on the flip list (or was within Basket.FLIP_RECENT: the
+-- scan after a purchase drops it, and a purchase that comes by mail arrives later) gets the junk mark, so
+-- "Sell junk" sells it at a merchant. How a purchase arrives on Forever is not told by Blizzard's API docs
+-- (they list COMMODITY_PURCHASED / ITEM_PURCHASED / AUCTION_HOUSE_PURCHASE_COMPLETED but not where the item
+-- goes), so the arrival in the bags is the signal, which covers both ways (taking it from the mail
+-- counts). Never marked: an item the bags held when it became a flip, one the player marked otherwise
+-- (Junk already, Sell on AH, Keep) or watches, one whose mark the player took away again, a setting off.
+
+Basket.FLIP_RECENT = 24 * 3600 -- seconds a flip that left the list still counts for arrivals (provisional)
+
+function Basket.MarkEnabled()
+	return not (ns.db and ns.db.settings and ns.db.settings.flipJunk == false)
+end
+
+-- Is the item free to be marked? The player's own marks win.
+local function Markable(itemID, held0)
+	local db = ns.db
+	if (held0 or 0) > 0 or (db.flipNoMark and db.flipNoMark[itemID]) then
+		return false
+	end
+	if db.flipMarked and db.flipMarked[itemID] and not (db.junk and db.junk[itemID]) then
+		db.flipNoMark[itemID] = true -- the player took our mark away: it stays away
+		db.flipMarked[itemID] = nil
+		return false
+	end
+	if (db.junk and db.junk[itemID]) or (db.sellAH and db.sellAH[itemID]) or (db.keep and db.keep[itemID]) then
+		return false
+	end
+	if ns.ItemWatch and ns.ItemWatch.IsWatched and ns.ItemWatch.IsWatched(itemID) then
+		return false
+	end
+	return true
+end
+
+-- Marks the flip items that arrived in the bags; returns their item IDs.
+function Basket.MarkArrived()
+	local db = ns.db
+	local marked = {}
+	if not (db and db.flipRecent and next(db.flipRecent) and Basket.MarkEnabled() and ns.Holdings and ns.SetItemState) then
+		return marked
+	end
+	db.flipMarked, db.flipNoMark = db.flipMarked or {}, db.flipNoMark or {}
+	local carried = ns.Holdings.Carried()
+	for itemID, r in pairs(db.flipRecent) do
+		if (carried[itemID] or 0) > (r.held0 or 0) then
+			if Markable(itemID, r.held0) then
+				ns.SetItemState(itemID, "junk")
+				db.flipMarked[itemID] = true
+				marked[#marked + 1] = itemID
+				ns.Print(("%s is marked as junk: bought as an AH → vendor flip. Middle-click it to take the mark off."):format(Basket.ItemName(itemID)))
+			end
+			db.flipRecent[itemID] = nil
+		end
+	end
+	return marked
+end
+ns.Listen("BAGS_CHANGED", Basket.MarkArrived)
 
 -- Takes a line out until it gets clearly better, and rebuilds the Auctionator list without it.
 function Basket.DismissFlip(itemID)
@@ -386,6 +460,9 @@ function Basket.DismissFlip(itemID)
 			ns.db.flipDismissed = ns.db.flipDismissed or {}
 			ns.db.flipDismissed[itemID] = f.profit
 			table.remove(flips.items, i)
+			if ns.db.flipRecent then
+				ns.db.flipRecent[itemID] = nil
+			end
 			break
 		end
 	end

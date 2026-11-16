@@ -249,7 +249,7 @@ it("Basket page: the AH → vendor section with units, max price and profit; bou
 	local rows = Make.Rows(ns, "basket")
 	eq(#rows, 2); eq(rows[1].kind, "flip"); eq(rows[1].itemID, SILK, "best profit first")
 	local plain = function(s) return (tostring(s):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
-	eq(plain(rows[1].view.cells.qty), "×8+", "all eight tiers below: at least")
+	eq(plain(rows[1].view.cells.qty), "8 or more", "all eight tiers below: written out")
 	eq(plain(rows[1].view.cells.where), "AH → vendor")
 	eq(plain(rows[2].view.cells.qty), "×5")
 	eq(M.Frame().hero.name.text, "2 AH → vendor flips")
@@ -261,4 +261,111 @@ it("Basket page: the AH → vendor section with units, max price and profit; bou
 		if r.itemID == CLOTH then cloth = r end
 	end
 	eq(plain(cloth.view.cells.where), "in bags")
+end)
+
+----------------------------------------------------------------------------------------------- #314
+
+local function Bags(stub, n)
+	stub.bags[0] = n > 0 and { { itemID = CLOTH, stackCount = n, quality = 1 } } or {}
+	stub.Fire("BAG_UPDATE_DELAYED")
+end
+
+local function FlipScan(ns, stub)
+	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5, t = stub.clock + 1 })
+	Scan(ns, stub)
+end
+
+it("Junk (#314): units that arrive in the bags while the item is a flip get the junk mark", function()
+	local ns, stub = Load()
+	FlipScan(ns, stub)
+	eq(ns.db.flipRecent[CLOTH].held0, 0)
+	eq(ns.db.junk[CLOTH], nil)
+	Bags(stub, 5)
+	eq(ns.db.junk[CLOTH], true); eq(ns.db.flipMarked[CLOTH], true); eq(ns.db.flipRecent[CLOTH], nil)
+end)
+
+it("Junk (#314): a purchase that comes by mail: the flip left the list, the arrival still counts for a day", function()
+	local ns, stub = Load()
+	FlipScan(ns, stub)
+	Seed(ns, CLOTH, { tiers = { 500, 1 }, total = 1, t = stub.clock + 1 }) -- bought out: no flip any more
+	Scan(ns, stub)
+	eq(#ns.Basket.Flips(), 0)
+	stub.clock = stub.clock + 3600 -- the mail is taken an hour later
+	Bags(stub, 5)
+	eq(ns.db.junk[CLOTH], true)
+	-- ...but not weeks later
+	local ns2, stub2 = Load()
+	FlipScan(ns2, stub2)
+	Seed(ns2, CLOTH, { tiers = { 500, 1 }, total = 1, t = stub2.clock + 1 })
+	Scan(ns2, stub2)
+	stub2.clock = stub2.clock + 2 * 86400
+	Seed(ns2, JUNKY, { tiers = { 500, 1 }, total = 1, t = stub2.clock })
+	Scan(ns2, stub2) -- the check prunes it
+	Bags(stub2, 5)
+	eq(ns2.db.junk[CLOTH], nil)
+end)
+
+it("Junk (#314): never an item that was in the bags already, one marked otherwise, or a watched one", function()
+	local ns, stub = Load()
+	stub.bags[0] = { { itemID = CLOTH, stackCount = 3, quality = 1 } }
+	FlipScan(ns, stub)
+	eq(ns.db.flipRecent[CLOTH].held0, 3)
+	Bags(stub, 8)
+	eq(ns.db.junk[CLOTH], nil, "it was in the bags before: kept as it is")
+	for _, state in ipairs({ "keep", "auction" }) do
+		local n, s = Load()
+		FlipScan(n, s)
+		n.SetItemState(CLOTH, state)
+		Bags(s, 5)
+		eq(n.db.junk[CLOTH], nil, state); eq(n.db.flipMarked[CLOTH], nil)
+	end
+	local n, s = Load()
+	n.ItemWatch.Set(CLOTH, true)
+	FlipScan(n, s)
+	Bags(s, 5)
+	eq(n.db.junk[CLOTH], nil, "watched")
+	eq(next(n.db.flipMarked or {}), nil)
+	n, s = Load()
+	n.db.settings.flipJunk = false
+	FlipScan(n, s)
+	Bags(s, 5)
+	eq(n.db.junk[CLOTH], nil, "switched off in Settings")
+end)
+
+it("Junk (#314): a mark the player takes off stays off", function()
+	local ns, stub = Load()
+	FlipScan(ns, stub)
+	Bags(stub, 5)
+	eq(ns.db.junk[CLOTH], true)
+	ns.SetItemState(CLOTH, "normal") -- middle click
+	Bags(stub, 0)
+	FlipScan(ns, stub) -- a flip again, nothing in the bags
+	Bags(stub, 5)
+	eq(ns.db.junk[CLOTH], nil, "no re-mark")
+	eq(ns.db.flipNoMark[CLOTH], true)
+	FlipScan(ns, stub)
+	Bags(stub, 9)
+	eq(ns.db.junk[CLOTH], nil)
+end)
+
+it("Junk (#314): a dismissed flip is not marked when it arrives", function()
+	local ns, stub = Load()
+	FlipScan(ns, stub)
+	ns.Basket.DismissFlip(CLOTH)
+	Bags(stub, 5)
+	eq(ns.db.junk[CLOTH], nil)
+end)
+
+it("Basket page (#314): the count is written out and the line has a tooltip", function()
+	local ns, stub, M = Load()
+	Seed(ns, SILK, { tiers = { 100, 1, 200, 1, 300, 1, 400, 1, 500, 1, 600, 1, 700, 1, 800, 1 }, total = 20 })
+	Seed(ns, CLOTH, { tiers = { 40, 5 }, total = 5 })
+	Scan(ns, stub)
+	M.Open("basket")
+	local rows = Make.Rows(ns, "basket")
+	local tip = rows[1].ownTip
+	eq(tip[1], "Silk Cloth")
+	assert(tip[2]:find("8 or more units are listed below the vendor price", 1, true), tip[2])
+	eq(rows[2].ownTip[2], "5 units are listed below the vendor price.")
+	eq(ns.LootToast.Lines()[1].detail, "Silk Cloth, 8 or more")
 end)

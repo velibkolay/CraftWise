@@ -1098,3 +1098,11 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - [ ] Buy some of a flip item: the line shows "in bags" and dims when the bags hold the units.
 - [ ] Settings > AH to vendor flips: "Flip alert" off stops the toast, the section and the list; "Smallest profit per item" steps like the loop alert (default 1s).
 - [ ] A full scan of an Everlook-sized house: the check right after the scan does not freeze the client (it reads every recorded item once; note the time in Settings > Debug > performance, "Loops.lua check").
+
+## Bought flips become junk (#314)
+- [ ] With a flip on Make > Basket > "AH → vendor" (item not in your bags before): buy some at the AH. Where does the purchase arrive on Forever, straight into the bags or by mail? Note it. Once the items are in your bags (taken from the mail if it came by mail) the chat says "<item> is marked as junk: bought as an AH → vendor flip" and the item shows the fold and the dim. Merchant: "Sell junk" sells them.
+- [ ] An item you already carry when it becomes a flip: buying more does not mark it. An item you marked Keep / Sell on AH or watch: not marked.
+- [ ] Middle-click the marked item to take the mark off, buy another flip of it later: stays unmarked.
+- [ ] If the purchase comes by mail: the next scan may drop the flip from the list before you open the mail; the item is still marked when you take it from the mail within a day.
+- [ ] Settings > AH to vendor flips > "Mark bought flips as junk" off: nothing is marked.
+- [ ] A flip with all eight stored tiers below the vendor price reads "8 or more" (not "×8+") in the line and the toast; hover the line: tooltip with the count, the max price per unit and the profit.
