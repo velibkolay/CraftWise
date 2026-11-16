@@ -11,6 +11,7 @@ return {
 		["C_TradeSkillUI.IsTradeSkillGuild"] = UI .. "Blizzard_ProfessionsRecipeList.lua",
 		["C_TradeSkillUI.IsTradeSkillLinked"] = UI .. "Blizzard_ProfessionsFrame.lua",
 		CreateFrame = UI .. "everywhere; " .. GAME,
+		StaticPopup_Show = UI .. "Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseFrame.lua (StaticPopup_Show(\"BUYOUT_AUCTION\", nil, nil, data), StartItemBuyout)",
 		CreateDataProvider = UI .. "Blizzard_SharedXML/DataProvider.lua (function CreateDataProvider(tbl)); main window list (#153)",
 		CreateScrollBoxListLinearView = UI .. "Blizzard_SharedXML/Shared/Scroll/ScrollBoxLinearView.lua (function CreateScrollBoxListLinearView); used by Blizzard_AchievementUI.lua and others",
 		CreateFont = UI .. "Blizzard_SharedXML/FontableFrameMixin.lua (self.fontObject = CreateFont(name), then :SetFont)",

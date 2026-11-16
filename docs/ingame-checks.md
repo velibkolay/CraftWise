@@ -1106,3 +1106,16 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - [ ] If the purchase comes by mail: the next scan may drop the flip from the list before you open the mail; the item is still marked when you take it from the mail within a day.
 - [ ] Settings > AH to vendor flips > "Mark bought flips as junk" off: nothing is marked.
 - [ ] A flip with all eight stored tiers below the vendor price reads "8 or more" (not "×8+") in the line and the toast; hover the line: tooltip with the count, the max price per unit and the profit.
+
+## Buying at the AH from CraftWise: panel, search, buy (#315, part 1)
+Needs a full game restart (new files AHBuy.lua and UI/AHPanel.lua in the TOC). Try it first with something cheap.
+- [ ] Open the AH: the CraftWise panel docks at the right of the AH window and lists the flips (Make > Basket) and the basket's AH lines. Opening the AH and the panel send **no** search by themselves (check with a slash `/etrace` or by watching the AH's own list).
+- [ ] Click a flip line: one search goes out; results list "qty × price per unit". The Buy button reads "Buy N for X" with the exact total. Check it against the AH's own list: the cheapest N units up to the line's max price (a flip: vendor price minus 1c).
+- [ ] Throttle: right after opening the AH (other addons query), click a line: the panel says "Wait: the auction house is busy" and sends nothing; click again when it is ready.
+- [ ] Buy an **item** auction (non-stackable, one at a time): one click buys that auction; the button is off until the result; then "Bought. The list is old: search again." The Buy button stays off until you search again. Does Blizzard's own AH frame show anything odd while CraftWise searches by item ID (level 0 key)? Gear with an item level may need the specific level: note what is found.
+- [ ] Buy a **commodity**: the first click starts the purchase and the button becomes "Confirm: buy N for X" once the server's price arrives (COMMODITY_PRICE_UPDATED); the second click confirms. Does Blizzard's AH window show its own buy dialog while this happens? Does the item land in the bags or the mail? (#314 notes where.)
+- [ ] A price change in between: have a second character buy or post under the listing, or wait for the list to move, then click Buy: nothing is bought, the panel says the price changed and shows the live total. For a commodity: if the server's quote is above what the button showed the purchase is cancelled and says so.
+- [ ] Not enough money: with less gold than the total the button says "Not enough gold" and is off. Auction gone: buy an auction another player just took: the panel or the client says so, nothing is retried.
+- [ ] A total above the limit (Settings > Buying at the AH > Ask above, default 10g) shows the client's confirm dialog first; Cancel buys nothing, Accept buys once. Change the limit and try again.
+- [ ] Hold the click / press fast: only one purchase per click; a second click while the result is pending does nothing.
+- [ ] With Auctionator loaded: the "Auctionator list" button in Make > Basket still works; Settings > Buying at the AH > Auctionator list off stops the automatic "CraftWise vendor flips" list.

@@ -47,6 +47,7 @@ Holdings.lua
 Balance.lua
 Loops.lua
 Basket.lua
+AHBuy.lua
 SendList.lua
 Disenchant.lua
 BagSort.lua
@@ -68,6 +69,7 @@ UI\Style.lua
 UI\ItemMenu.lua
 UI\RecipeChance.lua
 UI\MerchantBuy.lua
+UI\AHPanel.lua
 UI\TradeFill.lua
 UI\BuyAtPanel.lua
 UI\TrainAll.lua
