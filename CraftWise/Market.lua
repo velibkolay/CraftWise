@@ -2322,6 +2322,28 @@ function M.Houses(itemKey)
 	return out
 end
 
+-- Is there a record of this item key at this house (#350)? A table read, nothing decoded.
+function M.RecordedAt(itemKey, houseKey)
+	local perItem = db and db.items[itemKey]
+	return perItem ~= nil and perItem[houseKey] ~= nil
+end
+
+-- Changes whenever anything is recorded at any house (a scan, search or browse; a sync merge also moves
+-- M.DataVersion()). DataVersion() only moves with keys, so a second house's prices for a key already known
+-- don't show in it: caches of per-house prices (#350) key on both. Walks the houses, never the items.
+function M.HouseStamp()
+	if not db then
+		return "0"
+	end
+	local n, sum = 0, 0
+	for _, list in pairs(db.scans) do
+		n = n + #list
+		local last = list[#list]
+		sum = sum + (last and last.t or 0)
+	end
+	return n .. ":" .. sum
+end
+
 -- Units that disappeared at prices up to the typical, last 7 days. Sold or expired, never "sold".
 function M.Disappeared(itemKey, house)
 	local entry = db and GetEntry(itemKey, house)
