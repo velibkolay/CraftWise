@@ -321,3 +321,135 @@ it("Items page: the item menu's Where to buy opens it on the item; Price history
 	eq(M.Items.Selected(), SALT)
 	eq(ns.RW, nil, "the Records window is gone (#157)")
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Used in (#351): every recipe with its profit, the recipe's cost, the drop's own value
+----------------------------------------------------------------------------------------------------
+
+local OUT1, OUT2, OUT3, OUT4 = 990111, 990112, 990113, 990114
+local R_KNOWN, R_RICH, R_LEARN, R_TAIL = 2149, 2150, 3763, 2387
+
+-- Testleather is a reagent of two known recipes (profit 11s vs 80s 50c), a learnable one (skill 175, you
+-- have 60, a recipe item on the AH) and a Tailoring one. All outputs sell to a vendor.
+local function SetupUsed(extraTailoring)
+	local ns, stub, M = Load()
+	SeedLeather()
+	for id, sell in pairs({ [OUT1] = 3000, [OUT2] = 20000, [OUT3] = 9000, [OUT4] = 4000 }) do
+		stub.items[id] = { name = "Output" .. (id - 990110), sellPrice = sell, stack = 1 }
+	end
+	ns.RecipeData = {
+		[R_TAIL] = { skillLine = 197, reagents = { { itemID = LEATHER, quantity = 1 } }, output = { itemID = OUT4, quantity = 1 } },
+	}
+	for i = 1, extraTailoring or 0 do
+		ns.RecipeData[7000 + i] = { skillLine = 197, reagents = { { itemID = LEATHER, quantity = 1 } }, output = { itemID = OUT4, quantity = 1 } }
+	end
+	ns.ProfessionSkillLines = { Leatherworking = 165, Tailoring = 197 }
+	stub.profession = { id = 165, name = "Leatherworking", skill = 60, max = 75, recipes = {
+		[R_KNOWN] = { info = { name = "Plain Boots", learned = true }, schematic = stub.Schematic({ { LEATHER, 2 } }, OUT1) },
+		[R_RICH] = { info = { name = "Rich Belt", learned = true }, schematic = stub.Schematic({ { LEATHER, 1 } }, OUT3) },
+		[R_LEARN] = { info = { name = "Fine Gloves", learned = false }, schematic = stub.Schematic({ { LEATHER, 6 } }, OUT2) },
+	} }
+	stub.Fire("TRADE_SKILL_SHOW")
+	ns.SourceData = { [R_LEARN] = { skill = 175, item = DYE } }
+	Seed(DYE, HORDE, { typs = { 5000, 5000 }, tiers = { 5000, 1 }, total = 1, listings = 1 }) -- the recipe item on the AH
+	return ns, stub, M
+end
+
+local function Names(lines)
+	local out = {}
+	for _, l in ipairs(lines) do
+		if l.recipe then out[#out + 1] = l.recipe.name end
+	end
+	return out
+end
+
+it("Items › Used in: every recipe in order (known by profit, learnable, other professions), the drop's value on top", function()
+	local ns, _, M = SetupUsed()
+	local lines = M.Items.Card(LEATHER, NOW).usedIn
+	eq(table.concat(Names(lines), ","), "Rich Belt,Plain Boots,Fine Gloves,Recipe #2387", "known, best profit first; learnable; other")
+	has(lines[1].left, "Sell: "); has(lines[1].left, "each")
+	-- the profit is Make › Craft's own number
+	local rows = {}
+	for _, r in ipairs(ns.BuildRows(165, true, "profit")) do rows[r.recipeID] = r end
+	local byID = {}
+	for _, l in ipairs(lines) do if l.recipe then byID[l.recipe.recipeID] = l end end
+	eq(byID[R_KNOWN].profit, rows[R_KNOWN].profit); eq(byID[R_RICH].profit, rows[R_RICH].profit)
+	assert(byID[R_RICH].profit > byID[R_KNOWN].profit, "the order follows the profit")
+	eq(byID[R_LEARN].profit, rows[R_LEARN].profit)
+	-- a recipe you can learn: its skill and what the recipe item costs on the AH
+	has(byID[R_LEARN].sub, "skill 175"); has(byID[R_LEARN].sub, "recipe " .. ns.FormatCoins(5000))
+	-- another profession's recipe: dimmed, its profession on the row, no profit
+	eq(byID[R_TAIL].recipe.state, "other"); eq(byID[R_TAIL].mid, "Tailoring"); eq(byID[R_TAIL].leftColor, "text3")
+	eq(byID[R_TAIL].profit, nil); eq(byID[R_TAIL].action, nil)
+	eq(byID[R_KNOWN].right, "×2")
+end)
+
+it("Items › Used in: a learnable recipe you can't do yet is red; a recipe with no source says so", function()
+	local ns, _, M = SetupUsed()
+	local function sub(id)
+		for _, l in ipairs(M.Items.Card(LEATHER, NOW).usedIn) do
+			if l.recipe and l.recipe.recipeID == id then return l end
+		end
+	end
+	has(sub(R_LEARN).sub, ns.Style.Hex("danger") .. "skill 175|r")
+	ns.SourceData = {}
+	ns.Notify("RECIPES_CHANGED")
+	has(sub(R_LEARN).sub, "recipe source unknown")
+end)
+
+it("Items › Used in: more rows than the block holds end in 'and N more · Show all', which opens the recipes using it", function()
+	local ns, _, M = SetupUsed(5)
+	M.Items.USED_ROWS = 3
+	local lines = M.Items.Card(LEATHER, NOW).usedIn
+	local last = lines[#lines]
+	has(last.left, "and 6 more"); has(last.left, "Show all"); eq(last.action.kind, "all")
+	eq(#Names(lines), 3)
+	local opened
+	ns.ShowRecipesUsing = function(id) opened = id; return true end
+	M.Items.Select(LEATHER)
+	local body = OpenItems(M)
+	local row
+	for _, r in ipairs(body.card.used.rows) do
+		if r.line and r.line.action and r.line.action.kind == "all" then row = r end
+	end
+	row.scripts.OnClick(row)
+	eq(opened, LEATHER)
+end)
+
+it("Items › Used in: a click on a recipe of your profession opens Make › Craft on it; the rows are drawn in the docked layout too", function()
+	local ns, _, M = SetupUsed()
+	M.Items.Select(LEATHER)
+	local body = OpenItems(M)
+	local row
+	for _, r in ipairs(body.card.used.rows) do
+		if r.line and r.line.recipe and r.line.recipe.recipeID == R_RICH then row = r end
+	end
+	eq(row.left.text, "Rich Belt"); eq(row.shown ~= false, true)
+	row.scripts.OnClick(row)
+	eq(M.shown.page, "craft"); eq(M.Make.state.query, "Rich Belt"); eq(M.UI().profession, 165)
+	eq(ns.db.settings.includeUnlearned, true)
+	-- another profession's row does nothing
+	M.Open("items")
+	local other
+	for _, r in ipairs(M.SlotsOf("items").body.card.used.rows) do
+		if r.line and r.line.recipe and r.line.recipe.recipeID == R_TAIL then other = r end
+	end
+	other.scripts.OnClick(other)
+	eq(M.shown.page, "items")
+	-- hovering a row shows Make's recipe tooltip for my recipes
+	row.scripts.OnEnter(row)
+	eq(GameTooltip.shown ~= false, true)
+end)
+
+it("Items › Used in: built once per item while nothing changes; rebuilt when recipes or prices change", function()
+	local ns, _, M = SetupUsed()
+	local builds = 0
+	local build = ns.BuildRows
+	ns.BuildRows = function(...) builds = builds + 1; return build(...) end
+	M.Items.Card(LEATHER, NOW); M.Items.Card(LEATHER, NOW); M.Items.Card(LEATHER, NOW)
+	eq(builds, 1)
+	ns.Notify("RECIPES_CHANGED")
+	M.Items.Card(LEATHER, NOW)
+	eq(builds, 2)
+	ns.BuildRows = build
+end)
