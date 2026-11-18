@@ -380,6 +380,7 @@ local function NextBatch(out)
 	if #records == 0 then
 		return nil
 	end
+	table.insert(records, 1, "r" .. SEP .. (GetRealmName() or ""))
 	local payload = table.concat(records, "~")
 	local chunks = {}
 	for at = 1, #payload, Link.CHUNK do
@@ -454,14 +455,42 @@ local function Fields(text, count)
 	return out
 end
 
--- The records of a merged batch, turned into what Market.MergeIncoming takes.
-local function Parse(payload, maxT)
+-- Connected realms share an auction house but each keeps its own realm name in the house keys (#358). A house
+-- key of the other character's realm is rewritten to mine, and only to a key I would record myself: the
+-- faction house of my own faction ("<realm>|H" or "|A"), or a neutral house ("<realm>|N:<Zone>"). nil for
+-- anything else (another realm, the other faction's house, junk).
+function Link.MapHouse(house, fromRealm)
+	if type(house) ~= "string" or type(fromRealm) ~= "string" or fromRealm == "" then
+		return nil
+	end
+	local head = fromRealm .. "|"
+	if house:sub(1, #head) ~= head then
+		return nil
+	end
+	local rest = house:sub(#head + 1)
+	local letter = rest:match("^([HA])$")
+	if letter then
+		local faction = UnitFactionGroup and UnitFactionGroup("player")
+		if letter ~= (faction == "Horde" and "H" or faction == "Alliance" and "A" or nil) then
+			return nil
+		end
+	elseif not rest:match("^N:%w+$") then
+		return nil
+	end
+	return (GetRealmName() or "") .. "|" .. rest
+end
+
+-- The records of a merged batch, turned into what Market.MergeIncoming takes. The sender's realm comes in the
+-- batch's first record ("r"), else what its hello said; its house keys are mapped to mine here.
+local function Parse(payload, maxT, peerRealm)
 	local source = { houses = {}, items = {}, names = {}, itemInfo = {}, scans = {} }
 	for record in payload:gmatch("[^~]+") do
 		local kind = record:sub(1, 1)
 		local f = Fields(record, kind == "e" and 4 or 6)
-		if kind == "e" and f[4] then
-			local house, key, packed = f[2], f[3], f[4]
+		if kind == "r" and f[2] and #f[2] <= 64 then
+			peerRealm = f[2]
+		elseif kind == "e" and f[4] and Link.MapHouse(f[2], peerRealm) then
+			local house, key, packed = Link.MapHouse(f[2], peerRealm), f[3], f[4]
 			source.houses[house] = true
 			source.items[key] = source.items[key] or {}
 			source.items[key][house] = packed
@@ -469,8 +498,8 @@ local function Parse(payload, maxT)
 			if t and t > (maxT[house] or 0) then
 				maxT[house] = t
 			end
-		elseif kind == "s" and f[5] then
-			local house = f[2]
+		elseif kind == "s" and f[5] and Link.MapHouse(f[2], peerRealm) then
+			local house = Link.MapHouse(f[2], peerRealm)
 			source.houses[house] = true
 			source.scans[house] = source.scans[house] or {}
 			table.insert(source.scans[house], { t = tonumber(f[3]), kind = f[4], items = tonumber(f[5]),
@@ -525,7 +554,7 @@ local function OnChunk(key, f, now)
 	if asm.have < asm.total then
 		return
 	end
-	local job = ns.Market.MergeIncoming(Parse(table.concat(asm.chunks), inc.maxT), Link.DisplayName(key))
+	local job = ns.Market.MergeIncoming(Parse(table.concat(asm.chunks), inc.maxT, (PeerByKey(key) or {}).realm), Link.DisplayName(key))
 	inc.merged[n] = true
 	inc.asm[n] = nil
 	inc.priced = inc.priced + (job.priced or 0)
@@ -559,14 +588,22 @@ end
 
 local function OnHello(key, f, now)
 	local r = Runtime(key)
-	if tonumber(f[2]) ~= Link.PROTO or f[3] ~= (GetRealmName() or "") then
+	if tonumber(f[2]) ~= Link.PROTO or not f[3] or f[3] == "" or #f[3] > 64 then
 		return
+	end
+	-- A listed character that answers a whisper is on a connected realm, whatever its name (#358).
+	local peer = PeerByKey(key)
+	if peer then
+		peer.realm = f[3]
 	end
 	local since = {}
 	for i = 4, #f - 1, 2 do
-		since[f[i]] = tonumber(f[i + 1]) or 0
+		local mine = Link.MapHouse(f[i], f[3])
+		if mine then
+			since[mine] = tonumber(f[i + 1]) or 0
+		end
 	end
-	StartTransfer(key, f[3], since)
+	StartTransfer(key, GetRealmName() or "", since)
 	if not r.helloAt or now - r.helloAt > 20 then
 		Link.Hello(key) -- answer with what I lack
 	end
@@ -719,7 +756,7 @@ function Link.Status(now)
 		elseif r.inc then
 			state = "receiving"
 		end
-		out[#out + 1] = { name = p.name, online = Link.Online(key, now), lastSync = p.lastSync, received = p.received or 0,
+		out[#out + 1] = { name = p.name, realm = p.realm, online = Link.Online(key, now), lastSync = p.lastSync, received = p.received or 0,
 			state = state, error = r.lastError }
 	end
 	return out
@@ -742,7 +779,8 @@ function Link.StatusText()
 			parts[#parts + 1] = "not synced yet"
 		end
 		parts[#parts + 1] = Group(s.received) .. " prices received"
-		lines[#lines + 1] = s.name .. ": " .. table.concat(parts, " · ")
+		local realm = s.realm and s.realm ~= (GetRealmName() or "") and (" (" .. (s.realm:match("Realm %d+") or s.realm) .. ")") or ""
+		lines[#lines + 1] = s.name .. realm .. ": " .. table.concat(parts, " · ")
 	end
 	return table.concat(lines, "\n")
 end
