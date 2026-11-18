@@ -1262,3 +1262,10 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 ## AH buy: grouped item rows are one purchase (#343)
 - [ ] Find an item search row with quantity above 1 (several identical auctions, e.g. a plan or pattern listed by many sellers). The panel's "Listed now" shows "1 × price · N listed, one per purchase" and the Buy button says "Buy 1 for <the buyout>", never the quantity.
 - [ ] With the line's max under that buyout nothing is bought, whatever N is. At or above it one press buys one item and the amount taken is exactly the buyout (check the gold). Compare with Blizzard's own AH list: quantity column = N, buyout column = the same price.
+
+## Look up › Items: Used in lists every recipe (#351)
+- [ ] Look up › Items › Mystery Meat (a drop used by Cooking): the Used in block shows "Sell: ... each (AH, after cut)" on top, the Cooking summary line, then Cookie's Feast ×2, Carrion Surprise ×1, Mystery Stew ×1 and Dragonbreath Chili ×1, known ones first, each with its profit per craft on the right.
+- [ ] A recipe you can learn shows "skill N" (red when your skill is too low) and "recipe 50s (AH, ...)" or "recipe source unknown" under its name. A recipe of a profession you don't have is dimmed with the profession's name.
+- [ ] The profit on a row equals the profit on the same recipe in Make › Craft (same profession, Unlearned on).
+- [ ] Hover a row of your profession: Make's recipe tooltip. Click it: Make › Craft opens on that profession filtered to the recipe's name, Unlearned on.
+- [ ] An item with more than 6 recipes ends in "and N more · Show all"; clicking it opens Make › Craft with the recipes using the item. Docked layout: the same rows, Where to buy below them.
