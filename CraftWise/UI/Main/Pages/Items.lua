@@ -1106,6 +1106,204 @@ local function Lines(list)
 	return out
 end
 
+----------------------------------------------------------------------------------------------------
+-- Used in (#351): every recipe that takes the item, with its profit and, for one you don't know, the recipe's
+-- cost. The profit is Make › Craft's own: the rows come from ns.BuildRows (view "profit", the profit house),
+-- never a second calculation. Built once per item and kept while prices, settings and recipes stay the same.
+----------------------------------------------------------------------------------------------------
+
+Items.USED_ROWS = 6 -- recipe rows shown; the rest sit behind "and N more · Show all"
+Items.USED_TTL = 30 -- seconds a built block is kept; ledger and bag changes move the paid basis
+local usedCache = {}
+ns.Listen("RECIPES_CHANGED", function()
+	usedCache = {}
+end)
+
+local function UsedStamp()
+	local s = ns.db and ns.db.settings or {}
+	local basis, house = ns.PriceSettings()
+	return table.concat({ ns.Market.DataVersion and ns.Market.DataVersion() or 0, basis, house,
+		ns.CostBasis("profit"), s.priceBasis or "", math.floor(time() / Items.USED_TTL) }, "|")
+end
+
+-- The rows Make › Craft builds for the recipes of my professions that use the item: { [recipeID] = row }.
+local function UsedMakeRows(entries)
+	local want = {}
+	for _, e in ipairs(entries) do
+		if e.professionID then
+			want[e.professionID] = want[e.professionID] or {}
+			want[e.professionID][e.recipeID] = true
+		end
+	end
+	local byRecipe = {}
+	for professionID, only in pairs(want) do
+		for _, row in ipairs(ns.BuildRows(professionID, true, "profit", only)) do
+			byRecipe[row.recipeID] = row
+		end
+	end
+	return byRecipe
+end
+
+-- "Sell: 2s 15c each (AH)": what one unit of the item brings, after the house's cut (ns.GetSellValue).
+local function SellLine(itemID)
+	local v = ns.GetSellValue(itemID)
+	local line = { left = L["Sell"] .. ": " .. L["no price"], leftColor = "text2" }
+	if not v then
+		line.tip = { L["Sell"], L["No AH price and no vendor price."] }
+		return line
+	end
+	local copper = math.floor(v.copper)
+	if v.source == "vendor" then
+		line.left = ("%s: %s %s (%s)"):format(L["Sell"], ns.FormatCoins(copper), L["each"], L["vendor"])
+		line.tip = { L["Sell"], L["Sold to a vendor."] }
+	else
+		local how = v.cutUnverified and L["AH, cut unverified"] or L["AH, after cut"]
+		line.left = ("%s: %s %s (%s)"):format(L["Sell"], ns.FormatCoins(copper), L["each"], how)
+		line.tip = { L["Sell"], v.label or "", v.cutText or "", v.age and (L["%d days old"]):format(v.age) or nil }
+		line.tip = Lines(line.tip)
+	end
+	return line
+end
+
+-- "recipe 50s (AH, typical · Horde AH, 2d)" | "recipe source unknown" for a recipe you don't know.
+local function RecipeCostText(r)
+	if r.learnCost then
+		local how = r.learnSource == "vendor" and L["vendor"] or r.learnSource == "auction" and L["AH"] or L["trainer"]
+		local detail = how
+		if r.learnSource == "auction" then
+			local data = ns.Sources and ns.Sources.Merged and ns.Sources.Merged(r.recipeID)
+			local quote = data and data.item and ns.AuctionQuote(data.item)
+			detail = how .. (r.learnLabel and (", " .. r.learnLabel) or "")
+				.. (quote and quote.age and (", " .. (quote.age == 0 and L["today"] or (L["%d days old"]):format(quote.age))) or "")
+		end
+		return (L["recipe %s (%s)"]):format(ns.FormatCoins(r.learnCost), detail)
+	end
+	local where = ns.RecipeWhere and ns.RecipeWhere(r.recipeID) or {}
+	return #where > 0 and L["recipe price unknown"] or L["recipe source unknown"]
+end
+
+local function UsedHouseLabel()
+	local _, label = ns.ProfitHouse()
+	return label
+end
+
+-- One recipe row. r = the Make row (nil: my profession's recipe without a row, or another profession).
+local function UsedRecipeLine(e, r, houseLabel)
+	local line = { left = e.name, right = "×" .. (e.quantity or 1), rightColor = "text2", recipe = e }
+	if e.state == "other" then
+		line.mid, line.midColor, line.leftColor = e.profession, "text3", "text3"
+		line.tip = { e.name, e.profession, (L["Uses %d"]):format(e.quantity or 1) }
+		return line
+	end
+	line.action = { kind = "recipe", entry = e }
+	line.makeRow = r
+	if r and r.profit ~= nil then
+		line.mid, line.midColor = M.Make.Signed(r.profit)
+		line.profit = r.profit
+	else
+		line.mid, line.midColor = L["no price"], "text3"
+		local why = r and M.Make.WhyNoPrice(r, { prices = { label = houseLabel } })
+		line.why = why and why[2] or nil
+	end
+	local sub = {}
+	if e.state == "learnable" then
+		local skill = e.required and ((L["skill %d"]):format(e.required)) or nil
+		if skill then
+			sub[#sub + 1] = e.tooLow and (Style.Hex("danger") .. skill .. "|r") or skill
+		end
+		sub[#sub + 1] = r and RecipeCostText(r) or L["recipe source unknown"]
+	elseif line.why and r and not r.costComplete then
+		local names = {}
+		for _, id in ipairs(r.missing or {}) do
+			names[#names + 1] = M.Make.ItemName(id)
+		end
+		sub[#sub + 1] = (L["no price: %s"]):format(table.concat(names, ", "))
+	elseif line.why then
+		sub[#sub + 1] = line.why
+	else
+		sub[#sub + 1] = L["profit per craft"]
+	end
+	line.sub = table.concat(sub, " · ")
+	return line
+end
+
+-- The block: { lines, more } (pure; Items.Card turns it into the rows). Cached per item.
+function Items.UsedModel(itemID)
+	local stamp = UsedStamp()
+	local cached = usedCache[itemID]
+	if cached and cached.stamp == stamp then
+		return cached.model
+	end
+	local lines = {}
+	local entries = ns.UsedIn and ns.UsedIn(itemID) or {}
+	local summary = ns.UsedInSummary and ns.UsedInSummary(itemID) or {}
+	if #entries == 0 then
+		lines[1] = { left = L["No recipe uses it."], leftColor = "text2" }
+	else
+		lines[#lines + 1] = SellLine(itemID)
+		for i, g in ipairs(summary) do
+			if i > 2 then
+				break
+			end
+			lines[#lines + 1] = { left = g.profession, right = g.mine and (L["%d recipes · %d known"]):format(g.count, g.known)
+				or (L["%d recipes"]):format(g.count) }
+		end
+		local houseLabel = UsedHouseLabel()
+		local rows = UsedMakeRows(entries)
+		local list = {}
+		for i, e in ipairs(entries) do
+			list[i] = { e = e, i = i, r = rows[e.recipeID] }
+		end
+		-- known, then learnable, then other professions (the order of ns.UsedIn); inside the first two the
+		-- better profit per craft first, a recipe without a profit last
+		local ORDER = { known = 1, learnable = 2, other = 3 }
+		table.sort(list, function(a, b)
+			if a.e.state ~= b.e.state then
+				return ORDER[a.e.state] < ORDER[b.e.state]
+			end
+			if a.e.state ~= "other" then
+				local pa, pb = a.r and a.r.profit, b.r and b.r.profit
+				if pa ~= pb and (pa or pb) then
+					if pa == nil or pb == nil then
+						return pa ~= nil
+					end
+					return pa > pb
+				end
+			end
+			return a.i < b.i
+		end)
+		for i, item in ipairs(list) do
+			if i > Items.USED_ROWS then
+				lines[#lines + 1] = { left = (L["and %d more"]):format(#list - Items.USED_ROWS) .. " · " .. L["Show all"],
+					leftColor = "text2", action = { kind = "all" },
+					tip = { L["Recipes using this"], L["Opens Make › Craft with every recipe that uses it."] } }
+				break
+			end
+			lines[#lines + 1] = UsedRecipeLine(item.e, item.r, houseLabel)
+		end
+	end
+	local model = { lines = lines }
+	usedCache[itemID] = { stamp = stamp, model = model }
+	return model
+end
+
+-- A click on a row of the block: Make › Craft on that recipe (my profession), or on every recipe using the item.
+function Items.UsedClick(itemID, action)
+	if not action then
+		return false
+	end
+	local e = action.kind == "recipe" and action.entry
+	local MK = M.Make
+	if not (e and e.professionID and MK and MK.state) or tostring(e.name):find("^Recipe #") then
+		return ns.ShowRecipesUsing(itemID)
+	end
+	ns.db.settings.includeUnlearned = true
+	M.UI().profession = e.professionID
+	MK.state.query = e.name
+	M.Open("craft")
+	return true
+end
+
 -- Everything the card shows for one item (pure data).
 function Items.Card(itemID, now)
 	now = now or time()
@@ -1214,25 +1412,9 @@ function Items.Card(itemID, now)
 	end
 
 	-- Used in.
-	local used = {}
 	local usedReady = Items.WarmUsedIn()
-	for i, g in ipairs(usedReady and ns.UsedInSummary and ns.UsedInSummary(itemID) or {}) do
-		if i > 2 then
-			break
-		end
-		used[#used + 1] = { left = g.profession, right = g.mine and (L["%d recipes · %d known"]):format(g.count, g.known)
-			or (L["%d recipes"]):format(g.count) }
-	end
-	for _, e in ipairs(usedReady and ns.UsedIn and ns.UsedIn(itemID) or {}) do
-		if #used >= 4 or e.state ~= "known" then
-			break
-		end
-		used[#used + 1] = { left = e.name, right = "×" .. (e.quantity or 1), rightColor = "text2" }
-	end
-	if #used == 0 then
-		used[1] = { left = usedReady and L["No recipe uses it."] or L["Loading…"], leftColor = "text2" }
-	end
-	card.usedIn = used
+	card.usedIn = usedReady and ns.UsedIn and Items.UsedModel(itemID).lines
+		or { { left = L["Loading…"], leftColor = "text2" } }
 
 	-- Where to buy.
 	local where = {}
@@ -1271,7 +1453,7 @@ end
 ----------------------------------------------------------------------------------------------------
 
 local CARD_PAD_X, CARD_PAD_Y, FIG_TOP, FIG_GAP = 20, 14, 66, 14
-local KV_ROW = 20
+local KV_ROW, KV_ROW_SUB, KV_QTY_W = 20, 34, 34
 
 local function SetColor(fs, color)
 	local c = Style.Color(color or "text")
@@ -1487,40 +1669,85 @@ local function KVBlock(parent, title)
 	blk.rule:SetPoint("TOPLEFT", blk, "TOPLEFT", 0, -18)
 	blk.rule:SetPoint("TOPRIGHT", blk, "TOPRIGHT", 0, -18)
 	blk.rows = {}
-	function blk:Set(lines, leftWidth)
+	-- Lines: { left, right, mid, sub, leftColor, rightColor, midColor, tip, makeRow, action }. Returns the height
+	-- of the rows (a line with a sub caption is taller). mid sits left of right; a line with an action is a click.
+	-- leftWidth: a fixed width for the left text (the Auction houses block); onClick(action) answers a click.
+	function blk:Set(lines, leftWidth, onClick)
+		local y = 22
 		for i, line in ipairs(lines) do
 			local r = self.rows[i]
 			if not r then
-				r = CreateFrame("Frame", nil, self)
-				r:SetHeight(KV_ROW)
+				r = CreateFrame("Button", nil, self)
+				r:RegisterForClicks("LeftButtonUp")
+				r.right = Style.Text(r, "Figure", "text")
+				r.right:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, -3)
+				r.right:SetJustifyH("RIGHT")
+				r.mid = Style.Text(r, "Figure", "text")
+				r.mid:SetJustifyH("RIGHT")
+				r.mid:SetWordWrap(false)
 				r.left = Style.Text(r, "Small", "text")
-				r.left:SetPoint("LEFT", r, "LEFT", 0, 0)
 				r.left:SetJustifyH("LEFT")
 				r.left:SetWordWrap(false)
-				r.right = Style.Text(r, "Figure", "text")
-				r.right:SetPoint("RIGHT", r, "RIGHT", 0, 0)
-				r.right:SetJustifyH("RIGHT")
+				r.sub = Style.Text(r, "Caption", "text3")
+				r.sub:SetJustifyH("LEFT")
+				r.sub:SetWordWrap(false)
 				r.hair = Style.Rule(r, "H", C.rule)
 				r.hair:SetPoint("BOTTOMLEFT", r, "BOTTOMLEFT", 0, 0)
 				r.hair:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 0)
+				r:SetScript("OnEnter", function(row)
+					local l = row.line
+					if l and l.makeRow and M.Make and M.Make.ShowRecipeTooltip then
+						M.Make.ShowRecipeTooltip(row, l.makeRow, "profit")
+					elseif l and l.tip and l.tip[1] then
+						Style.ShowTip(row, unpack(l.tip))
+					end
+				end)
+				r:SetScript("OnLeave", function(row)
+					HideTips(row)
+				end)
+				r:SetScript("OnClick", function(row)
+					if row.line and row.line.action and onClick then
+						onClick(row.line.action)
+					end
+				end)
 				self.rows[i] = r
 			end
+			r.line = line
+			local h = line.sub and KV_ROW_SUB or KV_ROW
+			r:SetHeight(h)
 			r:ClearAllPoints()
-			r:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -22 - (i - 1) * KV_ROW)
-			r:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -22 - (i - 1) * KV_ROW)
+			r:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
+			r:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -y)
+			r.right:SetText(line.right or "")
+			SetColor(r.right, line.rightColor or "text")
+			r.mid:ClearAllPoints()
+			r.mid:SetPoint("TOPRIGHT", r, "TOPRIGHT", -(KV_QTY_W), -3)
+			r.mid:SetText(line.mid or "")
+			SetColor(r.mid, line.midColor or "text")
+			r.left:ClearAllPoints()
+			r.left:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -3)
 			if leftWidth then
 				r.left:SetWidth(leftWidth)
+			else
+				r.left:SetPoint("RIGHT", line.mid and r.mid or r.right, "LEFT", -8, 0)
 			end
 			r.left:SetText(line.left or "")
 			SetColor(r.left, line.leftColor or "text")
-			r.right:SetText(line.right or "")
-			SetColor(r.right, line.rightColor or "text")
+			r.sub:ClearAllPoints()
+			r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -17)
+			r.sub:SetPoint("RIGHT", r, "RIGHT", 0, 0)
+			r.sub:SetText(line.sub or "")
+			r.sub:SetShown(line.sub ~= nil)
+			r:EnableMouse(line.action ~= nil or line.tip ~= nil or line.makeRow ~= nil)
 			r:Show()
+			y = y + h
 		end
 		for i = #lines + 1, #self.rows do
 			self.rows[i]:Hide()
+			self.rows[i].line = nil
 		end
 		self.lines = lines
+		return y
 	end
 	return blk
 end
@@ -1779,22 +2006,26 @@ local function DrawCard(body, data, width, docked)
 	card.chart.note:SetWidth(width)
 	DrawChart(card, data.chart, width)
 	local blockTop = chartTop + (data.chart and data.chart.mode == "chart" and (Items.CHART_HEIGHT + 22) or 36)
-	local blockH = 22 + 5 * KV_ROW
 	local half = docked and width or (width - 20) / 2 -- docked: Used in over Where to buy
 	card.used:ClearAllPoints()
 	card.used:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -blockTop)
-	card.used:SetSize(half, blockH)
-	card.used:Set(data.usedIn)
+	card.used:SetSize(half, 22 + 5 * KV_ROW)
+	local usedH = card.used:Set(data.usedIn, nil, function(action)
+		Items.UsedClick(card.itemID, action)
+	end)
+	card.used:SetHeight(math.max(usedH, 22 + 5 * KV_ROW))
+	local blockH = 22 + 5 * KV_ROW
+	local usedBlockH = math.max(usedH, blockH)
 	card.where:ClearAllPoints()
 	if docked then
-		card.where:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -(blockTop + blockH + 12))
+		card.where:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -(blockTop + usedBlockH + 12))
 	else
 		card.where:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X + half + 20, -blockTop)
 	end
 	card.where:SetSize(half, blockH)
 	card.where:Set(data.where)
 	-- the card's whole height (what the scroll holds), with the Auction houses block under the other two
-	local bottom = docked and (blockTop + 2 * blockH + 12) or (blockTop + blockH)
+	local bottom = docked and (blockTop + usedBlockH + 12 + blockH) or (blockTop + math.max(usedBlockH, blockH))
 	if data.houses then
 		local housesH = 22 + #data.houses.lines * KV_ROW
 		card.houses:ClearAllPoints()
