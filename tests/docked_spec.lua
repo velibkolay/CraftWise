@@ -491,7 +491,8 @@ it("Docked Items (provisional Q1): the list across the sheet; a click swaps to t
 	-- the window: list 300 and card side by side again
 	M.SetLayout("window")
 	eq(body.left.width, 300); eq(body.left.shown, true); eq(body.card.shown, true)
-	eq(Point(body.card)[2], body); eq(Point(body.card)[4], 301)
+	eq(Point(body.card)[2], body.dscroll.child, "the card scrolls in the window too (#350)")
+	eq(Point(body.dscroll)[2], body); eq(Point(body.dscroll)[4], 301)
 	eq(tools.back.shown, false); eq(Items.searchBox.width, 300)
 end)
 
