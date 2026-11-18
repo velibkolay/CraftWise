@@ -17,6 +17,14 @@
 -- Market.DataVersion() stays the same, and a list row is priced when the scroll box first reads it
 -- (LazyRow). The page's Refresh is a timed hook ("Look up › Items: Refresh") in Settings › Debug.
 --
+-- Prices per house (#350): the card's "Auction houses" section lists every house this character can use that
+-- has a record of the item (the profit house first), with the lowest price, units, typical price and the age
+-- of each, and for the other houses what buying there and selling at the profit house nets per unit (the
+-- profit house's lowest x (1 - Market.MeasuredCut) - the other house's lowest; an unmeasured cut shows the
+-- gross difference and says so; deposits are not counted, #26 phase 3). The chip "Cheaper elsewhere" lists
+-- the items where that net is above zero, best first. Read only: it uses what scans already stored. The list
+-- is built in slices like the cache above and kept while Market.DataVersion() and Market.HouseStamp() stay.
+--
 -- Watched hook for #165: ns.ItemWatch = { List() -> itemIDs, IsWatched(itemID) -> bool, Toggle(itemID) }.
 -- Until it exists neither the chip nor the card's toggle shows.
 --
@@ -68,6 +76,9 @@ function Items.Chips()
 	end
 	chips[#chips + 1] = { key = "recipes", label = L["Your recipes"] }
 	chips[#chips + 1] = { key = "recent", label = L["Recent"] }
+	if #Items.OtherHouses() > 0 then -- provisional (#350): Veli may drop it after trying it
+		chips[#chips + 1] = { key = "elsewhere", label = L["Cheaper elsewhere"] }
+	end
 	return chips
 end
 
@@ -496,6 +507,343 @@ function Items.Key(itemID)
 	return keys[1] or itemID, keys
 end
 
+----------------------------------------------------------------------------------------------------
+-- Prices per auction house (#350)
+----------------------------------------------------------------------------------------------------
+
+-- The houses other than the profit house that this character can use and has recorded something at:
+-- { { key, label } }, own faction house first, then the neutral houses of the realm.
+function Items.OtherHouses()
+	local Mk = ns.Market
+	local profit = ns.ProfitHouse()
+	local out = {}
+	if not profit then
+		return out
+	end
+	for _, choice in ipairs(Mk.CHOICES) do
+		local key, label = Mk.HouseFor(choice)
+		if key and key ~= profit and Mk.HasData(key) then
+			out[#out + 1] = { key = key, label = Mk.HouseLabel(key) or label }
+		end
+	end
+	return out
+end
+
+-- What buying at another house and selling at the profit house leaves per unit: { copper, measured, cut }.
+-- The cut is the profit house's measured cut (Market.MeasuredCut); without one it is the gross difference
+-- (measured = false). Never a constant. nil without both prices.
+function Items.Spread(sellMin, buyMin, cut)
+	if not (sellMin and buyMin) then
+		return nil
+	end
+	if cut then
+		return { copper = math.floor(sellMin * (1 - cut) + 1e-7) - buyMin, measured = true, cut = cut }
+	end
+	return { copper = sellMin - buyMin, measured = false }
+end
+
+local function Signed(copper)
+	if copper < 0 then
+		return "−" .. ns.FormatCoins(-copper)
+	end
+	return "+" .. ns.FormatCoins(copper)
+end
+
+local function PercentText(cut)
+	return ("%g %%"):format(math.floor(cut * 1000 + 0.5) / 10)
+end
+
+local function AgeAgo(seconds)
+	return M.AgeText(math.max(0, seconds)) .. " " .. L["ago"]
+end
+
+-- The card's "Auction houses" section: nil unless a house other than the profit house has a record of the
+-- item. { title, rows = { { key, label, profit, lowest, qty, t, typical, diff } }, lines (for the block),
+-- tip }. diff: { copper, measured, cut } or { none = "profit unlisted" }, only on other houses that list it.
+function Items.HouseSection(p, now)
+	local Mk = ns.Market
+	if not p.house then
+		return nil
+	end
+	local others = {}
+	for _, h in ipairs(Mk.UsableHouses(p.key)) do
+		if h.key ~= p.house then
+			others[#others + 1] = h
+		end
+	end
+	if #others == 0 then
+		return nil
+	end
+	local list = { { key = p.house, label = p.houseLabel or Mk.HouseLabel(p.house), profit = true } }
+	for _, h in ipairs(others) do
+		list[#list + 1] = h
+	end
+	local cut = Mk.MeasuredCut(p.house)
+	local sellMin = p.current and p.current.listed and p.current.min or nil
+	local sec = { title = L["Auction houses"], rows = {}, lines = {} }
+	for _, h in ipairs(list) do
+		local cur = h.profit and p.current or Mk.Current(p.key, h.key)
+		local typ = Mk.Typical(p.key, h.key)
+		local row = { key = h.key, label = h.label, profit = h.profit, t = cur and cur.t,
+			lowest = cur and cur.listed and cur.min or nil, qty = cur and cur.listed and cur.qty or nil,
+			typical = typ.status == "ok" and typ.price or nil }
+		local parts = {}
+		if cur and cur.listed then
+			parts[#parts + 1] = (L["%d listed"]):format(cur.qty or 0)
+		elseif cur then
+			parts[#parts + 1] = L["not listed in the last full scan"]
+		else
+			parts[#parts + 1] = L["no price recorded"]
+		end
+		if cur then
+			parts[#parts + 1] = (L["seen %s"]):format(AgeAgo(now - cur.t))
+		end
+		if row.typical then
+			parts[#parts + 1] = L["typical"] .. " " .. ns.FormatCoins(row.typical)
+		end
+		sec.lines[#sec.lines + 1] = { left = h.label .. (h.profit and (" · " .. L["profit house"]) or ""),
+			right = row.lowest and ns.FormatCoins(row.lowest) or M.NoPriceText(), rightColor = not row.lowest and "text3" or nil }
+		sec.lines[#sec.lines + 1] = { left = table.concat(parts, " · "), leftColor = "text3", small = true }
+		if not h.profit and row.lowest then
+			local sellAge = p.current and (" (" .. (L["seen %s"]):format(AgeAgo(now - p.current.t)) .. ")") or ""
+			if not sellMin then
+				row.diff = { none = true }
+				sec.lines[#sec.lines + 1] = { left = (L["Not listed at %s: nothing to sell against."]):format(p.houseLabel) .. sellAge,
+					leftColor = "text3", small = true }
+			else
+				local sp = Items.Spread(sellMin, row.lowest, cut)
+				row.diff = sp
+				local left, right
+				if sp.measured then
+					left = (L["Buy here, sell at %s%s, after the %s cut"]):format(p.houseLabel, sellAge, PercentText(sp.cut))
+					right = Signed(sp.copper)
+				else
+					left = (L["Buy here, sell at %s%s: cut not measured"]):format(p.houseLabel, sellAge)
+					right = Signed(sp.copper) .. " " .. L["gross"]
+				end
+				sec.lines[#sec.lines + 1] = { left = left, leftColor = "text2", small = true, right = right,
+					rightColor = sp.copper > 0 and "nokta" or "text3" }
+			end
+		end
+		sec.rows[#sec.rows + 1] = row
+	end
+	sec.tip = {
+		L["Auction houses"],
+		L["Read from the scans already stored: no auction house is queried."],
+		L["Net = lowest at the profit house x (1 - its measured cut) - lowest here, per unit."],
+		L["Without a measured cut the difference is gross and says so."],
+		L["The scans are from different times: each price shows its age."],
+		L["Deposits are not counted yet (#26 phase 3)."],
+	}
+	return sec
+end
+
+-- "Cheaper elsewhere" (#350): items whose lowest price at another house is below what the profit house
+-- pays after its cut. Built in slices (like the cache above) over the recorded-key index, kept while
+-- Market.DataVersion() and Market.HouseStamp() stay (the first only moves with keys, the second with every
+-- scan): { stamp, rows = { { itemID, key, buyHouse, buyLabel, buyMin, buyQty, buyT, sellMin, sellT, copper,
+-- measured, cut } } } by net, best first. Items.elseBuilds counts the finished builds, for the specs.
+Items.elseBuilds = 0
+local eLatest, eJob
+local eQueued, eStarting = false, false
+
+local function ElseStamp()
+	local Mk = ns.Market
+	local house = ns.ProfitHouse()
+	return table.concat({ Mk.DataVersion(), Mk.HouseStamp(), tostring(house), tostring(house and Mk.MeasuredCut(house) or "-") }, "|")
+end
+
+local function ElseNewJob()
+	local house = ns.ProfitHouse()
+	return { stamp = ElseStamp(), stage = "index", house = house, others = Items.OtherHouses(), rows = {},
+		cut = house and ns.Market.MeasuredCut(house) or nil }
+end
+
+local function ElseItem(j, itemID)
+	local Mk = ns.Market
+	local key = (j.byItem[itemID] or {})[1] or itemID
+	if not Mk.RecordedAt(key, j.house) then
+		return
+	end
+	local sell
+	local best
+	for _, h in ipairs(j.others) do
+		if Mk.RecordedAt(key, h.key) then
+			if sell == nil then
+				local cur = Mk.Current(key, j.house)
+				sell = cur and cur.listed and cur.min and cur or false
+			end
+			if not sell then
+				return
+			end
+			local cur = Mk.Current(key, h.key)
+			if cur and cur.listed and cur.min then
+				local sp = Items.Spread(sell.min, cur.min, j.cut)
+				if sp.copper > 0 and (not best or sp.copper > best.copper) then
+					best = { itemID = itemID, key = key, buyHouse = h.key, buyLabel = h.label, buyMin = cur.min,
+						buyQty = cur.qty, buyT = cur.t, sellMin = sell.min, sellT = sell.t, copper = sp.copper,
+						measured = sp.measured, cut = sp.cut }
+				end
+			end
+		end
+	end
+	if best then
+		j.rows[#j.rows + 1] = best
+	end
+end
+
+local function ElseFinish(j)
+	table.sort(j.rows, function(a, b)
+		if a.copper ~= b.copper then
+			return a.copper > b.copper
+		end
+		return a.itemID < b.itemID
+	end)
+	j.result = { stamp = j.stamp, rows = j.rows }
+end
+
+-- Does up to budgetMs (and maxItems items) of the build; true once it is complete (j.result). A false with
+-- j.restart set says the table moved under the cursor: start over.
+local function ElseWork(j, budgetMs, maxItems)
+	local Mk = ns.Market
+	local started, handled = debugprofilestop(), 0
+	local function room()
+		return handled < maxItems and debugprofilestop() - started < budgetMs
+	end
+	if j.stage == "index" then
+		repeat
+			handled = handled + Items.SLICE_KEYS
+			if Mk.BuildIndexStep(Items.SLICE_KEYS) then
+				j.stage = "walk"
+				j.byItem = Mk.RecordedItemIDs()
+			end
+		until j.stage ~= "index" or not room()
+		if j.stage == "index" then
+			return false
+		end
+	end
+	if not j.house or #j.others == 0 then
+		ElseFinish(j)
+		return true
+	end
+	repeat
+		for _ = 1, Items.SLICE_KEYS do
+			local ok, itemID = pcall(next, j.byItem, j.cursor)
+			if not ok then
+				j.restart = true
+				return false
+			end
+			if itemID == nil then
+				ElseFinish(j)
+				return true
+			end
+			j.cursor = itemID
+			ElseItem(j, itemID)
+		end
+		handled = handled + Items.SLICE_KEYS
+	until not room()
+	return false
+end
+
+local ElseSchedule
+local ElseSlice = ns.Timed("Look up › Items: elsewhere slice", function()
+	eQueued = false
+	if not eJob then
+		return
+	end
+	if eJob.restart or eJob.stamp ~= ElseStamp() then
+		eJob = ElseNewJob() -- the data moved: start over
+	end
+	if ElseWork(eJob, Items.SLICE_MS, Items.SLICE_MAX) then
+		eLatest = eJob.result
+		eJob = nil
+		Items.elseBuilds = Items.elseBuilds + 1
+		if not eStarting and PageShown() then
+			M.Refresh()
+		end
+	else
+		ElseSchedule()
+	end
+end)
+
+function ElseSchedule()
+	if not eQueued then
+		eQueued = true
+		C_Timer.After(0, ElseSlice)
+	end
+end
+
+-- Starts (or restarts) the build unless the list is current. Returns true when it is.
+function Items.ElseWarm()
+	local stamp = ElseStamp()
+	if eLatest and eLatest.stamp == stamp then
+		return true
+	end
+	if not eJob or eJob.stamp ~= stamp then
+		eJob = ElseNewJob()
+	end
+	eStarting = true
+	ElseSchedule()
+	eStarting = false
+	return eLatest ~= nil and eLatest.stamp == stamp
+end
+
+-- The whole build now, in this frame (the specs).
+function Items.ElseWarmNow()
+	if Items.ElseWarm() then
+		return
+	end
+	local j = eJob or ElseNewJob()
+	while not ElseWork(j, math.huge, math.huge) do
+		j = ElseNewJob()
+	end
+	eJob = nil
+	eLatest = j.result
+	Items.elseBuilds = Items.elseBuilds + 1
+end
+
+-- The list's rows: the current list, else the older one, nil before the first.
+function Items.ElseItems()
+	Items.ElseWarm()
+	return eLatest and eLatest.rows or nil
+end
+
+-- One row of the "Cheaper elsewhere" list, in the shape of the other rows plus a tip.
+function Items.ElseRow(e, now)
+	local info = ns.Market.ItemInfo(e.itemID) or {}
+	local sellLabel = ns.ProfitHouse() and ns.Market.HouseLabel((ns.ProfitHouse())) or L["the auction house"]
+	local buyAge, sellAge = AgeAgo(now - e.buyT), AgeAgo(now - e.sellT)
+	local tip = {
+		DisplayName(e.itemID),
+		(L["Buy at %s: %s, %d listed, seen %s"]):format(e.buyLabel, ns.FormatMoney(e.buyMin, true), e.buyQty or 0, buyAge),
+		(L["Sell at %s: %s, seen %s"]):format(sellLabel, ns.FormatMoney(e.sellMin, true), sellAge),
+		e.measured and (L["Net per unit after the %s cut: %s"]):format(PercentText(e.cut), Signed(e.copper))
+			or (L["Cut not measured: gross %s per unit"]):format(Signed(e.copper)),
+		L["Deposits are not counted yet (#26 phase 3)."],
+	}
+	return { key = e.itemID, itemID = e.itemID, name = DisplayName(e.itemID), quality = info.q, icon = info.i,
+		note = ("%s %s ×%d · %s"):format(e.buyLabel, ns.FormatCoins(e.buyMin), e.buyQty or 0, M.AgeText(math.max(0, now - e.buyT))),
+		priceText = Signed(e.copper) .. (e.measured and "" or "*"), net = e.copper,
+		changeText = ("%s %s · %s"):format(sellLabel, ns.FormatCoins(e.sellMin), M.AgeText(math.max(0, now - e.sellT))),
+		changeColor = "text3", tip = tip, elsewhere = e }
+end
+
+-- The left list on the "Cheaper elsewhere" chip; same shape as ListModel's.
+function Items.ElseModel(now, chip)
+	local items = Items.ElseItems()
+	local chips = Items.Chips()
+	if not items then
+		return { rows = {}, empty = L["Loading…"], more = 0, chips = chips, chip = chip, searching = false, loading = true }
+	end
+	local rows = {}
+	for i = 1, math.min(#items, Items.LIST_MAX) do
+		rows[i] = Items.ElseRow(items[i], now)
+	end
+	return { rows = rows, more = math.max(0, #items - Items.LIST_MAX), chips = chips, chip = chip, searching = false,
+		empty = (L["Nothing is cheaper at another house than the net price at %s. Scan another auction house."])
+			:format(ns.ProfitHouse() and ns.Market.HouseLabel((ns.ProfitHouse())) or L["the auction house"]) }
+end
+
 -- 7-day change of the typical price: first and last day with a typical price in the series, in whole
 -- percent; nil with fewer than two such days.
 function Items.Change(series)
@@ -616,6 +964,9 @@ function Items.ListModel(now)
 	local searching = query:match("%S") ~= nil
 	local chip = Items.Chip()
 	Items.Warm() -- the page needs the key index, whichever chip shows
+	if chip == "elsewhere" and not searching then
+		return Items.ElseModel(now, chip)
+	end
 	local ids, more
 	if searching then
 		ids, more = Items.Search(query)
@@ -1034,19 +1385,14 @@ function Items.Card(itemID, now)
 	local chText, chColor = Items.ChangeText(pct)
 	fig.change = { text = Style.Hex(chColor) .. chText .. "|r", color = chColor, pct = pct,
 		tip = { L["7 days"], L["First to last day with a typical price, last 7 days."] } }
-	-- Other houses and Auctionator: on the Typical tip, as Records › Market listed them.
-	for _, h in ipairs(Mk.Houses(p.key)) do
-		if h.key ~= p.house then
-			local q = Mk.Quote(p.key, h.key, "typical")
-			table.insert(fig.typical.tip, ("%s: %s"):format(h.label, q and ns.FormatMoney(q.copper, true) or L["no price"]))
-		end
-	end
+	-- Other houses have their own section below (#350); Auctionator stays on the Typical tip.
 	local exported = Mk.AuctionatorExport and Mk.AuctionatorExport(itemID)
 	if exported then
 		table.insert(fig.typical.tip, ("%s: %s, %s %s"):format(ns.AUCTIONATOR_LABEL, ns.FormatMoney(exported.copper, true),
 			M.AgeText(now - exported.t), L["ago"]))
 	end
 	card.figures = fig
+	card.houses = Items.HouseSection(p, now)
 
 	-- Chart.
 	if p.lastOnly then
@@ -1179,7 +1525,9 @@ local function BuildListRow(page, b)
 		Items.ClickRow(self.row, mouse, self)
 	end)
 	b:SetScript("OnEnter", function(self)
-		if self.row then
+		if self.row and self.row.tip then
+			Style.ShowTip(self, unpack(self.row.tip))
+		elseif self.row then
 			ItemTip(self, self.row.itemID)
 		end
 	end)
@@ -1267,7 +1615,8 @@ end
 
 local function DrawList(body, list)
 	local left = body.left
-	local x = 16
+	local x, y, rows = 16, 10, 1
+	local avail = (left.GetWidth and left:GetWidth() or 0) > 0 and left:GetWidth() or Items.LIST_WIDTH
 	for i, chip in ipairs(list.chips) do
 		local b = left.chips[i]
 		if not b then
@@ -1284,11 +1633,16 @@ local function DrawList(body, list)
 		b.key = chip.key
 		b:SetLabel(chip.label)
 		b:SetOn(chip.key == list.chip and not list.searching)
+		-- a chip that doesn't fit in the row goes on the next one (provisional, #350: four chips)
+		if x > 16 and x + (b.cwWidth or 80) > avail - 12 then
+			x, y, rows = 16, y + 32, rows + 1
+		end
 		b:ClearAllPoints()
-		b:SetPoint("TOPLEFT", left, "TOPLEFT", x, -10)
+		b:SetPoint("TOPLEFT", left, "TOPLEFT", x, -y)
 		b:Show()
 		x = x + (b.cwWidth or 80) + 6
 	end
+	left.box:SetPoint("TOPLEFT", left, "TOPLEFT", 0, -(12 + 32 * rows))
 	for i = #list.chips + 1, #left.chips do
 		left.chips[i]:Hide()
 	end
@@ -1317,7 +1671,8 @@ local function KVBlock(parent, title)
 	blk.rows = {}
 	-- Lines: { left, right, mid, sub, leftColor, rightColor, midColor, tip, makeRow, action }. Returns the height
 	-- of the rows (a line with a sub caption is taller). mid sits left of right; a line with an action is a click.
-	function blk:Set(lines, onClick)
+	-- leftWidth: a fixed width for the left text (the Auction houses block); onClick(action) answers a click.
+	function blk:Set(lines, leftWidth, onClick)
 		local y = 22
 		for i, line in ipairs(lines) do
 			local r = self.rows[i]
@@ -1371,7 +1726,11 @@ local function KVBlock(parent, title)
 			SetColor(r.mid, line.midColor or "text")
 			r.left:ClearAllPoints()
 			r.left:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -3)
-			r.left:SetPoint("RIGHT", line.mid and r.mid or r.right, "LEFT", -8, 0)
+			if leftWidth then
+				r.left:SetWidth(leftWidth)
+			else
+				r.left:SetPoint("RIGHT", line.mid and r.mid or r.right, "LEFT", -8, 0)
+			end
 			r.left:SetText(line.left or "")
 			SetColor(r.left, line.leftColor or "text")
 			r.sub:ClearAllPoints()
@@ -1495,6 +1854,16 @@ local function BuildCard(body)
 	card.whereHit:SetPoint("TOPRIGHT", card.where, "TOPRIGHT", 0, 0)
 	card.whereHit:SetHeight(18)
 
+	-- Auction houses (#350): one block under the other two, over the full width.
+	card.houses = KVBlock(card, L["Auction houses"])
+	card.housesHit = TipArea(card.houses, function()
+		local sec = card.data and card.data.houses
+		return sec and sec.tip
+	end)
+	card.housesHit:SetPoint("TOPLEFT", card.houses, "TOPLEFT", 0, 0)
+	card.housesHit:SetPoint("TOPRIGHT", card.houses, "TOPRIGHT", 0, 0)
+	card.housesHit:SetHeight(18)
+
 	card.empty = Style.Text(card, "Body", "text3")
 	card.empty:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -CARD_PAD_Y - 6)
 	card.empty:SetJustifyH("LEFT")
@@ -1594,7 +1963,10 @@ local function DrawCard(body, data, width, docked)
 		f:SetShown(shown)
 	end
 	card.empty:SetShown(not shown)
+	card.houses:SetShown(shown and data.houses ~= nil)
+	card.housesHit:SetShown(shown and data.houses ~= nil)
 	if not shown then
+		card.contentHeight = 0
 		card.itemID = nil
 		card.watch:Hide()
 		card.chart:Hide()
@@ -1638,7 +2010,7 @@ local function DrawCard(body, data, width, docked)
 	card.used:ClearAllPoints()
 	card.used:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -blockTop)
 	card.used:SetSize(half, 22 + 5 * KV_ROW)
-	local usedH = card.used:Set(data.usedIn, function(action)
+	local usedH = card.used:Set(data.usedIn, nil, function(action)
 		Items.UsedClick(card.itemID, action)
 	end)
 	card.used:SetHeight(math.max(usedH, 22 + 5 * KV_ROW))
@@ -1652,8 +2024,17 @@ local function DrawCard(body, data, width, docked)
 	end
 	card.where:SetSize(half, blockH)
 	card.where:Set(data.where)
-	-- the card's whole height (docked: what the scroll holds)
-	card.contentHeight = (docked and (blockTop + usedBlockH + 12 + blockH) or (blockTop + math.max(usedBlockH, blockH))) + CARD_PAD_Y
+	-- the card's whole height (what the scroll holds), with the Auction houses block under the other two
+	local bottom = docked and (blockTop + usedBlockH + 12 + blockH) or (blockTop + math.max(usedBlockH, blockH))
+	if data.houses then
+		local housesH = 22 + #data.houses.lines * KV_ROW
+		card.houses:ClearAllPoints()
+		card.houses:SetPoint("TOPLEFT", card, "TOPLEFT", CARD_PAD_X, -(bottom + 14))
+		card.houses:SetSize(width, housesH)
+		card.houses:Set(data.houses.lines, width - 150)
+		bottom = bottom + 14 + housesH
+	end
+	card.contentHeight = bottom + CARD_PAD_Y
 end
 
 -- Search box in the sub bar (board: 300 x 26, 1 unit C.text border).
@@ -1752,17 +2133,28 @@ M.RegisterPage({
 		left.empty:SetWidth(Items.LIST_WIDTH - 32)
 		left.rule:Show()
 		left:Show()
-		if body.dscroll then
-			body.dscroll:Hide()
+		-- The card scrolls like the docked one: the Auction houses section can make it taller than the window.
+		if not body.dscroll then
+			body.dscroll = M.Docked.Scroll(body)
 		end
-		card:SetParent(body)
+		local scroll = body.dscroll
+		scroll:ClearAllPoints()
+		scroll:SetPoint("TOPLEFT", body, "TOPLEFT", Items.LIST_WIDTH + 1, 0)
+		scroll:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+		local cardWidth = width + 2 * CARD_PAD_X
+		card:SetParent(scroll.child)
 		card:ClearAllPoints()
-		card:SetPoint("TOPLEFT", body, "TOPLEFT", Items.LIST_WIDTH + 1, 0)
-		card:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+		card:SetPoint("TOPLEFT", scroll.child, "TOPLEFT", 0, 0)
+		card:SetWidth(cardWidth)
+		scroll.child:SetWidth(cardWidth)
+		scroll:Show()
 		card:Show()
 		Items.rowNameWidth = nil
 		DrawList(body, model.list)
 		DrawCard(body, model.card, width)
+		local h = math.max(card.contentHeight or 0, 1)
+		card:SetHeight(h)
+		scroll:SetContentHeight(h)
 	end),
 })
 
@@ -1786,9 +2178,10 @@ function Items.DockedRefresh(body, ctx, model)
 	left.rule:Hide()
 	if not body.dscroll then
 		body.dscroll = M.Docked.Scroll(body)
-		body.dscroll:SetAllPoints(body)
 	end
 	local scroll = body.dscroll
+	scroll:ClearAllPoints()
+	scroll:SetAllPoints(body)
 	if showCard then
 		card:SetParent(scroll.child)
 		card:ClearAllPoints()
