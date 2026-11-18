@@ -553,6 +553,12 @@ local function PercentText(cut)
 	return ("%g %%"):format(math.floor(cut * 1000 + 0.5) / 10)
 end
 
+-- " · via Velikopter Kitchenchant" for a price another of your characters scanned (#356), else nothing.
+local function Via(houseKey, t)
+	local who = ns.Market.SyncedVia and ns.Market.SyncedVia(houseKey, t)
+	return who and (" · " .. L["via"] .. " " .. who) or ""
+end
+
 local function AgeAgo(seconds)
 	return M.AgeText(math.max(0, seconds)) .. " " .. L["ago"]
 end
@@ -1350,7 +1356,7 @@ function Items.Card(itemID, now)
 	end
 	local cur = p.current
 	if cur and cur.listed then
-		local tip = { L["Lowest now"], (L["Seen %s ago at %s."]):format(M.AgeText(now - cur.t), houseLine) }
+		local tip = { L["Lowest now"], (L["Seen %s ago at %s."]):format(M.AgeText(now - cur.t), houseLine) .. Via(p.house, cur.t) }
 		if p.depth then
 			tip[#tip + 1] = L["Cheapest"] .. ": " .. Mk.DepthText(p.depth, 5, function(c) return ns.FormatMoney(c, true) end)
 		end
@@ -1361,7 +1367,7 @@ function Items.Card(itemID, now)
 		fig.lowest = { text = ns.FormatCoins(cur.min), tip = tip }
 	elseif cur then
 		fig.lowest = { text = M.NoPriceText(), tip = { L["Lowest now"], L["Not listed in the last full scan"],
-			(L["Last seen at %s, %s ago."]):format(ns.FormatMoney(cur.min, true), M.AgeText(now - cur.t)) } }
+			(L["Last seen at %s, %s ago."]):format(ns.FormatMoney(cur.min, true), M.AgeText(now - cur.t)) .. Via(p.house, cur.t) } }
 	else
 		fig.lowest = { text = M.NoPriceText(), tip = { L["Lowest now"], (L["Nothing recorded at %s."]):format(houseLine) } }
 	end

@@ -254,7 +254,9 @@ function ns.SaleAgeText(sale)
 	local quote = sale and sale.quote
 	if quote and quote.t then
 		local seconds = math.max(0, time() - quote.t)
-		return ns.Market.FormatAge(seconds) .. " old", seconds > DAY
+		-- A price another of your characters scanned says so (#356): "3h old via Velikopter Kitchenchant".
+		local via = ns.Market.SyncedVia and ns.Market.SyncedVia(quote.house, quote.t)
+		return ns.Market.FormatAge(seconds) .. " old" .. (via and (" via " .. via) or ""), seconds > DAY
 	elseif sale and sale.age then
 		return (sale.age == 0 and "today" or ("%dd old"):format(sale.age)), sale.age >= 1
 	end

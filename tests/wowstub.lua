@@ -522,6 +522,23 @@ function ClearCursor() stub.cursor = nil end
 stub.faction, stub.realm, stub.zone, stub.subzone, stub.locale = "Horde", "PvP", "Orgrimmar", "", "enUS"
 function UnitFactionGroup() return stub.faction end
 function GetRealmName() return stub.realm end
+
+-- Addon messages (#356): what the addon sends is in stub.addonSent ({ prefix, text, chatType, target }); a spec
+-- sets stub.addonResult to what the client answers (nil = sent; 3 = throttled) and delivers a message to the
+-- addon with stub.Fire("CHAT_MSG_ADDON", prefix, text, "WHISPER", sender).
+stub.addonSent, stub.addonPrefixes, stub.addonResult = {}, {}, nil
+C_ChatInfo = {
+	RegisterAddonMessagePrefix = function(prefix) stub.addonPrefixes[prefix] = true return 0 end,
+	SendAddonMessage = function(prefix, text, chatType, target)
+		assert(#text <= 255, "addon message over 255 bytes: " .. #text)
+		assert(#prefix <= 16, "prefix over 16 bytes")
+		local r = stub.addonResult
+		if r == nil or r == 0 then
+			stub.addonSent[#stub.addonSent + 1] = { prefix = prefix, text = text, chatType = chatType, target = target }
+		end
+		return r
+	end,
+}
 function GetRealZoneText() return stub.zone end
 function GetSubZoneText() return stub.subzone end
 -- Blizzard's Minimap_Update text: the subzone, else the zone.
