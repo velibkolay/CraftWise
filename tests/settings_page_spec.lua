@@ -45,7 +45,7 @@ it("Settings: the gear opens the page; the groups of the spec in its order; the 
 	eq(M.shown.page, "settings"); eq(M.shown.state, "custom")
 	local labels = {}
 	for _, g in ipairs(M.Settings.Groups()) do labels[#labels + 1] = g.label end
-	eq(table.concat(labels, ","), "Look,Prices,Tooltips,Bags and loot,Loot toast,Class trainer,Sale alert,Vendor loops,AH to vendor flips,Buying at the AH,Disenchant,Farm tracker,Fishing,AH rule,Interface,Snapshot,Debug")
+	eq(table.concat(labels, ","), "Look,Prices,Tooltips,Bags and loot,Loot toast,Class trainer,Sale alert,Vendor loops,AH to vendor flips,Buying at the AH,Disenchant,Farm tracker,Fishing,AH rule,Interface,Snapshot,Linked characters,Debug")
 	local body = M.SlotsOf("settings").body
 	eq(body.nav.width, 170)
 	local C = ns.Style.C
@@ -234,6 +234,18 @@ it("Settings › AH rule: percent and copper steps, the example, Defaults (the o
 	local d = row("defaults").holder.buttons[1]
 	d.scripts.OnClick(d)
 	eq(ns.db.settings.ahMinPercent, 20); eq(ns.db.settings.ahMinCopper, 10)
+end)
+
+it("Settings › Linked characters (#356): the status, Add a character and Sync now", function()
+	local ns, stub = LoadAddon()
+	ns.Link.Add("Kitchenchant")
+	local g = ns.Main.Settings.Group("link")
+	local keys = {}
+	for _, row in ipairs(g.rows) do keys[#keys + 1] = row.key end
+	eq(table.concat(keys, ","), "about,buttons,status,remove")
+	assert(g.rows[3].text():find("Velikopter Kitchenchant", 1, true) or g.rows[3].text():find("Kitchenchant", 1, true), g.rows[3].text())
+	eq(g.rows[2].buttons[1].text, "Add a character")
+	eq(g.rows[2].buttons[2].text, "Sync now")
 end)
 
 it("Settings › Snapshot: Save, Reload UI, when it was saved and what it holds", function()

@@ -799,6 +799,12 @@ SlashCmdList.CRAFTWISE = function(input)
 		Open("crates")
 		return
 	end
+	local linkArg = msg:match("^link%f[%A]%s*(.*)$")
+	if linkArg and ns.Link then
+		ns.Link.Slash(rawArg)
+		OpenSettings("link")
+		return
+	end
 	if msg == "snapshot" then
 		if ns.Snapshot then
 			ns.Snapshot.Slash()

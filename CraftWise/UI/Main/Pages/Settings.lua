@@ -32,6 +32,12 @@ local function S()
 	return ns.db.settings
 end
 
+ns.Listen("LINK_CHANGED", function()
+	if M.Refresh then
+		M.Refresh()
+	end
+end)
+
 local function Changed(...)
 	for _, name in ipairs({ ... }) do
 		ns.Notify(name)
@@ -666,6 +672,25 @@ local function Groups()
 			return Set.SnapshotLine()
 		end },
 		{ key = "holds", kind = "grid", label = L["What it holds"], items = Set.SnapshotItems },
+	} }
+
+	-- Linked characters (#356, Link.lua): live price sync with your own characters of another account.
+	groups[#groups + 1] = { key = "link", label = L["Linked characters"], rows = {
+		{ key = "about", kind = "text", label = "", text = function()
+			return L["Characters of your other WoW account, online at the same time on this realm and faction. Only the characters you list are heard; add this character on the other account too. New prices travel as addon messages; the accounts' saved files stay apart."]
+		end },
+		{ key = "buttons", kind = "buttons", label = L["Linked characters"], buttons = {
+			{ key = "add", text = L["Add a character"], onClick = function() ns.Link.Prompt() end,
+				tip = L["Type the name or surname of the other account's character."] },
+			{ key = "sync", text = L["Sync now"], onClick = function()
+				ns.Link.SyncNow()
+				M.Refresh()
+			end, tip = L["Asks every linked character for the prices it has that you lack."] },
+		} },
+		{ key = "status", kind = "text", label = L["Status"], text = function() return ns.Link.StatusText() end },
+		{ key = "remove", kind = "text", label = "", text = function()
+			return L["Remove one with /craftwise link remove <name>."]
+		end },
 	} }
 
 	-- Debug (#194): measure what CraftWise costs while you open the bags or a vendor (Perf.lua).

@@ -3199,10 +3199,12 @@ local function MergeItem(job, key, perHouse)
 	for houseKey, packed in pairs(perHouse) do
 		job.entries = job.entries + 1
 		if type(packed) == "string" and db.houses[houseKey] then
+			local before = job.changed
 			local ok = pcall(MergeStored, job, itemKey, houseKey, packed)
 			if not ok then
 				job.bad = job.bad + 1
 			end
+			job.priced = (job.priced or 0) + job.changed - before
 		else
 			job.bad = job.bad + 1
 		end
@@ -3474,6 +3476,187 @@ function M.LastSynced(houseKey)
 	local list = db and houseKey and db.syncScans[houseKey]
 	local last = list and list[#list]
 	return last and last.t or nil, last and last.machine or nil
+end
+
+----------------------------------------------------------------------------------------------------
+-- Live sync between own characters (#356, Link.lua). The transport is Link.lua; the data side is here and
+-- reuses the merge of the companion's file (#241): a batch the other character sent has the same shape as
+-- CraftWiseSync.market, so MergeStored decides everything (newer `last` wins, raw points by `t`, days with
+-- more points win, outside the scope `last` only) and a merged entry decodes like a recorded one.
+----------------------------------------------------------------------------------------------------
+
+-- When the own full scan at a house last finished; nil when there was none. Scans of the other character
+-- (db.syncScans) never count.
+function M.LastFullScan(houseKey)
+	local list = db and houseKey and db.scans[houseKey]
+	for i = #(list or {}), 1, -1 do
+		if list[i].kind == "full" then
+			return list[i].t
+		end
+	end
+	return nil
+end
+
+-- The houses recorded, house key -> house record (read only).
+function M.HouseKeys()
+	return db and db.houses or {}
+end
+
+-- Where a price of `t` at a house came from, when a character of another account scanned it: the name that
+-- sent the scan (db.syncScans[house].machine). An entry's `last.t` is the scan's start, the scan is logged at
+-- its end, so a scan logged within SYNC_SCAN_SPAN after `t` is the one. nil when an own scan fits as well
+-- (can't tell) or none does.
+M.SYNC_SCAN_SPAN = 7200
+function M.SyncedVia(houseKey, t)
+	local list = db and houseKey and t and db.syncScans[houseKey]
+	if not list or #list == 0 then
+		return nil
+	end
+	local function near(scans)
+		for i = #(scans or {}), 1, -1 do
+			local s = scans[i]
+			if s.t >= t and s.t - t <= M.SYNC_SCAN_SPAN then
+				return s
+			end
+		end
+	end
+	if near(db.scans[houseKey]) then
+		return nil
+	end
+	local s = near(list)
+	return s and s.machine or nil
+end
+
+-- t of the `last` of a packed entry (the text of one record); nil when it has none.
+function M.EntryTime(packed)
+	return type(packed) == "string" and StoredLastT(packed) or nil
+end
+
+-- The part of an entry the other side lacks: `last`, the raw points after `since` and the days from the day
+-- of `since`. Without `since` (or for a last-only entry) the entry as it is. Decodes the same as an entry.
+local function DeltaPacked(stored, since)
+	if since <= 0 or IsLastOnly(stored) then
+		return type(stored) == "string" and stored or M.EncodeEntry(stored)
+	end
+	local e = type(stored) == "string" and M.DecodeEntry(stored) or stored
+	local out = { last = e.last, raw = {}, days = {} }
+	for _, p in ipairs(e.raw) do
+		if p.t > since then
+			out.raw[#out.raw + 1] = p
+		end
+	end
+	local first = DayNumber(since)
+	for day, d in pairs(e.days) do
+		if day >= first then
+			out.days[day] = d
+		end
+	end
+	return M.EncodeEntry(out)
+end
+
+local function Escape(text)
+	return (text:gsub("[%%~\t]", function(c)
+		return ("%%%02X"):format(c:byte())
+	end))
+end
+
+function M.UnescapeText(text)
+	return (text:gsub("%%(%x%x)", function(h)
+		return string.char(tonumber(h, 16))
+	end))
+end
+
+-- Starts a delta: everything recorded at the houses of `realm` (by name) with a `last` newer than the
+-- house's `since` (house -> t; none: everything). Read it with M.DeltaNext. The scans are the own ones only
+-- (db.scans), so what a character sent comes back to none.
+function M.DeltaStart(since, realm)
+	local state = { since = since or {}, realm = realm, keys = {}, at = 0, seenInfo = {}, scans = {} }
+	if not db then
+		return state
+	end
+	local prefix = realm .. "|"
+	for houseKey, list in pairs(db.scans) do
+		if houseKey:sub(1, #prefix) == prefix then
+			for _, s in ipairs(list) do
+				if s.t > (state.since[houseKey] or 0) then
+					state.scans[#state.scans + 1] = { houseKey, s }
+				end
+			end
+		end
+	end
+	for key in pairs(db.items) do
+		state.keys[#state.keys + 1] = key
+	end
+	return state
+end
+
+-- Up to `maxEntries` entries of the delta as record texts (tab-separated fields, see Link.lua):
+--   s <house> <t> <kind> <items> <lastOnly>   an own scan
+--   e <house> <itemKey> <packed>              one entry
+--   f <itemID> <packed info>                  item info of an item sent
+--   n <itemID> <escaped name>                 its name
+-- Returns the list and whether the delta is finished.
+function M.DeltaNext(state, maxEntries)
+	local out = {}
+	for _, pair in ipairs(state.scans) do
+		local s = pair[2]
+		out[#out + 1] = ("s\t%s\t%d\t%s\t%d\t%d"):format(pair[1], s.t, s.kind, s.items or 0, s.lastOnly or 0)
+	end
+	state.scans = {}
+	local prefix, taken = state.realm .. "|", 0
+	while state.at < #state.keys and taken < maxEntries do
+		state.at = state.at + 1
+		local key = state.keys[state.at]
+		local perItem = db.items[key]
+		local sent = false
+		for houseKey, stored in pairs(perItem or {}) do
+			local t = houseKey:sub(1, #prefix) == prefix and StoredLastT(stored) or nil
+			local since = state.since[houseKey] or 0
+			if t and t > since then
+				local ok, packed = pcall(DeltaPacked, stored, since)
+				if ok then
+					out[#out + 1] = ("e\t%s\t%s\t%s"):format(houseKey, tostring(key), packed)
+					sent = true
+				end
+			end
+		end
+		taken = taken + 1
+		local itemID = ItemIDOfKey(key)
+		if sent and not state.seenInfo[itemID] then
+			state.seenInfo[itemID] = true
+			local info, name = db.itemInfo[itemID], db.names[itemID]
+			if type(info) == "string" then
+				out[#out + 1] = ("f\t%d\t%s"):format(itemID, info)
+			end
+			if type(name) == "string" and name ~= "" then
+				out[#out + 1] = ("n\t%d\t%s"):format(itemID, Escape(name))
+			end
+		end
+	end
+	return out, state.at >= #state.keys
+end
+
+-- Merges what another character of the player sent (`source` has the shape of CraftWiseSync.market: houses,
+-- items, names, itemInfo, scans) at once; a batch is a few dozen entries. `machine` is the sender's name,
+-- kept on its scans. Returns { entries, priced (entries that changed), changed, bad }.
+function M.MergeIncoming(source, machine)
+	if not db then
+		return { entries = 0, priced = 0, changed = 0, bad = 0 }
+	end
+	for _, list in pairs(source.scans or {}) do
+		for _, s in ipairs(list) do
+			s.machine = machine
+		end
+	end
+	local job = { source = source, stage = 1, now = time(), entries = 0, changed = 0, bad = 0, same = 0, skipped = 0,
+		decoded = 0, ms = 0, priced = 0 }
+	while SyncStep(job) do
+	end
+	if job.changed > 0 then
+		syncVersion = syncVersion + 1
+		ns.Notify("PRICES_CHANGED", "sync")
+	end
+	return job
 end
 
 ----------------------------------------------------------------------------------------------------
