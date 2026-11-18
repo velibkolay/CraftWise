@@ -34,7 +34,7 @@ local function setup(opts)
 	return ns, stub
 end
 
-local function stack(id, n) return { itemID = id, stackCount = n, quality = 1 } end
+local function stack(id, n, q) return { itemID = id, stackCount = n, quality = q or 1 } end
 
 it("the cheapest slot wins: a partial stack of 3 beats a full stack of 20 of the same item", function()
 	local ns = setup({ bag0 = { stack(LEATHER, 20), stack(LEATHER, 3), stack(BOOTS, 1) } })
@@ -274,4 +274,22 @@ it("the Bags page shows the suggestion and its button only while no slot is free
 	model = P.Model({ prices = {} })
 	eq(P.free, nil)
 	assert(not model.footer:find("Delete Light Leather", 1, true))
+end)
+
+it("an unmarked grey item counts as junk; Keep or Sell on AH on a grey item wins; quest items never", function()
+	local ns = setup({ bag0 = { stack(LEATHER, 3, 0), stack(LINEN, 20) } })
+	local plan = ns.Loot.Suggest()
+	eq(plan.itemID, LEATHER, "an unmarked grey qualifies"); eq(plan.count, 3)
+	eq(ns.Loot.Delete(plan), true, "and the delete re-check agrees")
+	local ns2 = setup({ bag0 = { stack(LEATHER, 3, 0) } })
+	ns2.ToggleKeep(LEATHER)
+	eq(ns2.Loot.Suggest(), nil, "a grey marked Keep is never suggested")
+	ns2.SetItemState(LEATHER, "auction")
+	eq(ns2.Loot.Suggest(), nil, "nor one marked Sell on AH")
+	ns2.SetItemState(LEATHER, "normal")
+	assert(ns2.Loot.Suggest(), "Normal clears the marks: grey again")
+	local ns3 = setup({ bag0 = { stack(QUEST, 1, 0) } })
+	eq(ns3.Loot.Suggest(), nil, "a grey quest item never qualifies")
+	local ns4 = setup({ bag0 = { stack(LEATHER, 3, 1) } })
+	eq(ns4.Loot.Suggest(), nil, "a white item needs the Junk mark")
 end)

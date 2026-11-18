@@ -360,7 +360,7 @@ local function Groups()
 				ns.Notify("UPGRADES_CHANGED")
 			end },
 		{ key = "junkSuggest", kind = "check", label = L["Full bags"], text = L["Suggest a junk item to delete when bags are full"],
-			sub = function() return L["Only items you marked Junk. Deleting asks first and needs a click."] end,
+			sub = function() return L["Items you marked Junk, and grey items you did not mark. Deleting asks first and needs a click."] end,
 			get = function() return ns.Loot.SuggestEnabled() end, set = function(v) ns.Loot.SetSuggestEnabled(v) end },
 		{ key = "fastLoot", kind = "check", label = L["Fast auto-loot"], text = L["On"],
 			sub = function()

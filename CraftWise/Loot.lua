@@ -13,7 +13,7 @@
 --   * No free bag slot: items are left in the window, coins and currency are still taken, one message names
 --     what is left. The same message appears once if the client reports a full bag part-way.
 --   * Bags full (#352): the message also says how to free a slot, in this order: stack two partial stacks of one
---     item into fewer slots, else delete the cheapest slot of an item YOU marked Junk (vendor price x count,
+--     item into fewer slots, else delete the cheapest slot of an item YOU marked Junk, or an unmarked grey one (vendor price x count,
 --     prices from the client only; an item whose price is not loaded is left out; no price at all = worth 0 and
 --     first; Keep, quest items, the reagent bag, the bank and special bags are never touched). A small panel
 --     shows it with one button. Nothing moves or deletes without a click, one item per click; deleting asks
@@ -158,7 +158,7 @@ function Loot.Scan()
 				local item = C_Container.GetContainerItemInfo(bag, slot)
 				if item and item.itemID then
 					slots[#slots + 1] = { bag = bag, slot = slot, itemID = item.itemID, count = item.stackCount or 1,
-						locked = item.isLocked }
+						locked = item.isLocked, quality = item.quality }
 				end
 			end
 		end
@@ -177,6 +177,20 @@ end
 
 local function IsQuest(itemID)
 	return C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID)) == 12
+end
+
+-- Junk for this suggestion (Veli, #352): an item marked Junk, or a grey (poor quality) item nobody marked.
+-- An explicit mark wins: Keep or Sell on AH is never suggested ("Normal" clears marks, so it reads as unmarked).
+-- Quest items never qualify.
+local function Qualifies(itemID, quality)
+	local db = ns.db
+	if not db or (db.keep and db.keep[itemID]) or IsQuest(itemID) then
+		return false
+	end
+	if db.junk and db.junk[itemID] then
+		return true
+	end
+	return quality == 0 and not (db.sellAH and db.sellAH[itemID])
 end
 
 local function Coins(copper)
@@ -231,10 +245,9 @@ local function Order(c)
 end
 
 local function DeletePlan(slots, lootValue)
-	local junk, keep = ns.db and ns.db.junk or {}, ns.db and ns.db.keep or {}
 	local best, pending = nil, 0
 	for _, s in ipairs(slots) do
-		if junk[s.itemID] and not keep[s.itemID] and not s.locked and not IsQuest(s.itemID) then
+		if Qualifies(s.itemID, s.quality) and not s.locked then
 			local each = ns.GetVendorSellPrice(s.itemID)
 			if each == nil then
 				pending = pending + 1
@@ -360,10 +373,9 @@ function Loot.Delete(plan)
 	if not plan or plan.kind ~= "delete" then
 		return false
 	end
-	local junk, keep = ns.db and ns.db.junk or {}, ns.db and ns.db.keep or {}
 	local item = C_Container.GetContainerItemInfo(plan.bag, plan.slot)
 	if not (item and item.itemID == plan.itemID and (item.stackCount or 1) == plan.count and not item.isLocked
-		and junk[plan.itemID] and not keep[plan.itemID] and not IsQuest(plan.itemID)) then
+		and Qualifies(plan.itemID, item.quality)) then
 		ns.Print("The bags changed, nothing was deleted.")
 		return false
 	end

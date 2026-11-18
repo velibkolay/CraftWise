@@ -1263,6 +1263,14 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 - [ ] Find an item search row with quantity above 1 (several identical auctions, e.g. a plan or pattern listed by many sellers). The panel's "Listed now" shows "1 × price · N listed, one per purchase" and the Buy button says "Buy 1 for <the buyout>", never the quantity.
 - [ ] With the line's max under that buyout nothing is bought, whatever N is. At or above it one press buys one item and the amount taken is exactly the buyout (check the gold). Compare with Blizzard's own AH list: quantity column = N, buyout column = the same price.
 
+## Look up > Items: price per auction house and "Cheaper elsewhere" (#350)
+- [ ] After a Gadgetzan scan: Look up > Items, search "Major Stamina" and open the card. A section "Auction houses" sits under Used in / Where to buy with the profit house first ("Horde AH · profit house"), then Gadgetzan: lowest price, units listed, how long ago each was seen, the typical price when there is history, and a line "Buy here, sell at Horde AH (seen N h ago), after the 5 % cut" with the net per unit (about +18g 69s at the numbers of 18 Nov). Hover the section title: the tip says nothing is queried, how the net is worked out, and that deposits are not counted.
+- [ ] Same card while the profit house has no measured cut (a fresh SavedVariables, or another house as profit house): the line says "cut not measured" and the figure is marked "gross".
+- [ ] An item only listed at Gadgetzan: its section says "Not listed at Horde AH: nothing to sell against." and the item is not on the chip.
+- [ ] The chip "Cheaper elsewhere" (only there once another house has data): rows best net first, each with the buy house, its price, units and age, and on the right the net and the profit house price with its age. Hover a row: the tip gives both prices, ages and the net. Does the fourth chip wrap onto a second row in the 300 wide list, and does it read well? A row marked with * is gross (cut not measured).
+- [ ] Open the chip right after logging in: "Loading..." for a moment, then the list; no hitch (Settings > Debug > Record: "Look up > Items: elsewhere slice" stays short). Scan an auction house, reopen the chip: the list has been rebuilt.
+- [ ] The card now scrolls in the window layout too (mouse wheel): check it with 3 houses of data and in both docked layouts.
+
 ## Bags full: suggest the cheapest Junk slot, or a stack (#352)
 No new files. Needs bags with no free slot and a few items marked Junk (item menu). Settings > Bags and loot > "Suggest a junk item to delete when bags are full" is on by default (provisional; Veli's call).
 - [ ] Fill every plain bag slot (the reagent bag may stay empty), mark a cheap item Junk, loot a mob with fast auto-loot: ONE chat line "Bags are full. Left in the loot window: ... Delete <item> xN (worth ...)." and the small panel "Bags are full" appears. Nothing is deleted or moved by itself.
