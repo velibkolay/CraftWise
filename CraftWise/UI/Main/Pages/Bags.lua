@@ -208,6 +208,11 @@ function P.Model(ctx)
 	local rows, hidden = P.Rows(all, { matsOnly = s.bagsMatsOnly, showKept = s.showKept,
 		stale = ctx.prices and ctx.prices.stale })
 	local model = { rows = rows, footer = P.FooterText(s.menuClick) }
+	-- No free slot (#352): the same suggestion as the full-bags panel, with the button in the tools row.
+	P.free = ns.Loot and ns.Loot.PlainFree() == 0 and ns.Loot.Suggest(nil) or nil
+	if P.free then
+		model.footer = L["Bags are full."] .. " " .. P.free.text .. ". " .. model.footer
+	end
 	local value = ns.HeroCards.BagValue(all)
 	if value then
 		model.hero = { label = L["What your bags would bring"], full = true, height = 88, total = value.total,
@@ -440,11 +445,26 @@ function P.Tools(slot)
 	slot.sort:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
 	slot.kept:SetPoint("RIGHT", slot.sort, "LEFT", -8, 0)
 	slot.mats:SetPoint("RIGHT", slot.kept, "LEFT", -8, 0)
+	-- Only while no slot is free and something can be done about it (#352); one click, one item.
+	slot.free = Style.Chip(slot, L["Free a slot"])
+	slot.free:SetPoint("RIGHT", slot.mats, "LEFT", -8, 0)
+	slot.free:SetScript("OnClick", function()
+		if P.free and ns.Loot then
+			ns.Loot.Click(P.free)
+		end
+	end)
+	slot.free:Hide()
 end
 
 function P.UpdateTools(slot)
 	local s = ns.db.settings
 	slot.mats:SetOn(s.bagsMatsOnly)
+	if slot.free then
+		slot.free:SetShown(P.free ~= nil)
+		if P.free then
+			slot.free:SetLabel(P.free.kind == "merge" and L["Stack"] or L["Free a slot"])
+		end
+	end
 	slot.kept:SetOn(s.showKept)
 	-- Orange while it runs (spec: orange means happening now).
 	local running = ns.BagSort and ns.BagSort.Running() or false

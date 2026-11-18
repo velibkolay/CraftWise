@@ -1277,3 +1277,15 @@ No new files. Display and selection only; the buy path is untouched. Needs a sca
 - [ ] The chip "Cheaper elsewhere" (only there once another house has data): rows best net first, each with the buy house, its price, units and age, and on the right the net and the profit house price with its age. Hover a row: the tip gives both prices, ages and the net. Does the fourth chip wrap onto a second row in the 300 wide list, and does it read well? A row marked with * is gross (cut not measured).
 - [ ] Open the chip right after logging in: "Loading..." for a moment, then the list; no hitch (Settings > Debug > Record: "Look up > Items: elsewhere slice" stays short). Scan an auction house, reopen the chip: the list has been rebuilt.
 - [ ] The card now scrolls in the window layout too (mouse wheel): check it with 3 houses of data and in both docked layouts.
+
+## Bags full: suggest the cheapest Junk slot, or a stack (#352)
+No new files. Needs bags with no free slot and a few items marked Junk (item menu). Settings > Bags and loot > "Suggest a junk item to delete when bags are full" is on by default (provisional; Veli's call).
+- [ ] Fill every plain bag slot (the reagent bag may stay empty), mark a cheap item Junk, loot a mob with fast auto-loot: ONE chat line "Bags are full. Left in the loot window: ... Delete <item> xN (worth ...)." and the small panel "Bags are full" appears. Nothing is deleted or moved by itself.
+- [ ] Is the cheapest slot really the lowest vendor price x count? Compare two stacks of the same Junk item (a partial one and a full one): the partial one is offered.
+- [ ] The panel's "Delete..." button opens CraftWise's confirm dialog naming the item, the count and the value; "Cancel" and Escape delete nothing. "Accept" deletes exactly that one stack (check DeleteCursorItem is allowed from the dialog's button: restricted function, needs the click). Then the panel closes.
+- [ ] Loot something cheap while the cheapest Junk slot is worth more: the line ends with "not worth it, the loot is worth less".
+- [ ] A Junk item with no vendor price (sell price 0) is offered first and says "no vendor price, worth nothing".
+- [ ] Two partial stacks of one item (e.g. 8 and 5 Linen Cloth): the panel offers "Stack Linen Cloth: 2 slots -> 1" and the button moves one stack per click.
+- [ ] Not offered, ever: Keep items, quest items, unmarked items, anything in the reagent bag, a profession bag, the bank.
+- [ ] Buy something at a vendor or take mail with full bags: which error does the client send? Only ERR_INV_FULL is handled; if the client sends another text for vendor or mail, note it here (no guessed strings).
+- [ ] CraftWise > Sell > Bags with no free slot: footer starts with the suggestion and a "Free a slot" (or "Stack") chip sits next to "My crafting materials". Does the tools row still fit in the docked layout?

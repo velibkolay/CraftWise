@@ -180,7 +180,8 @@ it("Bags: a click opens the item menu; Sort bags runs the sort; no price says wh
 	rock.hits[6].scripts.OnEnter(rock.hits[6])
 	eq(CraftWiseInverseTip.title.text, "No value")
 	has(CraftWiseInverseTip.body.text, "no vendor price")
-	eq(M.Frame().foot.left.text,
+	-- Full bags with a marked junk item add the #352 suggestion in front of the usual footer.
+	has(M.Frame().foot.left.text,
 		"Click an item: Keep · Junk · Sell on AH · Where to buy · Price history. In your bags: middle-click.")
 	local started = 0
 	ns.BagSort.Start = function() started = started + 1 end
