@@ -534,3 +534,108 @@ it("#356: /craftwise link add and remove", function()
 	SlashCmdList.CRAFTWISE("link remove Kitchenchant")
 	eq(#Link.List(), 0)
 end)
+
+------------------------------------------------------------------------------------- connected realms (#358)
+
+local R4, R8 = "CAMWOW EU4 Realm 4 PvP", "CAMWOW EU4 Realm 8 PvP"
+
+it("#358: house keys map to my realm: faction (my faction only) and neutral houses; anything else is nil", function()
+	local ns, stub, M, Link = Load()
+	stub.realm, stub.faction = R8, "Horde"
+	eq(Link.MapHouse(R4 .. "|H", R4), R8 .. "|H")
+	eq(Link.MapHouse(R4 .. "|N:Gadgetzan", R4), R8 .. "|N:Gadgetzan")
+	eq(Link.MapHouse(R4 .. "|N:BootyBay", R4), R8 .. "|N:BootyBay")
+	eq(Link.MapHouse(R4 .. "|A", R4), nil, "the other faction's house is not mine")
+	eq(Link.MapHouse("Other|H", R4), nil, "a house of a third realm")
+	eq(Link.MapHouse(R4 .. "|X", R4), nil)
+	eq(Link.MapHouse(R4 .. "|H", nil), nil)
+	stub.faction = "Alliance"
+	eq(Link.MapHouse(R4 .. "|H", R4), nil, "opposite factions don't map the faction house")
+	eq(Link.MapHouse(R4 .. "|A", R4), R8 .. "|A")
+	eq(Link.MapHouse(R4 .. "|N:Gadgetzan", R4), R8 .. "|N:Gadgetzan", "neutral houses are shared by both factions")
+end)
+
+it("#358: a hello from a listed character of another realm is accepted; from an unlisted one, on any realm, it is not", function()
+	local ns, stub, M, Link = Load()
+	stub.realm = R8
+	CraftWiseMarketDB.houses[R8 .. "|H"] = { realm = R8, kind = "faction", faction = "Horde", label = "Horde AH" }
+	Fill(M, 5)
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	stub.addonSent = {}
+	Say(stub, "Mallory Stranger", "H", "1", R4, R4 .. "|H", "0")
+	Run(Link, 1, 3)
+	eq(#stub.addonSent, 0)
+	Say(stub, PEER, "H", "1", R4, R4 .. "|H", "0")
+	Run(Link, 4, 3)
+	assert(#stub.addonSent > 0, "answered")
+	eq(CraftWiseDB.link.peers[1].realm, R4)
+	assert(Link.StatusText():find("(Realm 4)", 1, true), Link.StatusText())
+end)
+
+local function RealmTransfer(n, since)
+	local ns, stub, M, Link = Load()
+	stub.realm = R4
+	local house = R4 .. "|H"
+	CraftWiseMarketDB.houses[house] = { realm = R4, kind = "faction", faction = "Horde", label = "Horde AH" }
+	CraftWiseMarketDB.houses[R4 .. "|N:Gadgetzan"] = { realm = R4, kind = "neutral", label = "Gadgetzan" }
+	for i = 1, n do
+		CraftWiseMarketDB.items[1000 + i] = { [house] = M.EncodeEntry(Entry(NOW - 1000 + i, 100 + i, 5 + i)) }
+		CraftWiseMarketDB.scope.items[1000 + i] = true
+		CraftWiseMarketDB.names[1000 + i] = "Item " .. i
+	end
+	CraftWiseMarketDB.items[2001] = { [R4 .. "|N:Gadgetzan"] = M.EncodeEntry(Entry(NOW - 50, 777, 3)) }
+	CraftWiseMarketDB.scans[house] = { { t = NOW - 10, kind = "full", items = n } }
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	stub.addonSent = {}
+	-- the asker (realm 8) lists its own keys
+	Say(stub, PEER, "H", "1", R8, R8 .. "|H", tostring(since or 0), R8 .. "|A", "5")
+	return Sender(stub, Link, PEER, 1, 600)
+end
+
+it("#358: a transfer from Realm 4 lands in Realm 8's houses, with the sender's name on the scan; nothing is stored under Realm 4", function()
+	local log = RealmTransfer(25)
+	local ns, stub, M, Link = Load()
+	stub.realm = R8
+	CraftWiseMarketDB.houses[R8 .. "|H"] = { realm = R8, kind = "faction", faction = "Horde", label = "Horde AH" }
+	CraftWiseMarketDB.scope.items[1001] = true
+	Link.Add("Kitchenchant")
+	local out = Printed(function()
+		for _, text in ipairs(log) do Say(stub, PEER, unpack(Fields(text))) end
+	end)
+	assert(out:find("prices from " .. PEER, 1, true), out)
+	local e = CraftWiseMarketDB.items[1001][R8 .. "|H"]
+	assert(e, "stored at my house")
+	eq(M.DecodeEntry(e).last.min, 101)
+	eq(CraftWiseMarketDB.items[1001][R4 .. "|H"], nil, "no Realm 4 key")
+	assert(CraftWiseMarketDB.items[2001][R8 .. "|N:Gadgetzan"], "a neutral house maps by zone")
+	for _, house in pairs(CraftWiseMarketDB.houses) do assert(not house.realm or house.realm == R8, house.realm) end
+	eq(CraftWiseMarketDB.names[1025], "Item 25")
+	eq(CraftWiseDB.link.peers[1].got[R8 .. "|H"] >= NOW - 1000 + 25, true, "the watermark is kept under my key")
+	eq(M.SyncedVia(R8 .. "|H", NOW - 1000 + 5), PEER)
+end)
+
+it("#358: the hello asks in my keys: the answerer maps them back, so the delta respects the watermark", function()
+	local ns, stub, M, Link = Load()
+	stub.realm = R8
+	CraftWiseMarketDB.houses[R8 .. "|H"] = { realm = R8, kind = "faction", faction = "Horde", label = "Horde AH" }
+	CraftWiseMarketDB.scans[R8 .. "|H"] = { { t = NOW - 77, kind = "full" } }
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	local f = Fields(stub.addonSent[1].text)
+	eq(f[3], R8)
+	eq(f[4], R8 .. "|H")
+	eq(tonumber(f[5]), NOW - 77)
+	-- the answerer on Realm 4 reads it as its own house, and sends only newer entries
+	local log = RealmTransfer(5, NOW - 1000 + 3)
+	local all = {}
+	for _, text in ipairs(log) do all[#all + 1] = text:match("^B\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t(.*)$") end
+	all = table.concat(all)
+	local n = 0
+	for house in all:gmatch("e\t([^\t]*)\t1%d%d%d\t") do
+		n = n + 1
+		eq(house, R4 .. "|H", "the sender sends its own keys")
+	end
+	eq(n, 2, "entries 4 and 5 are newer than the watermark")
+end)

@@ -1302,3 +1302,11 @@ New file `Link.lua`: needs a full game restart on BOTH clients (not a /reload) a
 - [ ] Log out Kitchenchant mid-transfer: Tanner stops after the batch's retries (a minute or so), shows the character as not heard from, and the next login of Kitchenchant continues from where the data stopped (watermark), not from the start.
 - [ ] `/reload` on both sides after a sync: the "last sync" and "prices received" survive; the data is still there.
 - [ ] Remove the link on one side (`/craftwise link remove Kitchenchant`): that side ignores the other at once.
+
+## Linked characters on connected realms (#358)
+No new files; `/reload` on both clients after copying. Tanner is on CAMWOW EU4 Realm 8 PvP, Kitchenchant on Realm 4 PvP (shared Horde AH).
+- [ ] Settings > Linked characters on Tanner: the line reads "Velikopter Kitchenchant (Realm 4): online ..." once Kitchenchant has answered (and "(Realm 8)" on the other side).
+- [ ] Scan on Kitchenchant (own full scan). Tanner prints "Synced N prices from Velikopter Kitchenchant" with N close to the scan's items; Look up > Items on Tanner shows those prices at "Horde AH" with "via Velikopter Kitchenchant". Tanner's saved data has them under `CAMWOW EU4 Realm 8 PvP|H`, none under `...Realm 4 PvP|` (look at `CraftWiseMarketDB` after a /reload via the Debug page or `/dump`).
+- [ ] The other way: scan on Tanner; Kitchenchant gets the prices under its own Realm 4 key.
+- [ ] A neutral house scanned on one side (Gadgetzan or Booty Bay) arrives under the same zone on the other.
+- [ ] Not seen: a character that is not on the list, on any realm, still gets no answer.
