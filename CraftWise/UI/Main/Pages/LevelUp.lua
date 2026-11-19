@@ -1,8 +1,9 @@
 -- Main window, Make › Level up (#154; spec in #150 "Make", board "Make › Level up"): which known recipe
 -- gets the next skill point for the least money. Rows from ns.LevelingRows (grey recipes are left out;
 -- the footer says so). Columns: Recipe, Chance (60 unit bar + percent; white when measured, grey with "~"
--- for the community formula), Cost, Sale, Net/craft, Per skill-up. Sort: value per skill-up, recipes that
--- earn first, then the cheapest. Hero = the first row with its chance and per skill-up figure
+-- for the community formula), Cost, Sale, Net/craft, Per skill-up. Sort (ns.Leveling.Better, #364): recipes
+-- that earn first, by chance then earnings per craft, then the cheapest per skill-up; the Per skill-up
+-- header sorts by that order (again to reverse it). Hero = the first row with its chance and per skill-up figure
 -- (ns.HeroCards.BestSkillUp). Money that earns shows "+", money it costs "−" in C.danger.
 local _, ns = ...
 local M = ns.Main
@@ -116,9 +117,26 @@ local function DrawChance(b, r, ctx)
 end
 
 local SORT_NOTES = {
-	perSkill = L["best value per skill-up first: earning, then cheapest"],
+	perSkill = L["earning first by chance, then cheapest"],
 	name = L["by name"], chance = L["by chance"], cost = L["by cost"], saleValue = L["by sale"], netEarn = L["by net per craft"],
 }
+
+-- The list's own order: the Per skill-up column uses the Level up ranking (reversed when clicked
+-- again, rows without a figure stay last), every other column the plain one.
+function LevelPage.SortRows(rows, key, desc)
+	if key == "perSkill" then
+		local Better = ns.Leveling.Better
+		table.sort(rows, function(a, b)
+			if desc or (a.perPoint == nil) ~= (b.perPoint == nil) then
+				return Better(a, b)
+			end
+			return Better(b, a)
+		end)
+		return rows
+	end
+	table.sort(rows, ns.Profit.Comparator(key, desc))
+	return rows
+end
 
 function LevelPage.Hero(rows)
 	local h, why = ns.HeroCards.BestSkillUp(rows)
@@ -217,6 +235,7 @@ M.RegisterPage({
 	events = { "SKILLUPS_CHANGED", "BAGS_CHANGED", "LEDGER_CHANGED" },
 	columns = COLUMNS,
 	sort = { key = "perSkill", desc = true },
+	SortRows = LevelPage.SortRows,
 	Model = LevelPage.Model,
 	Hero = function(_, hero, ctx, slot)
 		local m = ctx.metrics or M.WINDOW_METRICS

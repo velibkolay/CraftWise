@@ -191,3 +191,65 @@ it("pools crafts per profession: Cooking crafts don't change a Leatherworking ch
 	local pk, infoK = ns.Leveling.Chance(99996, 2, 100, ns.Leveling.Pools())
 	eq(infoK.kind, "nodata") -- profession unknown: no pooling at all
 end)
+
+-- Issue #364: per skill-up = net / chance rewards a low chance for recipes that earn. Veli's Cooking
+-- at 225 (scan 2026-11-19, basis typical): Tasty Lion Steak (12%, earns ~1.96s, -15.7s per point) ranked
+-- first, Monster Omelet (orange, earns ~0.79s on every craft, -0.79s per point) fifth. Chances of the
+-- three middle rows are illustrative; their per point figures are the measured ones.
+local function cookingRows()
+	local function row(id, name, chance, net)
+		return { recipeID = id, name = name, chance = chance, net = net, perPoint = net / chance, craftsPerPoint = 1 / chance,
+			cost = 100, saleValue = 100 - net, chanceInfo = { kind = chance == 1 and "orange" or "formula" } }
+	end
+	return {
+		row(1, "Tasty Lion Steak", 0.125, -196), -- -1568 per point
+		row(2, "Heavy Kodo Stew", 0.5, -120), -- -240
+		row(3, "Barbecued Buzzard Wing", 0.6, -78), -- -130
+		row(4, "Hot Wolf Ribs", 0.75, -64), -- -85
+		row(5, "Monster Omelet", 1, -79), -- -79
+		row(6, "Cooked Glossy Mightfish", 1, 30), -- costs money
+		row(7, "Spiced Chili Crab", 0.5, 20), -- costs more per point
+		{ recipeID = 8, name = "No Price", chance = 1, chanceInfo = { kind = "orange" } },
+	}
+end
+
+local function names(rows)
+	local t = {}
+	for _, r in ipairs(rows) do t[#t + 1] = r.name end
+	return table.concat(t, ",")
+end
+
+it("ranks an orange recipe that earns above a near-grey one that earns more per point (#364)", function()
+	local ns = setup()
+	local rows = cookingRows()
+	table.sort(rows, ns.Leveling.Better)
+	eq(rows[1].name, "Monster Omelet")
+	eq(names(rows), "Monster Omelet,Hot Wolf Ribs,Barbecued Buzzard Wing,Heavy Kodo Stew,Tasty Lion Steak,"
+		.. "Cooked Glossy Mightfish,Spiced Chili Crab,No Price")
+	local hero = ns.HeroCards.BestSkillUp(cookingRows())
+	eq(hero.name, "Monster Omelet"); eq(hero.earns, true); eq(hero.perPoint, -79)
+end)
+
+it("breaks a chance tie by earnings per craft, compared in whole percent (#364)", function()
+	local ns = setup()
+	local rows = {
+		{ name = "A", chance = 1, net = -10, perPoint = -10 },
+		{ name = "B", chance = 0.998, net = -50, perPoint = -50 / 0.998 }, -- shows 100% too
+		{ name = "C", chance = 0.9, net = -500, perPoint = -500 / 0.9 },
+	}
+	table.sort(rows, ns.Leveling.Better)
+	eq(names(rows), "B,A,C")
+end)
+
+it("sorts the Level up list by the ranking, reversed on a second click, rows without a figure last (#364)", function()
+	local ns = setup()
+	local P = ns.Main.LevelPage
+	local rows = P.SortRows(cookingRows(), "perSkill", true)
+	eq(names(rows), "Monster Omelet,Hot Wolf Ribs,Barbecued Buzzard Wing,Heavy Kodo Stew,Tasty Lion Steak,"
+		.. "Cooked Glossy Mightfish,Spiced Chili Crab,No Price")
+	rows = P.SortRows(cookingRows(), "perSkill", false)
+	eq(names(rows), "Spiced Chili Crab,Cooked Glossy Mightfish,Tasty Lion Steak,Heavy Kodo Stew,"
+		.. "Barbecued Buzzard Wing,Hot Wolf Ribs,Monster Omelet,No Price")
+	rows = P.SortRows(cookingRows(), "chance", false)
+	eq(rows[1].name, "Tasty Lion Steak")
+end)

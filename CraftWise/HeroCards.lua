@@ -106,9 +106,9 @@ end
 ----------------------------------------------------------------------------------------------------
 
 -- rows: ns.LevelingRows(professionID) (grey recipes are already left out).
--- The Level up list's default order: per skill-up ascending (recipes that earn are negative, so they
--- come first, then the cheapest), rows without a per skill-up figure last. The hero is the first row
--- that has the figure. Returns {
+-- The Level up list's default order (ns.Leveling.Better, #364): recipes that earn first, by chance then
+-- earnings per craft, then the cheapest per skill-up; rows without a per skill-up figure last. The hero
+-- is the first row that has the figure. Returns {
 --   recipeID, name, icon, color, chance (0..1), chanceKind, chanceEstimate (true = formula, "~"),
 --   perPoint (copper per skill-up, negative = earns), craftsPerPoint, earns (bool),
 --   cost, sale, saleSource, net (cost - sale per craft),
@@ -121,7 +121,7 @@ function Hero.BestSkillUp(rows)
 	for _, r in ipairs(rows) do
 		sorted[#sorted + 1] = r
 	end
-	table.sort(sorted, ns.Profit.Comparator("perPoint", false))
+	table.sort(sorted, ns.Leveling.Better)
 	local best = sorted[1]
 	if best.perPoint == nil then
 		return nil, "no recipe has a price and a chance yet"

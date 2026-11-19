@@ -456,7 +456,7 @@ it("Level up rows: chance bar and percent (~ for the formula), cost, sale, net a
 	eq(bracers.view.cells.perSkill, "−20c"); eq(bracers.view.colors.perSkill, "danger")
 	local gloves = Row(ns, "level", R_GLOVES)
 	eq(gloves.view.chanceText, "~50%")
-	eq(M.Frame().listBar.note.text, "best value per skill-up first: earning, then cheapest")
+	eq(M.Frame().listBar.note.text, "earning first by chance, then cheapest")
 	eq(M.SlotsOf("level").listTools.note.text, "Sale: AH after cut when it passes your AH rule, else vendor")
 	assert(M.Frame().foot.left.text:find("Grey recipes are left out.", 1, true))
 	local text = Make.CaptureTooltip(function() assert(Make.Hover(ns, "level", R_BELT)) end)
