@@ -10,8 +10,12 @@
 --   net           C - S per craft (negative = the craft makes money)
 --   crafts/point  1 / p
 --   per point     net / p = expected money spent (or earned, when negative) per skill point
--- Rows are ranked by "per point", lowest first. Nothing is guessed: a recipe without a chance or
--- without reagent prices is listed last with the reason.
+-- Ranking (Leveling.Better, #364, Veli's decision): fewest crafts per point first, i.e. the highest
+-- chance (whole percent), then the net per craft (most earned, else least spent). Money is never
+-- multiplied by crafts per point for the order: net / p grows as the chance falls, so a near-grey
+-- recipe needing 8 crafts per point would beat an orange one that gives a point on every craft.
+-- "Per point" stays as a figure. Nothing is guessed: a recipe without a chance or without reagent
+-- prices is listed last with the reason.
 local _, ns = ...
 
 local Leveling = {}
@@ -158,6 +162,33 @@ function Leveling.Sale(output)
 		return vendor, "vendor", details
 	end
 	return nil, "unknown", details
+end
+
+-- The Level up order (#364, Veli's decision): true when row a ranks before row b.
+--   1. rows with a "per point" figure before rows without one
+--   2. higher chance first = fewer crafts per point (compared in whole percent, as the Chance column
+--      shows it)
+--   3. lower net per craft first (earns more, or costs less)
+--   4. name
+local function Percent(p)
+	return math.floor((p or 0) * 100 + 0.5)
+end
+
+function Leveling.Better(a, b)
+	local pa, pb = a.perPoint, b.perPoint
+	if (pa == nil) ~= (pb == nil) then
+		return pa ~= nil
+	end
+	if pa ~= nil then
+		local ca, cb = Percent(a.chance), Percent(b.chance)
+		if ca ~= cb then
+			return ca > cb
+		end
+		if a.net ~= b.net then
+			return a.net < b.net
+		end
+	end
+	return tostring(a.name or "") < tostring(b.name or "")
 end
 
 -- Current skill: the client's live value, else what the profession window showed last.

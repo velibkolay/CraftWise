@@ -1326,3 +1326,8 @@ No new files; `/reload` after copying.
 - [ ] Whisper Kitchenchant by hand while it is offline: the client's "No player named ..." line DOES show (it is not ours).
 - [ ] "Sync now" with Kitchenchant offline: still no line in chat, status stays offline.
 - [ ] The sender really is hidden only for our line: does the real line read exactly "No player named 'Velikopter Kitchenchant' is currently playing." (name as typed in the whisper target)? If the client words it differently the line shows and the peer is not marked offline: note the real text here.
+
+## Make › Level up: fewest crafts per point first (#364)
+No TOC change; `/reload` is enough.
+- [ ] Cooking around 225 with Monster Omelet known (orange) and Tasty Lion Steak (near grey): Monster Omelet is the hero "Best skill-up right now" and above Tasty Lion Steak in the list, although Lion Steak's "Per skill-up" figure is larger. The list note says "fewest crafts per point first, then net per craft". Rows go by chance (highest first); at the same percent the one that earns more (or costs less) per craft first; rows without a figure last.
+- [ ] Click the "Per skill-up" header: the order reverses (lowest chance first, rows without a figure still last); click again: back to the ranking. Other headers sort plainly.
