@@ -809,7 +809,7 @@ function Link.StatusText()
 	for _, s in ipairs(list) do
 		local parts = { s.online and "online" or "not heard from (offline, other realm or faction, or no CraftWise)" }
 		if s.proto then
-			parts[#parts + 1] = ("other side runs an older CraftWise (sync version %d, this is %d)"):format(s.proto, Link.PROTO)
+			parts[#parts + 1] = ("other side runs an older CraftWise: sync version %d, this one is %d"):format(s.proto, Link.PROTO)
 		end
 		if s.state then
 			parts[#parts + 1] = s.state
