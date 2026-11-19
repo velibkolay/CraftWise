@@ -10,12 +10,12 @@
 --   net           C - S per craft (negative = the craft makes money)
 --   crafts/point  1 / p
 --   per point     net / p = expected money spent (or earned, when negative) per skill point
--- Ranking (Leveling.Better, #364): recipes that earn (net < 0) first, by chance (whole percent,
--- highest first), then by earnings per craft. "Per point" is not the key for them: net / p grows as
--- the chance falls, so a near-grey recipe needing 8 crafts per point would beat an orange one that
--- earns on every craft and gives a point on every craft. Recipes that cost money follow, cheapest
--- "per point" first. Nothing is guessed: a recipe without a chance or without reagent prices is
--- listed last with the reason.
+-- Ranking (Leveling.Better, #364, Veli's decision): fewest crafts per point first, i.e. the highest
+-- chance (whole percent), then the net per craft (most earned, else least spent). Money is never
+-- multiplied by crafts per point for the order: net / p grows as the chance falls, so a near-grey
+-- recipe needing 8 crafts per point would beat an orange one that gives a point on every craft.
+-- "Per point" stays as a figure. Nothing is guessed: a recipe without a chance or without reagent
+-- prices is listed last with the reason.
 local _, ns = ...
 
 local Leveling = {}
@@ -164,11 +164,11 @@ function Leveling.Sale(output)
 	return nil, "unknown", details
 end
 
--- The Level up order (#364): true when row a ranks before row b.
+-- The Level up order (#364, Veli's decision): true when row a ranks before row b.
 --   1. rows with a "per point" figure before rows without one
---   2. recipes that earn (net < 0) before recipes that cost money
---   3. earning: higher chance first (compared in whole percent, as the Chance column shows it),
---      then more earned per craft; costing: lower "per point" first
+--   2. higher chance first = fewer crafts per point (compared in whole percent, as the Chance column
+--      shows it)
+--   3. lower net per craft first (earns more, or costs less)
 --   4. name
 local function Percent(p)
 	return math.floor((p or 0) * 100 + 0.5)
@@ -180,20 +180,12 @@ function Leveling.Better(a, b)
 		return pa ~= nil
 	end
 	if pa ~= nil then
-		local ea, eb = a.net < 0, b.net < 0
-		if ea ~= eb then
-			return ea
+		local ca, cb = Percent(a.chance), Percent(b.chance)
+		if ca ~= cb then
+			return ca > cb
 		end
-		if ea then
-			local ca, cb = Percent(a.chance), Percent(b.chance)
-			if ca ~= cb then
-				return ca > cb
-			end
-			if a.net ~= b.net then
-				return a.net < b.net
-			end
-		elseif pa ~= pb then
-			return pa < pb
+		if a.net ~= b.net then
+			return a.net < b.net
 		end
 	end
 	return tostring(a.name or "") < tostring(b.name or "")

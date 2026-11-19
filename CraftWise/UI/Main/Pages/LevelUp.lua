@@ -1,9 +1,9 @@
 -- Main window, Make › Level up (#154; spec in #150 "Make", board "Make › Level up"): which known recipe
 -- gets the next skill point for the least money. Rows from ns.LevelingRows (grey recipes are left out;
 -- the footer says so). Columns: Recipe, Chance (60 unit bar + percent; white when measured, grey with "~"
--- for the community formula), Cost, Sale, Net/craft, Per skill-up. Sort (ns.Leveling.Better, #364): recipes
--- that earn first, by chance then earnings per craft, then the cheapest per skill-up; the Per skill-up
--- header sorts by that order (again to reverse it). Hero = the first row with its chance and per skill-up figure
+-- for the community formula), Cost, Sale, Net/craft, Per skill-up. Sort (ns.Leveling.Better, #364): fewest
+-- crafts per point (highest chance) first, then the net per craft (most earned, else least spent); the
+-- Per skill-up header sorts by that order (again to reverse it). Hero = the first row with its chance and per skill-up figure
 -- (ns.HeroCards.BestSkillUp). Money that earns shows "+", money it costs "−" in C.danger.
 local _, ns = ...
 local M = ns.Main
@@ -117,7 +117,7 @@ local function DrawChance(b, r, ctx)
 end
 
 local SORT_NOTES = {
-	perSkill = L["earning first by chance, then cheapest"],
+	perSkill = L["fewest crafts per point first, then net per craft"],
 	name = L["by name"], chance = L["by chance"], cost = L["by cost"], saleValue = L["by sale"], netEarn = L["by net per craft"],
 }
 

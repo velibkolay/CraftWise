@@ -52,7 +52,7 @@ it("best craft: the chance comes from Leveling.Chance, formula marked as an esti
 	eq(hero.chanceKind, "orange"); eq(hero.chance, 1); eq(hero.chanceEstimate, false)
 end)
 
-it("best skill-up: first by per skill-up, earners first, rows without the figure last", function()
+it("best skill-up: fewest crafts per point first (#364), rows without the figure last", function()
 	local ns = Load()
 	local rows = {
 		{ recipeID = 1, name = "Cheap", perPoint = 50, chance = 0.5, chanceInfo = { kind = "recipe" }, cost = 25, saleValue = 0, net = 25, craftsPerPoint = 2 },
@@ -60,7 +60,11 @@ it("best skill-up: first by per skill-up, earners first, rows without the figure
 		{ recipeID = 3, name = "Unpriced", chance = 1, chanceInfo = { kind = "orange" } },
 	}
 	local hero = ns.HeroCards.BestSkillUp(rows)
-	eq(hero.recipeID, 2); eq(hero.perPoint, -30); eq(hero.earns, true); eq(hero.chanceEstimate, true); eq(hero.chance, 0.4)
+	eq(hero.recipeID, 1, "50% beats 40%, although the 40% one earns"); eq(hero.perPoint, 50); eq(hero.earns, false)
+	eq(hero.chanceEstimate, false); eq(hero.chance, 0.5)
+	hero = ns.HeroCards.BestSkillUp({ rows[1], rows[2], rows[3], { recipeID = 4, name = "Earner too", perPoint = -24,
+		chance = 0.5, chanceInfo = { kind = "formula" }, cost = 10, saleValue = 22, net = -12, craftsPerPoint = 2 } })
+	eq(hero.recipeID, 4, "same chance: the one that earns"); eq(hero.earns, true); eq(hero.chanceEstimate, true)
 	eq(rows[1].recipeID, 1, "the caller's list keeps its order")
 	local none, why = ns.HeroCards.BestSkillUp({ rows[3] })
 	eq(none, nil); eq(why, "no recipe has a price and a chance yet")

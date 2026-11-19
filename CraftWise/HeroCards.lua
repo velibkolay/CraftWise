@@ -106,9 +106,9 @@ end
 ----------------------------------------------------------------------------------------------------
 
 -- rows: ns.LevelingRows(professionID) (grey recipes are already left out).
--- The Level up list's default order (ns.Leveling.Better, #364): recipes that earn first, by chance then
--- earnings per craft, then the cheapest per skill-up; rows without a per skill-up figure last. The hero
--- is the first row that has the figure. Returns {
+-- The Level up list's default order (ns.Leveling.Better, #364): fewest crafts per point (highest chance)
+-- first, then the net per craft (most earned, else least spent); rows without a per skill-up figure last.
+-- The hero is the first row that has the figure. Returns {
 --   recipeID, name, icon, color, chance (0..1), chanceKind, chanceEstimate (true = formula, "~"),
 --   perPoint (copper per skill-up, negative = earns), craftsPerPoint, earns (bool),
 --   cost, sale, saleSource, net (cost - sale per craft),

@@ -276,7 +276,11 @@ it("Opened row: Open in profession window under Price history on Craft, Learn an
 		local list = Make.Open(ns, page, PROF)
 		local row, fr = Row(ns, page, recipeID)
 		fr.scripts.OnClick(fr, "LeftButton")
-		local content = list.box.frames[2].content
+		local at = 1
+		for i, f in ipairs(list.box.frames) do
+			if f == fr then at = i end
+		end
+		local content = list.box.frames[at + 1].content
 		local b, h = content.openRecipe, content.history
 		eq(b.label.text, "Open in profession window", page); eq(b.shown, true, page)
 		eq(b.height, MK.BUTTON_HEIGHT)
@@ -439,7 +443,7 @@ end)
 it("Level up rows: chance bar and percent (~ for the formula), cost, sale, net and per skill-up; best first", function()
 	local ns, _, M = Load()
 	local list = Make.Open(ns, "level", PROF)
-	eq(Make.Names(ns, "level"), "Test Belt,Test Bracers,Test Gloves")
+	eq(Make.Names(ns, "level"), "Test Bracers,Test Belt,Test Gloves", "100%, ~83%, ~50% (#364)")
 	local labels = {}
 	for i = 2, 7 do labels[#labels + 1] = list.headers[i].label.text:gsub(" |T.*$", "") end
 	eq(table.concat(labels, ","), "Recipe,Chance,Cost,Sale,Net/craft,Per skill-up")
@@ -456,7 +460,7 @@ it("Level up rows: chance bar and percent (~ for the formula), cost, sale, net a
 	eq(bracers.view.cells.perSkill, "−20c"); eq(bracers.view.colors.perSkill, "danger")
 	local gloves = Row(ns, "level", R_GLOVES)
 	eq(gloves.view.chanceText, "~50%")
-	eq(M.Frame().listBar.note.text, "earning first by chance, then cheapest")
+	eq(M.Frame().listBar.note.text, "fewest crafts per point first, then net per craft")
 	eq(M.SlotsOf("level").listTools.note.text, "Sale: AH after cut when it passes your AH rule, else vendor")
 	assert(M.Frame().foot.left.text:find("Grey recipes are left out.", 1, true))
 	local text = Make.CaptureTooltip(function() assert(Make.Hover(ns, "level", R_BELT)) end)
@@ -467,12 +471,17 @@ it("Level up hero: the first row with its chance and per skill-up", function()
 	local ns, _, M = Load()
 	Make.Open(ns, "level", PROF)
 	local f = M.Frame()
-	eq(f.hero.label.text, "Best skill-up right now"); eq(f.hero.name.text, "Test Belt")
-	assert(Plain(f.hero.sub.text):find("Yellow · earns +1s 50c per craft after selling it", 1, true), f.hero.sub.text)
+	eq(f.hero.label.text, "Best skill-up right now"); eq(f.hero.name.text, "Test Bracers", "orange: fewest crafts per point (#364)")
+	assert(Plain(f.hero.sub.text):find("costs 20c per craft", 1, true), f.hero.sub.text)
 	eq(f.hero.figureLabel.text, "Per skill-up")
 	local slot = M.SlotsOf("level").hero
-	eq(slot.pct.text, "~83%"); eq(slot.note.text, "estimate · community formula")
-	assert(math.abs(slot.fill.width - slot.barWidth * 25 / 30) < 1e-6)
+	eq(slot.pct.text, "100%"); eq(slot.note.text, "orange · every craft gives a point")
+	assert(math.abs(slot.fill.width - slot.barWidth) < 1e-6)
+	-- a hero that earns: the belt alone
+	local h = M.LevelPage.Hero({ (Row(ns, "level", R_BELT)) })
+	eq(h.name, "Test Belt")
+	assert(Plain(h.sub):find("Yellow · earns +1s 50c per craft after selling it", 1, true), h.sub)
+	eq(h.chanceNote, "estimate · community formula")
 end)
 
 ----------------------------------------------------------------------------------------------------

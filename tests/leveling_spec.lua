@@ -84,7 +84,7 @@ end)
 it("Make › Level up: sorted best first, chance bars, the maths in the tooltip", function()
 	local ns, stub = setup()
 	local list = Make.Open(ns, "level", 165)
-	eq(Make.Names(ns, "level"), "Murloc Scale Belt,Bound Thing,Fine Leather Belt")
+	eq(Make.Names(ns, "level"), "Bound Thing,Murloc Scale Belt,Fine Leather Belt") -- 100%, 83%, 50% (#364)
 	for _, f in ipairs(Make.Frames(ns, "level")) do
 		f.scripts.OnEnter(f)
 		f.scripts.OnLeave(f)
@@ -98,12 +98,16 @@ it("Make › Level up: sorted best first, chance bars, the maths in the tooltip"
 	eq(r.view.cells.netEarn, "+" .. ns.FormatCoins(75))
 	local fine = Make.Frame(ns, "level", 3763).elementData.row
 	eq(fine.view.cells.perSkill, "−60c"); eq(fine.view.colors.perSkill, "danger")
-	-- hero: the first row
+	-- hero: the first row (orange, costs 5c per point)
 	local f = ns.Main.Frame()
-	eq(f.hero.label.text, "Best skill-up right now"); eq(f.hero.name.text, "Murloc Scale Belt")
-	eq(f.hero.figureLabel.text, "Per skill-up"); eq(f.hero.figure.text, "+" .. ns.FormatCoins(90))
-	eq(ns.Main.SlotsOf("level").hero.pct.text, "83%")
-	eq(ns.Main.SlotsOf("level").hero.note.text, "measured · 6 of your crafts")
+	eq(f.hero.label.text, "Best skill-up right now"); eq(f.hero.name.text, "Bound Thing")
+	eq(f.hero.figureLabel.text, "Per skill-up"); eq(f.hero.figure.text, "−5c")
+	eq(ns.Main.SlotsOf("level").hero.pct.text, "100%")
+	eq(ns.Main.SlotsOf("level").hero.note.text, "orange · every craft gives a point")
+	-- a measured hero that earns: the belt alone
+	local h = ns.Main.LevelPage.Hero({ r })
+	eq(h.name, "Murloc Scale Belt"); eq(h.figure, "+" .. ns.FormatCoins(90))
+	eq(h.chanceNote, "measured · 6 of your crafts")
 	-- sort by every column without errors
 	for _, h in ipairs(list.headers) do
 		if h.col and h.col.sort then h.scripts.OnClick(h) end
@@ -192,7 +196,8 @@ it("pools crafts per profession: Cooking crafts don't change a Leatherworking ch
 	eq(infoK.kind, "nodata") -- profession unknown: no pooling at all
 end)
 
--- Issue #364: per skill-up = net / chance rewards a low chance for recipes that earn. Veli's Cooking
+-- Issue #364: per skill-up = net / chance rewards a low chance for recipes that earn. Veli's decision:
+-- fewest crafts per point first, net per craft second, money never multiplied by 1 / chance. His Cooking
 -- at 225 (scan 2026-11-19, basis typical): Tasty Lion Steak (12%, earns ~1.96s, -15.7s per point) ranked
 -- first, Monster Omelet (orange, earns ~0.79s on every craft, -0.79s per point) fifth. Chances of the
 -- three middle rows are illustrative; their per point figures are the measured ones.
@@ -219,18 +224,19 @@ local function names(rows)
 	return table.concat(t, ",")
 end
 
-it("ranks an orange recipe that earns above a near-grey one that earns more per point (#364)", function()
+it("ranks fewest crafts per point first: orange above a near-grey recipe that earns more per point (#364)", function()
 	local ns = setup()
 	local rows = cookingRows()
 	table.sort(rows, ns.Leveling.Better)
 	eq(rows[1].name, "Monster Omelet")
-	eq(names(rows), "Monster Omelet,Hot Wolf Ribs,Barbecued Buzzard Wing,Heavy Kodo Stew,Tasty Lion Steak,"
-		.. "Cooked Glossy Mightfish,Spiced Chili Crab,No Price")
+	-- a costing orange recipe ranks above every lower chance too; at 50% the one that earns goes first
+	eq(names(rows), "Monster Omelet,Cooked Glossy Mightfish,Hot Wolf Ribs,Barbecued Buzzard Wing,Heavy Kodo Stew,"
+		.. "Spiced Chili Crab,Tasty Lion Steak,No Price")
 	local hero = ns.HeroCards.BestSkillUp(cookingRows())
 	eq(hero.name, "Monster Omelet"); eq(hero.earns, true); eq(hero.perPoint, -79)
 end)
 
-it("breaks a chance tie by earnings per craft, compared in whole percent (#364)", function()
+it("breaks a chance tie by net per craft, compared in whole percent (#364)", function()
 	local ns = setup()
 	local rows = {
 		{ name = "A", chance = 1, net = -10, perPoint = -10 },
@@ -245,11 +251,11 @@ it("sorts the Level up list by the ranking, reversed on a second click, rows wit
 	local ns = setup()
 	local P = ns.Main.LevelPage
 	local rows = P.SortRows(cookingRows(), "perSkill", true)
-	eq(names(rows), "Monster Omelet,Hot Wolf Ribs,Barbecued Buzzard Wing,Heavy Kodo Stew,Tasty Lion Steak,"
-		.. "Cooked Glossy Mightfish,Spiced Chili Crab,No Price")
+	eq(names(rows), "Monster Omelet,Cooked Glossy Mightfish,Hot Wolf Ribs,Barbecued Buzzard Wing,Heavy Kodo Stew,"
+		.. "Spiced Chili Crab,Tasty Lion Steak,No Price")
 	rows = P.SortRows(cookingRows(), "perSkill", false)
-	eq(names(rows), "Spiced Chili Crab,Cooked Glossy Mightfish,Tasty Lion Steak,Heavy Kodo Stew,"
-		.. "Barbecued Buzzard Wing,Hot Wolf Ribs,Monster Omelet,No Price")
+	eq(names(rows), "Tasty Lion Steak,Spiced Chili Crab,Heavy Kodo Stew,Barbecued Buzzard Wing,Hot Wolf Ribs,"
+		.. "Cooked Glossy Mightfish,Monster Omelet,No Price")
 	rows = P.SortRows(cookingRows(), "chance", false)
 	eq(rows[1].name, "Tasty Lion Steak")
 end)
