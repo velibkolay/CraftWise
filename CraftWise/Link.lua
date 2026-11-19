@@ -10,14 +10,16 @@ local addonName, ns = ...
 -- belong to one person, so the list is the boundary. Same realm and faction (WHISPER).
 --
 -- Wire format (prefix "CWSync", WHISPER, fields separated by a tab, at most 255 bytes a message):
---   H 1 <realm> {<house> <since>}...   "send me what you have newer than `since` at these houses"
+--   H 2 <realm> {<house> <since>}...   "send me what you have newer than `since` at these houses"
 --                                      (since = the newer of what I got from you and my own last full scan)
---   P 1                                "I have new prices": answered with an H
+--   P 2                                "I have new prices": answered with an H
 --   B <xid> <batch> <seq> <total> <payload>   chunk `seq` of `total` of batch `batch` of transfer `xid`
 --   K <xid> <batch>                    batch merged
 --   R <xid> <batch> <seq,seq,...>      these chunks of the batch are missing: send them again
 --   E <xid> <batches>                  the transfer is complete
--- A batch is records joined by "~" (see Market.DeltaNext), about BATCH_BYTES of them. One batch is in
+-- A batch is records joined by "~" (see Market.DeltaNext), about BATCH_BYTES of them, then deflated (LibDeflate,
+-- Libs/LibDeflate.lua), prefixed with the Adler-32 of the records and encoded for the addon channel (#360); a
+-- corrupt or truncated batch is dropped, never merged, and the sender sends it again when no K comes. One batch is in
 -- flight at a time, the next goes out when the last one is acknowledged, so a lost chunk costs one batch.
 -- Everything sent leaves through one queue and a byte bucket (RATE bytes a second, BURST at most), and a
 -- throttle answer of the client pauses it. Merging a batch is what the companion's file merge does
@@ -28,7 +30,8 @@ local Link = {}
 ns.Link = Link
 
 Link.PREFIX = "CWSync"
-Link.PROTO = 1
+Link.PROTO = 2 -- 2: batches are deflated (#360); a version 1 client is told apart and left alone
+Link.LEVEL = 6 -- LibDeflate level of a batch
 Link.CHUNK = 200 -- payload bytes of a chunk; the header stays well under the 255 of a message
 Link.BATCH_BYTES = 3000
 Link.RATE = 800 -- bytes a second, the figure ChatThrottleLib starts from (the client's own limit is not documented)
@@ -42,7 +45,7 @@ Link.ONLINE = 300 -- heard from within this many seconds = online
 Link.HELLO_OFFLINE = 120 -- seconds between hellos to a character not heard from
 Link.HELLO_ONLINE = 600
 Link.LOGIN_DELAY = 10
-Link.MAX_CHUNKS = 600 -- a batch of more chunks than this is not accepted
+Link.MAX_CHUNKS = 120 -- a batch of more chunks than this is not accepted (deflated it is a few KB)
 Link.MAX_NAMES = 8
 
 local SEP = "\t"
@@ -362,6 +365,27 @@ local function SendBatch(key, out, batch)
 end
 
 -- The next batch of the delta: records up to BATCH_BYTES. nil when the delta is finished and nothing is left.
+-- The wire form of a batch's records: "<adler32 as 8 hex digits><deflated, encoded for the addon channel>".
+function Link.Pack(raw)
+	local lib = ns.LibDeflate
+	return ("%08x"):format(lib:Adler32(raw)) .. lib:EncodeForWoWAddonChannel(lib:CompressDeflate(raw, { level = Link.LEVEL }))
+end
+
+-- The records of a wire batch; nil for anything that is not exactly what Pack made (bad checksum, truncated,
+-- not deflate).
+function Link.Unpack(wire)
+	local lib = ns.LibDeflate
+	if type(wire) ~= "string" or #wire < 10 or not wire:sub(1, 8):match("^%x+$") then
+		return nil
+	end
+	local packed = lib:DecodeForWoWAddonChannel(wire:sub(9))
+	local raw = packed and lib:DecompressDeflate(packed)
+	if not raw or lib:Adler32(raw) ~= tonumber(wire:sub(1, 8), 16) then
+		return nil
+	end
+	return raw
+end
+
 local function NextBatch(out)
 	local records, bytes = {}, 0
 	local done = false
@@ -381,7 +405,7 @@ local function NextBatch(out)
 		return nil
 	end
 	table.insert(records, 1, "r" .. SEP .. (GetRealmName() or ""))
-	local payload = table.concat(records, "~")
+	local payload = Link.Pack(table.concat(records, "~"))
 	local chunks = {}
 	for at = 1, #payload, Link.CHUNK do
 		chunks[#chunks + 1] = payload:sub(at, at + Link.CHUNK - 1)
@@ -554,7 +578,13 @@ local function OnChunk(key, f, now)
 	if asm.have < asm.total then
 		return
 	end
-	local job = ns.Market.MergeIncoming(Parse(table.concat(asm.chunks), inc.maxT, (PeerByKey(key) or {}).realm), Link.DisplayName(key))
+	local raw = Link.Unpack(table.concat(asm.chunks))
+	if not raw then
+		inc.asm[n] = nil -- corrupt or truncated: nothing is merged, no K, the sender sends the batch again
+		stats.corrupt = (stats.corrupt or 0) + 1
+		return
+	end
+	local job = ns.Market.MergeIncoming(Parse(raw, inc.maxT, (PeerByKey(key) or {}).realm), Link.DisplayName(key))
 	inc.merged[n] = true
 	inc.asm[n] = nil
 	inc.priced = inc.priced + (job.priced or 0)
@@ -595,6 +625,7 @@ local function OnHello(key, f, now)
 	local peer = PeerByKey(key)
 	if peer then
 		peer.realm = f[3]
+		peer.proto = nil
 	end
 	local since = {}
 	for i = 4, #f - 1, 2 do
@@ -631,6 +662,13 @@ function Link.OnMessage(prefix, text, channel, sender)
 		return
 	end
 	local f = Fields(text, 64)
+	if (kind == "H" or kind == "P") and tonumber(f[2]) ~= Link.PROTO then
+		local peer = PeerByKey(key)
+		if peer then
+			peer.proto = tonumber(f[2]) or 0 -- shown on the Status line; nothing is sent or read
+		end
+		return
+	end
 	if kind == "H" then
 		OnHello(key, f, now)
 	elseif kind == "P" then
@@ -756,7 +794,7 @@ function Link.Status(now)
 		elseif r.inc then
 			state = "receiving"
 		end
-		out[#out + 1] = { name = p.name, realm = p.realm, online = Link.Online(key, now), lastSync = p.lastSync, received = p.received or 0,
+		out[#out + 1] = { name = p.name, realm = p.realm, proto = p.proto, online = Link.Online(key, now), lastSync = p.lastSync, received = p.received or 0,
 			state = state, error = r.lastError }
 	end
 	return out
@@ -770,6 +808,9 @@ function Link.StatusText()
 	local lines = {}
 	for _, s in ipairs(list) do
 		local parts = { s.online and "online" or "not heard from (offline, other realm or faction, or no CraftWise)" }
+		if s.proto then
+			parts[#parts + 1] = ("other side runs an older CraftWise: sync version %d, this one is %d"):format(s.proto, Link.PROTO)
+		end
 		if s.state then
 			parts[#parts + 1] = s.state
 		end

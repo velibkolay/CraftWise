@@ -16,7 +16,7 @@ end
 local function sourceFiles()
 	local files = {}
 	for line in io.lines("CraftWise/CraftWise.toc") do
-		if not line:match("^%s*#") and line:match("%.lua%s*$") and not line:match("^Data\\") then
+		if not line:match("^%s*#") and line:match("%.lua%s*$") and not line:match("^Data\\") and not line:match("^Libs\\") then
 			files[#files + 1] = "CraftWise/" .. line:gsub("\\", "/"):gsub("%s+$", "")
 		end
 	end

@@ -1310,3 +1310,11 @@ No new files; `/reload` on both clients after copying. Tanner is on CAMWOW EU4 R
 - [ ] The other way: scan on Tanner; Kitchenchant gets the prices under its own Realm 4 key.
 - [ ] A neutral house scanned on one side (Gadgetzan or Booty Bay) arrives under the same zone on the other.
 - [ ] Not seen: a character that is not on the list, on any realm, still gets no answer.
+
+## Linked characters: deflated batches (#360)
+New file `Libs/LibDeflate.lua` (TOC entry): a full game restart on BOTH clients. Both must run this version: an older one is shown as "other side runs an older CraftWise" and nothing is exchanged.
+- [ ] Settings > Linked characters on both sides: "online", no "older CraftWise" text.
+- [ ] Time the first sync: clear the receiver's prices for the house (or use a character that never synced), scan on the other side, note the minutes from "sending" to the chat line "Synced N prices from ...". Before (v1, 19 Nov, 2 265 entries): note Veli's figure; the stub's estimate is 703 s uncompressed and 343 s deflated at 800 B/s. Does the real figure fall by about half?
+- [ ] Settings > Debug > Record during the transfer: "Link" pump (batch packing, about 4 ms of host time per batch in the stub) and the receiving handler (about 1.5 ms inflate plus the merge) never show a frame over 30 ms; no hitch while playing.
+- [ ] The prices on the receiving side match the same sync before this change (spot check ten items: Look up > Items, same prices and "via" text).
+- [ ] After a transfer, `/reload` both clients: the second sync is only what changed (short).
