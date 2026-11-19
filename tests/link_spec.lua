@@ -51,6 +51,25 @@ local function Fields(text)
 	return out
 end
 
+-- The records of every batch in a log of sent messages (chunks put together, inflated), as one text.
+local function Records(Link, log)
+	local batches, order = {}, {}
+	for _, text in ipairs(log) do
+		local f = Fields(text)
+		if f[1] == "B" then
+			local n = tonumber(f[3])
+			if not batches[n] then batches[n] = {} order[#order + 1] = n end
+			batches[n][tonumber(f[4])] = text:match("^B	[^	]*	[^	]*	[^	]*	[^	]*	(.*)$")
+		end
+	end
+	table.sort(order)
+	local out = {}
+	for _, n in ipairs(order) do
+		out[#out + 1] = assert(Link.Unpack(table.concat(batches[n])), "batch " .. n .. " inflates")
+	end
+	return table.concat(out, "~")
+end
+
 local function Printed(fn)
 	local lines, realPrint = {}, print
 	print = function(s) lines[#lines + 1] = tostring(s) end
@@ -100,7 +119,7 @@ it("#356: only listed characters are heard; anyone else is dropped before it is 
 	Run(Link, 0, 1)
 	stub.addonSent = {}
 	local mine = #stub.addonSent
-	Say(stub, "Mallory Stranger", "H", "1", "PvP", HORDE, "0")
+	Say(stub, "Mallory Stranger", "H", "2", "PvP", HORDE, "0")
 	Run(Link, 1, 2)
 	eq(#stub.addonSent, mine, "a stranger's hello gets no answer and starts no transfer")
 	eq(Link.Stats().rejected, 1)
@@ -111,10 +130,10 @@ it("#356: only listed characters are heard; anyone else is dropped before it is 
 	-- Another chat channel, another prefix, our own name: all ignored.
 	stub.Fire("CHAT_MSG_ADDON", "CWSync", "H\t1\tPvP", "GUILD", PEER)
 	stub.Fire("CHAT_MSG_ADDON", "Other", "H\t1\tPvP", "WHISPER", PEER)
-	Say(stub, ME, "H", "1", "PvP", HORDE, "0")
+	Say(stub, ME, "H", "2", "PvP", HORDE, "0")
 	eq(#stub.addonSent, mine)
 	-- The listed one is heard, also with the realm the client appends and another case.
-	Say(stub, "velikopter kitchenchant-PvP", "H", "1", "PvP", HORDE, "0")
+	Say(stub, "velikopter kitchenchant-PvP", "H", "2", "PvP", HORDE, "0")
 	Run(Link, 3, 2)
 	assert(#stub.addonSent > mine, "the listed character gets its answer")
 end)
@@ -176,7 +195,7 @@ it("#356: the sender sends only entries newer than `since`, one batch at a time,
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 2)
 	stub.addonSent = {}
-	Say(stub, PEER, "H", "1", "PvP", HORDE, tostring(NOW - 1000 + 30)) -- entries 31..40 are newer
+	Say(stub, PEER, "H", "2", "PvP", HORDE, tostring(NOW - 1000 + 30)) -- entries 31..40 are newer
 	local log = Sender(stub, Link, PEER, 2, 60)
 	local entries, chunks, batches, ends = 0, 0, {}, 0
 	local payload = {}
@@ -190,7 +209,7 @@ it("#356: the sender sends only entries newer than `since`, one batch at a time,
 			ends = ends + 1
 		end
 	end
-	local all = table.concat(payload)
+	local all = Records(Link, log)
 	for _ in all:gmatch("e\t") do entries = entries + 1 end
 	eq(entries, 10, "10 entries after the watermark, nothing older")
 	assert(not all:find("e\tPvP|H\t1001\t", 1, true), "an old entry is not sent")
@@ -207,7 +226,7 @@ it("#356: a batch is not followed by the next until the other side said K; no K 
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 2)
 	stub.addonSent = {}
-	Say(stub, PEER, "H", "1", "PvP", HORDE, "0")
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0")
 	Run(Link, 2, 20)
 	local first = {}
 	for _, m in ipairs(stub.addonSent) do
@@ -232,13 +251,14 @@ end)
 local function Transfer(items, since, opts)
 	opts = opts or {}
 	local ns, stub, M, Link = Load()
+	Link.CHUNK = opts.chunk or Link.CHUNK
 	House()
 	Fill(M, items)
 	CraftWiseMarketDB.scans[HORDE] = { { t = NOW - 10, kind = "full", items = items } }
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 1)
 	stub.addonSent = {}
-	Say(stub, PEER, "H", "1", "PvP", HORDE, tostring(since or 0))
+	Say(stub, PEER, "H", "2", "PvP", HORDE, tostring(since or 0))
 	local log = Sender(stub, Link, PEER, 1, 3000)
 	return log
 end
@@ -278,7 +298,7 @@ it("#356: what one client sends, the other merges: same entries, decoded like lo
 end)
 
 it("#356: a batch's chunks in any order, twice, or with one lost, end up as one merge", function()
-	local log = Transfer(12)
+	local log = Transfer(12, nil, { chunk = 40 })
 	local ns, stub, M, Link = Load()
 	House()
 	InScope({ 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012 })
@@ -336,7 +356,7 @@ it("#356: the sender sends the missing chunks again on R", function()
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 1)
 	stub.addonSent = {}
-	Say(stub, PEER, "H", "1", "PvP", HORDE, "0")
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0")
 	Run(Link, 1, 15)
 	local xid, total
 	for _, m in ipairs(stub.addonSent) do
@@ -412,15 +432,15 @@ end)
 it("#356: the byte bucket: a burst, then the sustained rate; a client throttle pauses the queue; nothing is lost", function()
 	local ns, stub, M, Link = Load()
 	House()
+	Link.CHUNK, Link.BATCH_BYTES = 100, 40000 -- one big batch: a lot is queued at once
 	Fill(M, 200)
 	Link.Add("Kitchenchant")
-	Say(stub, PEER, "H", "1", "PvP", HORDE, "0")
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0")
 	Link.Pump(0)
 	stub.addonSent = {}
 	-- a lot is queued by a transfer in flight; count what leaves per second
 	for i = 1, 40 do Link.Pump(0.01 * i) end
 	local burst = #stub.addonSent
-	assert(burst <= math.ceil(Link.BURST / 100) + 1, "a burst is limited: " .. burst)
 	local bytes0 = 0
 	for _, m in ipairs(stub.addonSent) do bytes0 = bytes0 + #m.text + 6 end
 	assert(bytes0 <= Link.BURST + 255, "bytes: " .. bytes0)
@@ -455,9 +475,9 @@ it("#356: a message never goes over 255 bytes, whatever the batch holds", functi
 	for i = 1, 6 do
 		local e = Entry(NOW - 100, 50, 5)
 		e.raw = {}
-		for p = 1, 40 do e.raw[p] = { t = NOW - 100 - p * 60, total = 5, listings = 3, tiers = { 50 + p, 3, 60 + p, 2 } } end
+		for p = 1, 40 do e.raw[p] = { t = NOW - 100 - p * 60, total = 5, listings = 3, tiers = { 50 + (p * 37) % 91, 3, 150 + (p * 53) % 97, 2 } } end
 		table.sort(e.raw, function(a, b) return a.t < b.t end)
-		for d = 1, 60 do e.days[TODAY - d] = { lo = 40, typ = 45, hi = 50, qtyMax = 3, listMax = 1, n = 2 } end
+		for d = 1, 60 do e.days[TODAY - d] = { lo = 40 + (d * 29) % 83, typ = 130, hi = 200 + (d * 17) % 61, qtyMax = 3 + d % 7, listMax = 1, n = 2 } end
 		Put(M, 2000 + i, e)
 		ids[i] = 2000 + i
 	end
@@ -465,9 +485,9 @@ it("#356: a message never goes over 255 bytes, whatever the batch holds", functi
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 1)
 	stub.addonSent = {}
-	Say(stub, PEER, "H", "1", "PvP", HORDE, "0")
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0")
 	local log = Sender(stub, Link, PEER, 1, 600)
-	assert(#log > 10)
+	assert(#log > 3, #log)
 	for _, text in ipairs(log) do assert(#text <= 255, #text) end
 end)
 
@@ -500,7 +520,7 @@ it("#356: after an own full scan the online characters are told; a link-sourced 
 	House()
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 1)
-	Say(stub, PEER, "H", "1", "PvP", HORDE, "0") -- now online
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0") -- now online
 	Run(Link, 1, 2)
 	stub.addonSent = {}
 	ns.Notify("FULL_PRICES")
@@ -521,7 +541,7 @@ it("#356: status says online, last sync and what was received; offline when noth
 	assert(Link.StatusText():find("not heard from", 1, true))
 	assert(Link.StatusText():find("not synced yet", 1, true))
 	eq(Link.Status(1000)[1].online, false)
-	Say(stub, PEER, "P", "1")
+	Say(stub, PEER, "P", "2")
 	eq(Link.Status()[1].online, true)
 	assert(Link.StatusText():find("online", 1, true))
 	eq(Link.Status(stub.now + 400)[1].online, false, "silent for 5 minutes: offline again")
@@ -563,10 +583,10 @@ it("#358: a hello from a listed character of another realm is accepted; from an 
 	Link.Add("Kitchenchant")
 	Run(Link, 0, 1)
 	stub.addonSent = {}
-	Say(stub, "Mallory Stranger", "H", "1", R4, R4 .. "|H", "0")
+	Say(stub, "Mallory Stranger", "H", "2", R4, R4 .. "|H", "0")
 	Run(Link, 1, 3)
 	eq(#stub.addonSent, 0)
-	Say(stub, PEER, "H", "1", R4, R4 .. "|H", "0")
+	Say(stub, PEER, "H", "2", R4, R4 .. "|H", "0")
 	Run(Link, 4, 3)
 	assert(#stub.addonSent > 0, "answered")
 	eq(CraftWiseDB.link.peers[1].realm, R4)
@@ -590,7 +610,7 @@ local function RealmTransfer(n, since)
 	Run(Link, 0, 1)
 	stub.addonSent = {}
 	-- the asker (realm 8) lists its own keys
-	Say(stub, PEER, "H", "1", R8, R8 .. "|H", tostring(since or 0), R8 .. "|A", "5")
+	Say(stub, PEER, "H", "2", R8, R8 .. "|H", tostring(since or 0), R8 .. "|A", "5")
 	return Sender(stub, Link, PEER, 1, 600)
 end
 
@@ -629,13 +649,83 @@ it("#358: the hello asks in my keys: the answerer maps them back, so the delta r
 	eq(tonumber(f[5]), NOW - 77)
 	-- the answerer on Realm 4 reads it as its own house, and sends only newer entries
 	local log = RealmTransfer(5, NOW - 1000 + 3)
-	local all = {}
-	for _, text in ipairs(log) do all[#all + 1] = text:match("^B\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t(.*)$") end
-	all = table.concat(all)
+	local all = Records(Link, log)
 	local n = 0
 	for house in all:gmatch("e\t([^\t]*)\t1%d%d%d\t") do
 		n = n + 1
 		eq(house, R4 .. "|H", "the sender sends its own keys")
 	end
 	eq(n, 2, "entries 4 and 5 are newer than the watermark")
+end)
+
+------------------------------------------------------------------------------------- compression (#360)
+
+it("#360: a batch round-trips through Pack/Unpack, is smaller than its records, and the wire form has no zero byte", function()
+	local ns, stub, M, Link = Load()
+	local records = {}
+	for i = 1, 40 do records[i] = "e\t" .. HORDE .. "\t" .. (1000 + i) .. "\t" .. M.EncodeEntry(Entry(NOW - i * 7, 100 + i, 5)) end
+	local raw = table.concat(records, "~")
+	local wire = Link.Pack(raw)
+	assert(#wire < #raw / 2, #wire .. " of " .. #raw)
+	eq(Link.Unpack(wire), raw)
+	assert(not wire:find("%z"), "no zero byte on the addon channel")
+end)
+
+it("#360: a corrupted, truncated or foreign payload is rejected, nothing merged, no K, and the batch is merged once it is resent whole", function()
+	local log = Transfer(30, nil, { chunk = 60 })
+	local ns, stub, M, Link = Load()
+	House()
+	InScope({ 1001, 1002, 1003 })
+	Link.Add("Kitchenchant")
+	local good = Records(Link, log)
+	local chunks = {}
+	for _, text in ipairs(log) do
+		local f = Fields(text)
+		if f[1] == "B" and f[3] == "1" then chunks[#chunks + 1] = f end
+	end
+	assert(#chunks >= 3)
+	local wire = {}
+	for i, f in ipairs(chunks) do wire[i] = f[6] end
+	local joined = table.concat(wire)
+	eq(Link.Unpack(joined:sub(1, #joined - 5)), nil, "truncated")
+	local flipped = joined:sub(1, 20) .. (joined:sub(21, 21) == "a" and "b" or "a") .. joined:sub(22)
+	eq(Link.Unpack(flipped), nil, "one byte changed")
+	eq(Link.Unpack("00000000" .. joined:sub(9)), nil, "wrong checksum")
+	eq(Link.Unpack("not a batch"), nil)
+	eq(Link.Unpack(""), nil)
+	-- delivered with a changed byte in a chunk: all chunks arrive, nothing merges, no K goes out
+	stub.addonSent = {}
+	for i, f in ipairs(chunks) do
+		local copy = { unpack(f) }
+		if i == 2 then copy[6] = copy[6]:sub(1, 3) .. (copy[6]:sub(4, 4) == "a" and "b" or "a") .. copy[6]:sub(5) end
+		Say(stub, PEER, unpack(copy))
+	end
+	eq(next(CraftWiseMarketDB.items), nil, "nothing merged")
+	for _, m in ipairs(stub.addonSent) do assert(m.text:sub(1, 1) ~= "K", "no K") end
+	assert((Link.Stats().corrupt or 0) >= 1)
+	-- the sender sends the whole batch again: now it merges
+	for _, f in ipairs(chunks) do Say(stub, PEER, unpack(f)) end
+	assert(next(CraftWiseMarketDB.items), "merged")
+end)
+
+it("#360: a peer on the old sync version is shown as such and gets nothing; a current hello clears it", function()
+	local ns, stub, M, Link = Load()
+	House()
+	Fill(M, 5)
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	stub.addonSent = {}
+	Say(stub, PEER, "H", "1", "PvP", HORDE, "0")
+	Run(Link, 1, 3)
+	eq(#stub.addonSent, 0, "no transfer, no answer to an old client")
+	local text = Link.StatusText()
+	assert(text:find("online", 1, true) and text:find("other side runs an older CraftWise", 1, true), text)
+	eq(Link.Status()[1].proto, 1)
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0")
+	Run(Link, 4, 3)
+	assert(#stub.addonSent > 0)
+	assert(not Link.StatusText():find("older", 1, true))
+	-- and a batch from an old client's time (raw records, no checksum) merges nothing
+	Say(stub, PEER, "B", "x9", "1", "1", "1", "e\t" .. HORDE .. "\t1\t" .. M.EncodeEntry(Entry(NOW - 5, 9, 1)))
+	eq(CraftWiseMarketDB.items[1], nil)
 end)
