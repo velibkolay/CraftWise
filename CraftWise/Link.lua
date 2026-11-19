@@ -42,7 +42,9 @@ Link.TRIES = 3
 Link.RECV_WAIT = 10 -- seconds without a chunk before the missing ones are asked for
 Link.NAGS = 3
 Link.ONLINE = 300 -- heard from within this many seconds = online
-Link.HELLO_OFFLINE = 120 -- seconds between hellos to a character not heard from
+Link.HELLO_OFFLINE = 120 -- first gap between hellos to a character that is not heard from and not known offline
+Link.HELLO_MAX = 1800 -- the gap doubles each unanswered hello up to this (#362)
+Link.NOT_FOUND_WINDOW = 5 -- seconds after our own whisper in which the client's "no player named" line is ours
 Link.HELLO_ONLINE = 600
 Link.LOGIN_DELAY = 10
 Link.MAX_CHUNKS = 120 -- a batch of more chunks than this is not accepted (deflated it is a few KB)
@@ -61,6 +63,7 @@ local pausedUntil = 0
 local xidCounter = 0
 local stats = { sent = 0, rejected = 0, received = 0, resent = 0, throttled = 0 }
 local ticker
+local lastWhisper = {} -- peer key -> GetTime() of the last Link whisper sent to it (#362)
 
 local function Now()
 	return GetTime and GetTime() or 0
@@ -263,6 +266,7 @@ local function Drain(now)
 		table.remove(queue, 1)
 		bucket = bucket - cost
 		if state == "sent" then
+			lastWhisper[item.to] = Now()
 			n = n + 1
 			stats.sent = stats.sent + 1
 			if item.onSent then
@@ -656,6 +660,7 @@ function Link.OnMessage(prefix, text, channel, sender)
 	local now = Now()
 	local r = Runtime(key)
 	r.seen = now
+	r.offline, r.gap = nil, nil -- it is here (its own hello at login lands here): polling starts over
 	local kind = text:sub(1, 1)
 	if kind == "B" then
 		OnChunk(key, Fields(text, 6), now)
@@ -730,7 +735,14 @@ function Link.Pump(now)
 	for _, p in ipairs(db.peers) do
 		local key = Norm(p.name)
 		local r = Runtime(key)
-		if r.started and now - (r.helloAt or -1e9) >= (Link.Online(key, now) and Link.HELLO_ONLINE or Link.HELLO_OFFLINE) then
+		-- A character the client said is not playing is not polled: it says hello itself when it logs in (#362).
+		-- One that is simply silent is asked again with a growing gap (2 min, 4, 8 ... 30 min).
+		local online = Link.Online(key, now)
+		local gap = online and Link.HELLO_ONLINE or (r.gap or Link.HELLO_OFFLINE)
+		if r.started and not r.offline and now - (r.helloAt or -1e9) >= gap then
+			if not online then
+				r.gap = math.min(gap * 2, Link.HELLO_MAX)
+			end
 			Link.Hello(key)
 		end
 		PumpOut(key, r, now)
@@ -794,7 +806,7 @@ function Link.Status(now)
 		elseif r.inc then
 			state = "receiving"
 		end
-		out[#out + 1] = { name = p.name, realm = p.realm, proto = p.proto, online = Link.Online(key, now), lastSync = p.lastSync, received = p.received or 0,
+		out[#out + 1] = { name = p.name, realm = p.realm, proto = p.proto, offline = r.offline, online = Link.Online(key, now), lastSync = p.lastSync, received = p.received or 0,
 			state = state, error = r.lastError }
 	end
 	return out
@@ -807,7 +819,8 @@ function Link.StatusText()
 	end
 	local lines = {}
 	for _, s in ipairs(list) do
-		local parts = { s.online and "online" or "not heard from (offline, other realm or faction, or no CraftWise)" }
+		local parts = { s.online and "online" or s.offline and "offline (waiting for it to log in)"
+			or "not heard from (offline, other realm or faction, or no CraftWise)" }
 		if s.proto then
 			parts[#parts + 1] = ("other side runs an older CraftWise: sync version %d, this one is %d"):format(s.proto, Link.PROTO)
 		end
@@ -824,6 +837,27 @@ function Link.StatusText()
 		lines[#lines + 1] = s.name .. realm .. ": " .. table.concat(parts, " · ")
 	end
 	return table.concat(lines, "\n")
+end
+
+-- "No player named 'X' is currently playing." (ERR_CHAT_PLAYER_NOT_FOUND_S, the client's own text) when X is a
+-- listed character and the line comes right after a Link whisper to it: its key. nil for any other line, any
+-- other name, or one without a whisper of ours just before (Veli's own whisper must still show).
+function Link.NotFoundKey(message)
+	local template = _G.ERR_CHAT_PLAYER_NOT_FOUND_S
+	if type(message) ~= "string" or type(template) ~= "string" or not db then
+		return nil
+	end
+	local pattern = "^" .. template:gsub("[%^%$%(%)%.%[%]%*%+%-%?]", "%%%0"):gsub("%%s", "(.+)") .. "$"
+	local name = message:match(pattern)
+	local key = name and Norm(name)
+	if not key or not PeerByKey(key) then
+		return nil
+	end
+	local at = lastWhisper[key]
+	if not at or Now() - at > Link.NOT_FOUND_WINDOW then
+		return nil
+	end
+	return key
 end
 
 function Link.Stats()
@@ -926,6 +960,30 @@ ns.Listen("DB_READY", function()
 		pcall(C_ChatInfo.RegisterAddonMessagePrefix, Link.PREFIX)
 	end
 end)
+
+-- The client answers a whisper to a character that isn't online with a system line, every time. That line, after
+-- our own whisper, marks the peer offline (no more hellos until it says hello itself) and is hidden from chat.
+ns.On("CHAT_MSG_SYSTEM", function(_, message)
+	local key = db and Link.NotFoundKey(message)
+	if key then
+		local r = Runtime(key)
+		r.offline, r.seen, r.out, r.inc = true, nil, nil, nil
+		for i = #queue, 1, -1 do
+			if queue[i].to == key then
+				table.remove(queue, i)
+			end
+		end
+		ns.Notify("LINK_CHANGED")
+	end
+end)
+
+local function HideNotFound(_, _, message)
+	return Link.NotFoundKey(message) ~= nil
+end
+
+if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
+	ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_SYSTEM", HideNotFound)
+end
 
 ns.On("CHAT_MSG_ADDON", function(_, prefix, text, channel, sender)
 	if prefix == Link.PREFIX and db then

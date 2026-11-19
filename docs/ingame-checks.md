@@ -1318,3 +1318,11 @@ New file `Libs/LibDeflate.lua` (TOC entry): a full game restart on BOTH clients.
 - [ ] Settings > Debug > Record during the transfer: "Link" pump (batch packing, about 4 ms of host time per batch in the stub) and the receiving handler (about 1.5 ms inflate plus the merge) never show a frame over 30 ms; no hitch while playing.
 - [ ] The prices on the receiving side match the same sync before this change (spot check ten items: Look up > Items, same prices and "via" text).
 - [ ] After a transfer, `/reload` both clients: the second sync is only what changed (short).
+
+## Linked characters: no hello spam while the other character is offline (#362)
+No new files; `/reload` after copying.
+- [ ] Tanner online, Kitchenchant logged out for 10 minutes: no "No player named ... is currently playing." line in Tanner's chat, not at login and not later. Settings > Linked characters says "offline (waiting for it to log in)".
+- [ ] Kitchenchant logs in: within a few seconds both sides say "online" and the sync starts (Synced N prices ... after a scan or the first hello).
+- [ ] Whisper Kitchenchant by hand while it is offline: the client's "No player named ..." line DOES show (it is not ours).
+- [ ] "Sync now" with Kitchenchant offline: still no line in chat, status stays offline.
+- [ ] The sender really is hidden only for our line: does the real line read exactly "No player named 'Velikopter Kitchenchant' is currently playing." (name as typed in the whisper target)? If the client words it differently the line shows and the peer is not marked offline: note the real text here.

@@ -729,3 +729,79 @@ it("#360: a peer on the old sync version is shown as such and gets nothing; a cu
 	Say(stub, PEER, "B", "x9", "1", "1", "1", "e\t" .. HORDE .. "\t1\t" .. M.EncodeEntry(Entry(NOW - 5, 9, 1)))
 	eq(CraftWiseMarketDB.items[1], nil)
 end)
+
+------------------------------------------------------------------------------------- offline peers (#362)
+
+local NOTFOUND = "No player named 'Velikopter Kitchenchant' is currently playing."
+
+local function Hellos(stub)
+	local n = 0
+	for _, m in ipairs(stub.addonSent) do if m.text:sub(1, 2) == "H\t" then n = n + 1 end end
+	return n
+end
+
+it("#362: a not-found right after our hello marks the peer offline: no hello repeats, the status says so, its own hello clears it", function()
+	local ns, stub, M, Link = Load()
+	House()
+	stub.now = 0
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	eq(Hellos(stub), 1)
+	stub.Fire("CHAT_MSG_SYSTEM", NOTFOUND)
+	assert(Link.StatusText():find("offline (waiting for it to log in)", 1, true), Link.StatusText())
+	Run(Link, 1, 3 * 3600) -- three hours
+	eq(Hellos(stub), 1, "no hello after the not-found, however long it takes")
+	-- the peer logs in and says hello: it is online again and answered
+	Say(stub, PEER, "H", "2", "PvP", HORDE, "0")
+	assert(Link.StatusText():find("online", 1, true))
+	assert(not Link.StatusText():find("waiting for it", 1, true))
+	Run(Link, 3 * 3600 + 1, 2)
+	assert(Hellos(stub) >= 2, "it was answered with our own hello")
+end)
+
+it("#362: Sync now still says hello to an offline peer; one not-found more marks it again", function()
+	local ns, stub, M, Link = Load()
+	House()
+	stub.now = 0
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	stub.Fire("CHAT_MSG_SYSTEM", NOTFOUND)
+	eq(Link.SyncNow(), 1)
+	Run(Link, 1, 2)
+	eq(Hellos(stub), 2)
+	stub.Fire("CHAT_MSG_SYSTEM", NOTFOUND)
+	Run(Link, 3, 600)
+	eq(Hellos(stub), 2)
+end)
+
+it("#362: a peer that is silent but not known offline is asked with a growing gap, 2 min, 4, 8 ... up to 30 min", function()
+	local ns, stub, M, Link = Load()
+	House()
+	stub.now = 0
+	Link.Add("Kitchenchant")
+	local times, t = {}, 0
+	local seen = 0
+	Run(Link, 0, 4 * 3600, function(now)
+		stub.now = now
+		if Hellos(stub) > seen then seen = Hellos(stub) times[#times + 1] = now end
+	end)
+	local gaps = {}
+	for i = 2, #times do gaps[#gaps + 1] = math.floor((times[i] - times[i - 1]) / 60 + 0.5) end
+	eq(table.concat(gaps, ","), "2,4,8,16,30,30,30,30,30,30,30", table.concat(gaps, ","))
+end)
+
+it("#362: the not-found line is hidden only right after our own whisper to a listed character", function()
+	local ns, stub, M, Link = Load()
+	House()
+	stub.now = 0
+	Link.Add("Kitchenchant")
+	eq(stub.Filtered("CHAT_MSG_SYSTEM", NOTFOUND), false, "nothing sent yet: Veli's own whisper's line shows")
+	Run(Link, 0, 1)
+	eq(stub.Filtered("CHAT_MSG_SYSTEM", NOTFOUND), true, "right after our hello")
+	eq(stub.Filtered("CHAT_MSG_SYSTEM", "No player named 'Someone Else' is currently playing."), false, "another name")
+	eq(stub.Filtered("CHAT_MSG_SYSTEM", "Some other system line."), false)
+	stub.now = 30
+	eq(stub.Filtered("CHAT_MSG_SYSTEM", NOTFOUND), false, "30 s later it is Veli's own whisper")
+	stub.Fire("CHAT_MSG_SYSTEM", NOTFOUND) -- and that one doesn't mark the peer offline either
+	assert(not Link.StatusText():find("waiting for it", 1, true))
+end)
