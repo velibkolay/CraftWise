@@ -15,6 +15,7 @@ return {
 		TaxiNodeName = UI .. "Blizzard_UIPanels_Game/Shared/TaxiFrame.lua (TaxiNodeName(index) in TaxiNodeOnButtonEnter)",
 		GetNumRoutes = UI .. "Blizzard_UIPanels_Game/Shared/TaxiFrame.lua (GetNumRoutes(index); also Blizzard_FlightMap/FM_FlightPathDataProvider.lua)",
 		TaxiGetNodeSlot = UI .. "Blizzard_UIPanels_Game/Shared/TaxiFrame.lua (TaxiGetNodeSlot(index, routeIndex, isSource); also FM_FlightPathDataProvider.lua)",
+		["ChatFrameUtil.AddMessageEventFilter"] = "seen used on the Forever client by installed add-ons for CHAT_MSG_SYSTEM (Leatrix_Plus.lua:14211, Mastercraft/Network.lua:968, Polestar/Quests/PartyChat.lua:393; they prefer it to ChatFrame_AddMessageEventFilter); not seen in Blizzard's generated docs",
 		CreateFrame = UI .. "everywhere; " .. GAME,
 		StaticPopup_Show = UI .. "Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseFrame.lua (StaticPopup_Show(\"BUYOUT_AUCTION\", nil, nil, data), StartItemBuyout)",
 		CreateDataProvider = UI .. "Blizzard_SharedXML/DataProvider.lua (function CreateDataProvider(tbl)); main window list (#153)",

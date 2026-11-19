@@ -167,6 +167,19 @@ ScrollUtil = {
 -- Chat links (Shift-click): stub.chatLinks receives what was inserted.
 stub.chatLinks = {}
 ChatFrameUtil = { InsertLink = function(link) table.insert(stub.chatLinks, link) return true end }
+-- Chat filters (#362): stub.chatFilters[event] = { fn, ... }; stub.Filtered(event, ...) is true when one drops the line.
+stub.chatFilters = {}
+function ChatFrameUtil.AddMessageEventFilter(event, fn)
+	stub.chatFilters[event] = stub.chatFilters[event] or {}
+	table.insert(stub.chatFilters[event], fn)
+end
+function stub.Filtered(event, ...)
+	for _, fn in ipairs(stub.chatFilters[event] or {}) do
+		if fn(nil, event, ...) then return true end
+	end
+	return false
+end
+ERR_CHAT_PLAYER_NOT_FOUND_S = "No player named '%s' is currently playing."
 C_UI = { Reload = function() stub.reloaded = (stub.reloaded or 0) + 1 end }
 
 -- Fire a game event at every frame that registered it.
