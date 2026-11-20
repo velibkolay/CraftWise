@@ -207,6 +207,8 @@ list is `false`, numbers are as they came. A field the site doesn't have (`aucti
 missing, never filled in. Lua 5.1 allows about 262,000 distinct constants in one chunk; the market and a few
 characters are far below that, which is one reason the ledger is cut to 30 days and 2,000 entries per character.
 
+In the game (#243) the addon reads these characters from `CraftWiseSync.chars` on every look, read-only and never into its own saved data: Settings > Other machine lists each as "<machine> · <name> · <age> ago" with gold, bags, bank, mail, the ledger of 30 days, fishing and the last farm session, and Make > Crafted counts their crafts under the same label. A character key the account has itself is not shown from the file.
+
 ## Update on the Mac
 
 After a merge, quit WoW and run, in the repo checkout on the Mac (on `main`, no local changes):

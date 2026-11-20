@@ -548,6 +548,211 @@ function S.Slash()
 	end
 end
 
+----------------------------------------------------------------------------------------------------
+-- The other machine's characters (#243, phase 2 of #237). The companion writes them into the CraftWise_Sync
+-- add-on's file (`CraftWiseSync.chars`, docs/companion.md). They are read from that global on every call and
+-- never copied into CraftWiseDB or CraftWiseMarketDB, so the companion never uploads them again as this
+-- machine's data. Read-only; a character key this account has itself (snapshot, fishing log, ledger, craft
+-- log or the one logged in) is never shown from the file: own data wins.
+----------------------------------------------------------------------------------------------------
+
+local Synced = {}
+ns.Synced = Synced
+
+Synced.LEDGER_DAYS = 30
+
+local function IsOwn(key)
+	local db = ns.db
+	if key == ns.CharKey() then
+		return true
+	end
+	if db and ((db.snapshots and db.snapshots[key]) or (db.fishing and db.fishing[key])
+			or (db.crafted and db.crafted.chars and db.crafted.chars[key])) then
+		return true
+	end
+	local market = _G.CraftWiseMarketDB
+	local chars = market and market.ledger and market.ledger.chars
+	return chars and chars[key] ~= nil or false
+end
+
+-- { [key] = entry } of the characters of the other machine that are not ours.
+function Synced.Chars()
+	local file = _G.CraftWiseSync
+	local chars = type(file) == "table" and file.chars
+	local out = {}
+	if type(chars) ~= "table" then
+		return out
+	end
+	for key, entry in pairs(chars) do
+		if type(key) == "string" and type(entry) == "table" and not IsOwn(key) then
+			out[key] = entry
+		end
+	end
+	return out
+end
+
+-- Time of the newest data a character has (snapshot, else its info, else its upload).
+function Synced.Time(entry)
+	local snap, info = entry.snapshot, entry.info
+	return (type(snap) == "table" and tonumber(snap.t)) or (type(info) == "table" and tonumber(info.t)) or tonumber(entry.uploaded)
+end
+
+function Synced.Name(key, entry)
+	local info = entry and entry.info
+	local name = type(info) == "table" and info.name
+	if type(name) ~= "string" or name == "" then
+		name = key:match("^.-%-(.+)$") or key
+	end
+	return name
+end
+
+function Synced.Machine(entry)
+	return type(entry.machine) == "string" and entry.machine ~= "" and entry.machine or ns.L["other machine"]
+end
+
+-- "Mac · Velikopter · 2 h ago" ("other machine" when the site did not know the machine).
+function Synced.Label(key, entry, now)
+	local L = ns.L
+	local t = Synced.Time(entry)
+	local parts = { Synced.Machine(entry), Synced.Name(key, entry) }
+	if t then
+		parts[#parts + 1] = (L["%s ago"]):format(ns.Main.AgeText((now or time()) - t))
+	end
+	return table.concat(parts, " \194\183 ")
+end
+
+-- Characters sorted by machine, then name: { { key, entry, label, name, machine } }.
+function Synced.List(now)
+	local out = {}
+	for key, entry in pairs(Synced.Chars()) do
+		out[#out + 1] = { key = key, entry = entry, name = Synced.Name(key, entry), label = Synced.Label(key, entry, now),
+			machine = Synced.Machine(entry) }
+	end
+	table.sort(out, function(a, b)
+		if a.machine ~= b.machine then
+			return a.machine < b.machine
+		end
+		if a.name ~= b.name then
+			return a.name < b.name
+		end
+		return a.key < b.key
+	end)
+	return out
+end
+
+local function Sum(items)
+	local n = 0
+	for _, count in pairs(type(items) == "table" and items or {}) do
+		if type(count) == "number" then
+			n = n + count
+		end
+	end
+	return n
+end
+
+-- Money and item counts of a character's snapshot: { money, bags, bank, mail } (nil where the snapshot had none:
+-- bank and mail stay nil until that place was opened on the other machine).
+function Synced.Holdings(entry)
+	local data = type(entry.snapshot) == "table" and entry.snapshot.data
+	if type(data) ~= "table" then
+		return {}
+	end
+	local char = type(data.char) == "table" and data.char or {}
+	local h = type(data.holdings) == "table" and data.holdings or {}
+	return { money = tonumber(char.money), bags = h.bags ~= nil and Sum(h.bags) or nil,
+		bank = type(h.bank) == "table" and Sum(h.bank.items) or nil, mail = type(h.mail) == "table" and Sum(h.mail.items) or nil }
+end
+
+-- Last Synced.LEDGER_DAYS days of the character's ledger: { spent, received, n } in copper.
+function Synced.Ledger(entry, now)
+	local since = (now or time()) - Synced.LEDGER_DAYS * 86400
+	local out = { spent = 0, received = 0, n = 0 }
+	for _, e in ipairs(type(entry.ledger) == "table" and entry.ledger or {}) do
+		if type(e) == "table" and type(e.m) == "number" and (e.t or 0) >= since then
+			out.n = out.n + 1
+			if e.k == "ahbuy" or e.k == "vbuy" then
+				out.spent = out.spent + e.m
+			elseif e.k == "vsell" or e.k == "ahsell" then
+				out.received = out.received + e.m
+			elseif e.k == "buyback" then
+				out.received = out.received - e.m
+			end
+		end
+	end
+	return out
+end
+
+-- Fishing catches in the character's fishing summary (nil without one).
+function Synced.Fishing(entry)
+	local data = type(entry.fishing) == "table" and entry.fishing.data
+	return type(data) == "table" and tonumber(data.catches) or nil
+end
+
+-- The latest finished farm session of the snapshot: { seconds, coin, items, zone } (nil without one).
+function Synced.Farm(entry)
+	local data = type(entry.snapshot) == "table" and entry.snapshot.data
+	local farm = type(data) == "table" and data.farm
+	local s = type(farm) == "table" and type(farm.sessions) == "table" and farm.sessions[1]
+	if type(s) ~= "table" then
+		return nil
+	end
+	return { seconds = tonumber(s.seconds) or 0, coin = tonumber(s.coin) or 0, items = tonumber(s.items) or 0, zone = s.zone }
+end
+
+-- The craft log of the other machine's characters in the shape of CraftWiseDB.crafted.chars, so the Crafted
+-- page counts them like its own: { [key] = { [recipeID] = { days = { [YYYYMMDD] = { crafts, items, profit,
+-- priced } } } } }. A new table on every call; nothing of it is kept.
+function Synced.CraftChars()
+	local out = {}
+	for key, entry in pairs(Synced.Chars()) do
+		if type(entry.crafted) == "table" and #entry.crafted > 0 then
+			local char = {}
+			for _, row in ipairs(entry.crafted) do
+				if type(row) == "table" and type(row.r) == "number" and type(row.d) == "number" then
+					local e = char[row.r]
+					if not e then
+						e = { days = {} }
+						char[row.r] = e
+					end
+					local b = e.days[row.d] or { 0, 0, 0, 0 }
+					e.days[row.d] = b
+					b[1], b[2] = b[1] + (tonumber(row.n) or 0), b[2] + (tonumber(row.i) or 0)
+					b[3], b[4] = b[3] + (tonumber(row.p) or 0), b[4] + (tonumber(row.k) or 0)
+				end
+			end
+			out[key] = char
+		end
+	end
+	return out
+end
+
+-- The lines of Settings › Other machine: three per character.
+function Synced.Lines(now)
+	local L = ns.L
+	local dash = "\226\128\148"
+	local lines = {}
+	for _, c in ipairs(Synced.List(now)) do
+		local e = c.entry
+		local h = Synced.Holdings(e)
+		local function Items(n)
+			return n ~= nil and tostring(n) or dash
+		end
+		lines[#lines + 1] = c.label
+		lines[#lines + 1] = "  " .. (L["gold %s \194\183 bags %s \194\183 bank %s \194\183 mail %s"]):format(
+			h.money and ns.FormatCoins(h.money) or dash, Items(h.bags), Items(h.bank), Items(h.mail))
+		local led, fish, farm = Synced.Ledger(e, now), Synced.Fishing(e), Synced.Farm(e)
+		local parts = { (L["ledger %d days: spent %s, received %s"]):format(Synced.LEDGER_DAYS, ns.FormatCoins(led.spent), ns.FormatCoins(led.received)) }
+		if fish then
+			parts[#parts + 1] = (L["fishing %d catches"]):format(fish)
+		end
+		if farm then
+			parts[#parts + 1] = (L["last farm %s: %s coin, %s items"]):format(farm.zone or "?", ns.FormatCoins(farm.coin), ns.FormatCoins(farm.items))
+		end
+		lines[#lines + 1] = "  " .. table.concat(parts, " \194\183 ")
+	end
+	return lines
+end
+
 -- Logout, /reload and quit: refresh so the file on disk is current. Never raises. The client returns 0
 -- for money and XP by now; char and ledger use the values last seen in the world (#123).
 ns.On("PLAYER_LOGOUT", function()
