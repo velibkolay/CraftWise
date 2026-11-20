@@ -1,6 +1,7 @@
 // Crafts (/crafts, #185): every craft with today's Horde AH prices and the vendor check, to find crafts that
 // pay when the product goes to a vendor and vendor loops. Prices and names come from /api/browse (as the list
 // page); the recipes from /data/recipes.json. A price that is missing stays missing.
+import { itemName, loadItemNames } from "./lib/itemnames";
 import { type Browse, type BrowseItem, type House, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
 import { CRAFT_SORTS, type CraftFilter, type CraftRow, type CraftSort, craftSpells, formatPct, itemsOfSpell, keep, knownSpells, professionList, snapshotLines, scopeOf, sortCrafts, toRow } from "./lib/crafts";
@@ -262,6 +263,7 @@ async function load(): Promise<void> {
 		clear(statusSlot, statusBar(house), h("span", { class: "hint" }, "Prices are marked stale after 24 h"));
 		clear(footnote, `Prices come from CraftWise scans of the ${house.label} on ${(house.realms ?? [house.realm]).join(" / ")}. Item icons are placeholders.`);
 		data = await get<RecipeData>(RECIPES_URL);
+		await loadItemNames(get);
 		spells = craftSpells(data);
 		renderProfessions();
 		void loadKnown();
@@ -406,7 +408,7 @@ function profitButton(r: CraftRow, value: number | null, tip: string): HTMLEleme
 
 function rowEl(r: CraftRow): HTMLElement {
 	const out = r.spell.output!;
-	const name = r.name ?? `Item ${out}`;
+	const name = r.name ?? itemName(out);
 	const quality = qualityClass(itemNames.get(out)?.quality ?? null);
 	const v = r.craft.vendor;
 	return h(

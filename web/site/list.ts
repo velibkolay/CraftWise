@@ -1,5 +1,6 @@
 // Item list (/): category tree, search, filters, sortable table, favourites (#97), crafting profit of recipe
 // items (#143).
+import { itemName, loadItemNames } from "./lib/itemnames";
 import { type Browse, type BrowseItem, type Categories, type House, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, skinMoney, slot, statusBar, topBar, type View } from "./lib/dom";
@@ -340,6 +341,7 @@ async function loadRecipes(seq: number): Promise<void> {
 	try {
 		recipeFetch ??= get<RecipeData>(RECIPES_URL);
 		recipeData = await recipeFetch;
+		await loadItemNames(get);
 		const need = itemsNeeded(
 			recipeData,
 			rows.map((r) => r.item.id),
@@ -579,7 +581,7 @@ function append2(el: HTMLElement, ...c: (Node | string)[]): HTMLElement {
 
 function rowEl(r: Row, fav: boolean, today: number, recipes: boolean): HTMLElement {
 	const it = r.item;
-	const name = it.name ?? `Item ${it.id}`;
+	const name = itemName(it.id, it.name);
 	const spark = sparkPath(sparkValues(it.days, today), 96, 20, 2);
 	const cur = it.current;
 	const tr = h(

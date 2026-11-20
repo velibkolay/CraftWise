@@ -2,8 +2,10 @@
 // The numbers come from recipes.ts; this only draws them.
 import { h, moneyEl, skinMoney } from "./dom";
 import { qualityClass } from "./format";
+import { itemName } from "./itemnames";
+import { learnLines } from "./learn";
 import { formatPct, pctOf } from "./crafts";
-import { basisText, type Craft, depthText, type Priced, type RecipeRow, type Spell } from "./recipes";
+import { basisText, type Craft, depthText, type Priced, type RecipeData, type RecipeRow, type Spell } from "./recipes";
 
 export type CraftNames = Map<number, { name: string | null; quality: number | null }>;
 
@@ -30,7 +32,7 @@ export function craftsText(n: number): string {
 
 function itemLink(id: number, names: CraftNames): HTMLElement {
 	const n = names.get(id);
-	return h("a", { href: `/item/${id}`, class: `ilink ${qualityClass(n?.quality ?? null)}` }, n?.name ?? `Item ${id}`);
+	return h("a", { href: `/item/${id}`, class: `ilink ${qualityClass(n?.quality ?? null)}` }, itemName(id, n?.name));
 }
 
 // Where a price comes from; a lowest listing also says what it holds ("AH lowest, 3 units in 1 listing").
@@ -156,7 +158,7 @@ function missingNote(c: Craft, names: CraftNames): HTMLElement | null {
 }
 
 // A recipe item's breakdown: what it teaches, the reagents, the sums, the recipe's price and its pay back.
-export function craftBreakdown(rec: RecipeRow, names: CraftNames, title: string | null): HTMLElement[] {
+export function craftBreakdown(rec: RecipeRow, names: CraftNames, title: string | null, learn?: string[]): HTMLElement[] {
 	const c = rec.craft!;
 	const s = c.spell;
 	const extra: HTMLElement[] = [];
@@ -168,6 +170,7 @@ export function craftBreakdown(rec: RecipeRow, names: CraftNames, title: string 
 	}
 	return [
 		h("p", { class: "bd-head" }, h("span", { class: "lbl" }, "Teaches "), ...makesEl(s, names), h("span", { class: "hint" }, ` · ${professionText(s, rec.teach?.skill ?? null)}`)),
+		learn ? h("div", { class: "hint bd-learn" }, ...learn.map((t) => h("p", {}, t))) : h("span", { hidden: true }),
 		reagentTable(c, names, `Reagents of ${title ?? "the recipe"}`),
 		sums(c, extra),
 		missingNote(c, names) ?? h("span", { hidden: true }),
@@ -175,13 +178,14 @@ export function craftBreakdown(rec: RecipeRow, names: CraftNames, title: string 
 }
 
 // "Craft It" on the item page: one craft of the item, with the recipe item that teaches it when there is one.
-export function craftItBreakdown(c: Craft, recipe: { item: number; skill: number | null } | null, names: CraftNames, vendorBuy?: Record<string, number>): HTMLElement[] {
+export function craftItBreakdown(c: Craft, recipe: { item: number; skill: number | null } | null, names: CraftNames, vendorBuy?: Record<string, number>, data?: RecipeData): HTMLElement[] {
 	const s = c.spell;
 	const head = recipe
 		? [h("span", { class: "lbl" }, `${professionText(s, recipe.skill)}: `), itemLink(recipe.item, names)]
-		: [h("span", { class: "lbl" }, s.profession ?? `Profession ${s.skillLine}`), h("span", { class: "hint" }, " · no recipe item in the data (trainer or not known)")];
+		: [h("span", { class: "lbl" }, s.profession ?? `Profession ${s.skillLine}`), h("span", { class: "hint" }, " · no recipe item in the data: a trainer teaches it, or the source is not known")];
 	return [
 		h("p", { class: "bd-head" }, ...head, s.qty !== 1 ? h("span", { class: "hint" }, ` · makes ${qtyText(s.qty)} per craft`) : null),
+		recipe && data ? h("div", { class: "hint bd-learn" }, ...learnLines(data, recipe.item).map((t) => h("p", {}, t))) : h("span", { hidden: true }),
 		reagentTable(c, names, `Reagents to craft ${names.get(s.output ?? 0)?.name ?? "it"}`, vendorBuy),
 		sums(c, [], vendorBuy !== undefined),
 		missingNote(c, names) ?? h("span", { hidden: true }),
