@@ -89,3 +89,12 @@ export const SYNC_RAW_SECONDS = 48 * 3600; // CraftWise/Market.lua RAW_SECONDS
 export const SYNC_DAYS = 30; // CraftWise/Market.lua KEEP_DAYS
 export const SYNC_SCANS = 200; // newest scans on the first page
 export const SYNC_SAFETY = 60; // `until` lies this far behind now
+
+// Download of the characters (#242, GET /api/sync/characters).
+export const SYNC_CHARS = 5; // characters per page
+export const SYNC_CHARS_MAX = 20;
+export const SYNC_CHARS_BYTES = 3_000_000; // a page is cut when its documents pass this (the answer is built from the stored text)
+export const SYNC_LEDGER_DAYS = 30; // ledger window per character when `ledgerSince` is not given
+export const SYNC_LEDGER_DAYS_MAX = 90;
+export const SYNC_LEDGER_ENTRIES = 2000; // the newest entries per character
+export const SYNC_CRAFTED_DAYS = 30; // craft log days per character

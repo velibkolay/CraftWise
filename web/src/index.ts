@@ -9,6 +9,7 @@ import * as me from "./me";
 import * as read from "./read";
 import { PAGE_HEADERS } from "./pages";
 import { syncMarket } from "./sync";
+import { syncCharacters } from "./syncchars";
 import { assertJson, privateUpload, publicUpload } from "./upload";
 
 function nowSeconds(): number {
@@ -102,6 +103,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 	// The item page: one static page for every item; its script reads the ID from the path.
 	if (path.startsWith("/item/")) return itemPage(request, env, url);
 	if (path === "/api/sync/market") return syncMarket(request, env, url, now);
+	if (path === "/api/sync/characters") return syncCharacters(request, env, url, now);
 	if (path === "/api/houses") return read.houses(env);
 	if (path === "/api/scans") return read.scans(env, url);
 	if (path === "/api/items") return read.search(env, url);

@@ -20,6 +20,10 @@ type Cache struct {
 	Site   string                `json:"site"`
 	Since  int64                 `json:"since"` // server time of the last complete download; 0 = never
 	Market *upload.PublicPayload `json:"market"`
+	// The other machine's characters (#242), each whole as the site sent it, and the server time to
+	// ask `since` next time for them (0 = never).
+	Chars      map[string]Char `json:"chars,omitempty"`
+	CharsSince int64           `json:"charsSince,omitempty"`
 }
 
 // NewCache is an empty cache for site.

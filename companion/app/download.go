@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/velibkolay/CraftWise/companion/syncdata"
@@ -82,10 +83,33 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 	}
 	cache.Merge(dl)
 	cache.Since = until
+
+	// The other machine's characters (#242): they need the private scope, so a token without it, or a
+	// site that doesn't have the endpoint yet, leaves them out and never stops the market download.
+	own := ownChars(st)
+	charsText := ""
+	if cfg.Private {
+		got, charsUntil, cerr := syncdata.DownloadChars(ctx, client, cache.CharsSince, cfg.MachineName(), a.clock)
+		switch {
+		case cerr != nil:
+			a.Log.Printf("downloading the characters failed: %v", cerr)
+			charsText = ", characters failed: " + cerr.Error()
+		default:
+			cache.MergeChars(got, own)
+			cache.CharsSince = charsUntil
+			if len(got) > 0 {
+				charsText = fmt.Sprintf(", %d characters", len(got))
+			}
+		}
+	}
 	if err := cache.Save(a.CachePath()); err != nil {
 		return res, err
 	}
-	changed, err := syncdata.Write(wow, syncdata.File{Written: now.Unix(), Machine: cfg.MachineName(), Market: cache.Market})
+	out := syncdata.File{Written: now.Unix(), Machine: cfg.MachineName(), Market: cache.Market}
+	if cfg.Private {
+		out.Chars = cache.OtherChars(own, cfg.MachineName())
+	}
+	changed, err := syncdata.Write(wow, out)
 	if err != nil {
 		return res, err
 	}
@@ -94,10 +118,23 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 	if !syncdata.Empty(dl) {
 		text = fmt.Sprintf("downloaded %d items", len(dl.Items))
 	}
+	text += charsText
 	if changed {
 		text += ", wrote " + syncdata.LuaName
 	}
 	a.Log.Print(text)
 	a.setStatus(func(s *Status) { s.Download = text })
 	return res, nil
+}
+
+// ownChars are the character keys this machine uploads itself (the private documents in the upload
+// state): their data comes from the game's own file, so the site's copy is never taken (#242).
+func ownChars(st *upload.State) map[string]bool {
+	own := map[string]bool{}
+	for k := range st.Docs {
+		if _, char, ok := strings.Cut(k, ""); ok {
+			own[char] = true
+		}
+	}
+	return own
 }

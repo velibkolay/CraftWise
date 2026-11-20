@@ -165,8 +165,47 @@ A failed download (network, 5xx, 429) retries like an upload; a refusal (401, 40
 is logged and tried again after the next upload. Nothing changes on a failure: the cache, `since`, the marks
 and the add-on file stay as they were. Turn it off with `"sync": false`.
 
-The machine name goes into the file and every request (header `X-CraftWise-Machine`) so the site can label
-data later (#237 phase 2).
+The machine name goes into the file and every request (header `X-CraftWise-Machine`). The site stores it with
+each character the private upload carries, so the other machine can tell whose a character is (#242).
+
+### The other machine's characters (#242)
+
+With the private upload on (`private`), the same download also fetches the characters of the other machine:
+`GET /api/sync/characters?since=<t>&notMachine=<this machine>` (scope `private` of the same token,
+`web/docs/api.md`): each character's snapshot, auctions, fishing summary, the last 30 days of the ledger and of
+the craft log, with the machine that uploaded it and when. A character comes whole and replaces the cached one
+(`chars` in `market-cache.json`, with its own `since`).
+
+**Own data wins.** A character this machine uploads itself (every character key in the upload state's documents,
+and everything the site labels with this machine's name) is never written into the file: the game's own
+SavedVariables are the truth for it. A token without the `private` scope, or a site without the endpoint, leaves
+the characters out; the market download goes on and the status line says "characters failed: ...".
+
+`CraftWiseSync.chars` (the file keeps `v = 1`: the new key is additive and older addons ignore it):
+
+```lua
+CraftWiseSync = {
+  v = 1, written = ..., machine = "PC", market = { ... },
+  chars = {                                  -- the other machine's characters; {} when there are none
+    ["CAMWOW EU4 Realm 8 PvP-Mage Alt"] = {  -- the character key, as everywhere
+      machine = "Mac",                       -- who uploaded it; missing when the site doesn't know (uploaded before #242)
+      uploaded = 1794400100,                 -- server time of its last change on the site
+      info = { realm = "...", name = "Mage", faction = "Horde", race = "Orc", class = "Mage", level = 12, t = 1794400000 },
+      snapshot = { t = 1794400000, data = { ... } },   -- CraftWiseDB.snapshots[key], docs/snapshot.md
+      auctions = { t = ..., data = { ... } },          -- CraftWiseMarketDB.auctions.chars[key]
+      fishing = { t = ..., data = { ... } },
+      ledger = { { t = ..., k = "ahbuy", i = 2589, q = 20, m = 2000, w = "<house>", n = "Linen Cloth" }, ... },  -- oldest first
+      crafted = { { r = <recipe spell ID>, d = <YYYYMMDD>, n = <crafts>, i = <items>, p = <profit>, k = <priced crafts>, a = <active seconds> }, ... },
+    },
+  },
+}
+```
+
+The documents are the JSON the companion uploaded, turned into Lua tables: object keys are strings (a bag's item
+ID is `["2589"]`, not a number, as in the upload), a JSON `null` in an object is a missing field, a `null` in a
+list is `false`, numbers are as they came. A field the site doesn't have (`auctions`, `fishing`, `info.level`) is
+missing, never filled in. Lua 5.1 allows about 262,000 distinct constants in one chunk; the market and a few
+characters are far below that, which is one reason the ledger is cut to 30 days and 2,000 entries per character.
 
 ## Update on the Mac
 
@@ -209,7 +248,7 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   | `pollSeconds` | `5` | how often the file is checked |
   | `settleSeconds` | `3` | how long it must stay unchanged before it is read |
   | `sync` | `true` | download the merged market and write the `CraftWise_Sync` add-on (the upload token, `public` scope) |
-  | `machine` | (host name) | this machine's name, sent with every request and written into the sync file |
+  | `machine` | (host name) | this machine's name, sent with every request and written into the sync file; the site stores it with the characters this machine uploads (#242) |
 
   Changes apply at the next upload; a different `wowPath` or `account` switches the watched file.
 - `state.json`: what was uploaded (per site and file). Delete it, or use `-once -full`, to send
