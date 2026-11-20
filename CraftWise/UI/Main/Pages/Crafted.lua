@@ -326,11 +326,30 @@ local SORT_NOTES = { name = L["by name"], today = L["by crafts today"], week = L
 	speed = L["by crafts per hour"], profitHour = L["by profit per hour"],
 	profitToday = L["by profit today"], profitWeek = L["by profit in 7 days"], profitTotal = L["by total profit"] }
 
+-- Hero tooltip (#378): the estimated profit today, over 7 days and in total (the sum of the rows, so it follows the
+-- page's filters), how many crafts have a price, and what the figures are. {title, line...} or nil with no figure.
+function P.HeroTip(today, anyToday, week, anyWeek, all, anyAll, priced, dated)
+	if not (anyToday or anyWeek or anyAll) then
+		return nil
+	end
+	local function Money(any, v)
+		if not any then
+			return M.DASH
+		end
+		return (v < 0 and "-" or "+") .. MK.PlainMoney(math.abs(v))
+	end
+	return { L["Estimated profit"],
+		(L["Today %s · 7 days %s · total %s"]):format(Money(anyToday, today), Money(anyWeek, week), Money(anyAll, all)),
+		(L["Total: %s of %s crafts priced (crafts with no price add nothing)."]):format(CL.Format(priced), CL.Format(dated)),
+		L["Estimated: each craft valued at craft time (reagents at the Profit view's cost basis, the sale at the price then). Not money received; Sell > Ledger has the real money."] }
+end
+
 function P.Model(ctx)
 	local docked = M.IsDocked(ctx)
 	local rows = P.Rows()
 	local today, week, total = 0, 0, 0
 	local profitToday, profitWeek, anyToday, anyWeek = 0, 0, false, false
+	local profitAll, anyAll, datedCrafts, pricedCrafts = 0, false, 0, 0
 	local activeToday, activeWeek -- active crafting seconds (#251); nil while no day in the window was timed
 	local timedToday, timedWeek, timedProfitToday = 0, 0, 0 -- crafts measured and their profit (#273)
 	local untimedToday, estToday = 0, 0 -- untimed crafts that have a measured median, and their estimated seconds
@@ -352,6 +371,11 @@ function P.Model(ctx)
 		end
 		if r.profitWeek then
 			profitWeek, anyWeek = profitWeek + r.profitWeek, true
+		end
+		-- Total: the rows' Profit total, over the dated crafts (r.dated) of which r.known had a price (#378).
+		datedCrafts, pricedCrafts = datedCrafts + (r.dated or 0), pricedCrafts + (r.known or 0)
+		if r.profitTotal then
+			profitAll, anyAll = profitAll + r.profitTotal, true
 		end
 	end
 	-- Active time (#251, #273): only the crafts measured count. The gold per hour is their profit over their time, never the
@@ -394,8 +418,11 @@ function P.Model(ctx)
 			sub = (L["7 days %s"]):format(CL.Format(week))
 				.. weekText
 				.. (docked and "" or (" · " .. (L["%s crafts in total"]):format(CL.Format(total))))
-				.. (anyWeek and (" · " .. (L["profit 7 days %s"]):format(MK.PlainMoney(math.abs(profitWeek)) .. (profitWeek < 0 and " " .. L["loss"] or ""))) or ""),
+				.. (anyWeek and (" · " .. (L["profit 7 days %s"]):format(MK.PlainMoney(math.abs(profitWeek)) .. (profitWeek < 0 and " " .. L["loss"] or ""))) or "")
+				.. (anyAll and not docked and (" · " .. (L["total %s"]):format(MK.PlainMoney(math.abs(profitAll)) .. (profitAll < 0 and " " .. L["loss"] or ""))
+					.. (pricedCrafts < datedCrafts and (" (" .. (L["%s of %s priced"]):format(CL.Format(pricedCrafts), CL.Format(datedCrafts)) .. ")") or "")) or ""),
 			figureLabel = L["Estimated profit today"],
+			tip = P.HeroTip(profitToday, anyToday, profitWeek, anyWeek, profitAll, anyAll, pricedCrafts, datedCrafts),
 		}
 		if anyToday then
 			hero.figure, hero.figureColor = MK.Signed(profitToday)

@@ -1364,3 +1364,8 @@ Needs the companion with the private upload and a character whose auction tracke
 - [ ] An item not listed now (or never seen) gives a dash in Now, not the typical price.
 - [ ] Open a row: every reagent shows "now ..." under its typical total.
 - [ ] Settings > Profit prices = "Current lowest": the Now column is gone and the rows look as before.
+
+## Make > Crafted: estimated profit in total (#378)
+- Make > Crafted, window layout: the top card line reads "7 days N ... · profit 7 days X · total Y (K of N priced)"; the "(K of N priced)" part shows only when some crafts have no price. Y is the sum of the Profit total column of the rows. Pick a profession, a character or type in the filter box: Y and the counts follow the rows. A filter with no priced craft shows no total.
+- Hover the card: "Estimated profit", today / 7 days / total, "Total: K of N crafts priced", and the note that it is an estimate, not money received (Sell > Ledger has the real money).
+- Docked layout: the line stays short (no total); the total is in the card tooltip.

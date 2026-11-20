@@ -1031,3 +1031,37 @@ it("short casts: unchanged, no START seen means the old rules; a cancelled cast 
 	eq(entryOf(ns, R_BOOTS).speed.n, 1)
 	eq(entryOf(ns, R_BOOTS).days[20261115][5], 2.5)
 end)
+
+-- Make › Crafted hero: the estimated profit in total (#378)
+local function seedProfitLog(ns)
+	time = function() return T(2026, 11, 15) end
+	ns.db.crafted = { seeded = true, before = {}, chars = {
+		["TestRealm-Main Tanner"] = { [R_BOOTS] = { days = { [20261110] = { 5, 5, 500, 5 } } }, [R_CLAMS] = { days = { [20261115] = { 2, 2, 0, 0 } } } },
+		["TestRealm-Alt Mage"] = { [R_BOOTS] = { days = { [20261115] = { 3, 3, 300, 3 } } } } } }
+end
+
+it("Crafted hero: total profit is the sum of the rows, an unpriced recipe adds nothing and is counted", function()
+	local ns = setup()
+	seedProfitLog(ns)
+	local P, MK = ns.Main.CraftedPage, ns.Main.Make
+	local hero = P.Model().hero
+	assert(hero.sub:find("total " .. MK.PlainMoney(800), 1, true), hero.sub)
+	assert(hero.sub:find("8 of 10 priced", 1, true), hero.sub)
+	assert(hero.tip and hero.tip[3]:find("8 of 10", 1, true), "tooltip says how many crafts are priced")
+	assert(hero.tip[4]:find("Not money received", 1, true) and hero.tip[4]:find("Ledger", 1, true))
+end)
+
+it("Crafted hero: total profit follows the character filter and drops the priced note when all are priced", function()
+	local ns = setup()
+	seedProfitLog(ns)
+	local P, MK = ns.Main.CraftedPage, ns.Main.Make
+	P.state.char = "TestRealm-Alt Mage"
+	local hero = P.Model().hero
+	assert(hero.sub:find("total " .. MK.PlainMoney(300), 1, true), hero.sub)
+	assert(not hero.sub:find("priced", 1, true), hero.sub)
+	P.state.char = nil
+	MK.state.query = "clams"
+	hero = P.Model().hero
+	assert(hero.tip == nil and not hero.sub:find("profit 7 days", 1, true), "no priced craft in the filtered rows: no total")
+	MK.state.query = ""
+end)
