@@ -573,6 +573,16 @@ local function BuildBody()
 	hero.figureUnit = Style.Text(hero, "Small", "text2") -- after the figure ("crafts")
 	hero.figureUnit:SetJustifyH("RIGHT")
 	hero.middle = CreateFrame("Frame", nil, hero) -- the page's rails go here
+	-- model.hero.tip = { title, line, ... }: a tooltip over the whole card (set in PlaceHero).
+	hero:EnableMouse(true)
+	hero:SetScript("OnEnter", function(self)
+		if self.cwTip then
+			Style.ShowTip(self, unpack(self.cwTip))
+		end
+	end)
+	hero:SetScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
 	hero:Hide()
 
 	-- Docked: the page's sub bar tools move into the list header, a row of their own (spec).
@@ -681,6 +691,7 @@ local function PlaceHero(model, m, drawn)
 	local hero = f.hero
 	local h = model.hero
 	hero:SetShown(h ~= nil)
+	hero.cwTip = h and h.tip or nil
 	if not h then
 		return 0
 	end
