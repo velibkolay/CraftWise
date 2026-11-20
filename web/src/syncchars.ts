@@ -123,10 +123,12 @@ export async function syncCharacters(request: Request, env: Env, url: URL, now: 
 				db.prepare("SELECT char, t, data FROM fishing WHERE char IN (SELECT value FROM json_each(?1))").bind(keys),
 				db
 					.prepare(
-						`SELECT char, t, kind, item, qty, money, place, name FROM ledger
-						WHERE char IN (SELECT value FROM json_each(?1)) AND t >= ?2 ORDER BY char, t DESC, uid LIMIT ?3`,
+						`SELECT char, t, kind, item, qty, money, place, name FROM (
+							SELECT *, ROW_NUMBER() OVER (PARTITION BY char ORDER BY t DESC, uid) AS rn FROM ledger
+							WHERE char IN (SELECT value FROM json_each(?1)) AND t >= ?2
+						) WHERE rn <= ?3 ORDER BY char, t DESC, uid`,
 					)
-					.bind(keys, ledgerSince, SYNC_LEDGER_ENTRIES * limit),
+					.bind(keys, ledgerSince, SYNC_LEDGER_ENTRIES),
 				db
 					.prepare(
 						`SELECT char, recipe, day, n, items, profit, known, active FROM crafted

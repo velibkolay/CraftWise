@@ -155,13 +155,28 @@ most), later uploads only the changed days.
 
 The migration adds `machine` and `uploaded` to `characters`, sets `uploaded` once for the characters already stored
 (one row written per character, a few dozen at most) and adds nine triggers that move `uploaded` when a document, a
-ledger entry or a craft day really changes. Apply it from the PR's branch before merging (step 4 above), in PowerShell:
+ledger entry or a craft day really changes. Apply it before merging (step 4 above) from a separate checkout of the PR branch, so the shared checkout's branch
+is never switched. In PowerShell, from `C:\Users\Veli\Documents\GitHub\craftwise`:
 ```powershell
-cd C:\Users\Veli\Documents\GitHub\craftwise\web
 git fetch origin
-git switch cw-242-chars
+```
+```powershell
+git worktree add ..\craftwise-mig origin/cw-242-chars
+```
+```powershell
+cd ..\craftwise-mig\web
+```
+```powershell
+npm ci
+```
+```powershell
 npx wrangler d1 migrations apply craftwise --remote
-git switch main
+```
+```powershell
+cd ..\..\craftwise
+```
+```powershell
+git worktree remove --force ..\craftwise-mig
 ```
 The running Worker keeps working in between (it doesn't know the columns; the triggers already keep `uploaded`
 current). `machine` stays empty for a character until its machine uploads it again after the deploy; the companion

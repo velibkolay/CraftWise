@@ -153,6 +153,23 @@ describe("GET /api/sync/characters (#242)", () => {
 		expect((await page("/api/sync/characters")).characters[A]!.uploaded).toBeGreaterThanOrEqual(t);
 	});
 
+	it("caps the ledger per character, so a busy one doesn't starve the next", async () => {
+		const t = now();
+		await up({ v: 1, snapshots: { [A]: { t, data: snapshot(t, "Velikopter") }, [B]: { t, data: snapshot(t, "Mage") } } }, token, "PC");
+		await env.DB.prepare(
+			`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2100)
+			INSERT INTO ledger (uid, char, t, kind, item, qty, money) SELECT 'a' || i, ?1, ?2 - i, 'ahbuy', i, 1, 1 FROM n`,
+		).bind(A, t - 10).run();
+		await env.DB.prepare("INSERT INTO ledger (uid, char, t, kind, item, qty, money) VALUES ('b1', ?1, ?2, 'ahsell', 7, 1, 1), ('b2', ?1, ?3, 'ahsell', 8, 1, 1)")
+			.bind(B, t - 5, t - 4).run();
+		const body = await page("/api/sync/characters?limit=2");
+		expect(Object.keys(body.characters).sort()).toEqual([A, B].sort());
+		const a = body.characters[A]!.ledger;
+		expect(a).toHaveLength(2000);
+		expect(a[a.length - 1]!.i).toBe(1); // the newest entry is last (oldest first)
+		expect(body.characters[B]!.ledger.map((e) => e.i)).toEqual([7, 8]);
+	});
+
 	it("keeps a key with dots and spaces through the cursor", async () => {
 		const dotted = "CAMWOW EU4 Realm 8 PvP-Dr. Who";
 		const t = now();
