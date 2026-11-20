@@ -1350,3 +1350,10 @@ No TOC change; `/reload` is enough. Needs the companion on both computers with t
 ## Farm: best catch value is whole copper (#373)
 
 - [ ] Fish a few catches with an AH price on the best one, then `/reload`. In `WTF/.../SavedVariables/CraftWise.lua` the snapshot's `farm.current.fish.best.value` (and `farm.sessions[n].fish.best.value`) has no fraction (312, not 311.6). The companion log no longer says "values not read" for it.
+
+## Companion: a big auctions document is cut, not left out (#372)
+Needs the companion with the private upload and a character whose auction tracker holds over about 1,150 records (30 days of a busy seller).
+- [ ] After an upload the log says "cut to fit: N records: auctions document: the oldest finished records left out ..." and no "left out (server would refuse it): ... auctions document over 450000 bytes".
+- [ ] The tray tooltip and menu line end with "(N old auction records not uploaded (document too big))".
+- [ ] `/me` shows the character's auctions with a fresh "Auctions" time in the characters list; the listed auctions are all there.
+- [ ] `/craftwise auctions` in game still lists everything (the addon's own records are not cut).

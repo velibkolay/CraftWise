@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +45,9 @@ type Status struct {
 	RetryAt  time.Time
 	File     string // the SavedVariables file
 	Download string // the last download: what came, or the error (#239)
+	// Notice is what the last build left out or cut so the server would take the rest (#372), as one
+	// line; empty when nothing. Kept apart from Text: the upload itself worked.
+	Notice string
 }
 
 // ConfigPath, StatePath and LogPath are the files in Dir.
@@ -200,6 +204,27 @@ func (a *App) RunOnce(ctx context.Context, opt RunOptions) (upload.Result, error
 	return res, err
 }
 
+// NoticeText is the one line for the status line and the tray about what a plan left out or cut
+// (#372); empty when it left out nothing.
+func NoticeText(plan *upload.Plan) string {
+	var parts []string
+	skipped := 0
+	for _, n := range plan.Skipped {
+		skipped += n
+	}
+	if skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d values left out, see the log", skipped))
+	}
+	cut := 0
+	for _, n := range plan.Trimmed {
+		cut += n
+	}
+	if cut > 0 {
+		parts = append(parts, fmt.Sprintf("%d old auction records not uploaded (document too big)", cut))
+	}
+	return strings.Join(parts, "; ")
+}
+
 func countsText(c map[string]int) string {
 	b := upload.Batch[struct{}]{Counts: c}
 	return b.Summary()
@@ -245,6 +270,13 @@ func (a *App) runOnce(ctx context.Context, opt RunOptions) (upload.Result, strin
 	plan := upload.Build(f, st, bo)
 	for _, line := range plan.SkippedText() {
 		a.Log.Printf("left out (server would refuse it): %s", line)
+	}
+	for _, line := range plan.TrimmedText() {
+		a.Log.Printf("cut to fit: %s", line)
+	}
+	if !opt.DryRun {
+		notice := NoticeText(plan)
+		a.setStatus(func(s *Status) { s.Notice = notice })
 	}
 
 	if opt.DryRun {

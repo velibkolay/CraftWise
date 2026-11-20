@@ -314,3 +314,13 @@ func TestLoopUploadsAtStartAndAfterAChange(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestNoticeText(t *testing.T) {
+	if got := NoticeText(&upload.Plan{}); got != "" {
+		t.Errorf("nothing left out: %q", got)
+	}
+	got := NoticeText(&upload.Plan{Skipped: map[string]int{"a": 1, "b": 2}, Trimmed: map[string]int{"x": 183}})
+	if !strings.Contains(got, "3 values left out") || !strings.Contains(got, "183 old auction records") {
+		t.Errorf("notice: %q", got)
+	}
+}
