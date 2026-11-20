@@ -445,8 +445,8 @@ it("Level up rows: chance bar and percent (~ for the formula), cost, sale, net a
 	local list = Make.Open(ns, "level", PROF)
 	eq(Make.Names(ns, "level"), "Test Bracers,Test Belt,Test Gloves", "100%, ~83%, ~50% (#364)")
 	local labels = {}
-	for i = 2, 7 do labels[#labels + 1] = list.headers[i].label.text:gsub(" |T.*$", "") end
-	eq(table.concat(labels, ","), "Recipe,Chance,Cost,Sale,Net/craft,Per skill-up")
+	for i = 2, 8 do labels[#labels + 1] = list.headers[i].label.text:gsub(" |T.*$", "") end
+	eq(table.concat(labels, ","), "Recipe,Chance,Cost,Sale,Net/craft,Now,Per skill-up")
 	local belt, bf = Row(ns, "level", R_BELT)
 	eq(belt.view.chanceText, "~83%"); eq(belt.view.chanceColor, "text2")
 	eq(bf.cwChance.text.text, "~83%"); eq(bf.cwChance.track.width, 60)
@@ -986,7 +986,7 @@ it("Per day sorts: figures first (best first), then vendor rows, then rows witho
 	eq(rows[1].name, "Test Cap"); eq(rows[2].name, "Test Cloak"); eq(rows[3].name, "Test Belt")
 	eq(rows[4].name, "Test Gloves", "rows without a figure stay last in both directions")
 	local _ = table.concat(names, ",")
-	eq(M.Page("craft").columns[6].key, "daily"); eq(M.Page("craft").columns[6].sort, true)
+	eq(M.Page("craft").columnsAll[6].key, "daily"); eq(M.Page("craft").columnsAll[6].sort, true)
 end)
 
 it("Per day includes unlearned recipes (the Unlearned chip) and says how long learning takes to pay back", function()
@@ -1224,4 +1224,90 @@ it("Loops (#345): a single-item price change does not run the check; a full scan
 	ns.db.settings.loopAlert = false; ns.db.settings.flipAlert = false; ns.db.settings.snipeAlert = false
 	ns.Notify("FULL_PRICES")
 	eq(#stub.timers, 0, "switched off")
+end)
+
+----------------------------------------------------------------------------------------------------
+-- Now (#376): the net per craft at the current lowest prices, next to the typical one
+----------------------------------------------------------------------------------------------------
+
+-- A newer look at the house: the lowest listing now, `ago` seconds before NOW (typical days stay as they were).
+local function Look(itemID, min, ago)
+	local entry = CraftWiseMarketDB.items[itemID][HORDE]
+	local t = NOW - (ago or 0)
+	entry.last = { t = t, min = min, qty = 50 }
+	entry.raw[#entry.raw + 1] = { t = t, total = 50, tiers = { min, 50 } }
+end
+
+it("Now (#376): Level up and Craft show the net at the current lowest prices; the typical net and the order stay", function()
+	local ns, _, M = Load()
+	Look(HIDE, 15, 120) -- the reagent is dearer now: typical 10, now 15
+	Look(BELT, 220, 120) -- and the belt sells for more: typical 200, now 220
+	local list = Make.Open(ns, "level", PROF)
+	local belt = Row(ns, "level", R_BELT)
+	eq(belt.view.cells.netEarn, "+" .. ns.FormatCoins(150), "Net/craft stays on the typical price")
+	-- now: cost 2 x 15 + 20 (vendor thread) = 50, sale 220 less the 5% cut = 209
+	eq(belt.view.cells.now, "+" .. ns.FormatCoins(159)); eq(belt.view.colors.now, "text")
+	eq(belt.now.net, 159)
+	eq(Make.Names(ns, "level"), "Test Bracers,Test Belt,Test Gloves", "the order is still the typical one")
+	local tip = table.concat(belt.view.tips.now, "\n")
+	assert(tip:find("2 x Testhide", 1, true) and tip:find("seen 2 min ago", 1, true) and tip:find("typical", 1, true), tip)
+	assert(tip:find("vendor", 1, true), "the vendor reagent is the same vendor price")
+	-- the reagent line of the opened row: typical total and now
+	local lines = M.Make.ReagentLines(belt)
+	eq(Plain(lines[1].now), "now " .. Plain(ns.FormatCoins(30)))
+	-- Craft: the same
+	Make.Open(ns, "craft", PROF)
+	local craft = Row(ns, "craft", R_BELT)
+	eq(craft.profit, 150, "Profit stays typical")
+	eq(craft.view.cells.now, "+" .. ns.FormatCoins(159))
+	eq(craft.now.net, 159)
+end)
+
+it("Now (#376): an output that is not listed now is a dash, never the typical price", function()
+	local ns = Load()
+	Seed(BRACERS, 60) -- bracers have a typical price, vendors don't buy them
+	CraftWiseMarketDB.items[BRACERS][HORDE].last.off = NOW -- a later scan found none of it
+	Make.Open(ns, "level", PROF)
+	local b = Row(ns, "level", R_BRACERS)
+	eq(b.view.cells.now, ns.Main.DASH); eq(b.view.colors.now, "text3")
+	eq(b.now.net, nil)
+	local tip = table.concat(b.view.tips.now, "\n")
+	assert(tip:find("Sells: not listed now", 1, true) and tip:find("typical price is not used instead", 1, true), tip)
+	Make.Open(ns, "craft", PROF)
+	eq(Row(ns, "craft", R_BRACERS).view.cells.now, ns.Main.DASH)
+end)
+
+it("Now (#376): a reagent not listed now makes the net a dash even with a typical price", function()
+	local ns = Load()
+	CraftWiseMarketDB.items[HIDE][HORDE].last.off = NOW
+	Make.Open(ns, "level", PROF)
+	local belt = Row(ns, "level", R_BELT)
+	eq(belt.view.cells.netEarn, "+" .. ns.FormatCoins(150))
+	eq(belt.view.cells.now, ns.Main.DASH)
+	assert(table.concat(belt.view.tips.now, "\n"):find("not listed now", 1, true))
+end)
+
+it("Now (#376): with Profit prices on Current lowest the column is gone", function()
+	local ns, _, M = Load()
+	ns.db.settings.priceBasis = "current"
+	local list = Make.Open(ns, "level", PROF)
+	local labels = {}
+	for i = 2, 7 do labels[#labels + 1] = list.headers[i].label.text:gsub(" |T.*$", "") end
+	eq(table.concat(labels, ","), "Recipe,Chance,Cost,Sale,Net/craft,Per skill-up")
+	local belt = Row(ns, "level", R_BELT)
+	eq(belt.now, nil); eq(belt.view.cells.now, nil)
+	Make.Open(ns, "craft", PROF)
+	eq(Row(ns, "craft", R_BELT).now, nil)
+	eq(M.Make.ReagentLines(belt)[1].now, nil)
+end)
+
+it("Now (#376): follows PRICES_CHANGED, so a search changes it at once", function()
+	local ns = Load()
+	Make.Open(ns, "level", PROF)
+	eq(Row(ns, "level", R_BELT).view.cells.now, "+" .. ns.FormatCoins(150))
+	Look(BELT, 300, 5)
+	ns.Notify("PRICES_CHANGED")
+	-- 300 less 5% = 285, minus the cost 40
+	eq(Row(ns, "level", R_BELT).view.cells.now, "+" .. ns.FormatCoins(245))
+	eq(Row(ns, "level", R_BELT).view.cells.netEarn, "+" .. ns.FormatCoins(150), "typical unchanged by one look")
 end)

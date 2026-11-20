@@ -997,7 +997,11 @@ function M.Sort(page)
 	if not s then
 		local saved = M.UI().sort[page.key]
 		if type(saved) == "table" and saved.key then
-			for _, col in ipairs(page.columns or {}) do
+			local columns = page.columns
+			if type(columns) == "function" then
+				columns = page.columnsAll -- a page whose columns depend on the settings lists every one here
+			end
+			for _, col in ipairs(columns or {}) do
 				if col.sort and col.key == saved.key then
 					s = { key = saved.key, desc = saved.desc and true or false }
 					break

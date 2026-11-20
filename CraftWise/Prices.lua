@@ -65,8 +65,13 @@ end
 --   3. nil ("no price data").
 -- Returns { copper, source = "market"|"auctionator", basis, fallback, house, houseLabel, houseKind,
 -- label, age (days), thin, thinWhy }.
+local nowMode = false
+
 function ns.AuctionQuote(itemID)
 	local basis = ns.PriceSettings()
+	if nowMode then
+		basis = "current"
+	end
 	local house, houseLabel, kind = ns.ProfitHouse()
 	if house then
 		local quote = ns.Market.Quote(itemID, house, basis)
@@ -79,6 +84,9 @@ function ns.AuctionQuote(itemID)
 			return quote
 		end
 	end
+	if nowMode then
+		return nil -- "now" is a current listing at the profit house or nothing: no Auctionator, no typical (#376)
+	end
 	local ah, age = ns.GetAuctionPrice(itemID)
 	if ah then
 		-- Saved apart, labelled "house unknown", for reading the file without the game (#90).
@@ -88,6 +96,25 @@ function ns.AuctionQuote(itemID)
 		return { copper = ah, source = "auctionator", age = age, label = ns.AUCTIONATOR_LABEL }
 	end
 	return nil
+end
+
+-- Runs fn(...) with every auction price read as the current lowest listing at the profit house (#376): the
+-- same vendor, intermediate and cut rules as the typical figures, but a missing listing is nothing (no
+-- Auctionator fallback, never the typical price). Returns fn's results.
+function ns.NowPrices(fn, ...)
+	local was = nowMode
+	nowMode = true
+	local out = { pcall(fn, ...) }
+	nowMode = was
+	if not out[1] then
+		error(out[2], 0)
+	end
+	return unpack(out, 2)
+end
+
+-- The "now" figures only differ from the profit figures while the profit prices are typical (#376).
+function ns.NowDiffers()
+	return (ns.PriceSettings()) ~= "current"
 end
 
 -- Where a cut comes from (#40), shown wherever the cut is applied:

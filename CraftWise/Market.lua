@@ -2256,6 +2256,19 @@ function M.Current(itemKey, house)
 	return { t = l.t, min = l.min, qty = l.qty, listings = l.listings, listed = not absent }
 end
 
+-- Start (unix time) of the newest day the 7-day typical has a price for, nil without history (#376): an
+-- observation older than that adds nothing to the typical.
+function M.NewestDayStart(itemKey, house)
+	local entry = db and GetEntry(itemKey, house)
+	local newest
+	for day in pairs(entry and entry.days or {}) do
+		if not newest or day > newest then
+			newest = day
+		end
+	end
+	return newest and newest * DAY_SECONDS or nil
+end
+
 -- Cheapest n price tiers of the latest observation with depth: { t, total, { price, qty }, ... }.
 function M.Depth(itemKey, house, n)
 	local entry = db and GetEntry(itemKey, house)
