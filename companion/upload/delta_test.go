@@ -547,16 +547,17 @@ func TestClassNamesSplitOverRequests(t *testing.T) {
 	}
 }
 
-// #165: the watch list goes with the private upload, whole, only when it changed, an emptied list too.
+// #165, #244: the watch list goes with the private upload as changes (watched at a time, unwatched at a time),
+// only what the site doesn't have yet.
 func watchBody(t *testing.T, plan *Plan) (items []WatchItem, found bool) {
 	t.Helper()
 	for _, b := range plan.Private {
-		if b.Body.Watch != nil {
+		if len(b.Body.Watch) > 0 {
 			if found {
-				t.Fatal("watch list in two requests")
+				t.Fatal("watch changes in two requests")
 			}
 			found = true
-			items = *b.Body.Watch
+			items = b.Body.Watch
 		}
 	}
 	return
@@ -564,46 +565,62 @@ func watchBody(t *testing.T, plan *Plan) (items []WatchItem, found bool) {
 
 func TestWatchUpload(t *testing.T) {
 	now := int64(fixtureNow)
-	f := &savedvars.File{DB: &savedvars.DB{Watch: map[int64]int64{2589: now - 500, 4306: now - 100, 9: 5, 0: now - 1}}}
+	f := &savedvars.File{DB: &savedvars.DB{
+		Watch:     map[int64]int64{2589: now - 500, 4306: now - 100, 9: 5, 0: now - 1},
+		WatchGone: map[int64]int64{777: now - 50},
+	}}
 	st := NewState("s", "f")
 	plan := Build(f, st, Options{Now: now, Private: true})
 	items, ok := watchBody(t, plan)
-	if !ok || len(items) != 2 || items[0] != (WatchItem{I: 4306, T: now - 100}) || items[1] != (WatchItem{I: 2589, T: now - 500}) {
-		t.Fatalf("watch %v (%v), want the two valid items newest first", items, ok)
+	want := []WatchItem{{I: 777, T: now - 50, D: true}, {I: 4306, T: now - 100}, {I: 2589, T: now - 500}}
+	if !ok || len(items) != 3 || items[0] != want[0] || items[1] != want[1] || items[2] != want[2] {
+		t.Fatalf("watch %v (%v), want %v: the valid changes, newest first", items, ok, want)
 	}
 	if plan.Skipped["watched item without a valid item ID or time"] != 2 {
 		t.Errorf("skipped %v", plan.Skipped)
 	}
-	if got := plan.Private[0].Summary(); got != "1 watch" {
+	if got := plan.Private[0].Summary(); got != "3 watch" {
 		t.Errorf("summary %q", got)
 	}
 	body, _ := json.Marshal(plan.Private[0].Body)
-	if !strings.Contains(string(body), `"watch":[{"i":4306,"t":`) {
+	if !strings.Contains(string(body), `"watch":[{"i":777,"t":`) || !strings.Contains(string(body), `"d":true}`) {
 		t.Errorf("body %s", body)
 	}
 	commitAll(plan, st)
 	if _, ok := watchBody(t, Build(f, st, Options{Now: now + 60, Private: true})); ok {
-		t.Error("the same list was sent again")
+		t.Error("the same changes were sent again")
 	}
-	// a new item goes out as the whole list
+	// a new item goes out alone, not the whole list
 	f.DB.Watch[5000] = now - 5
 	items, ok = watchBody(t, Build(f, st, Options{Now: now + 60, Private: true}))
-	if !ok || len(items) != 3 || items[0].I != 5000 {
+	if !ok || len(items) != 1 || items[0].I != 5000 {
 		t.Fatalf("after a change: %v (%v)", items, ok)
 	}
-	// emptied: sent as [], not left out
-	f.DB.Watch = map[int64]int64{}
+	// unwatched in the game: a tombstone moves from watch to watchGone and goes out as a removal
+	delete(f.DB.Watch, 2589)
+	f.DB.WatchGone[2589] = now + 10
+	f.DB.Watch[5000] = now - 5
 	plan = Build(f, st, Options{Now: now + 60, Private: true})
 	items, ok = watchBody(t, plan)
-	if !ok || len(items) != 0 {
-		t.Fatalf("emptied list: %v (%v)", items, ok)
+	if !ok || len(items) != 2 || items[0] != (WatchItem{I: 2589, T: now + 10, D: true}) || items[1].I != 5000 {
+		t.Fatalf("removal: %v (%v)", items, ok)
 	}
-	body, _ = json.Marshal(plan.Private[0].Body)
-	if !strings.Contains(string(body), `"watch":[]`) {
-		t.Errorf("body %s", body)
+	commitAll(plan, st)
+	// watched again after the removal: the newer time wins, and the tombstone is no longer there
+	delete(f.DB.WatchGone, 2589)
+	f.DB.Watch[2589] = now + 20
+	items, ok = watchBody(t, Build(f, st, Options{Now: now + 60, Private: true}))
+	if !ok || len(items) != 1 || items[0] != (WatchItem{I: 2589, T: now + 20}) {
+		t.Fatalf("watched again: %v (%v)", items, ok)
+	}
+	// an emptied list is no change at all: the addon unwatches with a tombstone
+	f.DB.Watch = map[int64]int64{}
+	f.DB.WatchGone = map[int64]int64{}
+	if _, ok := watchBody(t, Build(f, st, Options{Now: now + 60, Private: true})); ok {
+		t.Error("an emptied list without tombstones sent something")
 	}
 	// an older addon (no watch table): nothing
-	f.DB.Watch = nil
+	f.DB.Watch, f.DB.WatchGone = nil, nil
 	if _, ok := watchBody(t, Build(f, NewState("s", "f"), Options{Now: now, Private: true})); ok {
 		t.Error("watch sent without a list")
 	}
@@ -614,20 +631,57 @@ func TestWatchUpload(t *testing.T) {
 	}
 }
 
+// What came down from the site is not sent back; a newer change of the addon still goes out.
+func TestWatchDownloadedIsNotSentBack(t *testing.T) {
+	now := int64(fixtureNow)
+	f := &savedvars.File{DB: &savedvars.DB{Watch: map[int64]int64{1: now - 100, 2: now - 100}, WatchGone: map[int64]int64{3: now - 100}}}
+	st := NewState("s", "f")
+	st.MarkWatchDownloaded([]WatchItem{{I: 1, T: now - 100}, {I: 2, T: now - 50, D: true}, {I: 3, T: now - 200, D: true}, {I: 9, T: now - 10}, {I: 0, T: now}})
+	items, ok := watchBody(t, Build(f, st, Options{Now: now, Private: true}))
+	// 1: same as the site's; 2: the site's removal is newer; 3: the site's removal is older, the addon's
+	// removal is the newer one and goes out; 9 isn't in the addon's file at all
+	if !ok || len(items) != 1 || items[0] != (WatchItem{I: 3, T: now - 100, D: true}) {
+		t.Fatalf("%v (%v)", items, ok)
+	}
+	// the same second: "watched" wins over "unwatched"
+	st = NewState("s", "f")
+	st.MarkWatchDownloaded([]WatchItem{{I: 1, T: now - 100, D: true}})
+	items, _ = watchBody(t, Build(f, st, Options{Now: now, Private: true}))
+	found := false
+	for _, it := range items {
+		if it.I == 1 && !it.D {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a tie lost the item: %v", items)
+	}
+}
+
 func TestWatchFixtureAndLimit(t *testing.T) {
 	f := readFixture(t)
 	items, ok := watchBody(t, Build(f, NewState("s", "f"), Options{Now: fixtureNow, Private: true}))
-	if !ok || len(items) != 2 || items[0].I != 9004 || items[1].I != 9001 {
+	if !ok || len(items) != 3 || items[0].I != 9004 || items[1].I != 9008 || !items[1].D || items[2].I != 9001 {
 		t.Fatalf("fixture watch %v (%v)", items, ok)
 	}
+	// more than one request's worth: split over requests, nothing dropped
 	big := map[int64]int64{}
 	for i := int64(1); i <= MaxWatch+5; i++ {
 		big[i] = fixtureNow - i
 	}
 	plan := Build(&savedvars.File{DB: &savedvars.DB{Watch: big}}, NewState("s", "f"), Options{Now: fixtureNow, Private: true})
-	items, _ = watchBody(t, plan)
-	if len(items) != MaxWatch || items[0].I != 1 {
-		t.Fatalf("%d items, first %d: want the newest %d", len(items), items[0].I, MaxWatch)
+	total, requests := 0, 0
+	for _, b := range plan.Private {
+		if n := len(b.Body.Watch); n > 0 {
+			if n > MaxWatch {
+				t.Fatalf("%d changes in one request", n)
+			}
+			total += n
+			requests++
+		}
+	}
+	if total != MaxWatch+5 || requests != 2 {
+		t.Fatalf("%d changes over %d requests", total, requests)
 	}
 }
 

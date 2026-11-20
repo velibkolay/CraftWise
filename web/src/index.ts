@@ -10,6 +10,7 @@ import * as read from "./read";
 import { PAGE_HEADERS } from "./pages";
 import { syncMarket } from "./sync";
 import { syncCharacters } from "./syncchars";
+import { syncWatch } from "./syncwatch";
 import { assertJson, privateUpload, publicUpload } from "./upload";
 
 function nowSeconds(): number {
@@ -50,8 +51,12 @@ async function privateApi(request: Request, env: Env, url: URL, now: number): Pr
 		return me.character(env, decodeURIComponent(char[1]!));
 	}
 	if (path === "/watch") {
-		if (method !== "GET") methodNotAllowed("GET");
-		return me.watch(env);
+		if (method === "GET") return me.watch(env);
+		if (method === "POST") {
+			assertJson(request);
+			return me.setWatch(request, env, now);
+		}
+		methodNotAllowed("GET, POST");
 	}
 	if (path === "/ledger") {
 		if (method !== "GET") methodNotAllowed("GET");
@@ -104,6 +109,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 	if (path.startsWith("/item/")) return itemPage(request, env, url);
 	if (path === "/api/sync/market") return syncMarket(request, env, url, now);
 	if (path === "/api/sync/characters") return syncCharacters(request, env, url, now);
+	if (path === "/api/sync/watch") return syncWatch(request, env, url, now);
 	if (path === "/api/houses") return read.houses(env);
 	if (path === "/api/scans") return read.scans(env, url);
 	if (path === "/api/items") return read.search(env, url);

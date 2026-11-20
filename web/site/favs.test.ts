@@ -30,15 +30,42 @@ describe("syncAddonWatch", () => {
 		expect(await syncAddonWatch(answer({ watch: [{ item: 5, added: 9 }, { item: 7, added: 8 }] }))).toBe(false);
 	});
 
-	it("an addon item can't be removed here, a local one can", async () => {
-		toggleFavourite(7);
+	it("without a watch list (no login) a star stays in this browser and sends nothing", () => {
+		const sent: unknown[] = [];
+		const f = (async (...a: unknown[]) => void sent.push(a)) as unknown as typeof fetch;
+		expect(toggleFavourite(7, f)).toBe(true);
+		expect(favourites()).toEqual([7]);
+		expect(toggleFavourite(7, f)).toBe(false);
+		expect(favourites()).toEqual([]);
+		expect(sent).toEqual([]);
+	});
+
+	it("with a watch list, starring and unstarring are sent to the site", async () => {
 		await syncAddonWatch(answer({ watch: [{ item: 5, added: 9 }] }));
+		const sent: { item: number; on: boolean }[] = [];
+		const f = (async (url: string, init: RequestInit) => {
+			expect(url).toBe("/api/me/watch");
+			expect(init.method).toBe("POST");
+			sent.push(JSON.parse(init.body as string));
+			return new Response("{}");
+		}) as unknown as typeof fetch;
 		expect(isFromAddon(5)).toBe(true);
-		expect(toggleFavourite(5)).toBe(true);
-		expect(favouriteLabel(5)).toBe("Watched in the addon");
-		expect(toggleFavourite(7)).toBe(false);
-		expect(favourites()).toEqual([5]);
-		expect(favouriteLabel(7, "Bundle")).toBe("Add Bundle to Favourites");
+		expect(toggleFavourite(5, f)).toBe(false); // an addon item can be removed now
+		expect(favourites()).toEqual([]);
+		expect(favouriteLabel(5)).toBe("Add to Favourites");
+		expect(toggleFavourite(8, f)).toBe(true);
+		expect(favourites()).toEqual([8]);
+		expect(addonFavourites()).toEqual([8]);
+		expect(favouriteLabel(8, "Bundle")).toBe("Remove Bundle from Favourites");
+		expect(sent).toEqual([{ item: 5, on: false }, { item: 8, on: true }]);
+	});
+
+	it("a failed send changes nothing for now; the next sync shows what the site stores", async () => {
+		await syncAddonWatch(answer({ watch: [] }));
+		const f = (async () => { throw new TypeError("network"); }) as unknown as typeof fetch;
+		expect(toggleFavourite(8, f)).toBe(true);
+		expect(await syncAddonWatch(answer({ watch: [] }))).toBe(true);
+		expect(favourites()).toEqual([]);
 	});
 
 	it("unwatched in the addon: gone on the next sync; failures keep the cached list", async () => {

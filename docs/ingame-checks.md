@@ -728,6 +728,13 @@ No new file in the TOC, so `/reload` is enough. Compare with the Colours paragra
 - [ ] The values survive `/reload`. Item menu, the Music dropdown and tooltips are not affected (always solid).
 - [ ] Every window at UI scale 1 and 0.64: sliders do not overlap other rows.
 
+## Watch list, two-way (#244)
+No TOC change; `/reload` is enough. Needs the companion with the private upload on and the site with `0008_watch_merge.sql`.
+- [ ] Watch an item in game, `/reload` (or log out) and wait for the upload: the item is a favourite on the site (`/me`, Favourites). Unwatch it in game: after the next upload it is gone from the site.
+- [ ] On the site, star an item (logged in): after the companion's next download, `/reload` in game: the item is in Look up > Items > Watched. Unstar it on the site: after the next download and `/reload` it is gone.
+- [ ] Two machines: watch an item on the PC, unwatch another on the Mac; after both companions have uploaded and downloaded once and both games were reloaded, both lists are the same. `SavedVariables/CraftWise.lua` has `["watchGone"] = { [itemID] = <Unix time> }` for the unwatched ones.
+- [ ] Unwatch in game, then star the same item on the site a minute later: it is watched again in game after the next download and `/reload`.
+
 ## Items watch list (#165, part 1)
 Needs a **full game restart**: new file `ItemWatch.lua` in the TOC (before `UI/Style.lua`); `/reload` is not enough.
 - [ ] Item menu (right/middle click in the bags, any row): a "Watch" line after Price history; click it and the menu closes. Open the menu again: the line reads "Stop watching"; click it and the item is no longer watched. Quest items can be watched too.
@@ -1331,3 +1338,11 @@ No new files; `/reload` after copying.
 No TOC change; `/reload` is enough.
 - [ ] Cooking around 225 with Monster Omelet known (orange) and Tasty Lion Steak (near grey): Monster Omelet is the hero "Best skill-up right now" and above Tasty Lion Steak in the list, although Lion Steak's "Per skill-up" figure is larger. The list note says "fewest crafts per point first, then net per craft". Rows go by chance (highest first); at the same percent the one that earns more (or costs less) per craft first; rows without a figure last.
 - [ ] Click the "Per skill-up" header: the order reverses (lowest chance first, rows without a figure still last); click again: back to the ranking. Other headers sort plainly.
+
+## The other machine's characters in the addon (#243)
+No TOC change; `/reload` is enough. Needs the companion on both computers with the private upload, then one download (CraftWise_Sync written).
+- [ ] Settings > Other machine: three lines per character of the other computer: "<machine> · <name> · <age> ago", gold/bags/bank/mail, ledger 30 days (+ fishing, last farm session). Bank/mail show a dash until opened on that computer. Before the first sync: the "None yet" line.
+- [ ] A character without a known machine reads "other machine".
+- [ ] Make > Crafted: the Character chip lists the other computer's characters as "<machine> · <name>"; picking one counts only its crafts; "All characters" includes them; a recipe row's tooltip names them.
+- [ ] A character you also play on this computer is listed once, from this computer's data (own data wins).
+- [ ] After /reload and a logout, `WTF/.../CraftWise.lua` holds no key of the other computer's characters (nothing synced is saved there) and the next companion upload does not send them back.

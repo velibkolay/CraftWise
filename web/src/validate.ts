@@ -3,6 +3,7 @@
 // and stored as NULL.
 import { HttpError } from "./http";
 import * as L from "./limits";
+import { newestPerItem, type WatchChange } from "./watch";
 
 export interface House {
 	key: string;
@@ -127,8 +128,8 @@ export interface PrivateUpload {
 	fishing: PrivateDoc[];
 	characters: Character[];
 	ledger: LedgerEntry[];
-	// The addon's watch list (#165), replacing the stored one; null = the upload doesn't carry it.
-	watch: { item: number; added: number }[] | null;
+	// Changes of the watch list (#165, #244): merged per item with the stored list; null = none in the upload.
+	watch: WatchChange[] | null;
 }
 
 type Obj = Record<string, unknown>;
@@ -569,20 +570,20 @@ export function validatePrivate(body: unknown, now: number): PrivateUpload {
 		return { char, recipe, day, n, items, profit, known, active };
 	});
 
-	// `watch` present (even empty) = the whole list; absent = leave the stored one alone.
+	// `watch` = changes of the list, [{ i, t, d? }] (d: true = unwatched at t); merged per item, never a
+	// replacement of the stored list (#244). Absent, null or empty = no changes.
 	let watch: PrivateUpload["watch"] = null;
 	if (b.watch !== undefined && b.watch !== null) {
-		const seen = new Set<number>();
-		watch = [];
+		const list: WatchChange[] = [];
 		arr(b.watch, "watch", L.MAX_WATCH).forEach((v, i) => {
 			const path = `watch[${i}]`;
 			const o = obj(v, path);
 			const item = int(o.i, `${path}.i`);
 			if (item < 1) fail(`${path}.i`, "expected an item ID");
-			if (seen.has(item)) return;
-			seen.add(item);
-			watch!.push({ item, added: time(o.t, `${path}.t`, now) });
+			if (o.d !== undefined && typeof o.d !== "boolean") fail(`${path}.d`, "expected true or false");
+			list.push({ item, t: time(o.t, `${path}.t`, now), removed: o.d === true });
 		});
+		watch = newestPerItem(list);
 	}
 
 	if (!snapshots.length && !auctions.length && !fishing.length && !ledger.length && !crafted.length && watch === null) fail("body", "nothing to store");

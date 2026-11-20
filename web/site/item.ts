@@ -5,7 +5,7 @@ import { mainHouse } from "./lib/housesel";
 import { type CraftNames, craftBreakdown, craftItBreakdown } from "./lib/craftview";
 import { craft, makersOf, type Quote, quoteOf, RECIPES_URL, type RecipeData, recipeItemOf, recipeRow, teachOf } from "./lib/recipes";
 import { bottomTabs, clear, closeButton, currentSkin, errorBox, h, moneyEl, nowSeconds, onSkinChange, pctText, s, skinMoney, slot, statusBar, topBar } from "./lib/dom";
-import { favouriteLabel, isFavourite, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
+import { favouriteLabel, isFavourite, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import {
 	age,
 	buyCost,
@@ -220,9 +220,6 @@ function render(d: ItemDetail, house: House | null): void {
 		const on = isFavourite(d.id);
 		favBtn.setAttribute("aria-pressed", String(on));
 		favFoot.textContent = favouriteLabel(d.id);
-		favFoot.disabled = isFromAddon(d.id);
-		favBtn.disabled = isFromAddon(d.id);
-		favBtn.title = isFromAddon(d.id) ? "Watched in the addon" : "";
 	};
 	const flip = () => {
 		toggleFavourite(d.id);

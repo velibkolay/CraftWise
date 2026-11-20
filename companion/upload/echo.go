@@ -121,3 +121,26 @@ func (s *State) markEntry(key string, e market.Entry) {
 		}
 	}
 }
+
+// MarkWatchDownloaded records watch list changes that came from the site (#244) as already sent, so the
+// next upload doesn't send them back: a change that wins over what the state has replaces it.
+func (s *State) MarkWatchDownloaded(changes []WatchItem) {
+	for _, c := range changes {
+		if c.I < 1 || c.T < 1 {
+			continue
+		}
+		if old, ok := s.WatchSent[c.I]; ok {
+			t, gone := old, false
+			if old < 0 {
+				t, gone = -old, true
+			}
+			if !WatchWins(c.T, c.D, t, gone) {
+				continue
+			}
+		}
+		if s.WatchSent == nil {
+			s.WatchSent = map[int64]int64{}
+		}
+		s.WatchSent[c.I] = c.sentValue()
+	}
+}

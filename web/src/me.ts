@@ -1,8 +1,9 @@
 // Private API under /api/me/* (Cloudflare Access + JWT check in index.ts): characters, their
 // snapshot / auctions / fishing documents, the ledger, upload tokens, today's write usage.
-import { hashToken, newToken, SCOPES, type AccessUser, type Scope } from "./auth";
+import { hashToken, newToken, rowsWritten, SCOPES, usageStatement, type AccessUser, type Scope } from "./auth";
 import type { Env } from "./env";
 import { HttpError, intParam, json, parseJson, readBody } from "./http";
+import { mergeWatchStatements } from "./watch";
 import { CRAFTED_READ_ROWS, DAY, MAX_ACTIVE_TOKENS, parseWriteBudget, softBudget } from "./limits";
 
 const PRIVATE = { "cache-control": "private, no-store" };
@@ -50,10 +51,28 @@ export async function character(env: Env, key: string): Promise<Response> {
 	return json({ key, snapshot: doc(s!), auctions: doc(a!), fishing: doc(f!) }, 200, PRIVATE);
 }
 
-// The addon's watch list (#165), newest first: [{ item, added }].
+// The watch list (#165, two-way since #244): the items watched now, newest first: [{ item, added }].
 export async function watch(env: Env): Promise<Response> {
-	const { results } = await env.DB.prepare("SELECT item, added FROM watch ORDER BY added DESC, item DESC").all<{ item: number; added: number }>();
+	const { results } = await env.DB.prepare("SELECT item, added FROM watch WHERE removed IS NULL ORDER BY added DESC, item DESC").all<{ item: number; added: number }>();
 	return json({ watch: results }, 200, PRIVATE);
+}
+
+// The site's favourites change the list too (#244): { item, on } watches or unwatches the item now (the
+// server's clock), merged like every other change.
+export async function setWatch(request: Request, env: Env, now: number): Promise<Response> {
+	const b = parseJson(await readBody(request, 1024)) as { item?: unknown; on?: unknown } | null;
+	if (!b || typeof b !== "object" || !Number.isInteger(b.item) || (b.item as number) < 1 || (b.item as number) > 2_147_483_647 || typeof b.on !== "boolean") {
+		throw new HttpError(400, "bad_shape", "expected { item: item ID, on: true or false }");
+	}
+	// The click is the newest change there is: if the item's last change is from this second or later (a
+	// quick double click, a machine with a fast clock), the change goes one second after it.
+	const cur = await env.DB.prepare("SELECT COALESCE(removed, added) AS t FROM watch WHERE item = ?1").bind(b.item).first<{ t: number }>();
+	const t = cur && cur.t >= now ? cur.t + 1 : now;
+	const results = await env.DB.batch([
+		...mergeWatchStatements(env, [{ item: b.item as number, t, removed: !b.on }]),
+		usageStatement(env, now, 1, 0),
+	]);
+	return json({ item: b.item, on: b.on, rowsWritten: rowsWritten(results) }, 200, PRIVATE);
 }
 
 export async function ledger(env: Env, url: URL): Promise<Response> {

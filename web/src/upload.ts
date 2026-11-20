@@ -6,6 +6,7 @@ import { checkBudget, rowsWritten, uploadAuth, usageStatement } from "./auth";
 import type { Env } from "./env";
 import { HttpError, json, parseJson, readBody } from "./http";
 import { MAX_PRIVATE_BYTES, MAX_PUBLIC_BYTES } from "./limits";
+import { mergeWatchStatements } from "./watch";
 import { validatePrivate, validatePublic, type ItemInfo, type PublicUpload } from "./validate";
 
 // Lower-case words of an item name for the search index ("Arthas' Tears" -> arthas', tears).
@@ -400,19 +401,8 @@ export async function privateUpload(request: Request, env: Env, now: number): Pr
 			).bind(JSON.stringify(rows)),
 		);
 	}
-	if (data.watch) {
-		// The list replaces the stored one: what is no longer in it goes, what changed is updated, an
-		// unchanged row is not written (the WHERE; D1 counts an update with equal values).
-		const rows = JSON.stringify(data.watch.map((w) => [w.item, w.added]));
-		statements.push(
-			db.prepare("DELETE FROM watch WHERE item NOT IN (SELECT value->>0 FROM json_each(?1))").bind(rows),
-			db.prepare(
-				`INSERT INTO watch (item, added) SELECT value->>0, value->>1 FROM json_each(?1) WHERE true
-				ON CONFLICT (item) DO UPDATE SET added = excluded.added WHERE watch.added IS NOT excluded.added`,
-			).bind(rows),
-		);
-	}
-	const results = await db.batch(statements);
+	if (data.watch?.length) statements.push(...mergeWatchStatements(env, data.watch));
+	const results = statements.length ? await db.batch(statements) : [];
 	const written = rowsWritten(results) + 1;
 	await usageStatement(env, now, written, 1).run();
 	return json({

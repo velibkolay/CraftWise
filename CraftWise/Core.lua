@@ -162,6 +162,7 @@ local DB_DEFAULTS = {
 	send = { work = {}, lists = {}, partners = {} }, -- send lists for trade (and later mail): the working list, saved lists, partner -> list (SendList.lua, #299)
 	dismissed = {}, -- [itemID] = true: upgrade suggestions you turned off (issue #16)
 	watch = {}, -- [itemID] = Unix time it was watched: Look up › Items watch list (ItemWatch.lua, #165); the companion reads it
+	watchGone = {}, -- [itemID] = Unix time it was unwatched (tombstones, 180 days; two-way sync, #244)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	crafted = { chars = {}, before = {} }, -- craft log per character, recipe and day; before = undated crafts counted in skillups (Crafts.lua, #205)
 	snapshots = {}, -- [ns.CharKey()] (= "<realm>-<name> <surname>", #77) = character snapshot for Claude (Snapshot.lua, issue #63)

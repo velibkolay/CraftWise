@@ -90,15 +90,33 @@ type PrivatePayload struct {
 	Ledger    []LedgerEntry  `json:"ledger,omitempty"`
 	// Crafted is the craft log (#266): one row per character, recipe and day that changed.
 	Crafted []CraftedRow `json:"crafted,omitempty"`
-	// Watch is the addon's whole watch list (#165): it replaces the stored one, so a pointer to a
-	// possibly empty list (omitted only when nil = not sent).
-	Watch *[]WatchItem `json:"watch,omitempty"`
+	// Watch are the changes of the item watch list (#165, #244): the site merges them per item with its
+	// own list (newest wins), it never replaces the list.
+	Watch []WatchItem `json:"watch,omitempty"`
 }
 
-// WatchItem is one entry of CraftWiseDB.watch: the item ID and the Unix time it was watched.
+// WatchItem is one change of the watch list: the item ID, the Unix time it was watched or unwatched,
+// and D = it was unwatched at T (a tombstone, CraftWiseDB.watchGone). The download of the site's
+// changes (GET /api/sync/watch) has the same shape.
 type WatchItem struct {
 	I int64 `json:"i"`
 	T int64 `json:"t"`
+	D bool  `json:"d,omitempty"`
+}
+
+// sentValue is the item's state as State.WatchSent keeps it: the time, negative for unwatched.
+func (w WatchItem) sentValue() int64 {
+	if w.D {
+		return -w.T
+	}
+	return w.T
+}
+
+// WatchWins reports whether a change (t, gone) replaces the state (cur, curGone) of the same item: the
+// newer time wins, and on the same time "watched" wins over "unwatched" (an item is never lost to a
+// tie). The site and the addon apply the same rule.
+func WatchWins(t int64, gone bool, cur int64, curGone bool) bool {
+	return t > cur || (t == cur && curGone && !gone)
 }
 
 // CraftedRow is one day of the craft log: c = character, r = recipe spell ID, d = local day as

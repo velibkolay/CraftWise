@@ -41,6 +41,9 @@ type File struct {
 	Market  *upload.PublicPayload
 	// Chars are the other machine's characters (#242), without this machine's own: Cache.OtherChars.
 	Chars map[string]Char
+	// Watch is the merged watch list (#244): Cache.Watch. Nil = not written (private data off), so the addon
+	// leaves its own list alone; an empty map writes empty tables.
+	Watch map[int64]WatchState
 }
 
 // Dir is the add-on folder inside the game's AddOns folder; wow is the _forever_ folder.
@@ -198,6 +201,9 @@ func Render(f File) []byte {
 
 	b.WriteString("  },\n")
 	renderChars(&b, f.Chars)
+	if f.Watch != nil {
+		renderWatch(&b, f.Watch, f.Written)
+	}
 	b.WriteString("}\n")
 	return b.Bytes()
 }

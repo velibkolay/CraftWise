@@ -3,7 +3,7 @@
 import { type Browse, type BrowseItem, type Categories, type House, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, onSkinChange, pctText, rotor, s, skinMoney, slot, statusBar, topBar, type View } from "./lib/dom";
-import { favouriteLabel, favourites, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
+import { favouriteLabel, favourites, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import { changeClass, changes, className, pctSpoken, qualityClass, qualityName, sellChoice, sparkPath, sparkValues, subclassName } from "./lib/format";
 import { type CraftNames, craftBreakdown, craftsText, profitEl, thinTag } from "./lib/craftview";
 import { itemsNeeded, type Quote, quoteOf, RECIPES_URL, type RecipeData, type RecipeRow, recipeRow } from "./lib/recipes";
@@ -593,7 +593,7 @@ function rowEl(r: Row, fav: boolean, today: number, recipes: boolean): HTMLEleme
 				{ href: `/item/${it.id}`, class: `iname ${r.quality}` },
 				slot(name, r.quality),
 				h("span", { class: "nm" }, name),
-				fav ? h("span", { class: "star", role: "img", "aria-label": isFromAddon(it.id) ? "Watched in the addon" : "Favourite", title: isFromAddon(it.id) ? "Watched in the addon" : undefined }) : null,
+				fav ? h("span", { class: "star", role: "img", "aria-label": "Favourite" }) : null,
 			),
 		),
 		recipes ? profitCell(r) : null,
@@ -696,7 +696,6 @@ function setSelection(id: number | null): void {
 	const row = rows.find((r) => r.item.id === id);
 	favBtn.disabled = !row;
 	favBtn.textContent = row ? favouriteLabel(row.item.id) : "Add to Favourites";
-	favBtn.disabled = !row || isFromAddon(row.item.id);
 	if (row) {
 		histBtn.setAttribute("href", `/item/${row.item.id}`);
 		histBtn.removeAttribute("aria-disabled");

@@ -31,6 +31,12 @@ type marketServer struct {
 	chars       string
 	charsStatus int
 	charGets    []string
+
+	// GET /api/sync/watch (#244): the answer (empty = no changes), a status to refuse with, the raw queries.
+	watch        string
+	watchStatus  int
+	watchGets    []string
+	uploadBodies []string
 }
 
 func newMarketServer(t *testing.T, file string) (*marketServer, *httptest.Server) {
@@ -59,6 +65,20 @@ func newMarketServer(t *testing.T, file string) (*marketServer, *httptest.Server
 		ms.mu.Lock()
 		defer ms.mu.Unlock()
 		ms.machine = r.Header.Get("X-CraftWise-Machine")
+		if r.Method == http.MethodGet && r.URL.Path == syncdata.WatchPath {
+			ms.watchGets = append(ms.watchGets, r.URL.RawQuery)
+			if ms.watchStatus != 0 {
+				w.WriteHeader(ms.watchStatus)
+				_, _ = io.WriteString(w, `{"error":"not_found","message":"no such endpoint"}`)
+				return
+			}
+			if ms.watch == "" {
+				_, _ = io.WriteString(w, `{"v":1,"watch":[],"until":4444}`)
+				return
+			}
+			_, _ = io.WriteString(w, ms.watch)
+			return
+		}
 		if r.Method == http.MethodGet && r.URL.Path == syncdata.CharsPath {
 			ms.charGets = append(ms.charGets, r.URL.RawQuery)
 			if ms.charsStatus != 0 {
@@ -87,7 +107,8 @@ func newMarketServer(t *testing.T, file string) (*marketServer, *httptest.Server
 			_, _ = w.Write(ms.pages[page])
 			return
 		}
-		_, _ = io.Copy(io.Discard, r.Body)
+		body, _ := io.ReadAll(r.Body)
+		ms.uploadBodies = append(ms.uploadBodies, string(body))
 		ms.uploads = append(ms.uploads, r.URL.Path)
 		_, _ = io.WriteString(w, `{"ok":true,"rowsWritten":1}`)
 	}))
