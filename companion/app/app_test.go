@@ -89,6 +89,7 @@ func newTestApp(t *testing.T, cfg Config) *App {
 	if err := SaveConfig(a.ConfigPath(), cfg); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { a.Close() }) // runs before TempDir's cleanup: Windows can't delete an open log
 	return a
 }
 
@@ -273,6 +274,7 @@ func TestLoopUploadsAtStartAndAfterAChange(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() { a.Loop(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done }) // the loop has stopped before the log is closed
 
 	waitFor := func(n int) {
 		t.Helper()

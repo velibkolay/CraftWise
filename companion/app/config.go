@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -143,7 +144,7 @@ func DefaultWoWPaths(goos, home string) []string {
 	case "darwin":
 		out := []string{"/Applications/World of Warcraft/_forever_"}
 		if home != "" {
-			out = append(out, filepath.Join(home, "Applications", "World of Warcraft", "_forever_"))
+			out = append(out, path.Join(home, "Applications", "World of Warcraft", "_forever_"))
 		}
 		return out
 	}

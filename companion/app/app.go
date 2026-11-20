@@ -24,6 +24,7 @@ type App struct {
 	Dir     string // settings, state and log
 	Version string
 	Log     *log.Logger
+	logFile io.Closer
 
 	mu      sync.Mutex
 	work    sync.Mutex // one upload or download at a time: both change state.json
@@ -60,6 +61,7 @@ func New(dir, version string, extra io.Writer) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.logFile = lw
 	var w io.Writer = lw
 	if extra != nil {
 		w = io.MultiWriter(lw, extra)
@@ -82,11 +84,20 @@ func New(dir, version string, extra io.Writer) (*App, error) {
 }
 
 // openLog appends to the log, starting a new one (the old kept as .1) above 1 MB.
-func openLog(path string) (io.Writer, error) {
+func openLog(path string) (*os.File, error) {
 	if fi, err := os.Stat(path); err == nil && fi.Size() > 1<<20 {
 		_ = os.Rename(path, path+".1")
 	}
 	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+}
+
+// Close closes the log file. Call it once the loop and every upload have stopped (an open file
+// cannot be deleted or moved on Windows).
+func (a *App) Close() error {
+	if a.logFile == nil {
+		return nil
+	}
+	return a.logFile.Close()
 }
 
 // Status returns the last upload status.
