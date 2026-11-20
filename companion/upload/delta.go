@@ -22,6 +22,19 @@ type Plan struct {
 	// Skipped lists values the server would refuse (missing required fields, out of range); they
 	// are never filled in. Counted per reason.
 	Skipped map[string]int
+	// Trimmed counts records left out of a document that was sent without them, per reason (#372):
+	// the oldest finished auctions of a character whose document would pass MaxAuctionsDoc.
+	Trimmed map[string]int
+}
+
+// TrimmedText is Trimmed as sorted lines.
+func (p *Plan) TrimmedText() []string {
+	out := make([]string, 0, len(p.Trimmed))
+	for reason, n := range p.Trimmed {
+		out = append(out, fmt.Sprintf("%d records: %s", n, reason))
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Empty reports a plan with nothing to send.
@@ -64,8 +77,8 @@ func Build(f *savedvars.File, st *State, opt Options) *Plan {
 	if opt.MaxRows <= 0 {
 		opt.MaxRows = DefaultMaxRows
 	}
-	d := &delta{st: st, now: opt.Now, skipped: map[string]int{}}
-	plan := &Plan{Skipped: d.skipped}
+	d := &delta{st: st, now: opt.Now, skipped: map[string]int{}, trimmed: map[string]int{}}
+	plan := &Plan{Skipped: d.skipped, Trimmed: d.trimmed}
 	if f.Market != nil {
 		units := d.public(f.Market)
 		plan.Public = packPublic(units, d.houses, d.connected, opt, d.skip)
@@ -81,12 +94,16 @@ type delta struct {
 	st      *State
 	now     int64
 	skipped map[string]int
+	trimmed map[string]int
 	houses  map[string]House
 	// connected is the validated realm pairs (#366), sent in every public request
 	connected map[string]map[string]int64
 }
 
 func (d *delta) skip(reason string) { d.skipped[reason]++ }
+
+// trim counts records cut from a document so that it fits; unlike a skip the rest is sent.
+func (d *delta) trim(reason string, n int) { d.trimmed[reason] += n }
 
 func (d *delta) validTime(t *int64) bool {
 	return t != nil && *t >= MinTime && *t <= d.now+MaxFuture
@@ -678,7 +695,11 @@ func (d *delta) private(f *savedvars.File) []unit[PrivatePayload] {
 				d.skip("auctions of an invalid character key")
 				continue
 			}
-			units = d.doc(units, "auctions", c, d.now, f.Market.Auctions.Chars[c])
+			doc, cut := trimAuctions(f.Market.Auctions.Chars[c], MaxAuctionsDoc)
+			if cut > 0 {
+				d.trim(fmt.Sprintf("auctions document: the oldest finished records left out to stay under %d bytes", MaxAuctionsDoc), cut)
+			}
+			units = d.doc(units, "auctions", c, d.now, doc)
 		}
 	}
 	if f.Market != nil && f.Market.Ledger != nil {

@@ -1346,3 +1346,10 @@ No TOC change; `/reload` is enough. Needs the companion on both computers with t
 - [ ] Make > Crafted: the Character chip lists the other computer's characters as "<machine> · <name>"; picking one counts only its crafts; "All characters" includes them; a recipe row's tooltip names them.
 - [ ] A character you also play on this computer is listed once, from this computer's data (own data wins).
 - [ ] After /reload and a logout, `WTF/.../CraftWise.lua` holds no key of the other computer's characters (nothing synced is saved there) and the next companion upload does not send them back.
+
+## Companion: a big auctions document is cut, not left out (#372)
+Needs the companion with the private upload and a character whose auction tracker holds over about 1,150 records (30 days of a busy seller).
+- [ ] After an upload the log says "cut to fit: N records: auctions document: the oldest finished records left out ..." and no "left out (server would refuse it): ... auctions document over 450000 bytes".
+- [ ] The tray tooltip and menu line end with "(N old auction records not uploaded (document too big))".
+- [ ] `/me` shows the character's auctions with a fresh "Auctions" time in the characters list; the listed auctions are all there.
+- [ ] `/craftwise auctions` in game still lists everything (the addon's own records are not cut).
