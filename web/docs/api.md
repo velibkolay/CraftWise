@@ -297,6 +297,9 @@ document texts without parsing them. Tests: `web/test/syncchars.test.ts`.
 | `watch[]` | the **changes** of the addon's item watch list (#165, #244: `CraftWiseDB.watch` `{ [itemID] = Unix time it was watched }` and its tombstones `CraftWiseDB.watchGone` `{ [itemID] = Unix time it was unwatched }`) as `{ "i": itemID, "t": time }`, with `"d": true` for an unwatch | Merged per item with the stored list (below), **never a replacement** of it: absent, `null` or `[]` = no changes. `i` an item ID of 1 or more, `t` a time (as everywhere), `d` `true` or `false` (default `false`), at most 1,000 per request, a repeated `i` counts once (the newest change, a tie to "watched"). |
 
 - Character key `"<realm>-<name> <surname>"` (or `"<realm>-<name>"`, #77). At most 50 per section.
+- `auctions[<char key>].data` may carry `trimmed` (#372): the number of the oldest finished records the
+  companion left out of `list` to keep the document under 400,000 bytes. Absent = the list is whole.
+  The server stores it as sent and does not read it.
 - Each document (`data`, an object) at most 450,000 bytes as JSON. A document replaces the stored
   one only when its `t` is newer. The characters list takes name, realm, faction, race, class and
   level from `snapshot.char`.

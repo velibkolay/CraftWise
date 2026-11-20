@@ -302,6 +302,14 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   `CraftWiseMarketDB.auctions.chars[<character>]` with the time the file was read; `fishing` is the
   snapshot's `fishing` summary with its `fishingZones` ranking under that key. A document is sent
   again only when its content changed.
+- A character's auctions document is cut to 400,000 bytes before it is sent (#372; the server takes
+  450,000). The tracker keeps finished records 30 days, which passes that for a busy seller (about 1,150
+  records at 350 bytes). The oldest finished records are left out of the copy on the site, newest first
+  kept, listed ("active") records always kept, the order unchanged, and the document says how many in
+  `trimmed`. The addon's own data is never changed. The log says "cut to fit: N records: ...", and the
+  status line and the tray show "(N old auction records not uploaded (document too big))". A value the
+  server would refuse (the "left out" lines) shows there too, as "N values left out, see the log", not
+  only in the log.
 
 - Connected realms (#366): `CraftWiseMarketDB.connected` (`[realm][otherRealm] = first seen`, recorded by the addon
   when a linked character on another realm answers) goes in every public request as `connected`, like `houses`. An

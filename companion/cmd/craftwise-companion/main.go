@@ -206,6 +206,14 @@ func autostartItem(a *app.App) tray.Item {
 }
 
 func statusLine(s app.Status) string {
+	line := statusBase(s)
+	if s.Notice != "" {
+		line += " (" + s.Notice + ")"
+	}
+	return line
+}
+
+func statusBase(s app.Status) string {
 	switch {
 	case s.Attempt.IsZero() && s.Success.IsZero():
 		return "No upload yet"
