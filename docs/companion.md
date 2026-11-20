@@ -9,8 +9,9 @@ on `/reload` and logout) and, after each change, sends what is new since the las
   points, changed daily aggregates and newer `last` values per item and house). Never the
   Auctionator fallback prices.
 - **Private** (`POST /api/private/upload`, can be turned off): each character's snapshot, the
-  auction tracker's records, the fishing summary, new ledger entries and the item watch list (#165,
-  `CraftWiseDB.watch`, sent whole when it changed; the site shows it as favourites, one way, never written back).
+  auction tracker's records, the fishing summary, new ledger entries and the changes of the item watch list
+  (#165, #244: `CraftWiseDB.watch` and its tombstones `CraftWiseDB.watchGone`; only the changes are sent and the
+  site merges them per item, the site's favourites and the other machine's list included).
 
 The request format is `web/docs/api.md`. The companion reads the game's files (never SavedVariables for
 writing: no game memory, no input) and writes exactly one thing into the World of Warcraft folder:
@@ -206,6 +207,28 @@ ID is `["2589"]`, not a number, as in the upload), a JSON `null` in an object is
 list is `false`, numbers are as they came. A field the site doesn't have (`auctions`, `fishing`, `info.level`) is
 missing, never filled in. Lua 5.1 allows about 262,000 distinct constants in one chunk; the market and a few
 characters are far below that, which is one reason the ledger is cut to 30 days and 2,000 entries per character.
+
+### The watch list (#244)
+
+With the private upload on, the same download also fetches the changes of the watch list:
+`GET /api/sync/watch?since=<t>` (`web/docs/api.md`). They are merged into the cache's list (`watch` in
+`market-cache.json`, with its own `since`) by the rule the site and the addon use: per item the newest change
+wins, on the same second "watched" wins, a removal stays as a tombstone. What came down is also marked in the upload
+state (`watchSent`), so it isn't sent back. The file gets the merged list (the key is additive, `v` stays 1; no list
+is written when the private data is off or the download failed, so the addon leaves its own list alone):
+
+```lua
+CraftWiseSync = {
+  ...,
+  watch = { [2589] = 1794399000, [4306] = 1794399100 },   -- watched: item ID = Unix time it was watched
+  watchGone = { [1210] = 1794390000 },                    -- unwatched: item ID = Unix time (tombstones; older than 180 days are left out)
+}
+```
+
+The addon merges both into `CraftWiseDB.watch` / `.watchGone` at login (`ns.ItemWatch.MergeSync`): per item the
+newest change wins, own changes the companion hasn't uploaded yet included, and on the same second "watched" wins.
+Changes made in game after that go up with the next upload as usual. A failed download (a site without the endpoint,
+a token without the `private` scope) says "watch list failed: ..." in the status line and never stops the market.
 
 ## Update on the Mac
 

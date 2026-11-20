@@ -1,8 +1,9 @@
 // Favourites: item IDs in this browser's localStorage (no account, no cookie), merged with the
-// watch list of the CraftWise addon (#165) when the private API answers. The addon's list is one way:
-// it comes from the companion's upload, the site never writes it back, so an item watched in the addon
-// can't be removed here. localStorage keeps a copy of the last list that came (a cache for the next
-// page view) and stays the only source for visitors without a Cloudflare Access login.
+// watch list of the CraftWise addon (#165) when the private API answers. Since #244 the list is two-way:
+// for a visitor with an Access login, starring or unstarring writes the watch list on the site
+// (POST /api/me/watch), the companion hands it to the addon of every machine, and the addon's changes
+// come back here. localStorage keeps a copy of the last list that came (a cache for the next page view)
+// and stays the only store for visitors without a login.
 const KEY = "cw-favourites";
 const ADDON_KEY = "cw-favourites-addon";
 const MAX = 100; // /api/browse takes at most 100 ids
@@ -34,23 +35,65 @@ export function isFavourite(id: number): boolean {
 	return favourites().includes(id);
 }
 
-// Returns whether the item is a favourite afterwards. An item watched in the addon stays one.
-export function toggleFavourite(id: number): boolean {
-	if (isFromAddon(id)) return true;
-	const list = readIds(KEY);
-	const on = !list.includes(id);
-	const next = on ? [id, ...list].slice(0, MAX) : list.filter((n) => n !== id);
+// Has the private API answered before (so there is a watch list to write to)?
+function hasWatchList(): boolean {
 	try {
-		localStorage.setItem(KEY, JSON.stringify(next));
+		return localStorage.getItem(ADDON_KEY) !== null;
 	} catch {
-		return !on;
+		return false;
 	}
-	return on;
 }
 
-// What the button of a favourite says: "Add to"/"Remove from Favourites", or that the addon owns it.
+function writeIds(key: string, ids: number[]): boolean {
+	try {
+		localStorage.setItem(key, JSON.stringify(ids));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// Tells the site about a change of the watch list. Fire and forget: when it fails the next page view
+// reads the site's list again (syncAddonWatch) and shows what is really stored.
+function sendWatch(item: number, on: boolean, fetchFn: typeof fetch): void {
+	try {
+		void fetchFn("/api/me/watch", {
+			method: "POST",
+			headers: { "content-type": "application/json", accept: "application/json" },
+			body: JSON.stringify({ item, on }),
+			credentials: "same-origin",
+			redirect: "manual",
+			signal: AbortSignal.timeout(8000),
+		}).catch(() => undefined);
+	} catch {
+		// no network API: nothing to send
+	}
+}
+
+// Returns whether the item is a favourite afterwards. With a watch list (an Access login) the change goes
+// to the site and shows at once; without one it stays in this browser.
+export function toggleFavourite(id: number, fetchFn: typeof fetch = fetch): boolean {
+	const addon = readIds(ADDON_KEY);
+	const local = readIds(KEY);
+	const on = !addon.includes(id) && !local.includes(id);
+	if (!on) {
+		if (local.includes(id)) writeIds(KEY, local.filter((n) => n !== id));
+		if (addon.includes(id)) {
+			writeIds(ADDON_KEY, addon.filter((n) => n !== id));
+			sendWatch(id, false, fetchFn);
+		}
+		return false;
+	}
+	if (hasWatchList()) {
+		if (!writeIds(ADDON_KEY, [id, ...addon].slice(0, MAX))) return false;
+		sendWatch(id, true, fetchFn);
+		return true;
+	}
+	return writeIds(KEY, [id, ...local].slice(0, MAX));
+}
+
+// What the button of a favourite says: "Add to" / "Remove from Favourites".
 export function favouriteLabel(id: number, what = ""): string {
-	if (isFromAddon(id)) return "Watched in the addon";
 	return `${isFavourite(id) ? "Remove" : "Add"} ${what ? what + " " : ""}${isFavourite(id) ? "from" : "to"} Favourites`;
 }
 

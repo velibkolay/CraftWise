@@ -101,6 +101,8 @@ func packPrivate(units []unit[PrivatePayload], opt Options, skip func(string)) [
 			full = cur.Counts["ledger"]+u.count > MaxLedgerEntries
 		} else if !full && u.kind == "crafted" {
 			full = cur.Counts["crafted"]+u.count > MaxCraftedRows
+		} else if !full && u.kind == "watch" {
+			full = cur.Counts["watch"]+u.count > MaxWatch
 		} else if !full {
 			full = cur.Counts[u.kind] >= MaxCharacters
 		}

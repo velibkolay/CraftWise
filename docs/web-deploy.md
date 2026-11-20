@@ -151,6 +151,40 @@ The running Worker keeps working in between (it doesn't know the table). After t
 companion; its first upload sends every day of the craft log once (one row written per day, a few thousand at
 most), later uploads only the changed days.
 
+## #244 (`0008_watch_merge.sql`): the watch list in both directions
+
+The migration adds `removed` (the time an item was unwatched, `NULL` = watched) and `updated` (the database clock of
+the last change) to `watch` and sets `updated` once for the rows that are there (one row written per watched item, a
+few hundred at most). No index. Apply it before merging (step 4 above) from a separate checkout of the PR branch, so
+the shared checkout's branch is never switched. In PowerShell, from `C:\Users\Veli\Documents\GitHub\craftwise`
+(replace `<branch>` with the PR's branch name):
+```powershell
+git fetch origin
+```
+```powershell
+git worktree add ..\craftwise-mig origin/<branch>
+```
+```powershell
+cd ..\craftwise-mig\web
+```
+```powershell
+npm ci
+```
+```powershell
+npx wrangler d1 migrations apply craftwise --remote
+```
+```powershell
+cd ..\..\craftwise
+```
+```powershell
+git worktree remove --force ..\craftwise-mig
+```
+The running Worker keeps working in between: its upload still replaces the list (it doesn't know the new columns,
+and the old queries still run), and the new queries need the columns, so merge soon after applying. After the
+deploy, update the companion on both machines: an older companion sends its whole list as additions only (it can't
+remove items any more), the new one sends changes and writes `CraftWiseSync.watch` / `.watchGone` at the next
+download. Then update the addon on both machines (a full game restart is not needed: no new file in the TOC).
+
 ## #242 (`0007_character_machine.sql`): the other machine's characters
 
 The migration adds `machine` and `uploaded` to `characters`, sets `uploaded` once for the characters already stored

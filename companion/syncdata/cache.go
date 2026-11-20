@@ -24,6 +24,10 @@ type Cache struct {
 	// ask `since` next time for them (0 = never).
 	Chars      map[string]Char `json:"chars,omitempty"`
 	CharsSince int64           `json:"charsSince,omitempty"`
+	// The merged watch list (#244): per item the newest change, tombstones included, and the server time to
+	// ask `since` next time (0 = never).
+	Watch      map[int64]WatchState `json:"watch,omitempty"`
+	WatchSince int64                `json:"watchSince,omitempty"`
 }
 
 // NewCache is an empty cache for site.

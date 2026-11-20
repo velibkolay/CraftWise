@@ -30,6 +30,9 @@ type DB struct {
 	// Watch is the item watch list (#165): [itemID] = Unix time it was watched. Nil when the file has
 	// no `watch` (an older addon); an empty non-nil map is a list the player emptied.
 	Watch map[int64]int64 `json:"watch,omitempty"`
+	// WatchGone are the tombstones of the watch list (#244): [itemID] = Unix time it was unwatched.
+	// Nil when the file has none (an addon older than #244).
+	WatchGone map[int64]int64 `json:"watchGone,omitempty"`
 	// Crafted is the craft log (#205, Crafts.lua): per character and recipe, per local day. Nil when the
 	// file has no `crafted` (an addon older than #205).
 	Crafted *Crafted `json:"crafted,omitempty"`
@@ -297,6 +300,10 @@ func (r *reader) db(v any) *DB {
 	if w := r.table(t.Get("watch"), "CraftWiseDB.watch"); w != nil {
 		out.Watch = map[int64]int64{}
 		r.unmarshal(w, &out.Watch, "CraftWiseDB.watch")
+	}
+	if g := r.table(t.Get("watchGone"), "CraftWiseDB.watchGone"); g != nil {
+		out.WatchGone = map[int64]int64{}
+		r.unmarshal(g, &out.WatchGone, "CraftWiseDB.watchGone")
 	}
 	if c := r.table(t.Get("crafted"), "CraftWiseDB.crafted"); c != nil {
 		out.Crafted = &Crafted{}

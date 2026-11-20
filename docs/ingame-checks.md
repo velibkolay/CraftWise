@@ -728,6 +728,13 @@ No new file in the TOC, so `/reload` is enough. Compare with the Colours paragra
 - [ ] The values survive `/reload`. Item menu, the Music dropdown and tooltips are not affected (always solid).
 - [ ] Every window at UI scale 1 and 0.64: sliders do not overlap other rows.
 
+## Watch list, two-way (#244)
+No TOC change; `/reload` is enough. Needs the companion with the private upload on and the site with `0008_watch_merge.sql`.
+- [ ] Watch an item in game, `/reload` (or log out) and wait for the upload: the item is a favourite on the site (`/me`, Favourites). Unwatch it in game: after the next upload it is gone from the site.
+- [ ] On the site, star an item (logged in): after the companion's next download, `/reload` in game: the item is in Look up > Items > Watched. Unstar it on the site: after the next download and `/reload` it is gone.
+- [ ] Two machines: watch an item on the PC, unwatch another on the Mac; after both companions have uploaded and downloaded once and both games were reloaded, both lists are the same. `SavedVariables/CraftWise.lua` has `["watchGone"] = { [itemID] = <Unix time> }` for the unwatched ones.
+- [ ] Unwatch in game, then star the same item on the site a minute later: it is watched again in game after the next download and `/reload`.
+
 ## Items watch list (#165, part 1)
 Needs a **full game restart**: new file `ItemWatch.lua` in the TOC (before `UI/Style.lua`); `/reload` is not enough.
 - [ ] Item menu (right/middle click in the bags, any row): a "Watch" line after Price history; click it and the menu closes. Open the menu again: the line reads "Stop watching"; click it and the item is no longer watched. Quest items can be watched too.

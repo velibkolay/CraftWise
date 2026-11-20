@@ -635,49 +635,79 @@ func (d *delta) private(f *savedvars.File) []unit[PrivatePayload] {
 	}
 	if f.DB != nil {
 		units = append(units, d.crafted(f.DB.Crafted)...)
-		units = append(units, d.watch(f.DB.Watch)...)
+		units = append(units, d.watch(f.DB.Watch, f.DB.WatchGone)...)
 	}
 	return units
 }
 
-// watch sends the item watch list (#165) whole when it differs from the one sent last. The server
-// replaces its list with it, so an emptied list is sent too (an older addon without the field
-// sends nothing). Over MaxWatch items the newest are sent.
-func (d *delta) watch(w map[int64]int64) []unit[PrivatePayload] {
-	if w == nil {
+// watch sends the changes of the item watch list (#165, #244): every item whose state (watched at a
+// time, or unwatched at a time, the tombstones of CraftWiseDB.watchGone) wins over what the site has
+// (State.WatchSent). Newest first, at most MaxWatch to a request. The site merges them per item with
+// the other machine's and the site's own, so an upload never replaces the list.
+func (d *delta) watch(w, gone map[int64]int64) []unit[PrivatePayload] {
+	if w == nil && gone == nil {
 		return nil
 	}
-	list := make([]WatchItem, 0, len(w))
-	for id, t := range w {
-		tt := t
-		if id < 1 || !d.validTime(&tt) {
-			d.skip("watched item without a valid item ID or time")
-			continue
+	cur := map[int64]WatchItem{}
+	put := func(m map[int64]int64, removed bool) {
+		for id, t := range m {
+			tt := t
+			if id < 1 || !d.validTime(&tt) {
+				d.skip("watched item without a valid item ID or time")
+				continue
+			}
+			if old, ok := cur[id]; ok && !WatchWins(t, removed, old.T, old.D) {
+				continue
+			}
+			cur[id] = WatchItem{I: id, T: t, D: removed}
 		}
-		list = append(list, WatchItem{I: id, T: t})
 	}
-	// Newest first, then by ID: a stable order, so the hash only changes with the list.
+	put(gone, true)
+	put(w, false)
+	var list []WatchItem
+	for id, c := range cur {
+		if sent, ok := d.st.WatchSent[id]; ok {
+			st, stGone := sent, false
+			if sent < 0 {
+				st, stGone = -sent, true
+			}
+			if !WatchWins(c.T, c.D, st, stGone) {
+				continue
+			}
+		}
+		list = append(list, c)
+	}
+	// Newest first, then by ID: a stable order.
 	sort.Slice(list, func(a, b int) bool {
 		if list[a].T != list[b].T {
 			return list[a].T > list[b].T
 		}
 		return list[a].I < list[b].I
 	})
-	if len(list) > MaxWatch {
-		d.skip(fmt.Sprintf("watched items beyond the newest %d", MaxWatch))
-		list = list[:MaxWatch]
+	var units []unit[PrivatePayload]
+	for len(list) > 0 {
+		n := len(list)
+		if n > MaxWatch {
+			n = MaxWatch
+		}
+		chunk := list[:n:n]
+		list = list[n:]
+		units = append(units, unit[PrivatePayload]{
+			add:   func(p *PrivatePayload) { p.Watch = append(p.Watch, chunk...) },
+			kind:  "watch",
+			bytes: size(chunk),
+			count: len(chunk),
+			commit: func(st *State) {
+				if st.WatchSent == nil {
+					st.WatchSent = map[int64]int64{}
+				}
+				for _, c := range chunk {
+					st.WatchSent[c.I] = c.sentValue()
+				}
+			},
+		})
 	}
-	h := hashJSON(list)
-	if d.st.Watch != nil && *d.st.Watch == h {
-		return nil
-	}
-	return []unit[PrivatePayload]{{
-		add:    func(p *PrivatePayload) { p.Watch = &list },
-		kind:   "watch",
-		bytes:  size(list),
-		count:  1,
-		commit: func(st *State) { st.Watch = &h },
-	}}
+	return units
 }
 
 func (d *delta) doc(units []unit[PrivatePayload], kind, char string, t int64, data any) []unit[PrivatePayload] {

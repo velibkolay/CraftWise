@@ -394,7 +394,7 @@ func TestWatchList(t *testing.T) {
 		t.Fatalf("an emptied list must read as empty, not missing: %#v", empty.DB.Watch)
 	}
 	old, err := Read(strings.NewReader("CraftWiseDB = {\n[\"snapshots\"] = {\n},\n}\n"))
-	if err != nil || old.DB.Watch != nil {
-		t.Fatal(err, old.DB.Watch)
+	if err != nil || old.DB.Watch != nil || old.DB.WatchGone != nil {
+		t.Fatal(err, old.DB.Watch, old.DB.WatchGone)
 	}
 }

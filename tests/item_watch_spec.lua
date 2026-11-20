@@ -102,3 +102,80 @@ it("ItemWatch: menu, Items card toggle and Watched chip stay in step", function(
 	-- survives a reload of the saved table
 	eq(CraftWiseDB.watch[BOOTS] ~= nil and CraftWiseDB.watch[SALT] ~= nil, true)
 end)
+
+----------------------------------------------------------------------------------------------------
+-- Two-way (#244): removals are kept as tombstones and CraftWiseSync.watch / .watchGone merge in at login.
+----------------------------------------------------------------------------------------------------
+
+it("ItemWatch: unwatching keeps a tombstone (db.watchGone), watching again drops it", function()
+	local ns, stub = Load()
+	eq(next(ns.db.watchGone), nil, "empty by default")
+	ns.ItemWatch.Set(SALT, true)
+	eq(ns.db.watchGone[SALT], nil)
+	stub.clock = NOW + 30
+	ns.ItemWatch.Set(SALT, false)
+	eq(ns.db.watch[SALT], nil)
+	eq(ns.db.watchGone[SALT], NOW + 30)
+	ns.ItemWatch.Set(SALT, false) -- again: the removal time stays
+	stub.clock = NOW + 60
+	ns.ItemWatch.Set(SALT, false)
+	eq(ns.db.watchGone[SALT], NOW + 30)
+	ns.ItemWatch.Set(SALT, true)
+	eq(ns.db.watch[SALT], NOW + 60)
+	eq(ns.db.watchGone[SALT], nil)
+end)
+
+it("ItemWatch.MergeSync: the newest change per item wins, a tie keeps the item", function()
+	local ns, stub = Load()
+	local seen = {}
+	ns.Listen("ITEM_WATCH_CHANGED", function(id, on) seen[#seen + 1] = id .. ":" .. tostring(on) end)
+	ns.db.watch[LEATHER] = NOW - 100 -- own, older than the removal below
+	ns.db.watch[SALT] = NOW - 100 -- own, newer than the removal below
+	ns.db.watchGone[BOOTS] = NOW - 50 -- own removal
+	local changed = ns.ItemWatch.MergeSync({
+		v = 1,
+		watch = { [BOOTS] = NOW - 50, [990104] = NOW - 10 }, -- a tie with the removal; a new item
+		watchGone = { [LEATHER] = NOW - 40, [SALT] = NOW - 150, [990105] = NOW - 20 },
+	})
+	eq(changed, 3, "boots back (tie), item 990104 new, leather removed")
+	eq(ns.db.watch[LEATHER], nil); eq(ns.db.watchGone[LEATHER], NOW - 40)
+	eq(ns.db.watch[SALT], NOW - 100, "the older removal loses"); eq(ns.db.watchGone[SALT], nil)
+	eq(ns.db.watch[BOOTS], NOW - 50); eq(ns.db.watchGone[BOOTS], nil)
+	eq(ns.db.watch[990104], NOW - 10)
+	eq(ns.db.watchGone[990105], NOW - 20, "a removal of an item never seen is kept")
+	table.sort(seen)
+	eq(table.concat(seen, " "), table.concat({ LEATHER .. ":false", BOOTS .. ":true", "990104:true" }, " "))
+	-- again: nothing changes
+	eq(ns.ItemWatch.MergeSync({ v = 1, watch = { [BOOTS] = NOW - 50 }, watchGone = { [LEATHER] = NOW - 40 } }), 0)
+	-- an own change newer than the file stays
+	stub.clock = NOW + 500
+	ns.ItemWatch.Set(BOOTS, false)
+	eq(ns.ItemWatch.MergeSync({ v = 1, watch = { [BOOTS] = NOW - 50 } }), 0)
+	eq(ns.ItemWatch.IsWatched(BOOTS), false)
+end)
+
+it("ItemWatch.MergeSync: bad entries are skipped, old tombstones are dropped, no file is fine", function()
+	local ns = Load()
+	eq(ns.ItemWatch.MergeSync(nil), 0)
+	eq(ns.ItemWatch.MergeSync({}), 0)
+	eq(ns.ItemWatch.MergeSync({ watch = { x = NOW, [0] = NOW, [-3] = NOW, [5.5] = NOW, [990106] = "soon", [990107] = 12 } }), 0)
+	eq(next(ns.db.watch), nil)
+	ns.db.watchGone[990108] = NOW - 181 * 86400
+	ns.db.watchGone[990109] = NOW - 10 * 86400
+	ns.ItemWatch.MergeSync({ watch = { [990110] = NOW } })
+	eq(ns.db.watchGone[990108], nil, "older than 180 days")
+	eq(ns.db.watchGone[990109], NOW - 10 * 86400)
+	eq(ns.db.watch[990110], NOW)
+end)
+
+it("ItemWatch: login merges CraftWiseSync.watch and lets go of it; another format version is ignored", function()
+	local ns, stub = LoadAddon()
+	stub.clock = NOW
+	time = function(t) if t then return os.time(t) end return stub.clock end
+	CraftWiseSync = { v = 1, written = NOW, machine = "Mac", market = {}, watch = { [SALT] = NOW - 5 }, watchGone = { [LEATHER] = NOW - 5 } }
+	ns.db.watch[LEATHER] = NOW - 100
+	stub.Fire("PLAYER_LOGIN")
+	eq(ns.ItemWatch.IsWatched(SALT), true)
+	eq(ns.ItemWatch.IsWatched(LEATHER), false)
+	eq(CraftWiseSync.watch, nil); eq(CraftWiseSync.watchGone, nil)
+end)

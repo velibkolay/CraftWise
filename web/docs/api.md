@@ -20,7 +20,7 @@ Errors are `{ "error": "<code>", "message": "<text>" }` with the HTTP status:
 ## Uploads (companion app)
 
 `Authorization: Bearer cw_...` with a token created on the private page (`/me`, see "Private API").
-A token has the scopes `public` (`POST /api/upload`, `GET /api/sync/market`) and/or `private` (`POST /api/private/upload`, `GET /api/sync/characters`).
+A token has the scopes `public` (`POST /api/upload`, `GET /api/sync/market`) and/or `private` (`POST /api/private/upload`, `GET /api/sync/characters`, `GET /api/sync/watch`).
 Only the token's SHA-256 is stored.
 
 Rules for the companion:
@@ -188,6 +188,28 @@ Cost: reads only; the token's rate-limit row is the one write per request (not c
 A delta reads the changed price rows through the index `prices_updated` plus their points and days,
 and the packed variants table whole (one row per item and house).
 
+### `GET /api/sync/watch`: the watch list changes (#244)
+
+The watch list of the other machine and of the site's favourites for the companion, to put into
+`CraftWiseSync.watch` and `.watchGone` (`docs/companion.md`; the addon merges them at login with the same rule).
+`Authorization: Bearer cw_...`, scope **`private`**. Not behind Cloudflare Access. `GET` only.
+`Cache-Control: private, no-store`.
+
+| Query | Meaning |
+|---|---|
+| `since` | Unix seconds, default `0` (everything). The items whose row changed (`watch.updated`, the database clock) at or after it. |
+
+```json
+{ "v": 1, "watch": [ { "i": 2589, "t": 1794399000 }, { "i": 4306, "t": 1794399100, "d": true } ], "until": 1794400200 }
+```
+
+`watch`: one entry per changed item in the shape of the upload (`t` = when the item was watched or unwatched,
+`d: true` = unwatched, a tombstone), in the order the rows changed. The receiver merges them with the rule above,
+so repeating or reordering answers is harmless. `until`: what to send as `since` the next time (server clock minus
+60 s, so a change that was still being written comes back next time). There is no paging: the table holds one row
+per item the player ever watched (at most a few thousand). The 30 requests a minute per token apply. Reads only.
+Tests: `web/test/watch.test.ts`.
+
 ### `GET /api/sync/characters`: the other machine's characters (#242)
 
 The second half of the two-machine sync (#237): the private character data of **every** machine, for the
@@ -260,7 +282,7 @@ document texts without parsing them. Tests: `web/test/syncchars.test.ts`.
   "auctions":  { "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner": { "t": 1794400000, "data": { "active": [], "sold": [] } } },
   "fishing":   { "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner": { "t": 1794400000, "data": { "days": 90, "catches": 12 } } },
   "ledger": [ { "t": 1794399000, "c": "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner", "k": "ahbuy", "i": 2589, "q": 20, "m": 2000, "w": "CAMWOW EU4 Realm 8 PvP|H", "n": "Linen Cloth" } ],
-  "watch": [ { "i": 2589, "t": 1794399000 } ]
+  "watch": [ { "i": 2589, "t": 1794399000 }, { "i": 4306, "t": 1794399100, "d": true } ]
 }
 ```
 
@@ -271,7 +293,7 @@ document texts without parsing them. Tests: `web/test/syncchars.test.ts`.
 | `fishing[<char key>]` | the fishing summary (`snapshot.fishing` and `snapshot.fishingZones`) as `data` | |
 | `ledger[]` | `CraftWiseMarketDB.ledger.entries[]` as they are (`t`, `c`, `k`, `i`, `q`, `m`, `w`, `n`, `l`) | `t`, `c`, `k` required. At most 5,000 per request. The link `l` is checked, not stored. |
 | `crafted[]` | `CraftWiseDB.crafted` (#205, #266: `chars[<char key>][<recipe spell ID>].days[<YYYYMMDD>]`) as one row per character, recipe and day: `{ "c": char key, "r": recipe spell ID, "d": day as YYYYMMDD, "n": crafts, "i": items, "p": profit, "k": priced crafts, "a": active seconds }` | `c`, `r`, `d`, `n` required (`n` 1 or more, `d` a local day 2020..2100). `i`, `p`, `k`, `a` only when the addon recorded them (it stores a day as the list `{ crafts, items, profit, known, active }` and starts it at `{ 0, 0, 0, 0 }`, so the companion treats a 0 in items, profit or known as not recorded; older days have no profit or time): `p` is the estimate recorded at craft time in copper, may be negative, an integer; `k` at most `n`; `a` 0 to 86,400. At most 5,000 per request. The undated `before` seed and the folded `earlier` totals are not sent. |
-| `watch[]` | `CraftWiseDB.watch` (#165, the addon's item watch list, `{ [itemID] = Unix time it was watched }`) as `{ "i": itemID, "t": time }` | The **whole list**: it replaces the stored one. Absent or `null` = leave the stored list alone; `[]` = the player emptied it. `i` an item ID of 1 or more, `t` a time (as everywhere), at most 1,000, a repeated `i` counts once. |
+| `watch[]` | the **changes** of the addon's item watch list (#165, #244: `CraftWiseDB.watch` `{ [itemID] = Unix time it was watched }` and its tombstones `CraftWiseDB.watchGone` `{ [itemID] = Unix time it was unwatched }`) as `{ "i": itemID, "t": time }`, with `"d": true` for an unwatch | Merged per item with the stored list (below), **never a replacement** of it: absent, `null` or `[]` = no changes. `i` an item ID of 1 or more, `t` a time (as everywhere), `d` `true` or `false` (default `false`), at most 1,000 per request, a repeated `i` counts once (the newest change, a tie to "watched"). |
 
 - Character key `"<realm>-<name> <surname>"` (or `"<realm>-<name>"`, #77). At most 50 per section.
 - Each document (`data`, an object) at most 450,000 bytes as JSON. A document replaces the stored
@@ -293,11 +315,23 @@ six before) and in total, the active time and the profit per active hour, with t
 the profit is the estimate recorded at craft time, not money received. A period without a recorded profit or
 time shows a dash; a `*` marks a profit that misses crafts without a price.
 
-Watch list (#165): the companion sends it when it differs from the list it sent last (a hash in its state
-file), in the same request as the other private data. The Worker stores it in `watch` (one row per item,
-`0004_watch.sql`; one list for the site's owner, like the characters and the ledger): items no longer in the
-upload are deleted, changed times updated, unchanged rows aren't written, so re-sending costs no writes.
-It goes one way only, addon to site; the site never writes it back (the companion only reads SavedVariables).
+Watch list (#165, two-way since #244): one list for the site's owner (like the characters and the ledger), stored
+in `watch` (one row per item: `added`, `removed`, `updated`; `0004_watch.sql`, `0008_watch_merge.sql`). Every
+change comes from one of three places, the addon of a machine (through the companion), the other machine, or the
+site's favourites, and they are **merged per item**, so adding on the PC, removing on the Mac and adding on the
+site converge whatever the order they arrive in:
+
+- the item's state is the time of its newest change and whether that change was a watch or an unwatch (a
+  tombstone: `removed` is kept, otherwise the machine that didn't see the removal would add the item back);
+- the newest change wins; on the **same second "watched" wins** (an item is never lost to a tie);
+- a change that doesn't win writes nothing, so re-sending costs no writes (the upsert's `WHERE`).
+
+The companion sends only the changes that win over what it last sent (`watchSent` in its state file: per item the
+time of the state the site has, negative for unwatched, also filled from what it downloaded, so a change that came
+from the site isn't sent back), newest first, at most 1,000 to a request. An older companion that still sends its
+whole list (no `d`) only adds items now; it can no longer remove any. The site's own change (`POST /api/me/watch`,
+below) uses the server's clock, and one second after the item's last change when that is later, so a click always
+wins over what was there. `GET /api/sync/watch` gives the merged list back to the companion of every machine.
 
 The machine (#242): the header `X-CraftWise-Machine` (the companion's `machine` setting, 1 to 64 characters; else
 the token's name is used) is stored in `characters.machine` for every character the upload carries, and
@@ -352,7 +386,7 @@ every price: a jump at a thin market is no trend. Cached in D1 until the house's
 next UTC day.
 
 `/api/browse` takes exactly one of `class` (an item class ID, or `none` for items without info; optionally
-`subclass`), `q` (as `/api/items`, at most 50 items) or `ids` (at most 100 item IDs, the site's favourites: the browser's own plus, behind Access, the addon's watch list from `/api/me/watch`, #165; the site marks the addon's ones "Watched in the addon" and can't remove them). Each
+`subclass`), `q` (as `/api/items`, at most 50 items) or `ids` (at most 100 item IDs, the site's favourites: the browser's own plus, behind Access, the watch list from `/api/me/watch`, #165, #244; with that list the site's star writes to it through `POST /api/me/watch`). Each
 item: `{ id, name, quality, icon, class, subclass, className, subclassName, sellPrice, current, typical, days }` with `current` and `typical` as on
 `/api/items/<id>` (house of the request, suffix 0; `current` `null` when the house has no price) and `days` the
 daily rows of the last 9 days (`{ day, src, lo, typ, hi, qtyMax }`), enough for a 24 h and a 7 day change and a
@@ -444,7 +478,8 @@ expiry), so the private data stays closed if the Access app is missing or miscon
 | `GET /api/me` | `{ email }` of the Access login |
 | `GET /api/me/characters` | `{ characters: [{ key, realm, name, surname, faction, race, class, level, snapshotT, auctionsT, fishingT }] }` |
 | `GET /api/me/characters/<char key>` | `{ key, snapshot, auctions, fishing }`, each `{ t, data }` or `null` |
-| `GET /api/me/watch` | `{ watch: [{ item, added }] }`, the addon's watch list (#165), newest first (`added` = when it was watched). Empty before the first upload or when nothing is watched. |
+| `GET /api/me/watch` | `{ watch: [{ item, added }] }`, the watch list (#165, #244), newest first (`added` = when it was watched). Unwatched items (tombstones) are left out. Empty before the first upload or when nothing is watched. |
+| `POST /api/me/watch` | body `{ "item": 2589, "on": true }` → `{ item, on, rowsWritten }`: the site's favourite star (#244) watches or unwatches the item now, merged like every other change (a login with an e-mail and the site's `Origin`; one row written, none when the item is in that state already). |
 | `GET /api/me/ledger?char=<key>&since=<t>&limit=500` | `{ entries: [{ char, t, kind, item, qty, money, place, name }] }`, newest first (limit 1..5000) |
 | `GET /api/me/crafted` | `?char=<key>&since=<YYYYMMDD>`: the craft log (#266), `{ rows: [[char, recipe, day, n, items, profit, known, active], ...], more }`, oldest day first (then character, recipe), at most 30000 rows (`more` = ask again with `since` of the last day). `null` = not recorded |
 | `GET /api/me/usage` | `{ day, rowsWritten, uploads, budget, softBudget, dbBytes }`: today's D1 writes against the budget (`WRITE_BUDGET`) and its soft limit (80%), and the database size |

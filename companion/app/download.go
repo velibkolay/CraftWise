@@ -102,12 +102,38 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 			}
 		}
 	}
+	// The watch list (#244): the site's changes are merged into the cache's list and marked as sent, so the
+	// upload doesn't send them back.
+	if cfg.Private {
+		changes, watchUntil, werr := syncdata.DownloadWatch(ctx, client, cache.WatchSince, a.clock)
+		switch {
+		case werr != nil:
+			a.Log.Printf("downloading the watch list failed: %v", werr)
+			charsText += ", watch list failed: " + werr.Error()
+		default:
+			st.MarkWatchDownloaded(changes)
+			if err := st.Save(a.StatePath()); err != nil {
+				return res, err
+			}
+			cache.MergeWatch(changes)
+			cache.WatchSince = watchUntil
+			if len(changes) > 0 {
+				charsText += fmt.Sprintf(", %d watch changes", len(changes))
+			}
+		}
+	}
 	if err := cache.Save(a.CachePath()); err != nil {
 		return res, err
 	}
 	out := syncdata.File{Written: now.Unix(), Machine: cfg.MachineName(), Market: cache.Market}
 	if cfg.Private {
 		out.Chars = cache.OtherChars(own, cfg.MachineName())
+		if cache.WatchSince > 0 {
+			out.Watch = cache.Watch
+			if out.Watch == nil {
+				out.Watch = map[int64]syncdata.WatchState{}
+			}
+		}
 	}
 	changed, err := syncdata.Write(wow, out)
 	if err != nil {
