@@ -1,7 +1,7 @@
 // Connected realms as one auction house (#366). Pure: no I/O, so the grouping and the merges are tested alone.
 //
 // Evidence comes only from uploads: `connected` holds the realm pairs a linked character proved (the
-// addon records them, 0008_connected.sql stores them). Nothing is guessed. Houses are grouped at read
+// addon records them, 0009_connected.sql stores them). Nothing is guessed. Houses are grouped at read
 // time and the stored rows stay per house key, so deleting a pair undoes the grouping.
 //
 //   - Realms joined by pairs form one component (a pair is symmetric; A-B and B-C make A, B and C one).

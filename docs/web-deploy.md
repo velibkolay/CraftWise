@@ -183,7 +183,7 @@ current). `machine` stays empty for a character until its machine uploads it aga
 sends the machine name with every request, so the next change of the character fills it. Then update the companion
 on both machines: the next download writes `CraftWiseSync.chars` (token with the `private` scope).
 
-## #366 (`0008_connected.sql`): connected realms as one auction house
+## #366 (`0009_connected.sql`): connected realms as one auction house
 
 The migration only adds the table `connected` (realm pairs; no existing row is touched). Apply it before merging
 (step 4 above) from a separate checkout of the PR branch, so the shared checkout's branch is never switched. In
