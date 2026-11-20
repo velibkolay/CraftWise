@@ -529,7 +529,7 @@ type FarmFish struct {
 
 type FarmFishBest struct {
 	ID    int64  `json:"id"`
-	Value *int64 `json:"value,omitempty"` // per unit
+	Value *int64 `json:"value,omitempty" lua:"value,round"` // per unit; older addon versions stored a fraction (#373)
 }
 
 type FarmFishZone struct {

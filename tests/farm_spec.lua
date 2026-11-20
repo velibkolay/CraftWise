@@ -1161,3 +1161,31 @@ it("fade: covers the mini strip too, and a tracker shown away from the mouse sta
 	SlashCmdList.CRAFTWISE("farm show")
 	eq(f.alpha, 0.4, "shown faded, no flash at 100 %")
 end)
+
+it("fishing: the best catch's value is whole copper in the summary, the snapshot and a saved session (#373)", function()
+	local ns, stub = fishSetup()
+	local F = ns.Farm
+	local real = ns.GetSellValue
+	-- An AH value after the cut has a fraction.
+	ns.GetSellValue = function(id)
+		if id == GEM then
+			return { copper = 311.6, source = "auction", age = 0, label = "AH" }
+		end
+		return real(id)
+	end
+	advance(stub, 30)
+	catch(stub, { { id = CLOTH } })
+	advance(stub, 30)
+	catch(stub, { { id = GEM } })
+	local function whole(v, what)
+		assert(type(v) == "number" and v == math.floor(v), what .. " is whole copper, got " .. tostring(v))
+	end
+	local best = F.Totals(F.Current(), stub.clock).fish.best
+	eq(best.itemID, GEM); eq(best.unit, 311.6, "the comparison keeps the unit as it is")
+	local sum = F.Summary and F.Summary(F.Current(), stub.clock)
+	local snap = ns.Snapshot.Build()
+	eq(snap.farm.current.fish.best.value, 312); whole(snap.farm.current.fish.best.value, "current")
+	SlashCmdList.CRAFTWISE("farm reset")
+	local saved = ns.Snapshot.Build().farm.sessions[1].fish.best.value
+	eq(saved, 312); whole(saved, "saved session")
+end)
