@@ -14,6 +14,7 @@ export const MAX_CLASS_NAMES = 1000; // class and subclass names together (#120)
 export const MAX_CLASS_NAME = 64; // characters
 export const MAX_CLASS_ID = 65535;
 export const MAX_HOUSES = 20;
+export const MAX_CONNECTED = 20; // other realms per realm in `connected` (#366)
 export const MAX_SCANS = 200;
 export const MAX_RAW_POINTS = 500; // per price entry (the addon keeps 48 h)
 export const MAX_DAYS = 400; // per price entry (the addon keeps 30 days)

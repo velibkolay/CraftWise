@@ -65,7 +65,7 @@ function page(crumbs: Node | string, section: HTMLElement, house: House | null):
 			{ class: "shell" },
 			section,
 			bottomTabs(null),
-			house ? h("p", { class: "hint footnote" }, `Prices come from CraftWise scans of the ${house.label} on ${house.realm}. Item icons are placeholders.`) : null,
+			house ? h("p", { class: "hint footnote" }, `Prices come from CraftWise scans of the ${house.label} on ${(house.realms ?? [house.realm]).join(" / ")}. Item icons are placeholders.`) : null,
 		),
 	);
 }

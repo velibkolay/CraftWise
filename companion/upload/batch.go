@@ -42,12 +42,12 @@ const envelopeBytes = 96 // {"v":1,"houses":{},"items":{}...} keys and brackets
 // packPublic fills requests in order. Every request carries all houses (the contract asks for it;
 // there are at most 20). Low-priority units (item info, class names) never share a request with
 // scans or prices, so a soft-limit refusal of theirs holds back nothing else (#145).
-func packPublic(units []unit[PublicPayload], houses map[string]House, opt Options, skip func(string)) []*Batch[PublicPayload] {
+func packPublic(units []unit[PublicPayload], houses map[string]House, connected map[string]map[string]int64, opt Options, skip func(string)) []*Batch[PublicPayload] {
 	var out []*Batch[PublicPayload]
 	var cur *Batch[PublicPayload]
 	var keys map[string]bool
 	low := false // the current request carries low-priority units
-	base := envelopeBytes + size(houses)
+	base := envelopeBytes + size(houses) + size(connected)
 	full := func(u unit[PublicPayload]) bool {
 		c := cur.Counts
 		return cur.Bytes+u.bytes > opt.MaxBytes || cur.Rows+u.rows > opt.MaxRows ||
@@ -68,7 +68,7 @@ func packPublic(units []unit[PublicPayload], houses map[string]House, opt Option
 		}
 		if cur == nil || (len(cur.commits) > 0 && full(u)) {
 			cur = &Batch[PublicPayload]{
-				Body:   PublicPayload{V: Version, Houses: houses},
+				Body:   PublicPayload{V: Version, Houses: houses, Connected: connected},
 				Bytes:  base,
 				Counts: map[string]int{},
 			}

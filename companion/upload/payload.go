@@ -26,6 +26,7 @@ const (
 	MaxPriceEntries   = 2000 // item/house entries
 	MaxItems          = 5000 // item IDs in names + itemInfo
 	MaxHouses         = 20
+	MaxConnected      = 20 // other realms per realm in `connected` (#366)
 	MaxScans          = 200
 	MaxRawPoints      = 500  // per entry
 	MaxDays           = 400  // per entry
@@ -49,6 +50,9 @@ const MaxWatch = 1000
 type PublicPayload struct {
 	V        int                                `json:"v"`
 	Houses   map[string]House                   `json:"houses"`
+	// Connected is the realm pairs the addon recorded (#366): [realm][otherRealm] = first seen. Both
+	// directions, validated like the houses. The site groups connected realms by it.
+	Connected map[string]map[string]int64 `json:"connected,omitempty"`
 	Scans    map[string][]Scan                  `json:"scans,omitempty"`    // per house key
 	Names    map[int64]string                   `json:"names,omitempty"`    // CraftWiseMarketDB.names
 	ItemInfo map[int64]market.ItemInfo          `json:"itemInfo,omitempty"` // decoded (#92), sell price p (#120)

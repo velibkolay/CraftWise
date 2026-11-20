@@ -57,3 +57,16 @@ describe("realm match and picker list", () => {
 		expect(wantedKey("?x=1", null)).toBeNull();
 	});
 });
+
+describe("connected realms as one house (#366)", () => {
+	const GROUP: House = { ...house("r4h", "CAMWOW EU4 Realm 4 PvP", "Horde", 80), realms: ["CAMWOW EU4 Realm 4 PvP", "CAMWOW EU4 Realm 8 PvP"], keys: ["r4h", "r8h"] };
+	it("a character on any realm of the group lands on it", () => {
+		expect(onRealm(GROUP, ["CAMWOW EU4 Realm 8"])).toBe(true);
+		expect(onRealm(GROUP, ["CAMWOW EU4 Realm 4"])).toBe(true);
+		expect(onRealm(GROUP, ["CAMWOW EU4 Realm 6"])).toBe(false);
+		expect(pickHouse([R6H, GROUP], { realms: ["camwow eu4 realm 8 pvp"] })?.key).toBe("r4h");
+	});
+	it("a remembered key of any member finds the group", () => {
+		expect(pickHouse([R6H, GROUP], { wanted: "r8h" })?.key).toBe("r4h");
+	});
+});

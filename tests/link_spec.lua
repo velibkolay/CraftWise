@@ -593,6 +593,39 @@ it("#358: a hello from a listed character of another realm is accepted; from an 
 	assert(Link.StatusText():find("(Realm 4)", 1, true), Link.StatusText())
 end)
 
+it("#366: a linked character's answer from another realm records the pair in both directions, once", function()
+	local ns, stub, M, Link = Load()
+	stub.realm = R8
+	Fill(M, 5)
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	eq(next(CraftWiseMarketDB.connected), nil, "nothing before an answer")
+	Say(stub, PEER, "H", "2", R4, R4 .. "|H", "0")
+	local first = CraftWiseMarketDB.connected[R8][R4]
+	assert(first, "Realm 8 knows Realm 4")
+	eq(CraftWiseMarketDB.connected[R4][R8], first, "and the other way, same time")
+	stub.now = stub.now + 500
+	Say(stub, PEER, "H", "2", R4, R4 .. "|H", "0")
+	eq(CraftWiseMarketDB.connected[R8][R4], first, "the first time seen is kept")
+end)
+
+it("#366: nothing is recorded from a stranger, a same-realm peer, or a message of another protocol", function()
+	local ns, stub, M, Link = Load()
+	stub.realm = R8
+	Fill(M, 5)
+	Link.Add("Kitchenchant")
+	Run(Link, 0, 1)
+	Say(stub, "Mallory Stranger", "H", "2", "Evil Realm", "Evil Realm|H", "0")
+	eq(next(CraftWiseMarketDB.connected), nil, "not listed")
+	Say(stub, PEER, "H", "9", R4, R4 .. "|H", "0")
+	eq(next(CraftWiseMarketDB.connected), nil, "other protocol")
+	Say(stub, PEER, "H", "2", R8, R8 .. "|H", "0")
+	eq(next(CraftWiseMarketDB.connected), nil, "same realm proves nothing")
+	eq(M.RecordConnected(R8, R8, 1), false)
+	eq(M.RecordConnected(R8, "", 1), false)
+	eq(M.RecordConnected(R8, ("x"):rep(65), 1), false)
+end)
+
 local function RealmTransfer(n, since)
 	local ns, stub, M, Link = Load()
 	stub.realm = R4

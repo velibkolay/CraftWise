@@ -4,6 +4,8 @@
 export interface House {
 	key: string;
 	realm: string;
+	realms?: string[]; // the realms of connected houses shown as one (#366); `realm` is one of them
+	keys?: string[]; // the keys of every house in it; the one asked for may be any of them
 	kind: "faction" | "neutral";
 	faction: string | null;
 	label: string;
@@ -22,11 +24,11 @@ const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 // A house sits on a character's realm when the names match ignoring case and punctuation, or one contains the
 // other ("CAMWOW EU4 Realm 8" and "CAMWOW EU4 Realm 8 PvP" are the same realm).
 export function onRealm(h: House, realms: Iterable<string | null | undefined>): boolean {
-	const hr = norm(h.realm);
-	if (!hr) return false;
+	const own = [...(h.realms ?? [h.realm])].map(norm).filter(Boolean);
+	if (!own.length) return false;
 	for (const r of realms) {
 		const n = r ? norm(r) : "";
-		if (n && (n === hr || n.includes(hr) || hr.includes(n))) return true;
+		if (n && own.some((hr) => n === hr || n.includes(hr) || hr.includes(n))) return true;
 	}
 	return false;
 }
@@ -36,7 +38,7 @@ const newest = (list: House[]): House | null => list.reduce<House | null>((best,
 // The house to show: the one asked for; else the Horde house on a realm one of the account's characters is on;
 // else the most recently scanned Horde house; else the same for any faction house; else the first house.
 export function pickHouse(houses: House[], choice: HouseChoice = {}): House | null {
-	const wanted = choice.wanted ? houses.find((h) => h.key === choice.wanted) : undefined;
+	const wanted = choice.wanted ? houses.find((h) => h.key === choice.wanted || h.keys?.includes(choice.wanted!)) : undefined;
 	if (wanted) return wanted;
 	const horde = houses.filter((h) => h.kind === "faction" && h.faction === "Horde");
 	const faction = houses.filter((h) => h.kind === "faction");

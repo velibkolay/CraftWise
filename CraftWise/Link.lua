@@ -630,6 +630,10 @@ local function OnHello(key, f, now)
 	if peer then
 		peer.realm = f[3]
 		peer.proto = nil
+		-- The answer is the evidence the two realms are connected (#366); the site groups by it.
+		if f[3] ~= (GetRealmName() or "") then
+			ns.Market.RecordConnected(GetRealmName() or "", f[3], time())
+		end
 	end
 	local since = {}
 	for i = 4, #f - 1, 2 do

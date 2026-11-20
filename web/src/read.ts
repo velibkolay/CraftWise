@@ -2,22 +2,11 @@
 import type { Env } from "./env";
 import { HttpError, intParam, json } from "./http";
 import * as L from "./limits";
+import { groupHouses, groupOf, mergeGroupDays, mergeGroupPoints, mergeGroupPrices, repIds, type Group, type HouseRow, type Pair } from "./groups";
 import { dayNumber, listed, medianFloor, tierList, typical, type Typical } from "./market";
 import { nameWords } from "./upload";
 
 const CACHE = { "cache-control": `public, max-age=${L.PUBLIC_MAX_AGE}` };
-
-interface HouseRow {
-	id: number;
-	key: string;
-	realm: string;
-	kind: string;
-	faction: string | null;
-	label: string;
-	last_scan: number | null;
-	last_full_scan: number | null;
-	last_full_scan_items: number | null;
-}
 
 interface PriceRow {
 	house: number;
@@ -78,17 +67,32 @@ function namesOut(names: ClassNames, cls: number | null, sub: number | null) {
 	};
 }
 
-async function allHouses(env: Env): Promise<HouseRow[]> {
-	const { results } = await env.DB.prepare(
-		"SELECT * FROM houses ORDER BY kind = 'faction' DESC, realm, label",
-	).all<HouseRow>();
-	return results;
+// The auction houses as the site shows them (#366): the houses of connected realms grouped into one.
+// Stored rows stay per house key; the pairs are the realms a linked character proved connected.
+async function allGroups(env: Env): Promise<Group[]> {
+	const [rows, pairs] = await env.DB.batch([
+		env.DB.prepare("SELECT * FROM houses ORDER BY kind = 'faction' DESC, realm, label"),
+		env.DB.prepare("SELECT a, b FROM connected"),
+	]);
+	return groupHouses(rows!.results as unknown as HouseRow[], pairs!.results as unknown as Pair[]);
 }
 
-function houseOut(h: HouseRow) {
+// The group of the house key in the query (any member's key finds it).
+async function groupParam(env: Env, url: URL): Promise<Group> {
+	const key = url.searchParams.get("house");
+	if (!key) throw new HttpError(400, "bad_query", "house is required");
+	const group = groupOf(await allGroups(env), key);
+	if (!group) throw new HttpError(404, "not_found", "unknown house");
+	return group;
+}
+
+function houseOut(g: Group) {
+	const h = g.house;
 	return {
 		key: h.key,
 		realm: h.realm,
+		realms: g.realms,
+		keys: g.keys,
 		kind: h.kind,
 		faction: h.faction,
 		label: h.label,
@@ -145,15 +149,17 @@ function currentOut(p: PriceRow) {
 }
 
 export async function houses(env: Env): Promise<Response> {
-	return json({ houses: (await allHouses(env)).map(houseOut) }, 200, CACHE);
+	return json({ houses: (await allGroups(env)).map(houseOut) }, 200, CACHE);
 }
 
 export async function scans(env: Env, url: URL): Promise<Response> {
 	const limit = intParam(url, "limit", L.SCANS_LIMIT, 1, L.SCANS_MAX);
-	const house = url.searchParams.get("house");
+	const asked = url.searchParams.get("house");
+	// a group's scans are the scans of all its houses, each under its own key
+	const keys = asked ? (groupOf(await allGroups(env), asked)?.keys ?? [asked]) : null;
 	const sql = `SELECT s.t, s.kind, s.items, s.last_only, s.source, h.key, h.label FROM scans s JOIN houses h ON h.id = s.house
-		${house ? "WHERE h.key = ?2" : ""} ORDER BY s.t DESC LIMIT ?1`;
-	const stmt = house ? env.DB.prepare(sql).bind(limit, house) : env.DB.prepare(sql).bind(limit);
+		${keys ? "WHERE h.key IN (SELECT value FROM json_each(?2))" : ""} ORDER BY s.t DESC LIMIT ?1`;
+	const stmt = keys ? env.DB.prepare(sql).bind(limit, JSON.stringify(keys)) : env.DB.prepare(sql).bind(limit);
 	const { results } = await stmt.all<{ t: number; kind: string; items: number | null; last_only: number | null; source: string | null; key: string; label: string }>();
 	return json(
 		{
@@ -183,8 +189,9 @@ export async function search(env: Env, url: URL): Promise<Response> {
 	const q = (url.searchParams.get("q") ?? "").trim();
 	const limit = intParam(url, "limit", L.SEARCH_LIMIT, 1, L.SEARCH_MAX);
 	const items = await findItems(env, q, limit);
-	const hs = await allHouses(env);
-	const byId = new Map(hs.map((h) => [h.id, h]));
+	const groups = await allGroups(env);
+	const byId = new Map(groups.map((g) => [g.house.id, g.house]));
+	const rep = repIds(groups);
 	let prices: PriceRow[] = [];
 	let names = NO_NAMES;
 	if (items.length) {
@@ -197,7 +204,7 @@ export async function search(env: Env, url: URL): Promise<Response> {
 			env.DB.prepare("SELECT house, item, data FROM variants WHERE house IN (SELECT id FROM houses) AND item IN (SELECT value FROM json_each(?1))").bind(ids),
 			...classNameStatements(env.DB, items.map((i) => i.class)),
 		]);
-		prices = mergePrices(rows!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[]));
+		prices = mergeGroupPrices(mergePrices(rows!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[])), rep);
 		names = classNamesOf(cls!, sub!);
 	}
 	return json(
@@ -289,14 +296,16 @@ export async function itemDetail(env: Env, url: URL, id: number, now: number): P
 		db.prepare("SELECT house, day, data FROM variant_days WHERE house IN (SELECT id FROM houses) AND item = ?1 AND day > ?2").bind(id, today - days),
 	]);
 	const info = (item!.results as unknown as (ItemRow & { class_name: string | null; subclass_name: string | null })[])[0] ?? null;
-	const priceRows = mergePrices(prices!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[]));
-	const dailyRows = mergeDays(daily!.results as unknown as DailyRow[], variantDays!.results as unknown as VariantDayRow[]);
-	const pointRows = points!.results as unknown as PointRow[];
+	const groups = await allGroups(env);
+	const rep = repIds(groups);
+	const priceRows = mergeGroupPrices(mergePrices(prices!.results as unknown as PriceRow[], variantPrices(variants!.results as unknown as VariantRow[])), rep);
+	const dailyRows = mergeGroupDays(mergeDays(daily!.results as unknown as DailyRow[], variantDays!.results as unknown as VariantDayRow[]), rep);
+	const pointRows = mergeGroupPoints(points!.results as unknown as PointRow[], rep);
 	if (!info && !priceRows.length && !dailyRows.length) {
 		throw new HttpError(404, "not_found", `no data for item ${id}`);
 	}
 
-	const hs = await allHouses(env);
+	const hs = groups.map((g) => g.house);
 	const markets = new Map<string, { house: HouseRow; suffix: number; price: PriceRow | null; days: DailyRow[]; raw: PointRow[] }>();
 	const market = (house: number, suffix: number) => {
 		const key = `${house}:${suffix}`;
@@ -362,18 +371,47 @@ interface Mover {
 	change: number;
 }
 
+// The rows the top movers are made of for a group of connected realms (#366): the same as the single
+// house's query returns, built from the merged rows of the members. One read per table, one pass in the
+// Worker: the work is bounded by the rows of the members.
+async function groupMoverRows(env: Env, group: Group, now: number, today: number): Promise<(PriceRow & { typs: string })[]> {
+	const list = JSON.stringify(group.ids);
+	const rep = repIds([group]);
+	const [days, prices] = await env.DB.batch([
+		env.DB.prepare(
+			`SELECT house, item, suffix, day, src, lo, hi, qty_max, list_max, n, typ FROM daily
+			WHERE house IN (SELECT value FROM json_each(?1)) AND day > ?2 AND day <= ?3 AND typ IS NOT NULL`,
+		).bind(list, today - L.TYPICAL_DAYS, today),
+		// no `min IS NOT NULL` here: the newest row of the group decides, and that may be an unlisted one
+		env.DB.prepare("SELECT * FROM prices WHERE house IN (SELECT value FROM json_each(?1)) AND t >= ?2").bind(list, now - L.MOVERS_MAX_AGE),
+	]);
+	const typs = new Map<string, number[]>();
+	for (const d of mergeGroupDays(days!.results as unknown as (DailyRow & { item: number })[], rep)) {
+		if (d.typ === null) continue;
+		const k = `${d.item}:${d.suffix}`;
+		const l = typs.get(k);
+		if (l) l.push(d.typ);
+		else typs.set(k, [d.typ]);
+	}
+	const out: (PriceRow & { typs: string })[] = [];
+	for (const p of mergeGroupPrices(prices!.results as unknown as PriceRow[], rep)) {
+		const t = typs.get(`${p.item}:${p.suffix}`);
+		if (t && t.length >= L.MIN_HISTORY_DAYS && p.min !== null) out.push({ ...p, typs: t.join(",") });
+	}
+	return out;
+}
+
 // Items whose current lowest price is furthest above (up) or below (down) their typical price.
 // Only items with a typical price (CraftWise history of at least 3 of the last 7 days) and a
 // listed price seen in the last 2 days. Cached in D1 until the house's next scan or the next day.
 export async function movers(env: Env, url: URL, now: number): Promise<Response> {
-	const key = url.searchParams.get("house");
 	const limit = intParam(url, "limit", L.MOVERS_LIMIT, 1, L.MOVERS_MAX);
-	if (!key) throw new HttpError(400, "bad_query", "house is required");
 	const db = env.DB;
-	const house = await db.prepare("SELECT * FROM houses WHERE key = ?1").bind(key).first<HouseRow>();
-	if (!house) throw new HttpError(404, "not_found", "unknown house");
+	const group = await groupParam(env, url);
+	const house = group.house;
 	const today = dayNumber(now);
-	const cacheKey = `movers:${house.id}`;
+	// a group of connected realms is cached under its members, so a new pair never serves a stale answer
+	const cacheKey = group.ids.length === 1 ? `movers:${house.id}` : `movers:${group.ids.join("+")}`;
 	const cached = await db.prepare("SELECT t, data FROM cache WHERE key = ?1").bind(cacheKey).first<{ t: number; data: string }>();
 	let result: { computedAt: number; up: Mover[]; down: Mover[] };
 	if (cached && cached.t >= (house.last_scan ?? 0) && dayNumber(cached.t) === today) {
@@ -381,17 +419,22 @@ export async function movers(env: Env, url: URL, now: number): Promise<Response>
 	} else {
 		// Items with a typical price (>= 3 of the last 7 days) and a recent price; SQLite does the
 		// join so only those rows reach the Worker.
-		const { results } = await db
-			.prepare(
-				`SELECT p.item, p.suffix, p.t, p.min, p.qty, p.listings, p.off, p.depth_t, p.depth_total, d.typs
-				FROM (SELECT item, suffix, group_concat(typ) AS typs FROM daily
-					WHERE house = ?1 AND day > ?3 AND day <= ?4 AND typ IS NOT NULL
-					GROUP BY item, suffix HAVING count(*) >= ?5) d
-				JOIN prices p ON p.house = ?1 AND p.item = d.item AND p.suffix = d.suffix
-				WHERE p.t >= ?2 AND p.min IS NOT NULL`,
-			)
-			.bind(house.id, now - L.MOVERS_MAX_AGE, today - L.TYPICAL_DAYS, today, L.MIN_HISTORY_DAYS)
-			.all<PriceRow & { typs: string }>();
+		const results =
+			group.ids.length === 1
+				? (
+						await db
+							.prepare(
+								`SELECT p.item, p.suffix, p.t, p.min, p.qty, p.listings, p.off, p.depth_t, p.depth_total, d.typs
+								FROM (SELECT item, suffix, group_concat(typ) AS typs FROM daily
+									WHERE house = ?1 AND day > ?3 AND day <= ?4 AND typ IS NOT NULL
+									GROUP BY item, suffix HAVING count(*) >= ?5) d
+								JOIN prices p ON p.house = ?1 AND p.item = d.item AND p.suffix = d.suffix
+								WHERE p.t >= ?2 AND p.min IS NOT NULL`,
+							)
+							.bind(house.id, now - L.MOVERS_MAX_AGE, today - L.TYPICAL_DAYS, today, L.MIN_HISTORY_DAYS)
+							.all<PriceRow & { typs: string }>()
+					).results
+				: await groupMoverRows(env, group, now, today);
 		const list: Mover[] = [];
 		for (const p of results) {
 			if (!listed(p)) continue;
@@ -446,13 +489,6 @@ export async function movers(env: Env, url: URL, now: number): Promise<Response>
 // Browse (#97): the site's item list, one house at a time.
 // ------------------------------------------------------------------------------------------
 
-async function houseParam(env: Env, url: URL): Promise<HouseRow> {
-	const key = url.searchParams.get("house");
-	if (!key) throw new HttpError(400, "bad_query", "house is required");
-	const house = await env.DB.prepare("SELECT * FROM houses WHERE key = ?1").bind(key).first<HouseRow>();
-	if (!house) throw new HttpError(404, "not_found", "unknown house");
-	return house;
-}
 
 // Item class and subclass (null without item info) -> the items priced at the house (suffix 0).
 type CategoryList = [number | null, number | null, number[]][];
@@ -463,9 +499,10 @@ interface CategoryIndex {
 
 // Built from every price row of the house (one read per item and its info), so it is cached in D1
 // until the house's next scan or the next UTC day, like the top movers.
-async function categoryIndex(env: Env, house: HouseRow, now: number): Promise<CategoryIndex> {
+async function categoryIndex(env: Env, group: Group, now: number): Promise<CategoryIndex> {
 	const db = env.DB;
-	const cacheKey = `categories:${house.id}`;
+	const house = group.house;
+	const cacheKey = group.ids.length === 1 ? `categories:${house.id}` : `categories:${group.ids.join("+")}`;
 	const cached = await db.prepare("SELECT t, data FROM cache WHERE key = ?1").bind(cacheKey).first<{ t: number; data: string }>();
 	if (cached && cached.t >= (house.last_scan ?? 0) && dayNumber(cached.t) === dayNumber(now)) {
 		return JSON.parse(cached.data) as CategoryIndex;
@@ -473,9 +510,9 @@ async function categoryIndex(env: Env, house: HouseRow, now: number): Promise<Ca
 	const { results } = await db
 		.prepare(
 			`SELECT p.item, i.class, i.subclass FROM prices p LEFT JOIN items i ON i.id = p.item
-			WHERE p.house = ?1 AND p.suffix = 0 ORDER BY i.class, i.subclass, p.item`,
+			WHERE p.house IN (SELECT value FROM json_each(?1)) AND p.suffix = 0 GROUP BY p.item ORDER BY i.class, i.subclass, p.item`,
 		)
-		.bind(house.id)
+		.bind(JSON.stringify(group.ids))
 		.all<{ item: number; class: number | null; subclass: number | null }>();
 	const cats: CategoryList = [];
 	let last: CategoryList[number] | undefined;
@@ -495,8 +532,9 @@ async function categoryIndex(env: Env, house: HouseRow, now: number): Promise<Ca
 }
 
 export async function categories(env: Env, url: URL, now: number): Promise<Response> {
-	const house = await houseParam(env, url);
-	const index = await categoryIndex(env, house, now);
+	const group = await groupParam(env, url);
+	const house = group.house;
+	const index = await categoryIndex(env, group, now);
 	// Names are read on every request (a few dozen rows), so a name uploaded after the index was built
 	// shows at once.
 	const names = await readClassNames(env, index.cats.map(([c]) => c));
@@ -523,7 +561,9 @@ function classParam(raw: string | null, name: string): number | null | undefined
 // One of: class (+ subclass), q (as /api/items), ids (comma-separated). Every item with its info,
 // its current price at the house, its typical price and the daily rows of the last BROWSE_DAYS days.
 export async function browse(env: Env, url: URL, now: number): Promise<Response> {
-	const house = await houseParam(env, url);
+	const group = await groupParam(env, url);
+	const house = group.house;
+	const rep = repIds([group]);
 	const today = dayNumber(now);
 	const q = url.searchParams.get("q");
 	const idsRaw = url.searchParams.get("ids");
@@ -542,7 +582,7 @@ export async function browse(env: Env, url: URL, now: number): Promise<Response>
 		}
 		ids = [...new Set(parts.map(Number))];
 	} else {
-		const index = await categoryIndex(env, house, now);
+		const index = await categoryIndex(env, group, now);
 		ids = index.cats.filter(([c, s]) => c === cls && (sub === undefined || s === sub)).flatMap(([, , list]) => list);
 	}
 	const more = ids.length > L.BROWSE_MAX;
@@ -550,21 +590,23 @@ export async function browse(env: Env, url: URL, now: number): Promise<Response>
 
 	const db = env.DB;
 	const list = JSON.stringify(ids);
+	const members = JSON.stringify(group.ids);
 	const [items, prices, daily] = ids.length
 		? await db.batch([
 				db.prepare("SELECT * FROM items WHERE id IN (SELECT value FROM json_each(?1))").bind(list),
-				db.prepare("SELECT * FROM prices WHERE house = ?1 AND suffix = 0 AND item IN (SELECT value FROM json_each(?2))").bind(house.id, list),
+				db.prepare("SELECT * FROM prices WHERE house IN (SELECT value FROM json_each(?1)) AND suffix = 0 AND item IN (SELECT value FROM json_each(?2))").bind(members, list),
 				db.prepare(
-					`SELECT item, day, src, lo, typ, hi, qty_max FROM daily
-					WHERE house = ?1 AND suffix = 0 AND item IN (SELECT value FROM json_each(?2)) AND day > ?3 ORDER BY item, day`,
-				).bind(house.id, list, today - L.BROWSE_DAYS),
+					`SELECT house, suffix, item, day, src, lo, typ, hi, qty_max, list_max, n FROM daily
+					WHERE house IN (SELECT value FROM json_each(?1)) AND suffix = 0 AND item IN (SELECT value FROM json_each(?2)) AND day > ?3 ORDER BY item, day`,
+				).bind(members, list, today - L.BROWSE_DAYS),
 			])
 		: [{ results: [] }, { results: [] }, { results: [] }];
 	const info = new Map((items!.results as unknown as ItemRow[]).map((i) => [i.id, i]));
 	const names = await readClassNames(env, [...info.values()].map((i) => i.class));
-	const price = new Map((prices!.results as unknown as PriceRow[]).map((p) => [p.item, p]));
+	// several houses in the group: the newest price of each item, the merged days (#366)
+	const price = new Map(mergeGroupPrices(prices!.results as unknown as PriceRow[], rep).map((p) => [p.item, p]));
 	const days = new Map<number, (DailyRow & { item: number })[]>();
-	for (const d of daily!.results as unknown as (DailyRow & { item: number })[]) {
+	for (const d of mergeGroupDays(daily!.results as unknown as (DailyRow & { item: number })[], rep)) {
 		let l = days.get(d.item);
 		if (!l) days.set(d.item, (l = []));
 		l.push(d);

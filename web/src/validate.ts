@@ -11,6 +11,12 @@ export interface House {
 	faction: "Horde" | "Alliance" | null;
 	label: string;
 }
+// Two realms proved connected (#366), in the fixed order a < b; t is the earliest time reported.
+export interface Connected {
+	a: string;
+	b: string;
+	t: number;
+}
 export interface Scan {
 	house: string;
 	t: number;
@@ -68,6 +74,7 @@ export interface Price {
 }
 export interface PublicUpload {
 	houses: House[];
+	connected: Connected[];
 	scans: Scan[];
 	items: ItemInfo[];
 	prices: Price[];
@@ -224,6 +231,37 @@ function houses(v: unknown): House[] {
 		}
 		return { key, realm, kind, faction, label: str(h.label, `${path}.label`, 64) };
 	});
+}
+
+// { "<realm>": { "<other realm>": firstSeen } } (CraftWiseMarketDB.connected, #366). Realm names as in the
+// house keys (no "|"), never paired with themselves. A pair may come from both sides: it is kept once
+// with the earlier time. Nothing here is guessed or completed: only what the addon recorded.
+function connectedRealms(v: unknown, now: number): Connected[] {
+	if (v === undefined || v === null) return [];
+	const o = obj(v, "connected");
+	const realms = Object.keys(o);
+	if (realms.length > L.MAX_HOUSES) fail("connected", `more than ${L.MAX_HOUSES} realms`);
+	const pairs = new Map<string, Connected>();
+	for (const a of realms) {
+		const path = `connected[${JSON.stringify(a)}]`;
+		if (a.length < 1 || a.length > 64 || a.includes("|")) fail(path, "realm name must be 1 to 64 characters without |");
+		const others = obj(o[a], path);
+		const names = Object.keys(others);
+		if (names.length > L.MAX_CONNECTED) fail(path, `more than ${L.MAX_CONNECTED} connected realms`);
+		for (const b of names) {
+			const p = `${path}[${JSON.stringify(b)}]`;
+			if (b.length < 1 || b.length > 64 || b.includes("|")) fail(p, "realm name must be 1 to 64 characters without |");
+			if (a === b) fail(p, "a realm is not connected to itself");
+			const t = time(others[b], p, now);
+			const lo = a < b ? a : b;
+			const hi = a < b ? b : a;
+			const key = `${lo} ${hi}`;
+			const old = pairs.get(key);
+			if (!old) pairs.set(key, { a: lo, b: hi, t });
+			else if (t < old.t) old.t = t;
+		}
+	}
+	return [...pairs.values()];
 }
 
 function itemKey(v: unknown, path: Path): { item: number; suffix: number } {
@@ -428,7 +466,7 @@ export function validatePublic(body: unknown, now: number): PublicUpload {
 	}
 	if (classNames.length > L.MAX_CLASS_NAMES) fail("classNames", `more than ${L.MAX_CLASS_NAMES} names in classNames and subclassNames`);
 
-	return { houses: houseList, scans, items, prices, classNames };
+	return { houses: houseList, connected: connectedRealms(b.connected, now), scans, items, prices, classNames };
 }
 
 // Character key as CraftWise builds it: "<realm>-<name> <surname>" or "<realm>-<name>".
