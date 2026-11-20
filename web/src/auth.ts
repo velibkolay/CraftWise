@@ -35,18 +35,18 @@ export interface Today {
 
 // Checks the bearer token, counts the request against the token's per-minute limit and reads
 // today's rows written. One D1 batch; an unknown or revoked token writes nothing.
-export async function uploadAuth(request: Request, env: Env, scope: Scope, now: number): Promise<{ tokenId: number; today: Today }> {
+export async function uploadAuth(request: Request, env: Env, scope: Scope, now: number): Promise<{ tokenId: number; tokenName: string; today: Today }> {
 	const m = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "");
 	if (!m || !TOKEN.test(m[1]!)) {
 		throw new HttpError(401, "unauthorized", "missing or malformed bearer token", { "www-authenticate": "Bearer" });
 	}
 	const hash = await hashToken(m[1]!);
 	const minute = Math.floor(now / 60);
-	const [tok, usage] = await env.DB.batch<{ id: number; scopes: string; rl_count: number } & { rows_written: number }>([
+	const [tok, usage] = await env.DB.batch<{ id: number; name: string; scopes: string; rl_count: number } & { rows_written: number }>([
 		env.DB.prepare(
 			`UPDATE tokens SET last_used = ?2,
 				rl_count = CASE WHEN rl_window = ?3 THEN rl_count + 1 ELSE 1 END, rl_window = ?3
-			WHERE hash = ?1 AND revoked IS NULL RETURNING id, scopes, rl_count`,
+			WHERE hash = ?1 AND revoked IS NULL RETURNING id, name, scopes, rl_count`,
 		).bind(hash, now, minute),
 		env.DB.prepare("SELECT rows_written FROM usage WHERE day = ?1").bind(Math.floor(now / DAY)),
 	]);
@@ -69,7 +69,7 @@ export async function uploadAuth(request: Request, env: Env, scope: Scope, now: 
 			"retry-after": String(DAY - (now % DAY)),
 		});
 	}
-	return { tokenId: row.id, today: { written, budget } };
+	return { tokenId: row.id, tokenName: row.name, today: { written, budget } };
 }
 
 // Refuses an upload whose rows (an upper bound: rows that don't change are not written) would take

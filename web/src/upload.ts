@@ -321,21 +321,37 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 
 const DOC_TABLES = ["snapshots", "auctions", "fishing"] as const;
 
-export async function privateUpload(request: Request, env: Env, now: number): Promise<Response> {
-	const { today } = await uploadAuth(request, env, "private", now);
-	const data = validatePrivate(parseJson(await readBody(request, MAX_PRIVATE_BYTES)), now);
-	// private data is never low priority: it goes through up to the full budget
-	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length + data.crafted.length + 2 * (data.watch?.length ?? 0), false, now);
-	const db = env.DB;
-	const statements: D1PreparedStatement[] = [];
+// The name of the machine that uploads (#242): the companion's X-CraftWise-Machine header (1 to 64
+// characters, no control characters), else the name of the token.
+export function machineName(request: Request, tokenName: string): string {
+	const h = (request.headers.get("x-craftwise-machine") ?? "").trim();
+	return h.length >= 1 && h.length <= 64 && !/[ -]/.test(h) ? h : tokenName;
+}
 
+export async function privateUpload(request: Request, env: Env, now: number): Promise<Response> {
+	const { today, tokenName } = await uploadAuth(request, env, "private", now);
+	const data = validatePrivate(parseJson(await readBody(request, MAX_PRIVATE_BYTES)), now);
 	const chars = new Set<string>();
 	for (const table of DOC_TABLES) for (const d of data[table]) chars.add(d.char);
 	for (const e of data.ledger) chars.add(e.char);
 	for (const e of data.crafted) chars.add(e.char);
+	// private data is never low priority: it goes through up to the full budget
+	checkBudget(today, 3 * (data.snapshots.length + data.auctions.length + data.fishing.length) + data.ledger.length + data.crafted.length + 2 * (data.watch?.length ?? 0) + 2 * data.characters.length + chars.size, false, now);
+	const db = env.DB;
+	const statements: D1PreparedStatement[] = [];
+
 	if (chars.size) {
 		statements.push(
 			db.prepare("INSERT OR IGNORE INTO characters (key, updated) SELECT value, 0 FROM json_each(?1)").bind(JSON.stringify([...chars])),
+		);
+	}
+	if (chars.size) {
+		// Which machine uploaded these characters (#242). The time `uploaded` is set by the triggers of
+		// 0007_character_machine.sql when a document, a ledger entry or a craft day really changes, so
+		// re-sending writes nothing; the machine is written only when it differs.
+		statements.push(
+			db.prepare("UPDATE characters SET machine = ?2 WHERE key IN (SELECT value FROM json_each(?1)) AND machine IS NOT ?2")
+				.bind(JSON.stringify([...chars]), machineName(request, tokenName)),
 		);
 	}
 	for (const c of data.characters) {

@@ -26,6 +26,11 @@ type marketServer struct {
 	uploads []string // paths of the uploads
 	machine string
 	status  int // download status, 0 = 200
+
+	// GET /api/sync/characters (#242): the answer (empty = no characters) or a status to refuse with.
+	chars       string
+	charsStatus int
+	charGets    []string
 }
 
 func newMarketServer(t *testing.T, file string) (*marketServer, *httptest.Server) {
@@ -54,6 +59,20 @@ func newMarketServer(t *testing.T, file string) (*marketServer, *httptest.Server
 		ms.mu.Lock()
 		defer ms.mu.Unlock()
 		ms.machine = r.Header.Get("X-CraftWise-Machine")
+		if r.Method == http.MethodGet && r.URL.Path == syncdata.CharsPath {
+			ms.charGets = append(ms.charGets, r.URL.RawQuery)
+			if ms.charsStatus != 0 {
+				w.WriteHeader(ms.charsStatus)
+				_, _ = io.WriteString(w, `{"error":"forbidden","message":"token lacks the private scope"}`)
+				return
+			}
+			if ms.chars == "" {
+				_, _ = io.WriteString(w, `{"v":1,"characters":{},"next":null,"until":4343}`)
+				return
+			}
+			_, _ = io.WriteString(w, ms.chars)
+			return
+		}
 		if r.Method == http.MethodGet {
 			ms.gets = append(ms.gets, r.URL.RawQuery)
 			if ms.status != 0 {

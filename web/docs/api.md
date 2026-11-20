@@ -20,7 +20,7 @@ Errors are `{ "error": "<code>", "message": "<text>" }` with the HTTP status:
 ## Uploads (companion app)
 
 `Authorization: Bearer cw_...` with a token created on the private page (`/me`, see "Private API").
-A token has the scopes `public` (`POST /api/upload`, `GET /api/sync/market`) and/or `private` (`POST /api/private/upload`).
+A token has the scopes `public` (`POST /api/upload`, `GET /api/sync/market`) and/or `private` (`POST /api/private/upload`, `GET /api/sync/characters`).
 Only the token's SHA-256 is stored.
 
 Rules for the companion:
@@ -188,6 +188,69 @@ Cost: reads only; the token's rate-limit row is the one write per request (not c
 A delta reads the changed price rows through the index `prices_updated` plus their points and days,
 and the packed variants table whole (one row per item and house).
 
+### `GET /api/sync/characters`: the other machine's characters (#242)
+
+The second half of the two-machine sync (#237): the private character data of **every** machine, for the
+companion of the other one to put into `CraftWiseSync.chars` (`docs/companion.md`, shown by #243). What a
+companion uploaded with `POST /api/private/upload`, as stored: the characters list, the latest documents, the
+newest ledger entries and craft days.
+
+`Authorization: Bearer cw_...`, scope **`private`** (this is private data, unlike the market download).
+Not behind Cloudflare Access. `GET` only. `Cache-Control: private, no-store`.
+
+| Query | Meaning |
+|---|---|
+| `since` | Unix seconds, default `0` (everything). Characters whose stored data changed (`uploaded`, below) at or after it. |
+| `cursor` | The `next` of the previous page, with the same `since`. Omit on the first request. |
+| `limit` | Characters per page, default 5, at most 20. A page is also cut when its documents pass about 3 MB, so a page can hold fewer (at least one). |
+| `notMachine` | A machine name: leaves out the characters that machine uploaded (the companion sends its own name; at most 64 characters). |
+| `ledgerSince` | Unix seconds: the ledger entries to send, default 30 days back, never more than 90 days back. |
+
+Response:
+
+```json
+{
+  "v": 1,
+  "characters": {
+    "CAMWOW EU4 Realm 8 PvP-Mage Alt": {
+      "machine": "Mac",
+      "uploaded": 1794400100,
+      "info": { "realm": "CAMWOW EU4 Realm 8 PvP", "name": "Mage", "faction": "Horde", "race": "Orc", "class": "Mage", "level": 12, "t": 1794400000 },
+      "snapshot": { "t": 1794400000, "data": { "v": 1 } },
+      "auctions": { "t": 1794400050, "data": { "active": [], "sold": [] } },
+      "fishing": { "t": 1794400040, "data": { "days": 90, "catches": 12 } },
+      "ledger": [ { "t": 1794399000, "k": "ahbuy", "i": 2589, "q": 20, "m": 2000, "w": "CAMWOW EU4 Realm 8 PvP|H", "n": "Linen Cloth" } ],
+      "crafted": [ { "r": 2575, "d": 20261114, "n": 3, "i": 3, "p": 150, "k": 3, "a": 12.5 } ]
+    }
+  },
+  "next": null,
+  "until": 1794400200
+}
+```
+
+- `machine`: who uploaded the character: the companion's machine name (header `X-CraftWise-Machine` of the
+  private upload, 1 to 64 characters), else the name of the token it uploaded with. `null` for a character last
+  uploaded before this endpoint existed (`0007_character_machine.sql`); the next upload from its machine sets it.
+- `uploaded`: server time of the last change of the character's stored data (a newer snapshot, auctions or
+  fishing document, a new ledger entry, a new or changed craft day; the database triggers of
+  `0007_character_machine.sql` set it, so re-sending the same data changes nothing). A character uploaded before
+  the migration has its snapshot time.
+- `info`: the characters list row (from `snapshot.char`); `snapshot`, `auctions`, `fishing`: the stored documents
+  with their time `t`, exactly as uploaded (missing = never uploaded).
+- `ledger`: the entries of the last 30 days (`ledgerSince`), at most 2,000 newest, oldest first, in the upload's
+  field names (`t`, `k`, `i`, `q`, `m`, `w`, `n`). `crafted`: the craft log days of the last 30 days, in the
+  upload's field names (`r`, `d`, `n`, `i`, `p`, `k`, `a`). Older ledger and craft days stay on the site (`/me`).
+- A character always comes whole; the receiver replaces what it had.
+- `until`: what to send as `since` the next time (server clock minus 60 s, so an upload that was still running
+  during this download comes back next time; a repeated character is harmless). Take it from the last page.
+
+Walk: `GET ?since=S`, then `GET ?since=S&cursor=<next>` until `next` is `null`, then store `until`. The cursor
+holds the last character's key (base64url), so a character that changes during the walk is read again by the next
+download. The 30 requests a minute per token apply (`429 rate_limited`).
+
+Cost: reads only (the token's rate-limit row is the one write per request). The body is built from the stored
+document texts without parsing them. Tests: `web/test/syncchars.test.ts`.
+
 ### `POST /api/private/upload`: private data
 
 ```json
@@ -235,6 +298,12 @@ file), in the same request as the other private data. The Worker stores it in `w
 `0004_watch.sql`; one list for the site's owner, like the characters and the ledger): items no longer in the
 upload are deleted, changed times updated, unchanged rows aren't written, so re-sending costs no writes.
 It goes one way only, addon to site; the site never writes it back (the companion only reads SavedVariables).
+
+The machine (#242): the header `X-CraftWise-Machine` (the companion's `machine` setting, 1 to 64 characters; else
+the token's name is used) is stored in `characters.machine` for every character the upload carries, and
+`characters.uploaded` (the time of the last real change) is set by database triggers, so re-sending writes
+nothing. `GET /api/sync/characters` gives both to the other machine (above). One more row is written per
+character and change (at most one a second).
 
 Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledger", "crafted", "watch" }, "rowsWritten" }`.
 

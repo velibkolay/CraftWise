@@ -39,6 +39,8 @@ type File struct {
 	Written int64  // unix time
 	Machine string // this machine's name
 	Market  *upload.PublicPayload
+	// Chars are the other machine's characters (#242), without this machine's own: Cache.OtherChars.
+	Chars map[string]Char
 }
 
 // Dir is the add-on folder inside the game's AddOns folder; wow is the _forever_ folder.
@@ -194,7 +196,9 @@ func Render(f File) []byte {
 	}
 	b.WriteString("    },\n")
 
-	b.WriteString("  },\n}\n")
+	b.WriteString("  },\n")
+	renderChars(&b, f.Chars)
+	b.WriteString("}\n")
 	return b.Bytes()
 }
 
