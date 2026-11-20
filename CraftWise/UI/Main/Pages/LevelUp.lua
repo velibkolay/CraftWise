@@ -12,7 +12,7 @@ local Style, L = ns.Style, ns.L
 local C = Style.C
 
 local CHANCE_BAR = 60
-local CHANCE_COLUMN, PER_COLUMN = 3, 7
+local CHANCE_COLUMN = 3
 
 local LevelPage = {}
 M.LevelPage = LevelPage
@@ -25,9 +25,32 @@ local COLUMNS = {
 	MK.Column("cost", L["Cost"], 80, "RIGHT", "Figure", true),
 	MK.Column("saleValue", L["Sale"], 80, "RIGHT", "Figure", true),
 	MK.Column("netEarn", L["Net/craft"], 84, "RIGHT", "Figure", true),
+	MK.Column("now", L["Now"], 78, "RIGHT", "Figure"), -- #376: Net/craft at the current lowest prices; hidden when the profit prices are
 	MK.Column("perSkill", L["Per skill-up"], nil, "RIGHT", "FigureBold", true),
 }
 LevelPage.COLUMNS = COLUMNS
+
+-- The columns on show: without Now while the profit prices are the current lowest anyway (#376).
+function LevelPage.Columns()
+	if ns.NowDiffers() then
+		return COLUMNS
+	end
+	local out = {}
+	for _, col in ipairs(COLUMNS) do
+		if col.key ~= "now" then
+			out[#out + 1] = col
+		end
+	end
+	return out
+end
+
+local function IndexOf(columns, key)
+	for i, col in ipairs(columns) do
+		if col.key == key then
+			return i
+		end
+	end
+end
 
 -- "measured · 12 of your crafts", "estimate · community formula", "orange · every craft".
 function LevelPage.ChanceNote(info)
@@ -75,6 +98,10 @@ function LevelPage.View(r, ctx)
 	if not r.net then
 		t.netEarn = MK.WhyNoPrice(r, ctx)
 	end
+	r.now = MK.Now(r, "level")
+	if r.now then
+		c.now, k.now, t.now = MK.NowCell(r.now, r, r.netEarn)
+	end
 	c.perSkill, k.perSkill = MK.Signed(r.perSkill)
 	if not r.perPoint then
 		t.perSkill = not r.net and MK.WhyNoPrice(r, ctx) or t.chance
@@ -82,13 +109,16 @@ function LevelPage.View(r, ctx)
 	view.rail = r.perSkill and { value = r.perSkill, zeroAt = 0.18 } or nil
 	view.result, view.resultColor = c.perSkill, k.perSkill
 	view.sub = view.chanceText
+	if r.now and r.now.net then
+		view.sub = view.sub .. " · " .. L["now"] .. " " .. (MK.Signed(r.now.net)) -- docked: no Now column (#376)
+	end
 	view.missing = r.net == nil
 	return MK.Attach(r, view)
 end
 
 -- The chance cell: a 60 unit bar (white measured, grey estimate) and the percent after it.
 local function DrawChance(b, r, ctx)
-	local pos = MK.ColumnAt(COLUMNS, CHANCE_COLUMN, ctx)
+	local pos = MK.ColumnAt(LevelPage.Columns(), CHANCE_COLUMN, ctx)
 	if not b.cwChance then
 		local track = b:CreateTexture(nil, "ARTWORK")
 		Style.Fill(track, C.rule)
@@ -233,7 +263,8 @@ M.RegisterPage({
 	key = "level", section = "make", label = L["Level up"], order = 3, title = L["Level up"],
 	profession = true, prices = true,
 	events = { "SKILLUPS_CHANGED", "BAGS_CHANGED", "LEDGER_CHANGED" },
-	columns = COLUMNS,
+	columns = LevelPage.Columns,
+	columnsAll = COLUMNS,
 	sort = { key = "perSkill", desc = true },
 	SortRows = LevelPage.SortRows,
 	Model = LevelPage.Model,
@@ -258,7 +289,9 @@ M.RegisterPage({
 	dockedListToolsWidth = 0,
 	InitRow = function(b, r, ctx)
 		DrawChance(b, r, ctx)
-		MK.DrawSkeleton(b, PER_COLUMN, MK.ColumnAt(COLUMNS, PER_COLUMN, ctx), r.net == nil, ctx)
+		local columns = LevelPage.Columns()
+		local per = IndexOf(columns, "perSkill")
+		MK.DrawSkeleton(b, per, MK.ColumnAt(columns, per, ctx), r.net == nil, ctx)
 	end,
 	Open = function(content, r, ctx)
 		MK.DrawOpen(content, r, nil, ctx)

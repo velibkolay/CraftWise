@@ -663,8 +663,133 @@ function MK.ReagentLines(r, counter)
 	local out = {}
 	for i, line in ipairs(r.reagents or {}) do
 		out[i] = MK.ReagentLine(line, counter)
+		if r.now and r.now.lines then
+			-- "now": the same reagent at the current lowest price (#376), next to the typical total above it
+			local n = r.now.lines[i]
+			out[i].now = L["now"] .. " " .. (n and n.total and ns.FormatCoins(n.total) or M.DASH)
+		end
 	end
 	return out
+end
+
+----------------------------------------------------------------------------------------------------
+-- "Now" (#376): the net per craft at the current lowest prices, next to the one on the typical price.
+-- Same vendor, intermediate and cut rules (ns.NowPrices); a price that is not listed now is a dash, never
+-- the typical one. Nothing here changes a ranking or a sort.
+----------------------------------------------------------------------------------------------------
+
+-- "2 min ago", "3 h ago", "1 d ago" (pure).
+function MK.AgeText(seconds)
+	seconds = math.max(0, seconds or 0)
+	if seconds < 60 then
+		return L["just now"]
+	elseif seconds < 3600 then
+		return (L["%d min ago"]):format(math.floor(seconds / 60))
+	elseif seconds < 86400 then
+		return (L["%d h ago"]):format(math.floor(seconds / 3600))
+	end
+	return (L["%d d ago"]):format(math.floor(seconds / 86400))
+end
+
+-- "3g 05s, seen 2 min ago" for one item's current lowest at the profit house; adds "no newer price than
+-- typical" when the observation is older than the newest day the typical has. nil text when not listed.
+function MK.NowPriceText(itemID, copper, t, house)
+	if not copper then
+		return L["not listed now"]
+	end
+	local text = MK.PlainMoney(copper)
+	if t then
+		text = text .. ", " .. (L["seen %s"]):format(MK.AgeText(time() - t))
+		local newest = house and ns.Market.NewestDayStart(itemID, house)
+		if newest and t < newest then
+			text = text .. " (" .. L["no newer price than typical"] .. ")"
+		end
+	end
+	return text
+end
+
+-- The "now" figures of a row: { net (copper, positive = earns; nil = no figure), cost, sale, lines = { { unit, total,
+-- source, t }, ... } per reagent, output = { unit, t }, why } or nil while the profit prices are the current lowest
+-- anyway. kind "craft" (net = profit per craft) or "level" (net = sale - cost, the sign of Net/craft there).
+function MK.Now(r, kind)
+	if not ns.NowDiffers() then
+		return nil
+	end
+	if r.vendorView or r.disenchantView then
+		return { why = L["Not shown while the vendor or disenchant check is on."] }
+	end
+	return ns.NowPrices(function()
+		local house = ns.ProfitHouse()
+		local output = (not r.noItemOutput and r.outputItemID) and { itemID = r.outputItemID, quantity = r.outputQuantity or 1 } or nil
+		local reagents = {}
+		for i, line in ipairs(r.reagents or {}) do
+			reagents[i] = { itemID = line.itemID, quantity = line.quantity }
+		end
+		local result = ns.Profit.Evaluate({ reagents = reagents, output = output, learned = true },
+			ns.ReagentPrices(kind == "level" and "level" or "profit"))
+		local now = { lines = {}, house = house, cost = result.costComplete and result.cost or nil }
+		for i, line in ipairs(result.reagents) do
+			local cur = line.source == "auction" and house and ns.Market.Current(line.itemID, house) or nil
+			now.lines[i] = { itemID = line.itemID, unit = line.unit, total = line.total, source = line.source, t = cur and cur.t }
+		end
+		if output then
+			local cur = house and ns.Market.Current(output.itemID, house) or nil
+			local q = ns.AuctionQuote(output.itemID)
+			now.output = { itemID = output.itemID, unit = q and q.copper, t = cur and cur.t }
+		end
+		if kind == "level" then
+			local sale = ns.Leveling.Sale(output)
+			now.sale = sale
+			if now.cost and sale then
+				now.net = sale - now.cost
+			end
+		else
+			now.sale = result.sellsFor
+			now.net = result.profit
+		end
+		return now
+	end)
+end
+
+-- Cell text, colour and tip of the Now column for a row's MK.Now() result (pure over it). The typical net is
+-- `typicalNet` (same sign), shown in the tip.
+function MK.NowCell(now, r, typicalNet)
+	if not now then
+		return nil
+	end
+	if now.why then
+		return M.DASH, "text3", { L["Now"], now.why }
+	end
+	local tip = { L["Now: at the current lowest prices"] }
+	local function add(text)
+		tip[#tip + 1] = text
+	end
+	for i, line in ipairs(r.reagents or {}) do
+		local n = now.lines and now.lines[i]
+		local typical = line.unit and MK.PlainMoney(line.unit) or M.DASH
+		local cur
+		if n and n.unit then
+			cur = n.source == "auction" and MK.NowPriceText(n.itemID, n.unit, n.t, now.house)
+				or (n.source == "vendor" and MK.PlainMoney(n.unit) .. ", " .. L["vendor"])
+				or (MK.PlainMoney(n.unit) .. ", " .. (n.source or ""))
+		else
+			cur = L["not listed now"]
+		end
+		add(("%d x %s: %s | %s %s"):format(line.quantity or 1, MK.ItemName(line.itemID), cur, L["typical"], typical))
+	end
+	if now.output then
+		local cur = MK.NowPriceText(now.output.itemID, now.output.unit, now.output.t, now.house)
+		add((L["Sells: %s | %s %s"]):format(cur, L["typical"], r.sellsFor and MK.PlainMoney(r.sellsFor) or M.DASH))
+	end
+	if not now.net then
+		add(L["No figure: a price is missing now. The typical price is not used instead."])
+		return M.DASH, "text3", tip
+	end
+	local text, color = MK.Signed(now.net)
+	if typicalNet then
+		add((L["%s per craft on the typical price"]):format(select(1, MK.Signed(typicalNet))))
+	end
+	return text, color, tip
 end
 
 -- Reagents per line: 4 in the window; docked (#161) as many as the narrow card holds, Price history
@@ -694,21 +819,26 @@ function MK.CanOpenRecipe(r)
 	return r.recipeID ~= nil and C_TradeSkillUI ~= nil and C_TradeSkillUI.OpenRecipe ~= nil
 end
 
+-- Height of one reagent cell: one more line when the row shows its "now" prices (#376).
+function MK.ReagentHeight(r)
+	return MK.REAGENT_HEIGHT + (r and r.now and r.now.lines and 12 or 0)
+end
+
 -- Top of the buttons column (Price history, Open in profession window) below the where lines.
 local function ButtonsTop(y)
 	return y + (MK.REAGENT_HEIGHT - 8 - MK.BUTTON_HEIGHT) / 2
 end
 
 -- Docked (#161): the buttons side by side in a row under the reagents.
-local function DockedButtonsTop(y, n, ctx)
-	return y + Lines(n, ctx) * MK.REAGENT_HEIGHT - 8 + 8
+local function DockedButtonsTop(y, n, ctx, height)
+	return y + Lines(n, ctx) * (height or MK.REAGENT_HEIGHT) - 8 + 8
 end
 
 -- Height of the opened part: where lines (Learn) and the reagent lines, at least the two buttons
 -- (docked: plus the row of buttons under the reagents).
 function MK.OpenHeight(r, whereLines, ctx, opts)
 	local where = (whereLines or 0) * MK.WHERE_LINE + ((whereLines or 0) > 0 and 6 or 0)
-	local reagents = where + Lines(#(r.reagents or {}), ctx) * MK.REAGENT_HEIGHT - 8
+	local reagents = where + Lines(#(r.reagents or {}), ctx) * MK.ReagentHeight(r) - 8
 	local basket = opts and opts.basket and (8 + MK.BUTTON_HEIGHT) or 0 -- the Add to basket row (#186)
 	if M.IsDocked(ctx) then
 		local any = r.outputItemID ~= nil or MK.CanOpenRecipe(r)
@@ -744,7 +874,7 @@ function MK.DrawOpen(content, r, opts, ctx)
 	end
 	for i, line in ipairs(content.reagentLines) do
 		local col, row = (i - 1) % perLine, math.floor((i - 1) / perLine)
-		local x, top = col * (MK.REAGENT_WIDTH + MK.REAGENT_GAP), -(y + row * MK.REAGENT_HEIGHT)
+		local x, top = col * (MK.REAGENT_WIDTH + MK.REAGENT_GAP), -(y + row * MK.ReagentHeight(r))
 		local head = pool:Text("Small", "text", line.head)
 		head:SetPoint("TOPLEFT", content, "TOPLEFT", x, top)
 		head:SetWidth(MK.REAGENT_WIDTH)
@@ -752,6 +882,10 @@ function MK.DrawOpen(content, r, opts, ctx)
 		total:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -1)
 		local note = pool:Text("Caption", "text2", line.note)
 		note:SetPoint("TOPLEFT", total, "BOTTOMLEFT", 0, -1)
+		if line.now then
+			local now = pool:Text("Caption", "text3", line.now) -- the current lowest, next to the typical total (#376)
+			now:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -1)
+		end
 		local hitData = { itemID = line.itemID }
 		if ns.BuyAtPanel and ns.Merchant and ns.Merchant.BuyAtAll(line.itemID) then
 			-- A click lists where to buy it (#276): the recorded vendors, the nearest marked, with waypoints.
@@ -762,7 +896,7 @@ function MK.DrawOpen(content, r, opts, ctx)
 		end
 		local hit = pool:Hit(hitData)
 		hit:SetPoint("TOPLEFT", content, "TOPLEFT", x, top)
-		hit:SetSize(MK.REAGENT_WIDTH, MK.REAGENT_HEIGHT - 8)
+		hit:SetSize(MK.REAGENT_WIDTH, MK.ReagentHeight(r) - 8)
 		content.reagentCells[i] = { head = head, total = total, note = note, hit = hit, x = x, y = top }
 	end
 	-- Price history of the crafted item: the address of its page on the site (#202).
@@ -773,7 +907,7 @@ function MK.DrawOpen(content, r, opts, ctx)
 	end, { L["Price history"], L["Shows the address of the crafted item's page on the site, with its price history."] }, MK.BUTTON_HEIGHT)
 	local docked = M.IsDocked(ctx)
 	if docked then
-		top = DockedButtonsTop(y, #content.reagentLines, ctx)
+		top = DockedButtonsTop(y, #content.reagentLines, ctx, MK.ReagentHeight(r))
 		h:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -top)
 	else
 		h:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -top)
@@ -798,7 +932,7 @@ function MK.DrawOpen(content, r, opts, ctx)
 	o:SetShown(MK.CanOpenRecipe(r))
 	content.openRecipe = o
 	if opts.basket then
-		MK.DrawBasketRow(content, pool, r, ctx, y + Lines(#content.reagentLines, ctx) * MK.REAGENT_HEIGHT - 8 + 8)
+		MK.DrawBasketRow(content, pool, r, ctx, y + Lines(#content.reagentLines, ctx) * MK.ReagentHeight(r) - 8 + 8)
 	end
 end
 

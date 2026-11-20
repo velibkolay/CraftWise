@@ -1357,3 +1357,10 @@ Needs the companion with the private upload and a character whose auction tracke
 - [ ] The tray tooltip and menu line end with "(N old auction records not uploaded (document too big))".
 - [ ] `/me` shows the character's auctions with a fresh "Auctions" time in the characters list; the listed auctions are all there.
 - [ ] `/craftwise auctions` in game still lists everything (the addon's own records are not cut).
+
+## Make: Now column, the profit at the current lowest price (#376)
+- [ ] Make > Level up and Make > Craft show a **Now** column next to Net/craft (Craft: after Profit) while Settings > Profit prices is "Typical". Search an item at the AH (a reagent of a listed recipe, or the item it makes), close the AH: the row's Now number changed at once, Net/craft and the order did not. Tough Scorpid Breastplate: Now is close to Auctionator's profit for the same current lowest prices.
+- [ ] Hover the Now cell: each reagent and the product with its current lowest price and how old it is ("seen 2 min ago"), next to the typical one; "no newer price than typical" when the look is older than the typical's newest day.
+- [ ] An item not listed now (or never seen) gives a dash in Now, not the typical price.
+- [ ] Open a row: every reagent shows "now ..." under its typical total.
+- [ ] Settings > Profit prices = "Current lowest": the Now column is gone and the rows look as before.

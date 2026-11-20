@@ -11,7 +11,6 @@ local Style, L = ns.Style, ns.L
 local C = Style.C
 
 local ZERO_AT = 0.18
-local RESULT_COLUMN = 7
 
 local CraftPage = {}
 M.CraftPage = CraftPage
@@ -29,8 +28,23 @@ local COLUMNS = {
 	MK.Column("pct", L["Return"], 62, "RIGHT", "Figure", true),
 	MK.Column("daily", L["Per day"], 92, "RIGHT", "Figure", true),
 	MK.Column("profit", L["Profit"], 96, "RIGHT", "FigureBold", true),
+	MK.Column("now", L["Now"], 76, "RIGHT", "Figure"), -- #376: the profit at the current lowest prices; hidden when the profit prices are
 }
 CraftPage.COLUMNS = COLUMNS
+
+-- The columns on show: without Now while the profit prices are the current lowest anyway (#376).
+function CraftPage.Columns()
+	if ns.NowDiffers() then
+		return COLUMNS
+	end
+	local out = {}
+	for _, col in ipairs(COLUMNS) do
+		if col.key ~= "now" then
+			out[#out + 1] = col
+		end
+	end
+	return out
+end
 COLUMNS[2].grow = 300 -- dragged wider (#280) the recipe name gets room before the profit rail does
 
 ----------------------------------------------------------------------------------------------------
@@ -157,6 +171,13 @@ function CraftPage.View(r, ctx)
 		view.tips.cost = view.tips.profit
 	end
 	view.cells.profit, view.colors.profit = view.result, view.resultColor
+	r.now = MK.Now(r, "craft")
+	if r.now then
+		view.cells.now, view.colors.now, view.tips.now = MK.NowCell(r.now, r, r.profit)
+		if r.now.net then
+			view.sub = view.sub .. " · " .. L["now"] .. " " .. (MK.Signed(r.now.net)) -- docked: no Now column (#376)
+		end
+	end
 	view.cells.pct, view.colors.pct = MK.PercentText(r.pct), r.pct and r.pct < 0 and "danger" or "text2"
 	view.tips.pct = { L["Return"], L["Profit divided by the cost to craft."] }
 	r.daily = CraftPage.Daily(r, CraftPage.MarketInfo(r.outputItemID))
@@ -343,7 +364,8 @@ M.RegisterPage({
 	key = "craft", section = "make", label = L["Craft"], order = 1, title = L["Craft"],
 	profession = true, prices = true, allowAll = true,
 	events = { "BAGS_CHANGED", "LEDGER_CHANGED", "SKILLUPS_CHANGED" },
-	columns = COLUMNS,
+	columns = CraftPage.Columns,
+	columnsAll = COLUMNS,
 	rowHeight = 38,
 	sort = { key = "profit", desc = true },
 	SortRows = CraftPage.SortRows,
@@ -367,8 +389,9 @@ M.RegisterPage({
 		MK.UpdateChips(slot.chips)
 	end,
 	InitRow = function(b, r, ctx)
-		MK.DrawSkeleton(b, RESULT_COLUMN, MK.ColumnAt(COLUMNS, RESULT_COLUMN, ctx),
-			r.profit == nil and not r.noItemOutput, ctx)
+		local columns = CraftPage.Columns()
+		local at = #columns - (ns.NowDiffers() and 1 or 0) -- the Profit column
+		MK.DrawSkeleton(b, at, MK.ColumnAt(columns, at, ctx), r.profit == nil and not r.noItemOutput, ctx)
 	end,
 	Open = function(content, r, ctx)
 		MK.DrawOpen(content, r, { basket = true }, ctx)
