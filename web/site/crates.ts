@@ -5,7 +5,7 @@ import { chooseHouse } from "./lib/housesel";
 import { GUIDE_SOURCES } from "./lib/crateFavorGuide";
 import * as C from "./lib/crates";
 import { bottomTabs, clear, closeButton, errorBox, h, moneyEl, nowSeconds, onSkinChange, s, slot, statusBar, topBar } from "./lib/dom";
-import { favouriteLabel, isFromAddon, syncAddonWatch, toggleFavourite } from "./lib/favs";
+import { favouriteLabel, syncAddonWatch, toggleFavourite } from "./lib/favs";
 import { age, qualityClass } from "./lib/format";
 import * as M from "./lib/me";
 
@@ -242,7 +242,7 @@ function renderDetail(): void {
 	const now = nowSeconds();
 	const c = st.crates?.list.find((x) => x.id === st.sel) ?? null;
 	const fill = c?.fill ?? null;
-	favBtn.disabled = !fill?.id || isFromAddon(fill.id);
+	favBtn.disabled = !fill?.id;
 	favBtn.textContent = fill?.id ? favouriteLabel(fill.id, "Bundle") : "Add Bundle to Favourites";
 	if (fill?.id) {
 		histBtn.setAttribute("href", `/item/${fill.id}`);

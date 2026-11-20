@@ -528,6 +528,9 @@ CraftWiseDB = {
 [9001] = 1794005020,
 [9004] = 1794005220,
 },
+["watchGone"] = {
+[9008] = 1794005120,
+},
 }
 CraftWiseMarketDB = {
 ["auctionator"] = {

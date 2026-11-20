@@ -26,9 +26,10 @@ type State struct {
 	Prices map[string]*PriceMark `json:"prices,omitempty"`
 	// Docs: hash of the private document sent, per "<kind>\x1f<character>".
 	Docs map[string]uint64 `json:"docs,omitempty"`
-	// Watch: hash of the watch list sent (#165); nil = never sent. The list is sent whole, only when it
-	// differs.
-	Watch *uint64 `json:"watch,omitempty"`
+	// WatchSent: the state of each watched or unwatched item as far as the site has it (#244): the time
+	// of its last change, negative when it was unwatched. Changes of the addon's list that win over it are
+	// uploaded; changes downloaded from the site are put in so they aren't sent back.
+	WatchSent map[int64]int64 `json:"watchSent,omitempty"`
 	// Got: times of raw points that came from a download of the merged market (#239) and were
 	// merged into the local file by the addon, per "<house><itemKey>". They are not new
 	// recordings, so the upload leaves them out. Entries older than the addon keeps raw points are
