@@ -1331,3 +1331,11 @@ No new files; `/reload` after copying.
 No TOC change; `/reload` is enough.
 - [ ] Cooking around 225 with Monster Omelet known (orange) and Tasty Lion Steak (near grey): Monster Omelet is the hero "Best skill-up right now" and above Tasty Lion Steak in the list, although Lion Steak's "Per skill-up" figure is larger. The list note says "fewest crafts per point first, then net per craft". Rows go by chance (highest first); at the same percent the one that earns more (or costs less) per craft first; rows without a figure last.
 - [ ] Click the "Per skill-up" header: the order reverses (lowest chance first, rows without a figure still last); click again: back to the ranking. Other headers sort plainly.
+
+## The other machine's characters in the addon (#243)
+No TOC change; `/reload` is enough. Needs the companion on both computers with the private upload, then one download (CraftWise_Sync written).
+- [ ] Settings > Other machine: three lines per character of the other computer: "<machine> · <name> · <age> ago", gold/bags/bank/mail, ledger 30 days (+ fishing, last farm session). Bank/mail show a dash until opened on that computer. Before the first sync: the "None yet" line.
+- [ ] A character without a known machine reads "other machine".
+- [ ] Make > Crafted: the Character chip lists the other computer's characters as "<machine> · <name>"; picking one counts only its crafts; "All characters" includes them; a recipe row's tooltip names them.
+- [ ] A character you also play on this computer is listed once, from this computer's data (own data wins).
+- [ ] After /reload and a logout, `WTF/.../CraftWise.lua` holds no key of the other computer's characters (nothing synced is saved there) and the next companion upload does not send them back.
