@@ -26,6 +26,7 @@ const (
 	MaxPriceEntries   = 2000 // item/house entries
 	MaxItems          = 5000 // item IDs in names + itemInfo
 	MaxHouses         = 20
+	MaxConnected      = 20 // other realms per realm in `connected` (#366)
 	MaxScans          = 200
 	MaxRawPoints      = 500  // per entry
 	MaxDays           = 400  // per entry
@@ -47,12 +48,15 @@ const MaxWatch = 1000
 
 // PublicPayload is the body of POST /api/upload. Houses goes into every request.
 type PublicPayload struct {
-	V        int                                `json:"v"`
-	Houses   map[string]House                   `json:"houses"`
-	Scans    map[string][]Scan                  `json:"scans,omitempty"`    // per house key
-	Names    map[int64]string                   `json:"names,omitempty"`    // CraftWiseMarketDB.names
-	ItemInfo map[int64]market.ItemInfo          `json:"itemInfo,omitempty"` // decoded (#92), sell price p (#120)
-	Items    map[string]map[string]market.Entry `json:"items,omitempty"`    // [item key][house key]
+	V      int              `json:"v"`
+	Houses map[string]House `json:"houses"`
+	// Connected is the realm pairs the addon recorded (#366): [realm][otherRealm] = first seen. Both
+	// directions, validated like the houses. The site groups connected realms by it.
+	Connected map[string]map[string]int64        `json:"connected,omitempty"`
+	Scans     map[string][]Scan                  `json:"scans,omitempty"`    // per house key
+	Names     map[int64]string                   `json:"names,omitempty"`    // CraftWiseMarketDB.names
+	ItemInfo  map[int64]market.ItemInfo          `json:"itemInfo,omitempty"` // decoded (#92), sell price p (#120)
+	Items     map[string]map[string]market.Entry `json:"items,omitempty"`    // [item key][house key]
 	// The client's class and subclass names (#120): [classID] and [classID][subclassID].
 	ClassNames    map[int64]string           `json:"classNames,omitempty"`
 	SubclassNames map[int64]map[int64]string `json:"subclassNames,omitempty"`

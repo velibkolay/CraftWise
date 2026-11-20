@@ -11,6 +11,8 @@
 --   what the last finished one cost; see the Own scan section
 --   syncScans[houseKey] (last 30) and sync = { written, machine, at, ... }: what the other machine's file
 --   (CraftWise_Sync, #241) added; see the Sync section
+--   connected[realm][otherRealm] = firstSeenTime (#366): realms a linked character answered from (Link.lua), both
+--   directions; the only evidence the site and the companion group connected realms by
 --   items[itemKey][houseKey] = entry, where itemKey is the itemID or "itemID:suffixID"
 --   entry = {
 --     last = { t, min, qty, listings, off },            latest observation (browse has no listings);
@@ -3497,6 +3499,44 @@ function M.LastFullScan(houseKey)
 	return nil
 end
 
+-- Two realms proved connected (#366): a listed character of `other` answered a whisper from `mine`. Stored
+-- both ways with the first time seen; nothing else is ever put here (no guesses, no lists from outside).
+-- Returns true when a pair was new.
+M.CONNECTED_MAX = 20 -- per realm; the site takes at most this many too
+function M.RecordConnected(mine, other, t)
+	if not db or type(mine) ~= "string" or type(other) ~= "string" or mine == other then
+		return false
+	end
+	if mine == "" or other == "" or #mine > 64 or #other > 64 or mine:find("|", 1, true) or other:find("|", 1, true) then
+		return false
+	end
+	t = tonumber(t) or time()
+	local isNew = false
+	for _, pair in ipairs({ { mine, other }, { other, mine } }) do
+		local list = db.connected[pair[1]]
+		if not list then
+			list = {}
+			db.connected[pair[1]] = list
+		end
+		if not list[pair[2]] then
+			local n = 0
+			for _ in pairs(list) do
+				n = n + 1
+			end
+			if n < M.CONNECTED_MAX then
+				list[pair[2]] = t
+				isNew = true
+			end
+		end
+	end
+	return isNew
+end
+
+-- The realm pairs recorded: realm -> { otherRealm = firstSeen } (read only).
+function M.Connected()
+	return db and db.connected or {}
+end
+
 -- The houses recorded, house key -> house record (read only).
 function M.HouseKeys()
 	return db and db.houses or {}
@@ -3671,6 +3711,7 @@ ns.Listen("DB_READY", function()
 	db.houses = db.houses or {}
 	db.scans = db.scans or {}
 	db.syncScans = db.syncScans or {}
+	db.connected = type(db.connected) == "table" and db.connected or {}
 	db.ownScan = type(db.ownScan) == "table" and db.ownScan or {}
 	db.items = db.items or {}
 	db.cutSamples = db.cutSamples or {}

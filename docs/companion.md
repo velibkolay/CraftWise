@@ -302,3 +302,9 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   `CraftWiseMarketDB.auctions.chars[<character>]` with the time the file was read; `fishing` is the
   snapshot's `fishing` summary with its `fishingZones` ranking under that key. A document is sent
   again only when its content changed.
+
+- Connected realms (#366): `CraftWiseMarketDB.connected` (`[realm][otherRealm] = first seen`, recorded by the addon
+  when a linked character on another realm answers) goes in every public request as `connected`, like `houses`. An
+  entry the server would refuse (a name over 64 characters or with `|`, a realm with itself, a time out of range, over 20
+  other realms per realm) is left out and counted in the log; nothing is guessed or filled in. The site groups the
+  houses of connected realms into one at read time (`web/docs/api.md`).

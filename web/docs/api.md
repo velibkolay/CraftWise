@@ -55,7 +55,7 @@ Rules for the companion:
 
 The body is a subset of `CraftWiseMarketDB` as the companion's Go readers (#93,
 `companion/savedvars.MarketDB` with the decoded `market.Entry` values) marshal it to JSON, plus `v`:
-`houses`, `scans`, `items`, `names`, `itemInfo`, `classNames`, `subclassNames`. Other fields (`cut`, `auctionator`, `ledger`, ...)
+`houses`, `connected`, `scans`, `items`, `names`, `itemInfo`, `classNames`, `subclassNames`. Other fields (`cut`, `auctionator`, `ledger`, ...)
 are ignored on this endpoint.
 
 ```json
@@ -91,6 +91,7 @@ are ignored on this endpoint.
 |---|---|---|
 | `v` | | `1` |
 | `houses` | `CraftWiseMarketDB.houses`: `realm`, `kind`, `faction`, `label` | Every house used in `scans` or `items` must be listed. Key `<realm>\|H`, `<realm>\|A` or `<realm>\|N:<Name>`; `realm` must match the key; faction houses carry `faction` (`H` = Horde, `A` = Alliance), neutral houses none. At most 20. |
+| `connected` | `CraftWiseMarketDB.connected` (#366): `{ "<realm>": { "<other realm>": firstSeen } }` | Optional. The realm pairs a linked character of the player answered from, so the two realms share an auction house; the addon records them both ways, nothing else (no guessed or outside lists). Realm names 1 to 64 characters without `\|`, never a realm with itself, `firstSeen` a time as in `scans` (`t`). At most 20 realms and 20 other realms per realm; one invalid value refuses the request. A pair is stored once with the earliest time, whichever side sent it; sending a stored pair again writes nothing. The companion sends it in every request, like `houses`. |
 | `scans` | `CraftWiseMarketDB.scans`: per house `t`, `kind`, `items`, `lastOnly`, `source` | `t` and `kind` (lower-case letters: `full`, `search`, `gear`) required. At most 200. Optional; drives "last scanned" per house. |
 | `names` | `CraftWiseMarketDB.names` | Optional. Names as the client gave them. |
 | `itemInfo` | `CraftWiseMarketDB.itemInfo` decoded (#92): `q` quality, `i` icon file ID, `c` class, `s` subclass, `t`, `p` vendor sell price per unit (#120, format 2; `0` = vendors don't buy it) | Optional. `t` is checked, not stored. `p` is missing in format 1 strings (older addon) and for items the client hasn't loaded yet. |
@@ -347,13 +348,34 @@ Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledg
 
 | Endpoint | Returns |
 |---|---|
-| `/api/houses` | `{ houses: [{ key, realm, kind, faction, label, lastScan, lastFullScan, lastFullScanItems }] }`, faction houses first |
+| `/api/houses` | `{ houses: [{ key, realm, realms, keys, kind, faction, label, lastScan, lastFullScan, lastFullScanItems }] }`, faction houses first. Connected realms are one house (#366), see below |
 | `/api/scans?limit=20&house=<key>` | `{ scans: [{ house, label, t, kind, items, lastOnly, source }] }`, newest first (limit 1..100, kept 90 days) |
 | `/api/items?q=<text or item ID>&limit=20` | `{ query, items: [{ id, name, quality, icon, class, subclass, className, subclassName, sellPrice, prices: [{ house, label, suffix, t, min, qty, listings, off, listed }] }] }`. Every word of `q` matches the start of a word of the name (`lot` finds Purple Lotus); "of", "the" and the like are ignored; at least 2 letters. |
 | `/api/items/<id>?days=90&hours=48` | `{ id, item, markets: [...] }`, one market per house (and random suffix), see below; `item` as in `/api/items` without `prices` |
 | `/api/movers?house=<key>&limit=10` | `{ house, label, computedAt, up: [...], down: [...] }`, see below |
 | `/api/categories?house=<key>` | `{ house, label, lastScan, computedAt, categories: [{ class, subclass, className, subclassName, items }] }`: items priced at the house (no random suffix) per item class and subclass; `class` and `subclass` are `null` for items without item info yet |
 | `/api/browse?house=<key>&class=<id>[&subclass=<id>]`, `...&q=<text>`, `...&ids=<id>,<id>` | `{ house, label, lastScan, today, more, items: [...] }`, the site's item list (#97), see below |
+
+### Connected realms (#366)
+
+Realms the player proved connected (`connected` in the upload) share one auction house. The read API groups them
+at read time; the stored rows stay per house key (nothing is migrated, deleting a row of `connected` undoes the
+grouping):
+
+- Realms joined by pairs are one set (A-B and B-C make A, B, C). Within it a faction house joins the faction
+  house of the same faction (Horde with Horde; **opposite factions never merge**) and a neutral house joins
+  the neutral house of the same zone (`N:Gadgetzan` with `N:Gadgetzan`). A realm without a pair stays alone,
+  however likely it looks.
+- A group is one entry of `/api/houses`: `key` is the member key that sorts first, `keys` all member keys,
+  `realms` their realm names, `label` e.g. `Realm 4 / Realm 8 (connected) · Horde AH`, `lastScan` the newest of
+  its members. A group of one is as before (`realms` has its one realm).
+- `house=<key>` in every endpoint takes any key of a group. `/api/scans?house=` lists the scans of all members
+  (each with its own `house` key).
+- Per item and suffix the newest `last` wins and the newest depth stays. Daily rows merge as Market.lua merges
+  entries: a CraftWise aggregate beats a day built from `last`, of two aggregates the one with more points (`n`)
+  wins, two `last` days combine (lowest `lo`, highest `hi`, most units and listings). Raw points are the union by time.
+  The top movers use the merged days and prices.
+- `GET /api/sync/market` is not grouped: it sends house keys as uploaded, the addon maps them itself (#358).
 
 A market of `/api/items/<id>`:
 

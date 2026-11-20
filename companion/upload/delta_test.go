@@ -684,3 +684,44 @@ func TestWatchFixtureAndLimit(t *testing.T) {
 		t.Fatalf("%d changes over %d requests", total, requests)
 	}
 }
+
+// #366: the realm pairs a linked character proved connected go in every public request, both ways as
+// the addon recorded them; invalid ones are left out and counted, the others still go.
+func TestConnectedRealms(t *testing.T) {
+	f := readFixture(t)
+	st := NewState("https://example.test", "CraftWise.lua")
+	plan := Build(f, st, Options{Now: fixtureNow, Private: true})
+	if len(plan.Public) == 0 {
+		t.Fatal("no public request")
+	}
+	for i, b := range plan.Public {
+		got := b.Body.Connected
+		if len(got) != 2 || got["Stub Realm"]["Stub Realm Two"] == 0 || got["Stub Realm Two"]["Stub Realm"] != got["Stub Realm"]["Stub Realm Two"] {
+			t.Fatalf("request %d: connected = %v", i, got)
+		}
+		body := asJSON(t, b.Body)
+		if _, ok := body["connected"].(map[string]any); !ok {
+			t.Fatalf("request %d: no `connected` object in %v", i, body)
+		}
+	}
+
+	f.Market.Connected = map[string]map[string]int64{
+		"A":        {"B": 1794000000, "A": 1794000000, "": 1794000000, "C|D": 1794000000, "E": 5},
+		"B":        {"A": 1794000000},
+		"bad|name": {"A": 1794000000},
+	}
+	plan = Build(f, NewState("https://example.test", "CraftWise.lua"), Options{Now: fixtureNow})
+	got := plan.Public[0].Body.Connected
+	if len(got) != 2 || len(got["A"]) != 1 || got["A"]["B"] != 1794000000 || got["B"]["A"] != 1794000000 {
+		t.Errorf("connected = %v, want only A<->B", got)
+	}
+	if len(plan.Skipped) == 0 {
+		t.Error("invalid pairs should be counted as skipped")
+	}
+
+	f.Market.Connected = nil
+	plan = Build(f, NewState("https://example.test", "CraftWise.lua"), Options{Now: fixtureNow})
+	if plan.Public[0].Body.Connected != nil {
+		t.Error("no pairs: the field is left out")
+	}
+}

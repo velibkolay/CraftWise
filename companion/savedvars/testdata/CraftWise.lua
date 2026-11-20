@@ -589,6 +589,14 @@ CraftWiseMarketDB = {
 [4] = "Test Armour",
 [7] = "Test Goods",
 },
+["connected"] = {
+["Stub Realm"] = {
+["Stub Realm Two"] = 1794001920,
+},
+["Stub Realm Two"] = {
+["Stub Realm"] = 1794001920,
+},
+},
 ["cutSamples"] = {
 },
 ["houses"] = {

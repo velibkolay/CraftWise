@@ -216,3 +216,34 @@ The running Worker keeps working in between (it doesn't know the columns; the tr
 current). `machine` stays empty for a character until its machine uploads it again after the deploy; the companion
 sends the machine name with every request, so the next change of the character fills it. Then update the companion
 on both machines: the next download writes `CraftWiseSync.chars` (token with the `private` scope).
+
+## #366 (`0009_connected.sql`): connected realms as one auction house
+
+The migration only adds the table `connected` (realm pairs; no existing row is touched). Apply it before merging
+(step 4 above) from a separate checkout of the PR branch, so the shared checkout's branch is never switched. In
+PowerShell, from `C:\Users\Veli\Documents\GitHub\craftwise`:
+```powershell
+git fetch origin
+```
+```powershell
+git worktree add ..\craftwise-mig origin/cw-366-connected
+```
+```powershell
+cd ..\craftwise-mig\web
+```
+```powershell
+npm ci
+```
+```powershell
+npx wrangler d1 migrations apply craftwise --remote
+```
+```powershell
+cd ..\..\craftwise
+```
+```powershell
+git worktree remove ..\craftwise-mig
+```
+The running Worker keeps working in between (it doesn't know the table). Until the companion uploads the pairs the site
+looks as before: nothing is grouped without them. After the merge deploys, update the companion; its next upload
+sends the pairs the addon recorded (a few rows). Nothing is migrated: undo the grouping with
+`npx wrangler d1 execute craftwise --remote --command "DELETE FROM connected"`.

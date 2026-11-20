@@ -255,7 +255,7 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 		// others 1); a packed variant row never counts more than the companion's 4 per `last`-only entry
 		2 * (itemRows.length + prices.length + dailyLast.length + dailyDays.length + scans.length + variants.length + variantDays.length) +
 			2 * data.classNames.length +
-			renamed.length * 12 + wordRows.length + points.length,
+			renamed.length * 12 + wordRows.length + points.length + 2 * data.connected.length,
 		// low priority (#145): item info, names, sell prices and search words that would change a row,
 		// and class names (rarely sent; unchanged ones would write nothing)
 		itemRows.length > 0 || data.classNames.length > 0,
@@ -271,6 +271,12 @@ export async function publicUpload(request: Request, env: Env, now: number): Pro
 	add(SUBCLASSES_SQL, subclassRows);
 	add("DELETE FROM item_words WHERE item IN (SELECT value FROM json_each(?1))", renamed);
 	add("INSERT OR IGNORE INTO item_words (word, item) SELECT value->>0, value->>1 FROM json_each(?1)", wordRows);
+	// Connected realms (#366): a pair is stored once with its earliest time; a known pair writes nothing.
+	add(
+		`INSERT INTO connected (a, b, t) SELECT value->>0, value->>1, value->>2 FROM json_each(?1) WHERE true
+		ON CONFLICT (a, b) DO UPDATE SET t = excluded.t WHERE excluded.t < connected.t`,
+		data.connected.map((c) => [c.a, c.b, c.t]),
+	);
 	add(PRICES_SQL, prices);
 	add(POINTS_SQL, points);
 	add(DAILY_LAST_SQL, dailyLast); // before the aggregates, so a CraftWise aggregate wins

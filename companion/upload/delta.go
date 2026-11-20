@@ -68,7 +68,7 @@ func Build(f *savedvars.File, st *State, opt Options) *Plan {
 	plan := &Plan{Skipped: d.skipped}
 	if f.Market != nil {
 		units := d.public(f.Market)
-		plan.Public = packPublic(units, d.houses, opt, d.skip)
+		plan.Public = packPublic(units, d.houses, d.connected, opt, d.skip)
 	}
 	if opt.Private {
 		units := d.private(f)
@@ -82,6 +82,8 @@ type delta struct {
 	now     int64
 	skipped map[string]int
 	houses  map[string]House
+	// connected is the validated realm pairs (#366), sent in every public request
+	connected map[string]map[string]int64
 }
 
 func (d *delta) skip(reason string) { d.skipped[reason]++ }
@@ -123,6 +125,54 @@ func (d *delta) house(key string, h savedvars.House) *House {
 	return out
 }
 
+// connectedRealms keeps the realm pairs the server accepts (#366): a realm name of 1 to 64 characters
+// without "|", another realm than its own, a valid time, at most MaxConnected per realm and
+// MaxHouses realms. A pair is sent from both sides as recorded; one invalid entry never holds back
+// the others. nil when none is left.
+func (d *delta) connectedRealms(in map[string]map[string]int64) map[string]map[string]int64 {
+	if len(in) == 0 {
+		return nil
+	}
+	realms := make([]string, 0, len(in))
+	for r := range in {
+		realms = append(realms, r)
+	}
+	sort.Strings(realms)
+	out := map[string]map[string]int64{}
+	for _, r := range realms {
+		if len(out) >= MaxHouses {
+			d.skip("more realms in connected than the server takes")
+			break
+		}
+		if !okRealm(r) {
+			d.skip("connected realm without a valid name")
+			continue
+		}
+		others := make([]string, 0, len(in[r]))
+		for o := range in[r] {
+			others = append(others, o)
+		}
+		sort.Strings(others)
+		for _, o := range others {
+			t := in[r][o]
+			if o == r || !okRealm(o) || !d.validTime(&t) || len(out[r]) >= MaxConnected {
+				d.skip("connected realm pair that is not valid")
+				continue
+			}
+			if out[r] == nil {
+				out[r] = map[string]int64{}
+			}
+			out[r][o] = t
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func okRealm(s string) bool { return okString(s, 64) && !strings.Contains(s, "|") }
+
 // unit is one piece of a request: a scan, an item, a price record, a document or a ledger group.
 type unit[T any] struct {
 	add    func(*T)
@@ -149,6 +199,7 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 			d.skip("house without a valid key, realm, kind, faction or label (its prices and scans too)")
 		}
 	}
+	d.connected = d.connectedRealms(m.Connected)
 	var units []unit[PublicPayload]
 
 	// Scans, per house in key order, oldest first.

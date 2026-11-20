@@ -60,6 +60,9 @@ type CraftedDay []float64
 type MarketDB struct {
 	V      *int64           `json:"v,omitempty"`
 	Houses map[string]House `json:"houses,omitempty"`
+	// Connected is the realm pairs a linked character proved connected (#366): [realm][otherRealm] =
+	// the time first seen, recorded both ways. Nil in a file from an older addon.
+	Connected map[string]map[string]int64 `json:"connected,omitempty"`
 	// Scans per house key: the last 30 recordings, oldest first.
 	Scans map[string][]Scan `json:"scans,omitempty"`
 	// Items[itemKey][houseKey] = price entry (decoded from the packed string, or the table form an

@@ -260,7 +260,7 @@ async function load(): Promise<void> {
 		if (!house) throw new Error("no house");
 		subline.textContent = `WoW: Forever, ${house.label}`;
 		clear(statusSlot, statusBar(house), h("span", { class: "hint" }, "Prices are marked stale after 24 h"));
-		clear(footnote, `Prices come from CraftWise scans of the ${house.label} on ${house.realm}. Item icons are placeholders.`);
+		clear(footnote, `Prices come from CraftWise scans of the ${house.label} on ${(house.realms ?? [house.realm]).join(" / ")}. Item icons are placeholders.`);
 		data = await get<RecipeData>(RECIPES_URL);
 		spells = craftSpells(data);
 		renderProfessions();
