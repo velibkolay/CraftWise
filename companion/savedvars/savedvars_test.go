@@ -398,3 +398,18 @@ func TestWatchList(t *testing.T) {
 		t.Fatal(err, old.DB.Watch, old.DB.WatchGone)
 	}
 }
+
+// #373: older addon versions stored the best catch's value per unit with a fraction (311.6).
+func TestFarmFishBestValueFractionIsRounded(t *testing.T) {
+	v, err := svparse.ParseString(`{ ["id"] = 9007, ["value"] = 311.6 }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b FarmFishBest
+	if problems := svparse.Unmarshal(v, &b); len(problems) != 0 {
+		t.Fatalf("problems %v", problems)
+	}
+	if i64(b.Value) != 312 || b.ID != 9007 {
+		t.Fatalf("%+v", b)
+	}
+}

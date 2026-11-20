@@ -96,3 +96,25 @@ func TestUnmarshalProblemsLeaveFieldsMissing(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestUnmarshalRoundTagTakesAFractionRounded(t *testing.T) {
+	type rounded struct {
+		Copper  *int64 `lua:"copper,round"`
+		Half    *int64 `lua:"half,round"`
+		Strict  *int64 `lua:"strict"`
+		Garbage *int64 `lua:"garbage,round"`
+	}
+	v, err := ParseString(`{ ["copper"] = 311.6, ["half"] = 184.5, ["strict"] = 2.5, ["garbage"] = "x" }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r rounded
+	problems := Unmarshal(v, &r)
+	if r.Copper == nil || *r.Copper != 312 || r.Half == nil || *r.Half != 185 {
+		t.Fatalf("%+v", r)
+	}
+	// An untagged integer still refuses a fraction, and a non-number is still a problem.
+	if r.Strict != nil || r.Garbage != nil || len(problems) != 2 {
+		t.Fatalf("%+v %v", r, problems)
+	}
+}

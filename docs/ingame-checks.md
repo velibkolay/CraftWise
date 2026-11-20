@@ -1347,6 +1347,10 @@ No TOC change; `/reload` is enough. Needs the companion on both computers with t
 - [ ] A character you also play on this computer is listed once, from this computer's data (own data wins).
 - [ ] After /reload and a logout, `WTF/.../CraftWise.lua` holds no key of the other computer's characters (nothing synced is saved there) and the next companion upload does not send them back.
 
+## Farm: best catch value is whole copper (#373)
+
+- [ ] Fish a few catches with an AH price on the best one, then `/reload`. In `WTF/.../SavedVariables/CraftWise.lua` the snapshot's `farm.current.fish.best.value` (and `farm.sessions[n].fish.best.value`) has no fraction (312, not 311.6). The companion log no longer says "values not read" for it.
+
 ## Companion: a big auctions document is cut, not left out (#372)
 Needs the companion with the private upload and a character whose auction tracker holds over about 1,150 records (30 days of a busy seller).
 - [ ] After an upload the log says "cut to fit: N records: auctions document: the oldest finished records left out ..." and no "left out (server would refuse it): ... auctions document over 450000 bytes".

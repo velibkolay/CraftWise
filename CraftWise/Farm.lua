@@ -671,7 +671,7 @@ function F.Summary(s, now)
 		sum.fish = { catches = f.catches, timed = f.timed, seconds = f.seconds, coin = f.coin, items = f.items,
 			unknown = f.unknownUnits, opened = f.opened, perCatch = f.perCatch, cph = f.cph, gph = f.gph, zones = {} }
 		if f.best then
-			sum.fish.best = { id = f.best.itemID, name = ItemName(f.best.itemID, f.best.link), value = f.best.unit }
+			sum.fish.best = { id = f.best.itemID, name = ItemName(f.best.itemID, f.best.link), value = f.best.unit and math.floor(f.best.unit + 0.5) or nil }
 		end
 		for i, z in ipairs(f.zones) do
 			if i <= F.MAX_ZONES then
@@ -961,7 +961,8 @@ local function Export(sum, names)
 		out.fish = { catches = f.catches, timed = f.timed, seconds = f.seconds, coin = f.coin, items = f.items,
 			unknown = f.unknown, opened = f.opened, zonesMore = f.zonesMore }
 		if f.best then
-			out.fish.best = { id = f.best.id, value = f.best.value }
+			-- Whole copper (#373): the unit value has a fraction.
+			out.fish.best = { id = f.best.id, value = f.best.value and math.floor(f.best.value + 0.5) or nil }
 			if f.best.id and f.best.name and not names[f.best.id] then
 				names[f.best.id] = f.best.name
 			end

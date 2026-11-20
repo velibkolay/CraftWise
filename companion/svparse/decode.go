@@ -23,6 +23,8 @@ func (p Problem) String() string { return p.Path + ": " + p.Msg }
 //     `-` skips a field; keys without a field are ignored
 //   - string, bool, float64, float32, int64, int, int32 and pointers to them (pointer = nil when
 //     the key is missing); integers only take numbers without a fraction
+//   - an integer field tagged `lua:"name,round"` also takes a number with a fraction and rounds it
+//     (half up); only for copper amounts the addon once stored unrounded
 //   - []T from the table's array part (keys 1..n)
 //   - map[string]T from string keys, map[int64]T / map[int]T from integral number keys
 //   - any (the parsed value as it is), *Table (the table itself)
@@ -40,6 +42,7 @@ func Unmarshal(v any, dst any) []Problem {
 
 type decoder struct {
 	problems []Problem
+	round    bool // the field being decoded takes a number with a fraction, rounded (`lua:"name,round"`)
 }
 
 func (d *decoder) problem(path, format string, args ...any) {
@@ -157,6 +160,9 @@ func (d *decoder) decodeValue(v any, out reflect.Value, path string) {
 			d.problem(path, "want number, got %s", typeName(v))
 			return
 		}
+		if d.round && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			f = math.Floor(f + 0.5)
+		}
 		n, ok := integral(f)
 		if !ok || out.OverflowInt(n) {
 			d.problem(path, "want an integer, got %s", formatNumber(f))
@@ -220,7 +226,9 @@ func (d *decoder) decodeValue(v any, out reflect.Value, path string) {
 			return
 		}
 		for _, f := range structFields(t) {
+			d.round = f.round
 			d.decode(tbl.Get(f.name), out.Field(f.index), fieldPath(path, f.name))
+			d.round = false
 		}
 	default:
 		d.problem(path, "can't decode into %s", t)
@@ -237,6 +245,7 @@ func integral(f float64) (int64, bool) {
 type structField struct {
 	name  string
 	index int
+	round bool
 }
 
 // structFields lists the exported fields with their Lua key names.
@@ -248,12 +257,19 @@ func structFields(t reflect.Type) []structField {
 			continue
 		}
 		name := f.Name
+		round := false
 		tag, ok := f.Tag.Lookup("lua")
 		if !ok {
 			tag, ok = f.Tag.Lookup("json")
 		}
 		if ok {
-			tag = strings.Split(tag, ",")[0]
+			parts := strings.Split(tag, ",")
+			tag = parts[0]
+			for _, opt := range parts[1:] {
+				if opt == "round" {
+					round = true
+				}
+			}
 			if tag == "-" {
 				continue
 			}
@@ -261,7 +277,7 @@ func structFields(t reflect.Type) []structField {
 				name = tag
 			}
 		}
-		out = append(out, structField{name: name, index: i})
+		out = append(out, structField{name: name, index: i, round: round})
 	}
 	return out
 }
