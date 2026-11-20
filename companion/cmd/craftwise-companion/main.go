@@ -80,6 +80,7 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
+	defer a.Close()
 
 	switch {
 	case *open != "":
