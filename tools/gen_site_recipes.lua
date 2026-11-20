@@ -22,10 +22,14 @@
 --                "from the recipe". Spells whose name is ambiguous within their profession have none.
 --   vendor       { "<item ID>": copper per unit a vendor sells it for }   (Vendor.lua)
 --   sell         { "<item ID>": copper a vendor pays for one }            (Recipes.lua ItemSellPrices)
+--   learn        { "<recipe item ID>": [[area ID, "A" | "H" | "", NPC ID], ...] } the vendors that sell the recipe item
+--                (#379; What's Training?, not seen in game; the NPC's name and spot are in vendornpcs.json)
+--                                                                         (RecipeVendors.lua)
+--   areas        { "<area ID>": "zone name" }                             (RecipeVendors.lua, AreaTable)
 local G = {}
 
 G.OUT = "web/public/data/recipes.json"
-G.FILES = { "Recipes.lua", "Sources.lua", "Vendor.lua" }
+G.FILES = { "Recipes.lua", "Sources.lua", "Vendor.lua", "RecipeVendors.lua" }
 local DIR = "CraftWise/Data/"
 
 ----------------------------------------------------------------------------------------------------
@@ -156,7 +160,7 @@ end
 function G.Build(root)
 	root = root or ""
 	local ns = Load(root)
-	local out = { v = 1, sources = {}, professions = {}, teach = {}, spells = {}, names = {}, vendor = {}, sell = {} }
+	local out = { v = 1, sources = {}, professions = {}, teach = {}, spells = {}, names = {}, vendor = {}, sell = {}, learn = {}, areas = {} }
 	out.about = "Recipe data of wow.velikopter.com (#143), written by tools/gen_site_recipes.lua from the addon's bundled "
 		.. "data files; do not edit. Licence: GPL-3.0 (CraftWise); each source file's header below names its own "
 		.. "source and licence."
@@ -198,6 +202,38 @@ function G.Build(root)
 	end
 	for item, price in pairs(ns.ItemSellPrices or {}) do
 		out.sell[item] = price
+	end
+	local vendorSpells = {}
+	for spell in pairs(ns.RecipeVendors or {}) do
+		vendorSpells[#vendorSpells + 1] = spell
+	end
+	table.sort(vendorSpells)
+	for _, spell in ipairs(vendorSpells) do
+		local vendors = ns.RecipeVendors[spell]
+		local seen, list = {}, {}
+		for _, v in ipairs(vendors) do
+			local key = v[1] .. "/" .. v[2] .. "/" .. (v[3] or "")
+			if not seen[key] then
+				seen[key] = true
+				list[#list + 1] = { v[2], v[3] or "", v[1] }
+			end
+		end
+		table.sort(list, function(a, b)
+			if a[1] ~= b[1] then
+				return a[1] < b[1]
+			end
+			if a[2] ~= b[2] then
+				return a[2] < b[2]
+			end
+			return a[3] < b[3]
+		end)
+		-- Several spells per item never happens in the data; if it did, the lowest spell's list would win.
+		if vendors.item and #list > 0 and not out.learn[vendors.item] then
+			out.learn[vendors.item] = list
+		end
+	end
+	for area, name in pairs(ns.RecipeVendorAreas or {}) do
+		out.areas[area] = name
 	end
 	-- Top level and the "sources" lists one entry per line; every map entry on a line of its own.
 	local text = {}

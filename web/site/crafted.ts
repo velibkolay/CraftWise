@@ -2,6 +2,7 @@
 // today, in the last 7 days and in total, the active crafting time and gold per active hour. Like Make > Crafted in
 // the addon. Data: /api/me/crafted, /api/me/characters (private API), recipes from /data/recipes.json, product names
 // from /api/browse?ids= (public API). A day without profit or time shows a dash, never a guess.
+import { itemName, loadItemNames } from "./lib/itemnames";
 import { type Browse, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
 import { profitEl } from "./lib/craftview";
@@ -113,7 +114,7 @@ function changed(): void {
 function metaOf(recipe: number): { name: string; profession: string | null } {
 	const sp = data ? spellOf(data, recipe) : null;
 	const out = sp?.output ?? null;
-	const name = (out !== null ? names.get(out)?.name : null) ?? sp?.name ?? (out !== null ? `Item ${out}` : `Recipe ${recipe}`);
+	const name = (out !== null ? names.get(out)?.name : null) ?? sp?.name ?? (out !== null ? itemName(out) : `Recipe ${recipe}`);
 	return { name, profession: sp?.profession ?? null };
 }
 
@@ -125,6 +126,7 @@ async function load(): Promise<void> {
 		const withRows = new Set(rows.map((r) => r.char));
 		chars = list.characters.filter((c) => withRows.has(c.key));
 		data = await get<RecipeData>(RECIPES_URL);
+		await loadItemNames(get);
 		for (const r of rows) {
 			const sp = spellOf(data, r.recipe);
 			if (sp) lineOf.set(r.recipe, sp.skillLine);

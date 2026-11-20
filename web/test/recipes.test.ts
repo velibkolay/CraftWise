@@ -44,7 +44,7 @@ const q = (typical: number | null, lowest: number | null, sellPrice: number | nu
 describe("recipe data (recipes.json)", () => {
 	it("is the generator's format with every source header", () => {
 		expect(real.v).toBe(1);
-		expect(Object.keys(real.sources).sort()).toEqual(["Recipes.lua", "Sources.lua", "Vendor.lua"]);
+		expect(Object.keys(real.sources).sort()).toEqual(["RecipeVendors.lua", "Recipes.lua", "Sources.lua", "Vendor.lua"]);
 		expect(real.sources["Vendor.lua"]!.join(" ")).toContain("LGPL-2.1");
 		expect(real.sources["Sources.lua"]!.join(" ")).toContain("GPL-3.0-or-later");
 		expect(real.about).toContain("tools/gen_site_recipes.lua");

@@ -17,6 +17,8 @@ export interface RecipeData {
 	names: Record<string, string>; // names of the spells that make no item
 	vendor: Record<string, number>; // vendor buy price per unit
 	sell: Record<string, number>; // vendor sell price per unit (the client's ItemSparse, bundled)
+	learn?: Record<string, [number, string, number][]>; // recipe item -> [area ID, "A" | "H" | "", NPC ID] of the vendors that sell it (#379)
+	areas?: Record<string, string>; // area ID -> zone name
 }
 
 export interface Spell {

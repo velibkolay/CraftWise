@@ -1,5 +1,7 @@
 // Item page (/item/<id>): tooltip, cheapest listings, price history (#97); crafting profit (#143).
 import { chart, type Point, type Series } from "./chart";
+import { itemName, loadItemNames } from "./lib/itemnames";
+import { learnLines, loadVendorNpcs } from "./lib/learn";
 import { ApiError, type Browse, type House, type ItemDetail, type ItemInfo, type Market, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
 import { type CraftNames, craftBreakdown, craftItBreakdown } from "./lib/craftview";
@@ -122,6 +124,7 @@ async function loadCrafting(d: ItemDetail, house: House | null): Promise<void> {
 	let data: RecipeData;
 	try {
 		data = await get<RecipeData>(RECIPES_URL);
+		await Promise.all([loadItemNames(get), loadVendorNpcs(get)]);
 	} catch {
 		return; // without the recipe data the page simply has no crafting blocks
 	}
@@ -176,7 +179,7 @@ function craftBlocks(d: ItemDetail): HTMLElement[] {
 					h(
 						"div",
 						{ class: "inset", role: "group", "aria-labelledby": "craft-title" },
-						makers.map((s) => h("div", { class: "craftbox" }, craftItBreakdown(craft(c.data, s, c.quotes), recipeItemOf(c.data, s.id), c.names))),
+						makers.map((s) => h("div", { class: "craftbox" }, craftItBreakdown(craft(c.data, s, c.quotes), recipeItemOf(c.data, s.id), c.names, undefined, c.data))),
 					),
 				status ? null : h("p", { class: "hint padx" }, CRAFT_NOTE),
 			),
@@ -190,7 +193,7 @@ function craftBlocks(d: ItemDetail): HTMLElement[] {
 				"div",
 				{ class: "block" },
 				h("h2", { class: "bar-head", id: "teach-title" }, "Teaches"),
-				status ?? h("div", { class: "inset", role: "group", "aria-labelledby": "teach-title" }, h("div", { class: "craftbox" }, craftBreakdown(rec, c.names, d.item?.name ?? null))),
+				status ?? h("div", { class: "inset", role: "group", "aria-labelledby": "teach-title" }, h("div", { class: "craftbox" }, craftBreakdown(rec, c.names, d.item?.name ?? null, learnLines(c.data, d.id)))),
 				status ? null : h("p", { class: "hint padx" }, `${CRAFT_NOTE} Pays back: crafts until the recipe's AH price is earned back.`),
 			),
 		);
@@ -201,7 +204,7 @@ function craftBlocks(d: ItemDetail): HTMLElement[] {
 function render(d: ItemDetail, house: House | null): void {
 	redraw = () => render(d, house);
 	const it = d.item;
-	const name = it?.name ?? `Item ${d.id}`;
+	const name = itemName(d.id, it?.name);
 	const q = qualityClass(it?.quality ?? null);
 	const cls = it ? className(it.class, it.className) : null;
 	const sub = it && it.class !== null ? subclassName(it.class, it.subclass, it.subclassName) : null;
