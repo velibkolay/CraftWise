@@ -693,6 +693,20 @@ local function Groups()
 		end },
 	} }
 
+	-- The other machine's characters (#243): read from the CraftWise_Sync add-on's file, read-only (Snapshot.lua, ns.Synced).
+	groups[#groups + 1] = { key = "machine", label = L["Other machine"], rows = {
+		{ key = "about", kind = "text", label = "", text = function()
+			return L["The characters of your other computer, as the companion app last downloaded them (needs the private upload on both). Read-only: they are never saved in this addon's data. Their crafts also count on Make › Crafted."]
+		end },
+		{ key = "chars", kind = "text", label = L["Characters"], text = function()
+			local lines = ns.Synced.Lines()
+			if #lines == 0 then
+				return L["None yet. Install the CraftWise_Sync add-on with the companion app and let both computers upload."], "text3"
+			end
+			return table.concat(lines, "\n")
+		end },
+	} }
+
 	-- Debug (#194): measure what CraftWise costs while you open the bags or a vendor (Perf.lua).
 	groups[#groups + 1] = { key = "debug", label = L["Debug"], rows = {
 		{ key = "buttons", kind = "buttons", label = L["Performance"], buttons = {

@@ -244,6 +244,10 @@ end
 
 -- Character shown in lists: the key without its realm ("<realm>-<name> <surname>").
 function CL.CharLabel(key)
+	local synced = CL.SyncedLabel(key)
+	if synced then
+		return synced
+	end
 	return key:match("^.-%-(.+)$") or key
 end
 
@@ -419,7 +423,7 @@ function CL.Counts(recipeID, now)
 	end
 	out.before = log.before and log.before[recipeID] or 0
 	local today = CL.DayNumber(CL.Today(now))
-	for key, char in pairs(log.chars or {}) do
+	for key, char in pairs(CL.Chars(log)) do
 		local entry = char[recipeID]
 		if entry then
 			local w = Windows(entry, today)
@@ -443,10 +447,33 @@ function CL.Counts(recipeID, now)
 	return out
 end
 
+-- The characters the Crafted page counts: the log's own (`log.chars`) plus the other machine's (#243, ns.Synced),
+-- in a table made for this call; the synced ones are never written into the log. An own key always wins.
+function CL.Chars(log)
+	local out = {}
+	for key, char in pairs(log and log.chars or {}) do
+		out[key] = char
+	end
+	if ns.Synced then
+		for key, char in pairs(ns.Synced.CraftChars()) do
+			if out[key] == nil then
+				out[key] = char
+			end
+		end
+	end
+	return out
+end
+
+-- Whether a key in the Crafted page's characters comes from the other machine: "<machine> · <name>" label or nil.
+function CL.SyncedLabel(key)
+	local entry = ns.Synced and ns.Synced.Chars()[key]
+	return entry and (ns.Synced.Machine(entry) .. " \194\183 " .. ns.Synced.Name(key, entry)) or nil
+end
+
 -- Characters in the log, sorted.
 function CL.Characters()
 	local out = {}
-	for key in pairs(ns.db and ns.db.crafted and ns.db.crafted.chars or {}) do
+	for key in pairs(CL.Chars(ns.db and ns.db.crafted)) do
 		out[#out + 1] = key
 	end
 	table.sort(out)
@@ -474,7 +501,7 @@ function CL.List(now, charKey)
 		end
 		return r
 	end
-	for key, char in pairs(log.chars) do
+	for key, char in pairs(CL.Chars(log)) do
 		if not charKey or key == charKey then
 			for recipeID, entry in pairs(char) do
 				local r, w = Row(recipeID), Windows(entry, todayNumber)

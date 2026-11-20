@@ -230,6 +230,8 @@ newest change wins, own changes the companion hasn't uploaded yet included, and 
 Changes made in game after that go up with the next upload as usual. A failed download (a site without the endpoint,
 a token without the `private` scope) says "watch list failed: ..." in the status line and never stops the market.
 
+In the game (#243) the addon reads these characters from `CraftWiseSync.chars` on every look, read-only and never into its own saved data: Settings > Other machine lists each as "<machine> · <name> · <age> ago" with gold, bags, bank, mail, the ledger of 30 days, fishing and the last farm session, and Make > Crafted counts their crafts under the same label. A character key the account has itself is not shown from the file.
+
 ## Update on the Mac
 
 After a merge, quit WoW and run, in the repo checkout on the Mac (on `main`, no local changes):
