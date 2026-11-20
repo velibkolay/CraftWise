@@ -20,9 +20,9 @@ const CharsPath = "/api/sync/characters"
 // Char is one character of the other machine as the site stored it, kept as the JSON the site sent:
 // the companion adds nothing and computes nothing, it passes the data on to CraftWise_Sync.
 type Char struct {
-	Machine  string          `json:"machine,omitempty"` // the machine that uploaded it (empty: unknown, uploaded before #242)
-	Uploaded int64           `json:"uploaded"`          // when, server time
-	Info     json.RawMessage `json:"info,omitempty"`    // realm, name, surname, faction, race, class, level, t
+	Machine  string          `json:"machine,omitempty"`  // the machine that uploaded it (empty: unknown, uploaded before #242)
+	Uploaded int64           `json:"uploaded"`           // when, server time
+	Info     json.RawMessage `json:"info,omitempty"`     // realm, name, surname, faction, race, class, level, t
 	Snapshot json.RawMessage `json:"snapshot,omitempty"` // { t, data }
 	Auctions json.RawMessage `json:"auctions,omitempty"` // { t, data }
 	Fishing  json.RawMessage `json:"fishing,omitempty"`  // { t, data }
