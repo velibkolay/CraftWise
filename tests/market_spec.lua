@@ -1,7 +1,7 @@
 -- Issue #26 phase 1: recorder, storage, house detection, pruning.
 local NOW = 1794000000 -- fixed clock; a whole number of days plus 21600 s
 local DAY = 86400
-local HORDE, BOOTY, GADGET = "PvP|H", "PvP|N:BootyBay", "PvP|N:Gadgetzan"
+local HORDE, BOOTY, GADGET = "H", "N:BootyBay", "N:Gadgetzan"
 
 local function Market(opts)
 	local ns, stub = LoadAddon(opts)
@@ -73,9 +73,9 @@ it("detects the house from faction and zone text", function()
 	stub.zone, stub.subzone = "Tanaris", "Gadgetzan"
 	eq((M.DetectHouse()), GADGET)
 	stub.zone, stub.subzone = "Winterspring", "Everlook"
-	eq((M.DetectHouse()), "PvP|N:Everlook")
+	eq((M.DetectHouse()), "N:Everlook")
 	stub.faction, stub.zone, stub.subzone = "Alliance", "Ironforge", ""
-	eq((M.DetectHouse()), "PvP|A")
+	eq((M.DetectHouse()), "A")
 end)
 
 it("records nothing when the house can't be told", function()
@@ -84,8 +84,9 @@ it("records nothing when the house can't be told", function()
 	eq(M.DetectHouse(), nil)
 	stub.zone, stub.faction = "Orgrimmar", "Neutral"
 	eq(M.DetectHouse(), nil)
+	-- the realm is not needed for a house (#382: the client no longer tells it)
 	stub.faction, stub.realm = "Horde", ""
-	eq(M.DetectHouse(), nil)
+	eq(M.DetectHouse(), HORDE)
 	stub.realm, stub.locale = "PvP", "deDE" -- a German Booty Bay must not land in the faction house
 	eq(M.DetectHouse(), nil)
 
@@ -99,7 +100,7 @@ it("stores house records with an unmeasured cut", function()
 	local _, stub = Market()
 	OpenAH(stub, "Booty Bay")
 	local house = CraftWiseMarketDB.houses[BOOTY]
-	eq(house.kind, "neutral"); eq(house.label, "Booty Bay"); eq(house.realm, "PvP")
+	eq(house.kind, "neutral"); eq(house.label, "Booty Bay"); eq(house.realm, nil)
 	eq(house.cut.rate, nil); eq(house.cut.samples, 0)
 	OpenAH(stub, "Orgrimmar")
 	eq(CraftWiseMarketDB.houses[HORDE].faction, "Horde")
@@ -1055,7 +1056,7 @@ it("/craftwise market prints every house with depth, typical and last seen", fun
 	assert(text:find("3 @ ", 1, true) and text:find("25 @ ", 1, true), text)
 	assert(text:find("too little history", 1, true), text)
 	assert(text:find("seen 30m ago", 1, true), text)
-	assert(text:find(HORDE, 1, true) == nil, "shows the label, not the key")
+	assert(text:find("N:BootyBay", 1, true) == nil, "shows the label, not the key")
 end)
 
 it("/craftwise market takes a link (lower-cased by the slash handler) and finds suffix variants", function()
@@ -1148,7 +1149,7 @@ local function SeedEntry(M, tiers, rawPoints, seed)
 end
 
 local function SeedSize(M, items, houses, tiers, rawPoints)
-	local keys = { "PvP|H", "PvP|N:BootyBay", "PvP|N:Gadgetzan", "PvP|N:Everlook" }
+	local keys = { "H", "N:BootyBay", "N:Gadgetzan", "N:Everlook" }
 	local db = {
 		v = 1,
 		houses = {},

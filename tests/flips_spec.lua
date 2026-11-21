@@ -2,7 +2,7 @@
 -- found after each scan, announced once, put into the basket and the Auctionator list "CraftWise vendor flips".
 local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
-local HORDE = "PvP|H"
+local HORDE = "H"
 local CLOTH, SILK, JUNKY, FREE = 100, 200, 300, 400
 
 local function Load(opts)
@@ -94,14 +94,14 @@ it("Market.FreshBelow: this scan's listings at the house only; stale, off, newer
 	Seed(ns, 500, { tiers = { 5, 1 }, total = 1, lastT = NOW + 600 }) -- a browse updated only the price later
 	Seed(ns, 501, { tiers = { 5000, 1 }, total = 1 }) -- above the limit
 	CraftWiseMarketDB.items[502] = { [HORDE] = ns.Market.EncodeEntry({ last = { t = NOW, min = 5, qty = 1, listings = 1 }, raw = {}, days = {} }) }
-	CraftWiseMarketDB.items[CLOTH]["PvP|A"] = CraftWiseMarketDB.items[CLOTH][HORDE] -- another house: never read
+	CraftWiseMarketDB.items[CLOTH]["A"] = CraftWiseMarketDB.items[CLOTH][HORDE] -- another house: never read
 	local rows = ns.Market.FreshBelow(HORDE, NOW + 10, 1800, function(id) return id == 501 and 100 or 1100 end)
 	table.sort(rows, function(a, b) return a.itemID < b.itemID end)
 	local ids = {}
 	for _, r in ipairs(rows) do ids[#ids + 1] = r.itemID end
 	eq(table.concat(ids, ","), "100,200", "last-only records have no tiers: not read")
 	eq(rows[1].tiers[1], 40); eq(rows[2].tiers[1], 500); eq(rows[2].total, 2)
-	eq(#ns.Market.FreshBelow("PvP|N:BootyBay", NOW, 1800, function() return 1100 end), 0, "no data at that house")
+	eq(#ns.Market.FreshBelow("N:BootyBay", NOW, 1800, function() return 1100 end), 0, "no data at that house")
 end)
 
 ----------------------------------------------------------------------------------------------- the check

@@ -71,6 +71,7 @@ const (
 // Batch.Commit records a sent batch in it.
 func Build(f *savedvars.File, st *State, opt Options) *Plan {
 	st.init()
+	st.MigrateHouseKeys() // #382: marks under "<realm>|H" belong to "H"
 	if opt.MaxBytes <= 0 {
 		opt.MaxBytes = DefaultMaxBytes
 	}
@@ -80,6 +81,7 @@ func Build(f *savedvars.File, st *State, opt Options) *Plan {
 	d := &delta{st: st, now: opt.Now, skipped: map[string]int{}, trimmed: map[string]int{}}
 	plan := &Plan{Skipped: d.skipped, Trimmed: d.trimmed}
 	if f.Market != nil {
+		f.Market.NormalizeHouses() // #382: no realm in a house key (a file from before, a test)
 		units := d.public(f.Market)
 		plan.Public = packPublic(units, d.houses, d.connected, opt, d.skip)
 	}
@@ -110,7 +112,8 @@ func (d *delta) validTime(t *int64) bool {
 }
 
 var (
-	houseKeyRE = regexp.MustCompile(`^([^|]{1,64})\|(H|A|N:[A-Za-z]{1,32})$`)
+	// A house key has no realm (#382): "H", "A" or "N:<Zone>". savedvars normalizes the keys of an older file.
+	houseKeyRE = regexp.MustCompile(`^(H|A|N:[A-Za-z]{1,32})$`)
 	lowerRE    = regexp.MustCompile(`^[a-z]{1,16}$`)
 )
 
@@ -122,13 +125,13 @@ func okString(s string, max int) bool { return s != "" && jsLen(s) <= max }
 // house checks one house against the server's rules; nil when it can't be sent.
 func (d *delta) house(key string, h savedvars.House) *House {
 	m := houseKeyRE.FindStringSubmatch(key)
-	if m == nil || h.Realm != m[1] || !okString(h.Label, 64) {
+	if m == nil || !okString(h.Label, 64) {
 		return nil
 	}
-	out := &House{Realm: h.Realm, Label: h.Label}
-	switch m[2] {
+	out := &House{Label: h.Label}
+	switch m[1] {
 	case "H", "A":
-		want := map[string]string{"H": "Horde", "A": "Alliance"}[m[2]]
+		want := map[string]string{"H": "Horde", "A": "Alliance"}[m[1]]
 		if h.Kind != "faction" || h.Faction != want {
 			return nil
 		}
@@ -213,7 +216,7 @@ func (d *delta) public(m *savedvars.MarketDB) []unit[PublicPayload] {
 		if out := d.house(key, h); out != nil {
 			d.houses[key] = *out
 		} else {
-			d.skip("house without a valid key, realm, kind, faction or label (its prices and scans too)")
+			d.skip("house without a valid key, kind, faction or label (its prices and scans too)")
 		}
 	}
 	d.connected = d.connectedRealms(m.Connected)

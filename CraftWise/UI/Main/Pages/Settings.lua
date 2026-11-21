@@ -37,6 +37,11 @@ ns.Listen("LINK_CHANGED", function()
 		M.Refresh()
 	end
 end)
+ns.Listen("REALM_CHANGED", function()
+	if M.Refresh then
+		M.Refresh()
+	end
+end)
 
 local function Changed(...)
 	for _, name in ipairs({ ... }) do
@@ -146,6 +151,50 @@ function Set.AHRuleExample()
 end
 
 -- Snapshot: save now and keep the outcome for the line under the buttons.
+-- A small box to type this character's realm in (#382): Enter takes it, Esc closes.
+local realmPopup
+
+function Set.RealmPrompt()
+	if not realmPopup then
+		local Style = ns.Style
+		local f = CreateFrame("Frame", "CraftWiseRealmPrompt", UIParent)
+		f:SetSize(380, 96)
+		f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+		f:SetFrameStrata("DIALOG")
+		f:EnableMouse(true)
+		local bg = f:CreateTexture(nil, "BACKGROUND")
+		bg:SetAllPoints(f)
+		Style.Fill(bg, Style.C.sheet)
+		Style.Border(f, Style.C.ruleStrong)
+		local title = Style.Text(f, "Small", "text2")
+		title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -10)
+		title:SetText(L["This character's realm name, Enter saves it, Esc closes"])
+		local box = CreateFrame("EditBox", nil, f)
+		box:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -40)
+		box:SetSize(356, 24)
+		box:SetAutoFocus(false)
+		box:SetFontObject(Style.Fonts.Body or Style.Fonts.Small)
+		box:SetTextColor(Style.C.text[1], Style.C.text[2], Style.C.text[3], 1)
+		box:SetScript("OnEscapePressed", function()
+			f:Hide()
+		end)
+		box:SetScript("OnEnterPressed", function(self)
+			if ns.SetCharRealm(self:GetText()) then
+				ns.Print(L["realm saved for this character"])
+			else
+				ns.Print(L["that realm name was not taken (empty, too long or has a |)"])
+			end
+			self:SetText("")
+			f:Hide()
+		end)
+		f.box = box
+		f:Hide()
+		realmPopup = f
+	end
+	realmPopup:Show()
+	realmPopup.box:SetFocus()
+end
+
 function Set.SaveSnapshot()
 	local ok, snap = pcall(ns.Snapshot.Save)
 	if ok and snap then
@@ -674,23 +723,33 @@ local function Groups()
 		{ key = "holds", kind = "grid", label = L["What it holds"], items = Set.SnapshotItems },
 	} }
 
-	-- Linked characters (#356, Link.lua): live price sync with your own characters of another account.
+	-- Linked characters (#356, Link.lua): the live link is off since the 20 Nov 2026 realm change (#382). The
+	-- sync between your accounts runs through the companion; the old rows come back only if Link.ENABLED is on.
 	groups[#groups + 1] = { key = "link", label = L["Linked characters"], rows = {
+		{ key = "off", kind = "text", label = L["Status"], text = function()
+			if ns.Link.ENABLED then
+				return ns.Link.StatusText()
+			end
+			return ns.Link.OFF_TEXT
+		end },
+	} }
+
+	-- This character's realm (#382): the client no longer tells it, character keys need it.
+	groups[#groups + 1] = { key = "realm", label = L["Realm"], rows = {
 		{ key = "about", kind = "text", label = "", text = function()
-			return L["Characters of your other WoW account, online at the same time on this realm and faction. Only the characters you list are heard; add this character on the other account too. New prices travel as addon messages; the accounts' saved files stay apart."]
+			return L["Since the 20 Nov 2026 client update the game no longer tells addons the realm name. CraftWise keeps the one each character had before and uses it for the character's saved data. Set it here only when it says unknown."]
 		end },
-		{ key = "buttons", kind = "buttons", label = L["Linked characters"], buttons = {
-			{ key = "add", text = L["Add a character"], onClick = function() ns.Link.Prompt() end,
-				tip = L["Type the name or surname of the other account's character."] },
-			{ key = "sync", text = L["Sync now"], onClick = function()
-				ns.Link.SyncNow()
-				M.Refresh()
-			end, tip = L["Asks every linked character for the prices it has that you lack."] },
+		{ key = "now", kind = "text", label = L["Realm"], text = function()
+			local realm = ns.RealmName()
+			if realm then
+				return realm
+			end
+			return L["unknown: nothing is saved for this character until you set it"], "danger"
+		end },
+		{ key = "buttons", kind = "buttons", label = L["Realm"], buttons = {
+			{ key = "set", text = L["Set realm"], onClick = function() Set.RealmPrompt() end,
+				tip = L["Type this character's realm name exactly as the realm list shows it, for example CAMWOW EU4 Realm 8 PvP."] },
 		} },
-		{ key = "status", kind = "text", label = L["Status"], text = function() return ns.Link.StatusText() end },
-		{ key = "remove", kind = "text", label = "", text = function()
-			return L["Remove one with /craftwise link remove <name>."]
-		end },
 	} }
 
 	-- The other machine's characters (#243): read from the CraftWise_Sync add-on's file, read-only (Snapshot.lua, ns.Synced).

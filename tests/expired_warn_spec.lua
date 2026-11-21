@@ -1,5 +1,5 @@
 -- Issue #327: warn when the item picked into the sell frame expired unsold before. Read only.
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 local ITEM = 2318
 
 local function Setup()

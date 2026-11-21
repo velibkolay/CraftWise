@@ -85,7 +85,7 @@ type MarketDB struct {
 	Auctions      *Auctions                  `json:"auctions,omitempty"`
 }
 
-// House is one auction house seen (#26): key "<realm>|H", "<realm>|A" or "<realm>|N:BootyBay".
+// House is one auction house seen (#26): key "H", "A" or "N:BootyBay" (#382; a file from before had "<realm>|H").
 type House struct {
 	Realm   string    `json:"realm,omitempty"`
 	Kind    string    `json:"kind,omitempty"` // "faction" or "neutral"
@@ -260,6 +260,7 @@ func FromParsed(parsed *svparse.File) *File {
 	}
 	if v := parsed.Get("CraftWiseMarketDB"); v != nil {
 		out.Market = r.market(v)
+		out.Market.NormalizeHouses() // #382: house keys without a realm
 	}
 	out.Problems = svparse.SortedProblems(r.problems)
 	return out

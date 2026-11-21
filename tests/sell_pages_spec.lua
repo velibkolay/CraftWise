@@ -3,7 +3,7 @@
 -- (profit window Bags view, Records › Ledger and Auctions) gone. Invented data only.
 local NOW = os.time({ year = 2026, month = 11, day = 12, hour = 15 })
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 local LINEN, SWORD, BOOTS, GREY, ROCK, SALT = 990100, 990200, 990300, 990400, 990600, 990700
 local LEATHER, HIDE, PANTS, CLOAK, BRACERS = 990801, 990802, 990803, 990804, 990805
 

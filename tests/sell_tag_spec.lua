@@ -2,7 +2,7 @@
 -- always lists both sale options, the chosen one marked.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 local HOUSES = {
 	[HORDE] = { realm = "PvP", kind = "faction", faction = "Horde", label = "Horde AH" },
 	[BOOTY] = { realm = "PvP", kind = "neutral", label = "Booty Bay" },

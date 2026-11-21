@@ -3,7 +3,7 @@
 local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
 local DAY = 86400
-local HORDE, BOOTY, GADGET, ALLIANCE = "PvP|H", "PvP|N:BootyBay", "PvP|N:Gadgetzan", "PvP|A"
+local HORDE, BOOTY, GADGET, ALLIANCE = "H", "N:BootyBay", "N:Gadgetzan", "A"
 local HOUSES = {
 	[HORDE] = { realm = "PvP", kind = "faction", faction = "Horde", label = "Horde AH" },
 	[ALLIANCE] = { realm = "PvP", kind = "faction", faction = "Alliance", label = "Alliance AH" },
@@ -105,7 +105,7 @@ it("an item a full scan found absent has no current price; its typical still cou
 	eq(why, "not listed")
 end)
 
-it("prices of the other faction or another realm are never used", function()
+it("prices of the other faction are never used (the realm is not part of a house, #382)", function()
 	local ns, stub = Load()
 	Seed(5, ALLIANCE, { typs = { 50, 50, 50 }, tiers = { 50, 100 }, total = 100 })
 	eq(ns.AuctionQuote(5), nil)
@@ -113,7 +113,7 @@ it("prices of the other faction or another realm are never used", function()
 	stub.faction = "Alliance"
 	eq(ns.AuctionQuote(5).copper, 50)
 	stub.realm = "PvE"
-	eq(ns.AuctionQuote(5), nil)
+	eq(ns.AuctionQuote(5).copper, 50, "no realm in a house key: connected realms share the house")
 end)
 
 ----------------------------------------------------------------------------------------- the cut

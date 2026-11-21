@@ -136,15 +136,15 @@ CraftWiseSync = {
   written = 1763200000,        -- unix time the companion wrote it
   machine = "PC",              -- this machine's name (setting `machine`, default host name)
   market = {                   -- all of the merged market, not a delta
-    houses = { ["Realm|H"] = { realm = "Realm", kind = "faction", faction = "Horde", label = "Realm Horde" } },
-    scans = { ["Realm|H"] = { { t = 1763000000, kind = "full", items = 1200, lastOnly = 300, source = "..." } } },
+    houses = { ["H"] = { kind = "faction", faction = "Horde", label = "Horde AH" } },   -- no realm in a house key (#382)
+    scans = { ["H"] = { { t = 1763000000, kind = "full", items = 1200, lastOnly = 300, source = "..." } } },
     names = { [2589] = "Linen Cloth" },
     itemInfo = { [2589] = "q,i,c,s,t,p" },      -- Market.lua's packed item info
     classNames = { [7] = "Trade Goods" },
     subclassNames = { [7] = { [5] = "Cloth" } },
     items = {
-      [2589] = { ["Realm|H"] = "last|raw|days" },       -- Market.lua's packed entry (`market.Encode`)
-      ["2589:123"] = { ["Realm|H"] = "..." },           -- a suffix variant: string key
+      [2589] = { ["H"] = "last|raw|days" },       -- Market.lua's packed entry (`market.Encode`)
+      ["2589:123"] = { ["H"] = "..." },           -- a suffix variant: string key
     },
   },
 }
@@ -311,8 +311,15 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   server would refuse (the "left out" lines) shows there too, as "N values left out, see the log", not
   only in the log.
 
-- Connected realms (#366): `CraftWiseMarketDB.connected` (`[realm][otherRealm] = first seen`, recorded by the addon
-  when a linked character on another realm answers) goes in every public request as `connected`, like `houses`. An
-  entry the server would refuse (a name over 64 characters or with `|`, a realm with itself, a time out of range, over 20
-  other realms per realm) is left out and counted in the log; nothing is guessed or filled in. The site groups the
-  houses of connected realms into one at read time (`web/docs/api.md`).
+- House keys have no realm (#382). Since the 20 Nov 2026 client update the game no longer tells addons the realm
+  name, and connected realms share their auction houses, so a house is `H` (Horde AH), `A` (Alliance AH) or
+  `N:<Zone>` (a neutral AH). A SavedVariables file from before has `<realm>|H` and the like: the companion reads
+  both, drops the realm and merges the keys that meet (the newer entry wins, scans by time and kind, 30 kept), in
+  `savedvars.NormalizeHouses`. What the upload state remembers under an old key moves to the new one
+  (`State.MigrateHouseKeys`), so the first upload after the change does not send the market again. The downloaded
+  market (cache and `CraftWise_Sync`) is merged the same way and its `houses` have no `realm` field; the addon
+  also reads a file that still has `<realm>|H` keys. The `connected` table (#366) is not sent any more: the addon
+  records no new pairs and the site does not need them (`web/docs/api.md`).
+- Character keys keep their realm (`<realm>-<name> <surname>`): the addon stores the realm each character had before
+  the update (`CraftWiseDB.charRealms`) and a character with none gets one typed in on Settings › Realm. The
+  companion's and the site's rule to refuse a key without a realm is unchanged.

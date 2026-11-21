@@ -3,7 +3,7 @@
 -- only, `off` items, the list's order and its cache. Invented data only; the numbers of the first two
 -- recipes are the ones from the issue.
 local NOW = os.time({ year = 2026, month = 11, day = 18, hour = 16 })
-local HORDE, GADGET = "PvP|H", "PvP|N:Gadgetzan"
+local HORDE, GADGET = "H", "N:Gadgetzan"
 local STAMINA, THORIUM, SAME, GONE, ONLYGAD, ONLYHORDE = 990201, 990202, 990203, 990204, 990205, 990206
 
 local function Load()

@@ -1,6 +1,6 @@
 -- Issue #46: purchase and sale log (AH + vendor), paid cost of the units still held, /craftwise ledger.
 local NOW = os.time({ year = 2026, month = 11, day = 9, hour = 12 })
-local HORDE = "PvP|H"
+local HORDE = "H"
 local SALT, HIDE, LINEN, BOOTS, CLH = 4289, 783, 2589, 400, 4231
 
 local function Load()

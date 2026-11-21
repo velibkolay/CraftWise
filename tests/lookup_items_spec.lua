@@ -3,7 +3,7 @@
 -- Used in, Where to buy, and the ways in (item menu, Shift-click). Invented data only.
 local NOW = os.time({ year = 2026, month = 11, day = 12, hour = 15 })
 local DAY = 86400
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 local LEATHER, SALT, BOOTS, DYE, SCALE = 990101, 990102, 990103, 990104, 990105
 
 local function Load(opts)

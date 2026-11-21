@@ -5,7 +5,7 @@
 -- list header) and the saved layout. Invented data only.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 local PROF = 165
 local HIDE, THREAD, BELT, GLOVES = 990001, 990002, 990101, 990102
 local R_BELT, R_GLOVES = 990201, 990202

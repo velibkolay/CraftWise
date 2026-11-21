@@ -2,7 +2,7 @@
 -- the names map of #90 in CraftWiseMarketDB.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 
 local function B36(n)
 	local out, d = "", "0123456789abcdefghijklmnopqrstuvwxyz"

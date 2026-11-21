@@ -2,7 +2,7 @@
 -- value over the defaults, the toast finds, one action per key press, nothing on a held key, nothing queued
 -- while the server is busy, and every safety check on the key path too.
 local NOW = 1794000000
-local HORDE = "PvP|H"
+local HORDE = "H"
 local CLOTH, SWORD = 100, 300
 
 local function Setup()

@@ -132,7 +132,7 @@ func Render(f File) []byte {
 	b.WriteString("    houses = {\n")
 	for _, k := range sortedStrings(m.Houses) {
 		h := m.Houses[k]
-		fmt.Fprintf(&b, "      [%s] = { realm = %s, kind = %s", luaString(k), luaString(h.Realm), luaString(h.Kind))
+		fmt.Fprintf(&b, "      [%s] = { kind = %s", luaString(k), luaString(h.Kind))
 		if h.Faction != "" {
 			fmt.Fprintf(&b, ", faction = %s", luaString(h.Faction))
 		}

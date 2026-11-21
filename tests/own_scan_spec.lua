@@ -3,7 +3,7 @@
 -- countdown, the states requested > waiting > reading > storing > done | failed, timeouts, the header
 -- button, and frames bounded by time (debugprofilestop). Invented data only.
 local NOW = 1794000000
-local HORDE = "PvP|H"
+local HORDE = "H"
 
 local function Load()
 	local ns, stub = LoadAddon()

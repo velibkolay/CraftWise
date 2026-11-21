@@ -1,6 +1,7 @@
 // Crafts (/crafts, #185): every craft with today's Horde AH prices and the vendor check, to find crafts that
 // pay when the product goes to a vendor and vendor loops. Prices and names come from /api/browse (as the list
 // page); the recipes from /data/recipes.json. A price that is missing stays missing.
+import { houseName } from "./lib/house";
 import { itemName, loadItemNames } from "./lib/itemnames";
 import { type Browse, type BrowseItem, type House, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
@@ -261,7 +262,7 @@ async function load(): Promise<void> {
 		if (!house) throw new Error("no house");
 		subline.textContent = `WoW: Forever, ${house.label}`;
 		clear(statusSlot, statusBar(house), h("span", { class: "hint" }, "Prices are marked stale after 24 h"));
-		clear(footnote, `Prices come from CraftWise scans of the ${house.label} on ${(house.realms ?? [house.realm]).join(" / ")}. Item icons are placeholders.`);
+		clear(footnote, `Prices come from CraftWise scans of the ${houseName(house)}. Item icons are placeholders.`);
 		data = await get<RecipeData>(RECIPES_URL);
 		await loadItemNames(get);
 		spells = craftSpells(data);

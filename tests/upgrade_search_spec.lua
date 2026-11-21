@@ -134,18 +134,18 @@ it("prices outside the market scope are stored as last only", function()
 	OpenAH(stub)
 	ns.UpgradeSearch.Start()
 	Answer(stub, { [1] = { Row(6002, 30, 400, 2) }, [16] = { Row(6001, 12, 2500, 4) } })
-	local entry = CraftWiseMarketDB.items[6001]["PvP|H"]
+	local entry = CraftWiseMarketDB.items[6001]["H"]
 	eq(entry.last.min, 2500); eq(entry.last.qty, 4); eq(#entry.raw, 0); eq(next(entry.days), nil)
-	eq(CraftWiseMarketDB.items[6002]["PvP|H"].last.min, 400) -- in scope: Market's own browse recorder
+	eq(CraftWiseMarketDB.items[6002]["H"].last.min, 400) -- in scope: Market's own browse recorder
 	-- Market's browse recorder stores every row since #90, the gear recorder whatever it missed.
 	local inScope, lastOnly = 0, 0
-	for _, scan in ipairs(CraftWiseMarketDB.scans["PvP|H"]) do
+	for _, scan in ipairs(CraftWiseMarketDB.scans["H"]) do
 		if scan.kind == "gear" then lastOnly = lastOnly + scan.items else
 			inScope, lastOnly = inScope + scan.items, lastOnly + (scan.lastOnly or 0) end
 	end
 	eq(inScope, 1); eq(lastOnly, 1)
 	ns.Market.Prune()
-	eq(CraftWiseMarketDB.items[6001]["PvP|H"] ~= nil, true)
+	eq(CraftWiseMarketDB.items[6001]["H"] ~= nil, true)
 end)
 
 it("a price seen at another house shows as not seen at the profit house", function()

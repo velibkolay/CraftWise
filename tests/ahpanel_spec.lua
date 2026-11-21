@@ -1,7 +1,7 @@
 -- The CraftWise panel next to the auction house (#328): what a line costs, what a vendor pays, the profit,
 -- the totals on top with the scan age, the groups in order. Display only: nothing here searches or buys.
 local NOW = 1794000000
-local HORDE = "PvP|H"
+local HORDE = "H"
 local CLOTH, SILK, SWORD, GEM = 100, 200, 300, 400
 
 local function Setup()

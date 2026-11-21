@@ -1,14 +1,17 @@
-// Connected realms as one auction house (#366). Pure: no I/O, so the grouping and the merges are tested alone.
+// One auction house per slot (#382). Pure: no I/O, so the grouping and the merges are tested alone.
 //
-// Evidence comes only from uploads: `connected` holds the realm pairs a linked character proved (the
-// addon records them, 0009_connected.sql stores them). Nothing is guessed. Houses are grouped at read
-// time and the stored rows stay per house key, so deleting a pair undoes the grouping.
+// Since the 20 Nov 2026 client update the realm name is hidden from addons, and the connected realms of a
+// group share their auction houses (the Horde AH of Realms 4, 6 and 8 showed the same lowest price on all 327
+// items compared). A house is "H", "A" or "N:<Zone>" with no realm. Rows uploaded before have "<realm>|H"
+// and the like; at read time every row of the same slot is one house, whatever the realm:
 //
-//   - Realms joined by pairs form one component (a pair is symmetric; A-B and B-C make A, B and C one).
-//   - Within a component a faction house joins the faction house of the same faction (Horde with Horde,
-//     Alliance with Alliance: opposite factions never merge) and a neutral house the neutral house of the
-//     same zone ("N:Gadgetzan" with "N:Gadgetzan"). A faction house never joins a neutral one.
-//   - A realm without a pair is a component of its own: its houses are groups of one.
+//   - a faction house joins the faction house of the same faction (Horde with Horde, Alliance with
+//     Alliance: opposite factions never merge) and a neutral house the neutral house of the same zone
+//     ("N:Gadgetzan" with "N:Gadgetzan"). A faction house never joins a neutral one.
+//   - the newest entry wins per item (mergeGroupPrices and the merges below, as Market.lua's MergeEntry).
+//
+// Stored rows stay per house key (no migration). The `connected` table of #366 (0009_connected.sql) is no
+// longer read: the addon records no new pairs, and the grouping does not need them.
 //
 // The work of a merge is one pass over the rows of the group's members: bounded by the group size
 // times the rows of a single house.
@@ -25,6 +28,7 @@ export interface HouseRow {
 	last_full_scan_items: number | null;
 }
 
+// The realm pairs of #366 (the upload still accepts them from an older companion); not used for grouping.
 export interface Pair {
 	a: string;
 	b: string;
@@ -44,47 +48,27 @@ export function shortRealm(name: string): string {
 	return /Realm \d+/.exec(name)?.[0] ?? name;
 }
 
-function components(pairs: Pair[]): Map<string, string> {
-	const parent = new Map<string, string>();
-	const find = (x: string): string => {
-		if (!parent.has(x)) parent.set(x, x);
-		let root = x;
-		while (parent.get(root) !== root) root = parent.get(root)!;
-		parent.set(x, root);
-		return root;
-	};
-	for (const { a, b } of pairs) {
-		const ra = find(a);
-		const rb = find(b);
-		if (ra !== rb) parent.set(ra < rb ? rb : ra, ra < rb ? ra : rb);
-	}
-	const out = new Map<string, string>();
-	for (const r of [...parent.keys()]) out.set(r, find(r));
-	return out;
+// "H" -> "H", "<realm>|H" -> "H", "<realm>|N:Gadgetzan" -> "N:Gadgetzan": the key without its realm.
+export function slot(key: string): string {
+	const i = key.indexOf("|");
+	return i < 0 ? key : key.slice(i + 1);
 }
 
-// "<realm>|H" -> "H", "<realm>|N:Gadgetzan" -> "N:Gadgetzan"
-function slot(h: HouseRow): string {
-	return h.key.slice(h.realm.length + 1);
-}
-
-// The groups of `rows`, in the order of the first row of each. The group is known by the member whose key
-// sorts first, so adding a realm that sorts earlier changes the key; any member's key still finds the
-// group (groupOf).
-export function groupHouses(rows: HouseRow[], pairs: Pair[]): Group[] {
-	const comp = components(pairs);
-	const byGroup = new Map<string, HouseRow[]>();
+// The groups of `rows`, in the order of the first row of each. The group is known by its realm-less row
+// when there is one, else by the member whose key sorts first; any member's key finds the group (groupOf).
+export function groupHouses(rows: HouseRow[]): Group[] {
+	const bySlot = new Map<string, HouseRow[]>();
 	for (const h of rows) {
-		const key = `${comp.get(h.realm) ?? h.realm}\u0000${slot(h)}`;
-		let list = byGroup.get(key);
-		if (!list) byGroup.set(key, (list = []));
+		const key = slot(h.key);
+		let list = bySlot.get(key);
+		if (!list) bySlot.set(key, (list = []));
 		list.push(h);
 	}
 	const out: Group[] = [];
-	for (const list of byGroup.values()) {
+	for (const list of bySlot.values()) {
 		const members = [...list].sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
-		const first = members[0]!;
-		const realms = [...new Set(members.map((m) => m.realm))].sort();
+		const first = members.find((m) => !m.key.includes("|")) ?? members[0]!;
+		const realms = [...new Set(members.map((m) => m.realm).filter((r) => r !== ""))].sort();
 		let house = first;
 		if (members.length > 1) {
 			let scan: number | null = null;
@@ -95,8 +79,6 @@ export function groupHouses(rows: HouseRow[], pairs: Pair[]): Group[] {
 			}
 			house = {
 				...first,
-				// "Realm 4 / Realm 8 (connected) · Horde AH"
-				label: `${realms.map(shortRealm).join(" / ")} (connected) · ${first.label}`,
 				last_scan: scan,
 				last_full_scan: full?.last_full_scan ?? null,
 				last_full_scan_items: full?.last_full_scan_items ?? null,
