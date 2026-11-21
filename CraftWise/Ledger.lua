@@ -178,6 +178,21 @@ function L.FlipShare(itemID, quantity, charKey)
 	return units, math.floor(p.ahCost / p.ahKnown * units + 0.5)
 end
 
+-- #384: one unit of an item was equipped. It was bought to use, so a later vendor sale of it is no flip: one
+-- unit of the AH cost leaves the flip share (the paid cost stays, the profit figures still use it). The count
+-- does not move (equipped items count as held), so this is the only sign. Returns true when a unit left.
+function L.Equipped(itemID, charKey)
+	local c = store and store.chars[charKey or L.CharKey() or ""]
+	local p = c and c.pos and c.pos[itemID]
+	if not p or (p.ahKnown or 0) <= 1e-6 then
+		return false
+	end
+	local drop = math.min(1, p.ahKnown)
+	p.ahCost = (p.ahCost or 0) * (p.ahKnown - drop) / p.ahKnown
+	p.ahKnown = p.ahKnown - drop
+	return true
+end
+
 -- Puts units with a known AH cost back into the position (a buyback of a sale that was a flip, #330).
 function L.RestoreAH(itemID, units, cost, before)
 	local c = Char()
@@ -1006,6 +1021,16 @@ ns.On("BAG_UPDATE_DELAYED", function()
 		Schedule()
 	else
 		L.SyncAll()
+	end
+end)
+
+-- A slot got an item (hasCurrent): see L.Equipped (#384).
+ns.On("PLAYER_EQUIPMENT_CHANGED", function(_, slot, hasCurrent)
+	if hasCurrent and slot and GetInventoryItemID then
+		local itemID = GetInventoryItemID("player", slot)
+		if itemID then
+			L.Equipped(itemID)
+		end
 	end
 end)
 

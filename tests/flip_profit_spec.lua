@@ -191,3 +191,64 @@ it("the Flips page lists newest first with a hero and names, never bare ids", fu
 	eq(model.hero.profit, 400)
 	assert(model.hero.caption:find("Cured Light Hide", 1, true), model.hero.caption)
 end)
+
+-- Issue #384: items bought to use are no flips.
+it("an item equipped after its AH purchase is no flip when vendored later", function()
+	local ns, stub = Load()
+	AHBuy(stub, 1, 9099, { [LINEN] = 20, [CLH] = 1 })
+	stub.equipped.MAINHANDSLOT = CLH
+	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, true)
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 5694)
+	eq(#ns.Flips.Rows(), 0)
+	eq(ns.Flips.Stats("all").profit, 0)
+end)
+
+it("equipping one of two AH units takes one unit out of the flip, the other still flips", function()
+	local ns, stub = Load()
+	AHBuy(stub, 2, 1000, { [LINEN] = 20, [CLH] = 2 })
+	stub.equipped.MAINHANDSLOT = CLH
+	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, true)
+	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, false) -- an emptied slot changes nothing
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 800)
+	local r = ns.Flips.Rows()[1]
+	eq(r.q, 1); eq(r.cost, 500); eq(r.skip, 1)
+end)
+
+it("a row marked 'not a flip' leaves the totals and the hero; undo brings it back", function()
+	local ns, stub = Load()
+	AHBuy(stub, 10, 600, { [LINEN] = 20, [CLH] = 10 })
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 1000)
+	stub.Fire("MERCHANT_CLOSED")
+	stub.RunTimers()
+	AHBuy(stub, 5, 1000, { [LINEN] = 20, [CLH] = 5 })
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 500) -- a real loss of 500
+	eq(ns.Flips.Stats("all").profit, 400 - 500)
+	local P = ns.Main.Page("flips").P
+	local rows = P.Model().rows
+	eq(#rows, 2)
+	P.OnClick(rows[1]) -- the newest: the losing one
+	local model = P.Model()
+	eq(#model.rows, 2) -- still listed
+	eq(model.rows[1].notFlip, true)
+	eq(model.hero.profit, 400); eq(model.hero.flips, 1)
+	eq(ns.Flips.Stats("all").flips, 1); eq(ns.Flips.Stats("all").spent, 600)
+	assert(P.Model().hero.caption:find("Cured Light Hide", 1, true))
+	P.OnClick(P.Model().rows[1]) -- undo
+	eq(ns.Flips.Stats("all").profit, 400 - 500); eq(ns.Flips.Stats("all").flips, 2)
+	eq(P.Model().rows[1].notFlip, nil)
+end)
+
+it("a marked row is dropped, not folded, when it gets old", function()
+	local ns, stub = Load()
+	AHBuy(stub, 10, 600, { [LINEN] = 20, [CLH] = 10 })
+	OpenMerchant(stub)
+	Trade(stub, { [LINEN] = 20 }, stub.money + 1000)
+	ns.Flips.SetNotFlip(ns.Flips.Rows()[1], true)
+	ns.Flips.Prune(NOW + 120 * DAY)
+	eq(#ns.Flips.Rows(), 0)
+	eq(ns.Flips.Stats("all").flips, 0)
+end)
