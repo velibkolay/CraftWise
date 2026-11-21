@@ -50,13 +50,19 @@ function P.Rows(period, now)
 		if not since or h.t >= since then
 			local name, quality = S.ItemName(h.itemID, { name = h.name, link = h.link })
 			local note
-			if h.day then
+			if h.notFlip then
+				note = L["Not a flip: left out of the totals. Click the row to count it again."]
+			elseif h.day then
 				note = (L["%d flips that day"]):format(h.flips)
 			elseif h.skip > 0 then
 				note = (L["%d more units had no logged AH cost: left out"]):format(h.skip)
 			end
+			if not h.day and not h.notFlip then
+				note = (note and note .. " " or "") .. L["Click the row if you bought it to use, not to flip."]
+			end
 			rows[#rows + 1] = { key = i, itemID = h.itemID, name = name, quality = quality, when = P.WhenText(h),
-				units = h.units, cost = h.cost, got = h.got, profit = h.profit, note = note }
+				units = h.units, cost = h.cost, got = h.got, profit = h.profit, note = note, ref = h.row,
+				notFlip = h.notFlip }
 			if not (h.name or h.link) then
 				ids[#ids + 1] = h.itemID
 			end
@@ -90,7 +96,7 @@ function P.Model()
 	local hero = P.HeroData(stats)
 	hero.full, hero.height, hero.middle = true, 80, P.DOCKED_HERO_MIDDLE
 	return { rows = rows, hero = hero,
-		footer = L["Profit = what the vendor paid minus what the same units cost at the AH. Units without a logged AH cost are left out."],
+		footer = L["Profit = what the vendor paid minus what the same units cost at the AH. Units without a logged AH cost are left out. Items you equipped and rows you marked \"not a flip\" are not counted."],
 		empty = L["No flip recorded in this period. A flip is units bought at the AH and sold to a vendor."] }
 end
 
@@ -98,21 +104,37 @@ end
 -- Drawing
 ----------------------------------------------------------------------------------------------------
 
-local function ProfitColor(v)
+local function ProfitColor(v, r)
+	if r and r.notFlip then
+		return "text3"
+	end
 	return v and v < 0 and "danger" or "text"
 end
 
+-- #384: a click on a flip row marks it "not a flip" (bought to use), a second click counts it again.
+function P.OnClick(row)
+	if row and row.ref then
+		ns.Flips.SetNotFlip(row.ref, not row.notFlip)
+	end
+end
+
+local function Grey(r, normal)
+	return r.notFlip and "text3" or normal
+end
+
 P.COLUMNS = {
-	{ key = "when", label = L["When"], width = 100, font = "Small", color = function() return "text2" end },
+	{ key = "when", label = L["When"], width = 100, font = "Small", color = function(r) return Grey(r, "text2") end },
 	{ key = "icon", icon = true, width = 22 },
-	{ key = "name", label = L["Item"], color = function(r) return S.QualityColor(r.quality) end,
+	{ key = "name", label = L["Item"], color = function(r) return r.notFlip and "text3" or S.QualityColor(r.quality) end,
 		tip = function(r) if r.note then return { r.name, r.note } end end },
-	{ key = "units", label = L["Units"], width = 60, align = "RIGHT", font = "Figure", text = function(r) return tostring(r.units) end },
-	{ key = "cost", label = L["AH cost"], width = 100, align = "RIGHT", font = "Figure", color = function() return "text2" end,
+	{ key = "units", label = L["Units"], width = 60, align = "RIGHT", font = "Figure", color = function(r) return Grey(r, "text") end, text = function(r) return tostring(r.units) end },
+	{ key = "cost", label = L["AH cost"], width = 100, align = "RIGHT", font = "Figure", color = function(r) return Grey(r, "text2") end,
 		text = function(r) return S.Coins(r.cost) end },
-	{ key = "got", label = L["Vendor paid"], width = 100, align = "RIGHT", font = "Figure", text = function(r) return S.Coins(r.got) end },
+	{ key = "got", label = L["Vendor paid"], width = 100, align = "RIGHT", font = "Figure", color = function(r) return Grey(r, "text") end,
+		text = function(r) return S.Coins(r.got) end },
 	{ key = "profit", label = L["Profit"], width = 100, align = "RIGHT", font = "FigureBold",
-		color = function(r) return ProfitColor(r.profit) end, text = function(r) return S.Signed(r.profit) end },
+		color = function(r) return ProfitColor(r.profit, r) end,
+		text = function(r) return r.notFlip and L["not a flip"] or S.Signed(r.profit) end },
 }
 
 function P.Columns()
@@ -143,8 +165,9 @@ end
 function P.DockedRow(data)
 	return {
 		icon = data.itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(data.itemID) or nil,
-		name = data.name, nameColor = S.QualityColor(data.quality), note = data.when .. " · " .. data.units .. "×",
-		result = S.Signed(data.profit), resultColor = ProfitColor(data.profit),
+		name = data.name, nameColor = data.notFlip and "text3" or S.QualityColor(data.quality),
+		note = data.when .. " · " .. data.units .. "×",
+		result = data.notFlip and L["not a flip"] or S.Signed(data.profit), resultColor = ProfitColor(data.profit, data),
 		sub = L["AH cost"] .. " " .. (S.Coins(data.cost) or M.DASH) .. "  " .. L["Vendor paid"] .. " " .. (S.Coins(data.got) or M.DASH),
 		tip = data.note and { data.name, data.note } or nil,
 	}
@@ -197,7 +220,7 @@ end
 
 M.RegisterPage({
 	key = "flips", section = "sell", label = L["Flips"], order = 4, events = { "FLIPS_CHANGED", "LEDGER_CHANGED" },
-	columns = P.Columns, Model = P.Model, Hero = P.Hero,
+	columns = P.Columns, Model = P.Model, Hero = P.Hero, OnClick = P.OnClick,
 	DockedRow = P.DockedRow, DockedHero = P.DockedHero,
 	Tools = P.Tools, UpdateTools = P.UpdateTools,
 	P = P,

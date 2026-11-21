@@ -1380,3 +1380,11 @@ The game gives addons no realm name (`GetRealmName()` and `GetNormalizedRealmNam
 - [ ] Settings > Linked characters says the live link is off since the 20 Nov realm change and that sync runs through the companion; `/craftwise link` prints the same; no whisper goes out and no error shows (also with the old list of linked characters in the saved data).
 - [ ] Companion: after the update the next upload sends no (or only the new) prices, not the whole market again; the site's Horde AH shows one house. Log in on the other account after `/reload` there: it has the prices from the first.
 - [ ] No new key starting with `-` appears in `CraftWise.lua` / `CraftWiseMarketDB` after a normal session with AH sales.
+
+## Flips: bought to use are no flips (#384)
+No TOC change, `/reload` is enough. Sell › Flips and the Ledger positions.
+- [ ] Buy a piece of gear at the AH, equip it (PLAYER_EQUIPMENT_CHANGED), later unequip it and sell it to a vendor: Sell › Flips shows no new row, the hero does not drop.
+- [ ] Buy two of an item, equip one, vendor both: one flip row for one unit (the note says 1 unit had no logged AH cost).
+- [ ] A real AH to vendor flip of a stackable item still shows as a row, also after you equipped some other item.
+- [ ] Left-click a flip row: the row turns grey, the profit cell says "not a flip", the hero, "Average per flip" and the best list drop it; the row's tooltip says to click to count it again. Click again: it counts again. The mark survives `/reload`. Right-click still opens the item menu.
+- [ ] Docked layout (narrow window): same greying and "not a flip" in the row's result; clicking the row toggles it.

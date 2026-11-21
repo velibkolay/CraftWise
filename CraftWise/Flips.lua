@@ -6,7 +6,8 @@
 --
 -- Storage: CraftWiseMarketDB.flips (no new SavedVariables)
 --   rows  = { { t, c = charKey, i = itemID, q = units, cost, got, skip, w = merchant, n = name, l = link }, ... }
---           one row per flip, oldest first, kept ROW_DAYS days.
+--           one row per flip, oldest first, kept ROW_DAYS days. nf = true: marked "not a flip" (#384, an item
+--           bought to use): kept and shown greyed, but out of every total; folded away (dropped) with its age.
 --   days  = { ["YYYY-MM-DD"] = { [itemID] = { f = flips, q, cost, got, n, l } } }  rows older than ROW_DAYS
 --           folded per item and day, kept DAY_DAYS days.
 --   older = { [itemID] = { f, q, cost, got, n, l } }  days older than DAY_DAYS folded per item, forever.
@@ -38,6 +39,21 @@ end
 
 function F.Rows()
 	return store and store.rows or {}
+end
+
+-- #384: marks a flip row (a row of F.Rows, History's `row`) as "not a flip" (on = true) or counts it again.
+-- Returns true when the row changed.
+function F.SetNotFlip(row, on)
+	if not (store and row) then
+		return false
+	end
+	on = on and true or nil
+	if row.nf == on then
+		return false
+	end
+	row.nf = on
+	ns.Notify("FLIPS_CHANGED", row)
+	return true
 end
 
 -- Records one realised flip: `sold` units went to the vendor for `copper` in total; `units` of them had an
@@ -131,7 +147,7 @@ function F.Prune(now)
 	for _, r in ipairs(store.rows) do
 		if r.t >= rowCutoff then
 			kept[#kept + 1] = r
-		else
+		elseif not r.nf then -- a row marked "not a flip" is no flip: dropped, not folded (#384)
 			local key = DayKey(r.t)
 			local day = store.days[key] or {}
 			store.days[key] = day
@@ -176,7 +192,7 @@ function F.Stats(window, now)
 		return items[itemID]
 	end
 	for _, r in ipairs(F.Rows()) do
-		if not since or r.t >= since then
+		if not r.nf and (not since or r.t >= since) then
 			Add(total, 1, r.q, r.cost, r.got)
 			Add(item(r.i), 1, r.q, r.cost, r.got, r.n, r.l)
 		end
@@ -214,7 +230,7 @@ function F.History(limit)
 	for i = #rows, 1, -1 do
 		local r = rows[i]
 		out[#out + 1] = { t = r.t, itemID = r.i, name = r.n, link = r.l, units = r.q, cost = r.cost, got = r.got,
-			profit = r.got - r.cost, skip = r.skip or 0, merchant = r.w, charKey = r.c, flips = 1 }
+			profit = r.got - r.cost, skip = r.skip or 0, merchant = r.w, charKey = r.c, flips = 1, row = r, notFlip = r.nf or nil }
 	end
 	local days = {}
 	for key in pairs(store and store.days or {}) do
