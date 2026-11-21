@@ -261,6 +261,34 @@ it("repair: '-Name Surname' data moves into the real key at login, snapshot newe
 	eq(ns.RepairEmptyRealm(), nil, "nothing left to move")
 end)
 
+it("repair: merchant records fold '-Name Surname' into the real key, other characters untouched (#382)", function()
+	local EMPTY = "-Velikopter Tanner"
+	local OTHER = "-Other Person"
+	local saved = { db = { merchants = {
+		[1] = { name = "Vendor", char = EMPTY, items = {
+			[10] = { p = 5, ps = { [4] = 5 }, pk = { [4] = EMPTY, [5] = OTHER },
+				pc = { [EMPTY] = { p = 5, st = 4, t = NOW - 10 }, [TANNER] = { p = 6, st = 4, t = NOW - 500 },
+					[OTHER] = { p = 7, st = 4, t = NOW } } },
+			[11] = { p = 1, pc = { [EMPTY] = { p = 1, t = NOW - 900 }, [TANNER] = { p = 2, t = NOW - 5 } } },
+		} },
+		[2] = { name = "Elsewhere", char = OTHER, items = {} },
+	} } }
+	local ns = Login("Tanner", "Orc", "Hunter", saved)
+	local m = CraftWiseDB.merchants
+	eq(m[1].char, TANNER)
+	eq(m[1].items[10].pk[4], TANNER)
+	eq(m[1].items[10].pk[5], OTHER, "another character is untouched")
+	eq(m[1].items[10].pc[EMPTY], nil)
+	eq(m[1].items[10].pc[TANNER].p, 5, "the newer sighting won")
+	eq(m[1].items[10].pc[OTHER].p, 7)
+	eq(m[1].items[11].pc[TANNER].p, 2, "the newer full-key sighting stayed")
+	eq(m[2].char, OTHER)
+	local said = 0
+	for _, line in ipairs(ns.printed) do if line:find("did not know the realm", 1, true) then said = said + 1 end end
+	eq(said, 1, "one chat line")
+	eq(ns.RepairEmptyRealm(), nil, "nothing left to move")
+end)
+
 it("AH house needs no realm: the Scan AH house is set while the client tells nothing (#382)", function()
 	local ns, stub = LoadAddon()
 	stub.names.player, stub.surnames.player, stub.realm = "Velikopter", "Tanner", ""

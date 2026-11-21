@@ -686,6 +686,34 @@ function ns.RepairEmptyRealm()
 			moved[#moved + 1] = "flips"
 		end
 	end
+	local merchantsMoved
+	for _, m in pairs(type(db.merchants) == "table" and db.merchants or {}) do
+		if type(m) == "table" then
+			if m.char == oldKey then
+				m.char, merchantsMoved = newKey, true
+			end
+			for _, item in pairs(type(m.items) == "table" and m.items or {}) do
+				if type(item) == "table" then
+					for standing, k in pairs(type(item.pk) == "table" and item.pk or {}) do
+						if k == oldKey then
+							item.pk[standing], merchantsMoved = newKey, true
+						end
+					end
+					local pc = type(item.pc) == "table" and item.pc or nil
+					if pc and pc[oldKey] then
+						local c = pc[oldKey]
+						pc[oldKey], merchantsMoved = nil, true
+						if not pc[newKey] or (pc[newKey].t or 0) < (type(c) == "table" and c.t or 0) then
+							pc[newKey] = c
+						end
+					end
+				end
+			end
+		end
+	end
+	if merchantsMoved then
+		moved[#moved + 1] = "merchants"
+	end
 	if #moved == 0 then
 		return nil
 	end
