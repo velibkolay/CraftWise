@@ -197,7 +197,7 @@ it("an item equipped after its AH purchase is no flip when vendored later", func
 	local ns, stub = Load()
 	AHBuy(stub, 1, 9099, { [LINEN] = 20, [CLH] = 1 })
 	stub.equipped.MAINHANDSLOT = CLH
-	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, true)
+	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, false) -- the second argument is not relied on
 	OpenMerchant(stub)
 	Trade(stub, { [LINEN] = 20 }, stub.money + 5694)
 	eq(#ns.Flips.Rows(), 0)
@@ -209,7 +209,9 @@ it("equipping one of two AH units takes one unit out of the flip, the other stil
 	AHBuy(stub, 2, 1000, { [LINEN] = 20, [CLH] = 2 })
 	stub.equipped.MAINHANDSLOT = CLH
 	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, true)
-	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, false) -- an emptied slot changes nothing
+	stub.equipped.MAINHANDSLOT = nil
+	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, true) -- an emptied slot holds no item: changes nothing
+	stub.Fire("PLAYER_EQUIPMENT_CHANGED", 16, false)
 	OpenMerchant(stub)
 	Trade(stub, { [LINEN] = 20 }, stub.money + 800)
 	local r = ns.Flips.Rows()[1]

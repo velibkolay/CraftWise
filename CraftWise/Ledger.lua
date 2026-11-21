@@ -1024,9 +1024,10 @@ ns.On("BAG_UPDATE_DELAYED", function()
 	end
 end)
 
--- A slot got an item (hasCurrent): see L.Equipped (#384).
-ns.On("PLAYER_EQUIPMENT_CHANGED", function(_, slot, hasCurrent)
-	if hasCurrent and slot and GetInventoryItemID then
+-- A slot changed: whatever it holds now was equipped, see L.Equipped (#384). The event's second argument is
+-- not used: its meaning (slot filled or emptied) is easy to get wrong; an emptied slot has no item.
+ns.On("PLAYER_EQUIPMENT_CHANGED", function(_, slot)
+	if slot and GetInventoryItemID then
 		local itemID = GetInventoryItemID("player", slot)
 		if itemID then
 			L.Equipped(itemID)
