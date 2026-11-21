@@ -77,10 +77,10 @@ func TestFirstUploadSendsEverythingOnce(t *testing.T) {
 	if len(houses) != 2 {
 		t.Fatalf("houses: %v", houses)
 	}
-	if _, has := houses["Stub Realm|N:BootyBay"].(map[string]any)["faction"]; has {
+	if _, has := houses["N:BootyBay"].(map[string]any)["faction"]; has {
 		t.Error("a neutral house must not carry a faction")
 	}
-	if houses["Stub Realm|H"].(map[string]any)["faction"] != "Horde" {
+	if houses["H"].(map[string]any)["faction"] != "Horde" {
 		t.Error("Horde house without its faction")
 	}
 	if _, has := pub["auctionator"]; has {
@@ -166,15 +166,15 @@ func smallMarket() *savedvars.MarketDB {
 	i := market.Int
 	return &savedvars.MarketDB{
 		Houses: map[string]savedvars.House{
-			"R|H":          {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"},
-			"R|N:BootyBay": {Realm: "R", Kind: "neutral", Label: "Booty Bay"},
-			"R|A":          {Realm: "R", Kind: "faction", Faction: "Horde", Label: "wrong faction"},
+			"H":          {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"},
+			"N:BootyBay": {Realm: "R", Kind: "neutral", Label: "Booty Bay"},
+			"A":          {Realm: "R", Kind: "faction", Faction: "Horde", Label: "wrong faction"},
 		},
 		Names:    map[int64]string{2589: "Linen Cloth"},
 		ItemInfo: map[int64]market.ItemInfo{2589: {Quality: i(1), Icon: i(132889), Class: i(7), Subclass: i(5), T: i(fixtureNow - 100)}},
 		Items: map[market.ItemKey]map[string]market.Entry{
 			{ItemID: 2589}: {
-				"R|H": {
+				"H": {
 					Last: &market.Last{T: i(fixtureNow - 100), Min: i(95), Qty: i(400), Listings: i(6)},
 					Raw: []market.Point{
 						{T: fixtureNow - 7200, Total: i(380), Listings: i(5), Tiers: []market.Tier{{Price: 96, Qty: 10}}},
@@ -185,10 +185,10 @@ func smallMarket() *savedvars.MarketDB {
 						fixtureNow / 86400:   {Lo: i(95), Typ: i(97), Hi: i(96), QtyMax: i(400), ListMax: i(6), N: i(2)},
 					},
 				},
-				"R|A": {Last: &market.Last{T: i(fixtureNow), Min: i(1), Qty: i(1)}},
+				"A": {Last: &market.Last{T: i(fixtureNow), Min: i(1), Qty: i(1)}},
 			},
 			{ItemID: 15210, Suffix: 1017}: {
-				"R|N:BootyBay": {Last: &market.Last{T: i(fixtureNow - 600), Min: i(25000), Qty: i(1)}},
+				"N:BootyBay": {Last: &market.Last{T: i(fixtureNow - 600), Min: i(25000), Qty: i(1)}},
 			},
 		},
 		Auctionator: &savedvars.Auctionator{Items: map[int64]market.AuctionatorPrice{2589: {T: i(1), Copper: i(5)}}},
@@ -201,7 +201,7 @@ func TestPayloadShape(t *testing.T) {
 	if len(plan.Public) != 2 {
 		t.Fatalf("%d requests", len(plan.Public))
 	}
-	houses := `"houses":{"R|H":{"realm":"R","kind":"faction","faction":"Horde","label":"Horde AH"},"R|N:BootyBay":{"realm":"R","kind":"neutral","label":"Booty Bay"}},`
+	houses := `"houses":{"H":{"kind":"faction","faction":"Horde","label":"Horde AH"},"N:BootyBay":{"kind":"neutral","label":"Booty Bay"}},`
 	// #145: item info after the prices, in a request of its own
 	got, err := json.Marshal(plan.Public[1].Body)
 	if err != nil {
@@ -217,8 +217,8 @@ func TestPayloadShape(t *testing.T) {
 	day := int64(fixtureNow / 86400)
 	want := `{"v":1,` + houses +
 		`"items":{` +
-		`"15210:1017":{"R|N:BootyBay":{"last":{"t":1794009400,"min":25000,"qty":1}}},` +
-		`"2589":{"R|H":{"last":{"t":1794009900,"min":95,"qty":400,"listings":6},` +
+		`"15210:1017":{"N:BootyBay":{"last":{"t":1794009400,"min":25000,"qty":1}}},` +
+		`"2589":{"H":{"last":{"t":1794009900,"min":95,"qty":400,"listings":6},` +
 		`"raw":[{"t":1794002800,"total":380,"listings":5,"tiers":[{"price":96,"qty":10}]},` +
 		`{"t":1794009900,"total":400,"listings":6,"m":120,"tiers":[{"price":95,"qty":10},{"price":100,"qty":40}]}],` +
 		`"days":{"` + itoa(day-5) + `":{"lo":90,"typ":100,"hi":140,"qtyMax":500,"listMax":7,"n":4,"gone":20},` +
@@ -241,15 +241,15 @@ func TestDeltaSendsOnlyNewPointsAndChangedDays(t *testing.T) {
 
 	// The addon records a new point today: raw grows, today's aggregate changes, last moves on.
 	i := market.Int
-	e := m.Items[market.ItemKey{ItemID: 2589}]["R|H"]
+	e := m.Items[market.ItemKey{ItemID: 2589}]["H"]
 	e.Raw = append(e.Raw, market.Point{T: fixtureNow + 300, Total: i(390), Listings: i(6), Tiers: []market.Tier{{Price: 94, Qty: 5}}})
 	e.Last = &market.Last{T: i(fixtureNow + 300), Min: i(94), Qty: i(390), Listings: i(6)}
 	e.Days = map[int64]market.Day{}
-	for k, v := range m.Items[market.ItemKey{ItemID: 2589}]["R|H"].Days {
+	for k, v := range m.Items[market.ItemKey{ItemID: 2589}]["H"].Days {
 		e.Days[k] = v
 	}
 	e.Days[fixtureNow/86400] = market.Day{Lo: i(94), Typ: i(96), Hi: i(96), QtyMax: i(400), ListMax: i(6), N: i(3)}
-	m.Items[market.ItemKey{ItemID: 2589}]["R|H"] = e
+	m.Items[market.ItemKey{ItemID: 2589}]["H"] = e
 
 	plan := Build(f, st, Options{Now: fixtureNow + 400})
 	if len(plan.Public) != 1 {
@@ -262,7 +262,7 @@ func TestDeltaSendsOnlyNewPointsAndChangedDays(t *testing.T) {
 	if len(b.Items) != 1 {
 		t.Fatalf("items: %v", b.Items)
 	}
-	got := b.Items["2589"]["R|H"]
+	got := b.Items["2589"]["H"]
 	if len(got.Raw) != 1 || got.Raw[0].T != fixtureNow+300 {
 		t.Errorf("raw: want only the new point, got %+v", got.Raw)
 	}
@@ -279,12 +279,12 @@ func TestDeltaSendsOnlyNewPointsAndChangedDays(t *testing.T) {
 	// `off` set by a later full scan: last is sent again with the same time.
 	commitAll(plan, st)
 	e.Last = &market.Last{T: i(fixtureNow + 300), Min: i(94), Qty: i(390), Listings: i(6), Off: i(fixtureNow + 500)}
-	m.Items[market.ItemKey{ItemID: 2589}]["R|H"] = e
+	m.Items[market.ItemKey{ItemID: 2589}]["H"] = e
 	plan = Build(f, st, Options{Now: fixtureNow + 600})
-	if len(plan.Public) != 1 || plan.Public[0].Body.Items["2589"]["R|H"].Last.Off == nil {
+	if len(plan.Public) != 1 || plan.Public[0].Body.Items["2589"]["H"].Last.Off == nil {
 		t.Fatalf("off change not sent: %+v", plan.Public)
 	}
-	if r := plan.Public[0].Body.Items["2589"]["R|H"]; len(r.Raw) != 0 || len(r.Days) != 0 {
+	if r := plan.Public[0].Body.Items["2589"]["H"]; len(r.Raw) != 0 || len(r.Days) != 0 {
 		t.Errorf("raw/days sent again: %+v", r)
 	}
 }
@@ -296,9 +296,9 @@ func TestInvalidValuesLeftOut(t *testing.T) {
 		tiers[n] = market.Tier{Price: int64(n + 1), Qty: 1}
 	}
 	m := &savedvars.MarketDB{
-		Houses: map[string]savedvars.House{"R|H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
+		Houses: map[string]savedvars.House{"H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
 		Items: map[market.ItemKey]map[string]market.Entry{
-			{ItemID: 1}: {"R|H": {
+			{ItemID: 1}: {"H": {
 				Last: &market.Last{T: i(fixtureNow), Qty: i(3)}, // no min
 				Raw: []market.Point{
 					{T: fixtureNow - 10, Tiers: []market.Tier{{Price: 1, Qty: 1}}},                                 // no total
@@ -307,14 +307,14 @@ func TestInvalidValuesLeftOut(t *testing.T) {
 					{T: fixtureNow - 7, Total: i(2), Tiers: []market.Tier{{Price: 5, Qty: 2}}},
 				},
 			}},
-			{ItemID: 2}: {"R|H": {Last: &market.Last{T: i(1000), Min: i(1), Qty: i(1)}}}, // time out of range
+			{ItemID: 2}: {"H": {Last: &market.Last{T: i(1000), Min: i(1), Qty: i(1)}}}, // time out of range
 		},
 	}
 	plan := Build(&savedvars.File{Market: m}, NewState("s", "f"), Options{Now: fixtureNow})
 	if len(plan.Public) != 1 {
 		t.Fatalf("%d requests", len(plan.Public))
 	}
-	e := plan.Public[0].Body.Items["1"]["R|H"]
+	e := plan.Public[0].Body.Items["1"]["H"]
 	if e.Last != nil || len(e.Raw) != 1 || e.Raw[0].T != fixtureNow-7 {
 		t.Errorf("entry: %+v", e)
 	}
@@ -333,11 +333,11 @@ func TestInvalidValuesLeftOut(t *testing.T) {
 func TestBatchesSplitAndResume(t *testing.T) {
 	i := market.Int
 	m := &savedvars.MarketDB{
-		Houses: map[string]savedvars.House{"R|H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
+		Houses: map[string]savedvars.House{"H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
 		Items:  map[market.ItemKey]map[string]market.Entry{},
 	}
 	for id := int64(1); id <= 2500; id++ {
-		m.Items[market.ItemKey{ItemID: id}] = map[string]market.Entry{"R|H": {Last: &market.Last{T: i(fixtureNow), Min: i(id), Qty: i(1)}}}
+		m.Items[market.ItemKey{ItemID: id}] = map[string]market.Entry{"H": {Last: &market.Last{T: i(fixtureNow), Min: i(id), Qty: i(1)}}}
 	}
 	f := &savedvars.File{Market: m}
 	st := NewState("s", "f")
@@ -386,8 +386,8 @@ func TestRawPointsSplitOverRequests(t *testing.T) {
 		raw = append(raw, market.Point{T: fixtureNow - 100_000 + int64(n)*60, Total: i(1), Tiers: []market.Tier{{Price: 5, Qty: 1}}})
 	}
 	m := &savedvars.MarketDB{
-		Houses: map[string]savedvars.House{"R|H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
-		Items:  map[market.ItemKey]map[string]market.Entry{{ItemID: 1}: {"R|H": {Last: &market.Last{T: i(fixtureNow), Min: i(5), Qty: i(1)}, Raw: raw}}},
+		Houses: map[string]savedvars.House{"H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
+		Items:  map[market.ItemKey]map[string]market.Entry{{ItemID: 1}: {"H": {Last: &market.Last{T: i(fixtureNow), Min: i(5), Qty: i(1)}, Raw: raw}}},
 	}
 	f := &savedvars.File{Market: m}
 	st := NewState("s", "f")
@@ -395,13 +395,13 @@ func TestRawPointsSplitOverRequests(t *testing.T) {
 	if len(plan.Public) != 2 {
 		t.Fatalf("%d requests", len(plan.Public))
 	}
-	a, b := plan.Public[0].Body.Items["1"]["R|H"], plan.Public[1].Body.Items["1"]["R|H"]
+	a, b := plan.Public[0].Body.Items["1"]["H"], plan.Public[1].Body.Items["1"]["H"]
 	if len(a.Raw) != MaxRawPoints || len(b.Raw) != 20 || a.Last == nil || b.Last != nil {
 		t.Errorf("pieces: %d (last %v), %d (last %v)", len(a.Raw), a.Last != nil, len(b.Raw), b.Last != nil)
 	}
 	plan.Public[0].Commit(st)
 	rest := Build(f, st, Options{Now: fixtureNow})
-	if len(rest.Public) != 1 || len(rest.Public[0].Body.Items["1"]["R|H"].Raw) != 20 || rest.Public[0].Body.Items["1"]["R|H"].Last != nil {
+	if len(rest.Public) != 1 || len(rest.Public[0].Body.Items["1"]["H"].Raw) != 20 || rest.Public[0].Body.Items["1"]["H"].Last != nil {
 		t.Errorf("resume after the first piece: %+v", rest.Public)
 	}
 }

@@ -2,7 +2,7 @@
 import type { Env } from "./env";
 import { HttpError, intParam, json } from "./http";
 import * as L from "./limits";
-import { groupHouses, groupOf, mergeGroupDays, mergeGroupPoints, mergeGroupPrices, repIds, type Group, type HouseRow, type Pair } from "./groups";
+import { groupHouses, groupOf, mergeGroupDays, mergeGroupPoints, mergeGroupPrices, repIds, type Group, type HouseRow } from "./groups";
 import { dayNumber, listed, medianFloor, tierList, typical, type Typical } from "./market";
 import { nameWords } from "./upload";
 
@@ -67,14 +67,11 @@ function namesOut(names: ClassNames, cls: number | null, sub: number | null) {
 	};
 }
 
-// The auction houses as the site shows them (#366): the houses of connected realms grouped into one.
-// Stored rows stay per house key; the pairs are the realms a linked character proved connected.
+// The auction houses as the site shows them (#382): every row of one slot ("H", "A", "N:<Zone>") is one house,
+// whatever realm an older upload named. Stored rows stay per house key.
 async function allGroups(env: Env): Promise<Group[]> {
-	const [rows, pairs] = await env.DB.batch([
-		env.DB.prepare("SELECT * FROM houses ORDER BY kind = 'faction' DESC, realm, label"),
-		env.DB.prepare("SELECT a, b FROM connected"),
-	]);
-	return groupHouses(rows!.results as unknown as HouseRow[], pairs!.results as unknown as Pair[]);
+	const rows = await env.DB.prepare("SELECT * FROM houses ORDER BY kind = 'faction' DESC, realm, label").all();
+	return groupHouses(rows.results as unknown as HouseRow[]);
 }
 
 // The group of the house key in the query (any member's key finds it).

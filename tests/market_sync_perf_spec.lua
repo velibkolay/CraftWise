@@ -5,7 +5,7 @@
 local NOW = 1794000000
 local DAY = 86400
 local TODAY = math.floor(NOW / DAY)
-local HORDE = "PvP|H"
+local HORDE = "H"
 local SCOPE, OTHERS = 2700, 37300 -- the market as it is: a few thousand with history, the rest last only
 
 local function Entry(seed, older)

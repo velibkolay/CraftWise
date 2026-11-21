@@ -3,7 +3,7 @@
 -- old windows. Invented data only.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 local CRAFT_PROF = 990165 -- an invented crafting profession
 
 local function Load(opts)
@@ -349,7 +349,7 @@ it("Header AH status: hover shows the scan summary per house (was Records › Ma
 	local ns, stub, M = Load()
 	TestPage(M, { prices = true })
 	local db = CraftWiseMarketDB
-	local BOOTY = "PvP|N:BootyBay"
+	local BOOTY = "N:BootyBay"
 	db.houses[HORDE] = { realm = "PvP", kind = "faction", faction = "Horde", label = "Horde AH" }
 	db.houses[BOOTY] = { realm = "PvP", kind = "neutral", label = "Booty Bay" }
 	db.scans[HORDE] = { { t = NOW - 2 * 3600, kind = "full", items = 3 }, { t = NOW - 600, kind = "search" } }

@@ -62,10 +62,10 @@ type PublicPayload struct {
 	SubclassNames map[int64]map[int64]string `json:"subclassNames,omitempty"`
 }
 
-// House is one auction house; key "<realm>|H", "<realm>|A" or "<realm>|N:<Name>". A neutral
+// House is one auction house; key "H", "A" or "N:<Name>" (no realm, #382). A neutral
 // house has no faction.
 type House struct {
-	Realm   string `json:"realm"`
+	Realm   string `json:"realm,omitempty"`
 	Kind    string `json:"kind"`
 	Faction string `json:"faction,omitempty"`
 	Label   string `json:"label"`

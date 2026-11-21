@@ -188,7 +188,7 @@ it("an intermediate with a paid cost uses it, even when crafting is cheaper (dec
 	stub.counts[HIDE] = 10
 	ns.Ledger.Record("vbuy", HIDE, 10, 900, "Tanner", 0)
 	stub.counts[CLH] = 2
-	ns.Ledger.Record("ahbuy", CLH, 2, 360, "PvP|H", 0) -- 1s80 each, crafting would be 1s40
+	ns.Ledger.Record("ahbuy", CLH, 2, 360, "H", 0) -- 1s80 each, crafting would be 1s40
 	local clh = Line(Row(ns, "profit", 9068), CLH)
 	eq(clh.unit, 180); eq(clh.source, "paid"); eq(clh.crafted, nil); eq(clh.craftUnit, nil); eq(clh.paidFallback, nil)
 	local t = TooltipOf(ns, stub, "Light Leather Pants")

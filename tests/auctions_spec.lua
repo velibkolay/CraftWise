@@ -1,7 +1,7 @@
 -- Issue #81: auction tracker (posts, owned list, sold/expired messages, inferred outcomes, mail
 -- settlement into the ledger with a cut sample, snapshot section, /craftwise auctions).
 local NOW = os.time({ year = 2026, month = 11, day = 11, hour = 18 })
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 local LEATHER, HIDE, PANTS, CLOAK = 2318, 783, 7280, 15000
 
 local function Link(id, name)

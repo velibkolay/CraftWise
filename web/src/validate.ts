@@ -202,8 +202,10 @@ function version(body: Obj): void {
 	if (body.v !== 1) fail("v", "unsupported version (expected 1)");
 }
 
-// "<realm>|H", "<realm>|A" or "<realm>|N:<Name>" as CraftWise/Market.lua builds it.
-const HOUSE_KEY = /^([^|]{1,64})\|(H|A|N:[A-Za-z]{1,32})$/;
+// "H", "A" or "N:<Name>" as CraftWise/Market.lua builds it since the realm name was hidden from addons (#382).
+// An older companion still sends "<realm>|H", "<realm>|A" or "<realm>|N:<Name>": accepted as before, the realm
+// kept in the row, and read as the same house (src/groups.ts).
+const HOUSE_KEY = /^(?:([^|]{1,64})\|)?(H|A|N:[A-Za-z]{1,32})$/;
 const ITEM_KEY = /^([1-9][0-9]{0,9})(?::([0-9]{1,10}))?$/;
 const SCAN_KIND = /^[a-z]{1,16}$/;
 const CLASS_ID = /^(0|[1-9][0-9]{0,4})$/;
@@ -215,10 +217,11 @@ function houses(v: unknown): House[] {
 	return keys.map((key) => {
 		const path = `houses[${JSON.stringify(key)}]`;
 		const m = HOUSE_KEY.exec(key);
-		if (!m) fail(path, "house key must be <realm>|H, <realm>|A or <realm>|N:<name>");
+		if (!m) fail(path, "house key must be H, A or N:<name> (or <realm>|H, <realm>|A, <realm>|N:<name> from an older companion)");
 		const h = obj(o[key], path);
-		const realm = str(h.realm, `${path}.realm`, 64);
-		if (realm !== m[1]) fail(`${path}.realm`, "does not match the house key");
+		// no realm in the key: none in the house either (an empty `realm` is the same as none)
+		const realm = m[1] === undefined ? (h.realm === undefined || h.realm === "" ? "" : fail(`${path}.realm`, "a house key without a realm has none")) : str(h.realm, `${path}.realm`, 64);
+		if (m[1] !== undefined && realm !== m[1]) fail(`${path}.realm`, "does not match the house key");
 		const neutral = m[2]!.startsWith("N:");
 		const kind = neutral ? "neutral" : "faction";
 		if (h.kind !== kind) fail(`${path}.kind`, `expected "${kind}"`);

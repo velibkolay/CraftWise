@@ -2,7 +2,7 @@
 -- goes to the site. Invented data only.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 
 local function Load()
 	local ns, stub = LoadAddon()

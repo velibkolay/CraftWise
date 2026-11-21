@@ -4,7 +4,7 @@
 local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 local PROF = 165 -- a profession id the addon knows as a skill line; its name and recipes are invented
 local HIDE, THREAD = 990001, 990002 -- reagents
 local BELT, GLOVES, BRACERS, CLOAK, CAP, HAT = 990101, 990102, 990103, 990104, 990105, 990106 -- outputs

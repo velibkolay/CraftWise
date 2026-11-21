@@ -4,7 +4,7 @@
 -- (tests/settings_page_spec.lua), their views on the pages (sell_pages, gather, lookup_items specs).
 local NOW = os.time({ year = 2026, month = 11, day = 12, hour = 15 })
 local DAY = 86400
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 local LINEN, SALT, BOOTS, CRATE, COPPER, FISH = 2589, 4289, 400, 7001, 2840, 9001
 
 local function Load(opts)

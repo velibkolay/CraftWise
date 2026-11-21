@@ -10,8 +10,25 @@ import (
 	"sort"
 
 	"github.com/velibkolay/CraftWise/companion/market"
+	"github.com/velibkolay/CraftWise/companion/savedvars"
 	"github.com/velibkolay/CraftWise/companion/upload"
 )
+
+// houseKey is the realm-less key of a house key the site sent or an older cache holds (#382); a key that
+// is not a house key stays as it is.
+func houseKey(key string) string {
+	if k, ok := savedvars.HouseKeyOf(key); ok {
+		return k
+	}
+	return key
+}
+
+func entryT(e market.Entry) int64 {
+	if e.Last == nil || e.Last.T == nil {
+		return 0
+	}
+	return *e.Last.T
+}
 
 // Cache is everything downloaded so far and the time to ask `since` next. The site answers with
 // the entries that changed, each one complete (merged from both machines, #238), so merging a
@@ -49,6 +66,10 @@ func LoadCache(path, site string) (*Cache, error) {
 	if err := json.Unmarshal(data, &c); err != nil || c.Market == nil || c.Site != site {
 		return NewCache(site), nil
 	}
+	// A cache from before #382 holds "<realm>|H" keys: merged into the realm-less houses, the newer entry winning.
+	old := c.Market
+	c.Market = &upload.PublicPayload{V: old.V, Names: old.Names, ItemInfo: old.ItemInfo, ClassNames: old.ClassNames, SubclassNames: old.SubclassNames}
+	c.Merge(&upload.PublicPayload{Houses: old.Houses, Scans: old.Scans, Items: old.Items})
 	return &c, nil
 }
 
@@ -69,9 +90,11 @@ func (c *Cache) Merge(p *upload.PublicPayload) {
 		if m.Houses == nil {
 			m.Houses = map[string]upload.House{}
 		}
-		m.Houses[k] = h
+		h.Realm = ""
+		m.Houses[houseKey(k)] = h
 	}
-	for house, scans := range p.Scans {
+	for fileHouse, scans := range p.Scans {
+		house := houseKey(fileHouse)
 		if m.Scans == nil {
 			m.Scans = map[string][]upload.Scan{}
 		}
@@ -131,7 +154,11 @@ func (c *Cache) Merge(p *upload.PublicPayload) {
 		if m.Items[item] == nil {
 			m.Items[item] = map[string]market.Entry{}
 		}
-		for house, e := range houses {
+		for fileHouse, e := range houses {
+			house := houseKey(fileHouse)
+			if mine, ok := m.Items[item][house]; ok && entryT(mine) > entryT(e) {
+				continue // two old keys of one house: the newer entry wins
+			}
 			m.Items[item][house] = e
 		}
 	}

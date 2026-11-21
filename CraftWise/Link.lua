@@ -29,6 +29,13 @@ local addonName, ns = ...
 local Link = {}
 ns.Link = Link
 
+-- OFF since the 20 Nov 2026 client update (#382): no realm information reaches addons any more, and the live
+-- link needed the realm for its whisper targets and house keys. The sync between your own accounts runs through
+-- the companion app (upload to the site, then CraftWise_Sync) and is picked up at login or /reload. The
+-- code stays (this file is in the TOC); with ENABLED false nothing is registered, whispered or hidden.
+Link.ENABLED = false
+Link.OFF_TEXT = "Live link is off since the 20 Nov realm change. Sync runs through the companion: it uploads your prices and writes the merged ones for the other account; log in or /reload to pick them up."
+
 Link.PREFIX = "CWSync"
 Link.PROTO = 2 -- 2: batches are deflated (#360); a version 1 client is told apart and left alone
 Link.LEVEL = 6 -- LibDeflate level of a batch
@@ -195,6 +202,9 @@ end
 ----------------------------------------------------------------------------------------------------
 
 local function Enqueue(item, front)
+	if not Link.ENABLED then
+		return
+	end
 	if front then
 		table.insert(queue, 1, item)
 	else
@@ -284,7 +294,10 @@ end
 -- What I have from this peer and from my own scans, per house of this realm: send me what is newer.
 local function HelloText(key)
 	local peer = PeerByKey(key)
-	local realm = GetRealmName() or ""
+	local realm = ns.RealmName() -- #382: nil while the client doesn't tell it; no hello without a realm
+	if not realm then
+		return nil
+	end
 	local parts = { "H", tostring(Link.PROTO), realm }
 	local market = ns.Market
 	local houses = {}
@@ -292,15 +305,12 @@ local function HelloText(key)
 		houses[#houses + 1] = houseKey
 	end
 	table.sort(houses)
-	local prefix = realm .. "|"
 	for _, houseKey in ipairs(houses) do
-		if houseKey:sub(1, #prefix) == prefix then
-			local since = math.max(peer.got[houseKey] or 0, market.LastFullScan(houseKey) or 0)
-			local field = houseKey .. SEP .. tostring(since)
-			if #table.concat(parts, SEP) + #field + 1 < MSG_MAX - 20 then
-				parts[#parts + 1] = houseKey
-				parts[#parts + 1] = tostring(since)
-			end
+		local since = math.max(peer.got[houseKey] or 0, market.LastFullScan(houseKey) or 0)
+		local field = houseKey .. SEP .. tostring(since)
+		if #table.concat(parts, SEP) + #field + 1 < MSG_MAX - 20 then
+			parts[#parts + 1] = houseKey
+			parts[#parts + 1] = tostring(since)
 		end
 	end
 	return table.concat(parts, SEP)
@@ -308,6 +318,9 @@ end
 
 -- Asks a peer for what is new (and, by its answer, tells it what I have).
 function Link.Hello(key)
+	if not Link.ENABLED then
+		return false
+	end
 	local r = Runtime(key)
 	r.helloAt = Now()
 	for _, item in ipairs(queue) do
@@ -315,13 +328,20 @@ function Link.Hello(key)
 			return false -- one is waiting already
 		end
 	end
-	Control(key, HelloText(key))
+	local text = HelloText(key)
+	if not text then
+		return false
+	end
+	Control(key, text)
 	return true
 end
 
 -- "Sync now": a hello to every listed character, at once.
 function Link.SyncNow()
 	local n = 0
+	if not Link.ENABLED then
+		return n
+	end
 	for _, p in ipairs(Peers()) do
 		if Link.Hello(Norm(p.name)) then
 			n = n + 1
@@ -332,6 +352,9 @@ end
 
 -- After an own scan: tell the online characters (each asks for what it lacks).
 function Link.Push()
+	if not Link.ENABLED then
+		return
+	end
 	for _, p in ipairs(Peers()) do
 		local key = Norm(p.name)
 		if Link.Online(key) then
@@ -391,6 +414,10 @@ function Link.Unpack(wire)
 end
 
 local function NextBatch(out)
+	local realm = ns.RealmName()
+	if not realm then
+		return nil -- #382: nothing is consumed from the delta while the realm is unknown
+	end
 	local records, bytes = {}, 0
 	local done = false
 	while bytes < Link.BATCH_BYTES do
@@ -408,7 +435,7 @@ local function NextBatch(out)
 	if #records == 0 then
 		return nil
 	end
-	table.insert(records, 1, "r" .. SEP .. (GetRealmName() or ""))
+	table.insert(records, 1, "r" .. SEP .. realm)
 	local payload = Link.Pack(table.concat(records, "~"))
 	local chunks = {}
 	for at = 1, #payload, Link.CHUNK do
@@ -483,29 +510,22 @@ local function Fields(text, count)
 	return out
 end
 
--- Connected realms share an auction house but each keeps its own realm name in the house keys (#358). A house
--- key of the other character's realm is rewritten to mine, and only to a key I would record myself: the
--- faction house of my own faction ("<realm>|H" or "|A"), or a neutral house ("<realm>|N:<Zone>"). nil for
--- anything else (another realm, the other faction's house, junk).
-function Link.MapHouse(house, fromRealm)
-	if type(house) ~= "string" or type(fromRealm) ~= "string" or fromRealm == "" then
+-- House keys have no realm (#382), so a key from the other character is mine as it is: only a key I would
+-- record myself counts, the faction house of my own faction ("H" or "A") or a neutral house ("N:<Zone>"). A
+-- key an older client sent with its realm in front ("<realm>|H") is read as the same house. nil for anything
+-- else (the other faction's house, junk). `fromRealm` is unused now.
+function Link.MapHouse(house, _)
+	local key = ns.Market and ns.Market.HouseKeyOf(house)
+	if not key then
 		return nil
 	end
-	local head = fromRealm .. "|"
-	if house:sub(1, #head) ~= head then
-		return nil
-	end
-	local rest = house:sub(#head + 1)
-	local letter = rest:match("^([HA])$")
-	if letter then
+	if key == "H" or key == "A" then
 		local faction = UnitFactionGroup and UnitFactionGroup("player")
-		if letter ~= (faction == "Horde" and "H" or faction == "Alliance" and "A" or nil) then
+		if key ~= (faction == "Horde" and "H" or faction == "Alliance" and "A" or nil) then
 			return nil
 		end
-	elseif not rest:match("^N:%w+$") then
-		return nil
 	end
-	return (GetRealmName() or "") .. "|" .. rest
+	return key
 end
 
 -- The records of a merged batch, turned into what Market.MergeIncoming takes. The sender's realm comes in the
@@ -622,7 +642,7 @@ end
 
 local function OnHello(key, f, now)
 	local r = Runtime(key)
-	if tonumber(f[2]) ~= Link.PROTO or not f[3] or f[3] == "" or #f[3] > 64 then
+	if tonumber(f[2]) ~= Link.PROTO or not f[3] or f[3] == "" or #f[3] > 64 or not ns.RealmName() then
 		return
 	end
 	-- A listed character that answers a whisper is on a connected realm, whatever its name (#358).
@@ -631,8 +651,9 @@ local function OnHello(key, f, now)
 		peer.realm = f[3]
 		peer.proto = nil
 		-- The answer is the evidence the two realms are connected (#366); the site groups by it.
-		if f[3] ~= (GetRealmName() or "") then
-			ns.Market.RecordConnected(GetRealmName() or "", f[3], time())
+		local mine = ns.RealmName()
+		if mine and f[3] ~= mine then
+			ns.Market.RecordConnected(mine, f[3], time())
 		end
 	end
 	local since = {}
@@ -642,7 +663,7 @@ local function OnHello(key, f, now)
 			since[mine] = tonumber(f[i + 1]) or 0
 		end
 	end
-	StartTransfer(key, GetRealmName() or "", since)
+	StartTransfer(key, ns.RealmName(), since)
 	if not r.helloAt or now - r.helloAt > 20 then
 		Link.Hello(key) -- answer with what I lack
 	end
@@ -770,7 +791,7 @@ end
 -- A frame ticks the pump while there is anything to do, and every few seconds otherwise (hellos).
 local acc = 0
 function Link.Wake()
-	if ticker or not CreateFrame or not db then
+	if not Link.ENABLED or ticker or not CreateFrame or not db then
 		return
 	end
 	ticker = CreateFrame("Frame")
@@ -817,6 +838,9 @@ function Link.Status(now)
 end
 
 function Link.StatusText()
+	if not Link.ENABLED then
+		return Link.OFF_TEXT
+	end
 	local list = Link.Status()
 	if #list == 0 then
 		return "No linked characters. Add the other account's characters by name; each side lists the other."
@@ -837,7 +861,7 @@ function Link.StatusText()
 			parts[#parts + 1] = "not synced yet"
 		end
 		parts[#parts + 1] = Group(s.received) .. " prices received"
-		local realm = s.realm and s.realm ~= (GetRealmName() or "") and (" (" .. (s.realm:match("Realm %d+") or s.realm) .. ")") or ""
+		local realm = s.realm and s.realm ~= (ns.RealmName() or "") and (" (" .. (s.realm:match("Realm %d+") or s.realm) .. ")") or ""
 		lines[#lines + 1] = s.name .. realm .. ": " .. table.concat(parts, " · ")
 	end
 	return table.concat(lines, "\n")
@@ -879,6 +903,9 @@ end
 local popup
 
 function Link.Prompt()
+	if not Link.ENABLED then
+		return
+	end
 	if not popup then
 		local Style = ns.Style
 		local f = CreateFrame("Frame", "CraftWiseLinkPrompt", UIParent)
@@ -928,6 +955,10 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function Link.Slash(arg)
+	if not Link.ENABLED then
+		ns.Print(Link.OFF_TEXT)
+		return
+	end
 	local verb, rest = (arg or ""):match("^(%S*)%s*(.-)$")
 	verb = verb:lower()
 	if verb == "add" then
@@ -960,7 +991,7 @@ ns.Listen("DB_READY", function()
 	for _, p in ipairs(db.peers) do
 		p.got = type(p.got) == "table" and p.got or {}
 	end
-	if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
+	if Link.ENABLED and C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
 		pcall(C_ChatInfo.RegisterAddonMessagePrefix, Link.PREFIX)
 	end
 end)
@@ -968,7 +999,7 @@ end)
 -- The client answers a whisper to a character that isn't online with a system line, every time. That line, after
 -- our own whisper, marks the peer offline (no more hellos until it says hello itself) and is hidden from chat.
 ns.On("CHAT_MSG_SYSTEM", function(_, message)
-	local key = db and Link.NotFoundKey(message)
+	local key = Link.ENABLED and db and Link.NotFoundKey(message)
 	if key then
 		local r = Runtime(key)
 		r.offline, r.seen, r.out, r.inc = true, nil, nil, nil
@@ -982,7 +1013,7 @@ ns.On("CHAT_MSG_SYSTEM", function(_, message)
 end)
 
 local function HideNotFound(_, _, message)
-	return Link.NotFoundKey(message) ~= nil
+	return Link.ENABLED and Link.NotFoundKey(message) ~= nil
 end
 
 if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
@@ -990,7 +1021,7 @@ if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
 end
 
 ns.On("CHAT_MSG_ADDON", function(_, prefix, text, channel, sender)
-	if prefix == Link.PREFIX and db then
+	if Link.ENABLED and prefix == Link.PREFIX and db then
 		pcall(Link.OnMessage, prefix, text, channel, sender)
 	end
 end)
@@ -998,7 +1029,7 @@ end)
 -- The first hello a few seconds after login (the other client may still be loading); after that the pump
 -- repeats it.
 ns.On("PLAYER_LOGIN", function()
-	if not db then
+	if not (Link.ENABLED and db) then
 		return
 	end
 	local function start()
@@ -1013,7 +1044,7 @@ end)
 
 -- An own full scan was stored: tell the online characters.
 ns.Listen("FULL_PRICES", function(source)
-	if source ~= "link" and db and #db.peers > 0 then
+	if Link.ENABLED and source ~= "link" and db and #db.peers > 0 then
 		Link.Push()
 	end
 end)

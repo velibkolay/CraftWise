@@ -19,6 +19,12 @@ export interface HouseChoice {
 	realms?: Iterable<string | null | undefined>; // the realms of the account's characters (private snapshots)
 }
 
+// "Horde AH" or, when the scans came from named realms (rows from before #382), "Horde AH on Realm 4 / Realm 8".
+export function houseName(h: House): string {
+	const realms = (h.realms ?? [h.realm]).filter((r) => r);
+	return realms.length ? `${h.label} on ${realms.join(" / ")}` : h.label;
+}
+
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 // A house sits on a character's realm when the names match ignoring case and punctuation, or one contains the

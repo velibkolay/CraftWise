@@ -638,12 +638,39 @@ local function SuffixFromLink(link)
 	return tonumber(suffix)
 end
 
+-- House keys carry no realm (#382): since the 20 Nov 2026 client update the realm name is hidden from addons,
+-- and the connected realms of one group share their auction houses anyway (the Horde AH of Realms 4, 6 and 8
+-- is one house: the same lowest price on 327 items, issue #382). A house is "H" (Horde AH), "A" (Alliance AH)
+-- or "N:<Zone>" (a neutral AH). Keys saved before that, "<realm>|H", "<realm>|A", "<realm>|N:<Zone>", are
+-- read as the same house: M.HouseKeyOf, and M.MigrateHouseKeys moves the data once.
+function M.HouseKeyOf(key)
+	if type(key) ~= "string" then
+		return nil
+	end
+	if key == "H" or key == "A" or key:match("^N:%w+$") then
+		return key
+	end
+	local rest = key:match("^.+|(H)$") or key:match("^.+|(A)$") or key:match("^.+|(N:%w+)$")
+	return rest
+end
+
+-- The record of a house made from its key (never from a file's text).
+local function HouseRecord(key)
+	local zone = key:match("^N:(%w+)$")
+	if zone then
+		return { kind = "neutral", label = NEUTRAL_LABELS[zone] or zone, cut = { samples = 0 } }
+	elseif key == "H" then
+		return { kind = "faction", faction = "Horde", label = "Horde AH" }
+	elseif key == "A" then
+		return { kind = "faction", faction = "Alliance", label = "Alliance AH" }
+	end
+end
+
 -- House the player is standing at: key and its record, or nil when it can't be told.
 function M.DetectHouse()
 	local faction = UnitFactionGroup("player")
-	local realm = GetRealmName()
 	local locale = GetLocale()
-	if not (realm and realm ~= "") or (faction ~= "Horde" and faction ~= "Alliance") then
+	if faction ~= "Horde" and faction ~= "Alliance" then
 		return nil
 	end
 	if locale ~= "enUS" and locale ~= "enGB" then
@@ -654,10 +681,8 @@ function M.DetectHouse()
 		return nil
 	end
 	local neutral = NEUTRAL_ZONES[subzone] or NEUTRAL_ZONES[zone]
-	if neutral then
-		return realm .. "|N:" .. neutral, { realm = realm, kind = "neutral", label = NEUTRAL_LABELS[neutral], cut = { samples = 0 } }
-	end
-	return realm .. "|" .. faction:sub(1, 1), { realm = realm, kind = "faction", faction = faction, label = faction .. " AH" }
+	local key = neutral and "N:" .. neutral or faction:sub(1, 1)
+	return key, HouseRecord(key)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -2628,21 +2653,17 @@ function M.ListingsLabel(itemKey)
 	return stack > 1 and "price levels" or "listings"
 end
 
--- The house a profit setting means for this character: key and label, nil when realm or faction
+-- The house a profit setting means for this character: key and label, nil when the faction
 -- can't be read. choice: "faction" (own faction house) | "BootyBay" | "Gadgetzan" | "Everlook".
 function M.HouseFor(choice)
-	local realm = GetRealmName()
-	if not (realm and realm ~= "") then
-		return nil
-	end
 	if NEUTRAL_LABELS[choice] then
-		return realm .. "|N:" .. choice, NEUTRAL_LABELS[choice], "neutral"
+		return "N:" .. choice, NEUTRAL_LABELS[choice], "neutral"
 	end
 	local faction = UnitFactionGroup("player")
 	if faction ~= "Horde" and faction ~= "Alliance" then
 		return nil
 	end
-	return realm .. "|" .. faction:sub(1, 1), faction .. " AH", "faction"
+	return faction:sub(1, 1), faction .. " AH", "faction"
 end
 
 function M.HouseLabel(houseKey)
@@ -2699,14 +2720,13 @@ function M.Quote(itemKey, house, basis)
 	return nil, current and "not listed" or M.NO_DATA
 end
 
--- Houses this character can use for an item: its own faction house and the neutral houses of its
--- realm, faction house first. Records of the other faction or another realm (alts) are left out.
+-- Houses this character can use for an item: its own faction house and the neutral houses, faction house
+-- first. Records of the other faction's house (alts) are left out.
 function M.UsableHouses(itemKey)
 	local own = M.HouseFor("faction")
-	local realm = GetRealmName()
 	local out = {}
 	for _, house in ipairs(M.Houses(itemKey)) do
-		if house.key == own or (realm and house.key:sub(1, #realm + 3) == realm .. "|N:") then
+		if house.key == own or house.key:sub(1, 2) == "N:" then
 			out[#out + 1] = house
 		end
 	end
@@ -3211,9 +3231,10 @@ local function MergeItem(job, key, perHouse)
 		job.bad = job.bad + 1
 		return
 	end
-	for houseKey, packed in pairs(perHouse) do
+	for fileKey, packed in pairs(perHouse) do
 		job.entries = job.entries + 1
-		if type(packed) == "string" and db.houses[houseKey] then
+		local houseKey = M.HouseKeyOf(fileKey) -- #382: a key with a realm is the realm-less house
+		if type(packed) == "string" and houseKey and db.houses[houseKey] then
 			local before = job.changed
 			local ok = pcall(MergeStored, job, itemKey, houseKey, packed)
 			if not ok then
@@ -3226,26 +3247,18 @@ local function MergeItem(job, key, perHouse)
 	end
 end
 
--- Houses are made from their key, not from the file's text: "<realm>|H", "|A" or "|N:<Name>".
+-- Houses are made from their key, not from the file's text: "H", "A" or "N:<Name>" (a file written before
+-- #382 may still carry "<realm>|H" and the like; the realm is dropped).
 local function MergeHouse(job, key, _)
-	local realm = type(key) == "string" and key:match("^(.+)|[HAN]") or nil
-	if not realm then
+	local house = M.HouseKeyOf(key)
+	if not house then
 		job.bad = job.bad + 1
 		return
 	end
-	if db.houses[key] then
+	if db.houses[house] then
 		return
 	end
-	local zone = key:match("^.+|N:(%w+)$")
-	if zone then
-		db.houses[key] = { realm = realm, kind = "neutral", label = NEUTRAL_LABELS[zone] or zone, cut = { samples = 0 } }
-	elseif key == realm .. "|H" or key == realm .. "|A" then
-		local faction = key == realm .. "|H" and "Horde" or "Alliance"
-		db.houses[key] = { realm = realm, kind = "faction", faction = faction, label = faction .. " AH" }
-	else
-		job.bad = job.bad + 1
-		return
-	end
+	db.houses[house] = HouseRecord(house)
 	job.changed = job.changed + 1
 end
 
@@ -3328,8 +3341,9 @@ end
 
 -- Scans of the other machine, merged by t and kept apart from the own ones (db.syncScans), last 30.
 -- An own scan that comes back (the site holds both machines' scans) is the same t and kind: not added.
-local function MergeScans(job, houseKey, scans)
-	if not (db.houses[houseKey] and type(scans) == "table") then
+local function MergeScans(job, fileKey, scans)
+	local houseKey = M.HouseKeyOf(fileKey)
+	if not (houseKey and db.houses[houseKey] and type(scans) == "table") then
 		job.bad = job.bad + 1
 		return
 	end
@@ -3619,7 +3633,7 @@ function M.UnescapeText(text)
 	end))
 end
 
--- Starts a delta: everything recorded at the houses of `realm` (by name) with a `last` newer than the
+-- Starts a delta: everything recorded at the houses (realm-less keys, #382; `realm` is unused) with a `last` newer than the
 -- house's `since` (house -> t; none: everything). Read it with M.DeltaNext. The scans are the own ones only
 -- (db.scans), so what a character sent comes back to none.
 function M.DeltaStart(since, realm)
@@ -3627,13 +3641,10 @@ function M.DeltaStart(since, realm)
 	if not db then
 		return state
 	end
-	local prefix = realm .. "|"
 	for houseKey, list in pairs(db.scans) do
-		if houseKey:sub(1, #prefix) == prefix then
-			for _, s in ipairs(list) do
-				if s.t > (state.since[houseKey] or 0) then
-					state.scans[#state.scans + 1] = { houseKey, s }
-				end
+		for _, s in ipairs(list) do
+			if s.t > (state.since[houseKey] or 0) then
+				state.scans[#state.scans + 1] = { houseKey, s }
 			end
 		end
 	end
@@ -3656,14 +3667,14 @@ function M.DeltaNext(state, maxEntries)
 		out[#out + 1] = ("s\t%s\t%d\t%s\t%d\t%d"):format(pair[1], s.t, s.kind, s.items or 0, s.lastOnly or 0)
 	end
 	state.scans = {}
-	local prefix, taken = state.realm .. "|", 0
+	local taken = 0
 	while state.at < #state.keys and taken < maxEntries do
 		state.at = state.at + 1
 		local key = state.keys[state.at]
 		local perItem = db.items[key]
 		local sent = false
 		for houseKey, stored in pairs(perItem or {}) do
-			local t = houseKey:sub(1, #prefix) == prefix and StoredLastT(stored) or nil
+			local t = StoredLastT(stored)
 			local since = state.since[houseKey] or 0
 			if t and t > since then
 				local ok, packed = pcall(DeltaPacked, stored, since)
@@ -3713,6 +3724,105 @@ function M.MergeIncoming(source, machine)
 end
 
 ----------------------------------------------------------------------------------------------------
+-- House keys without a realm (#382): data saved under "<realm>|H" and the like moves to "H", "A", "N:<Zone>".
+-- Connected realms share a house, so several old keys can land on one: per item the entry with the newer
+-- `last` wins; scans are merged by time (30 kept); a house record keeps the cut samples of the richer one.
+-- Runs once at load (db.houseKeysV = 2). The old keys are gone afterwards; the companion and the site read
+-- old keys the same way.
+----------------------------------------------------------------------------------------------------
+
+M.HOUSE_KEYS_VERSION = 2
+
+local function MergeScanLists(into, from)
+	local seen = {}
+	for _, s in ipairs(into) do
+		seen[s.t .. ":" .. tostring(s.kind)] = true
+	end
+	for _, s in ipairs(from) do
+		if not seen[s.t .. ":" .. tostring(s.kind)] then
+			into[#into + 1] = s
+		end
+	end
+	table.sort(into, function(a, b)
+		return (a.t or 0) < (b.t or 0)
+	end)
+	while #into > SCANS_KEPT do
+		table.remove(into, 1)
+	end
+end
+
+local function KeysOf(t)
+	local keys = {}
+	for key in pairs(t) do
+		keys[#keys + 1] = key
+	end
+	return keys
+end
+
+function M.MigrateHouseKeys()
+	if not db or db.houseKeysV == M.HOUSE_KEYS_VERSION then
+		return false
+	end
+	for _, field in ipairs({ "scans", "syncScans" }) do
+		local store = db[field]
+		for _, key in ipairs(KeysOf(store)) do
+			local house, list = M.HouseKeyOf(key), store[key]
+			if house and house ~= key then
+				store[key] = nil
+				store[house] = store[house] or {}
+				MergeScanLists(store[house], list)
+			end
+		end
+	end
+	for _, key in ipairs(KeysOf(db.houses)) do
+		local record = db.houses[key]
+		local house = M.HouseKeyOf(key)
+		if house and house ~= key then
+			db.houses[key] = nil
+			local mine = db.houses[house] or HouseRecord(house)
+			local theirs = type(record) == "table" and record.cut
+			if theirs and (not mine.cut or (theirs.samples or 0) > (mine.cut.samples or 0)) then
+				mine.cut = theirs
+			end
+			db.houses[house] = mine
+		elseif house and type(record) == "table" then
+			record.realm = nil
+		end
+	end
+	for _, perItem in pairs(db.items) do
+		local moved
+		for key in pairs(perItem) do
+			local house = M.HouseKeyOf(key)
+			if house and house ~= key then
+				moved = moved or {}
+				moved[#moved + 1] = key
+			end
+		end
+		for _, key in ipairs(moved or {}) do
+			local house = M.HouseKeyOf(key)
+			local stored = perItem[key]
+			perItem[key] = nil
+			local mine = perItem[house]
+			if mine == nil or (StoredLastT(stored) or 0) > (StoredLastT(mine) or 0) then
+				perItem[house] = stored
+			end
+		end
+	end
+	if db.ownScan and db.ownScan.house then
+		db.ownScan.house = M.HouseKeyOf(db.ownScan.house) or db.ownScan.house
+	end
+	local auctions = type(db.auctions) == "table" and db.auctions.chars
+	for _, c in pairs(auctions or {}) do
+		c.ownedHouse = M.HouseKeyOf(c.ownedHouse) or c.ownedHouse
+		for _, a in ipairs(c.list or {}) do
+			a.h = M.HouseKeyOf(a.h) or a.h
+		end
+	end
+	db.houseKeysV = M.HOUSE_KEYS_VERSION
+	return true
+end
+
+----------------------------------------------------------------------------------------------------
 -- Events
 ----------------------------------------------------------------------------------------------------
 
@@ -3741,6 +3851,7 @@ ns.Listen("DB_READY", function()
 	db.auctionator.house = M.AUCTIONATOR_HOUSE
 	db.auctionator.label = ns.AUCTIONATOR_LABEL or "Auctionator (house unknown)"
 	db.auctionator.items = db.auctionator.items or {}
+	pcall(M.MigrateHouseKeys)
 end)
 
 ns.Listen("RECIPES_CHANGED", M.RefreshScope)

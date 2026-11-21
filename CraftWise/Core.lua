@@ -165,6 +165,7 @@ local DB_DEFAULTS = {
 	watchGone = {}, -- [itemID] = Unix time it was unwatched (tombstones, 180 days; two-way sync, #244)
 	skillups = {}, -- [recipeID][skill] = { n, ups, d }: crafts recorded in game (issue #15)
 	crafted = { chars = {}, before = {} }, -- craft log per character, recipe and day; before = undated crafts counted in skillups (Crafts.lua, #205)
+	charRealms = {}, -- ["<name> <surname>"] = realm name this character had before the 20 Nov 2026 client update hid it (#382, ns.RealmName)
 	snapshots = {}, -- [ns.CharKey()] (= "<realm>-<name> <surname>", #77) = character snapshot for Claude (Snapshot.lua, issue #63)
 	fishing = {}, -- [ns.CharKey()] = { catches, opened, seen, findFish }, 90 days (Fishing.lua, issues #69, #86)
 	fishObjects = {}, -- [GameObject ID] = { name, t }: names the client gave for fishing loot sources (#86)
@@ -292,12 +293,103 @@ function ns.CharName()
 	return name, name, nil
 end
 
-function ns.CharKey()
+-- The realm of this character (#382). Since the 20 Nov 2026 client update no realm information reaches
+-- addons: GetRealmName(), GetNormalizedRealmName() and GetRealmID() all return ""/0, and UnitFullName gives
+-- name and surname only (Veli's /dump, issue #382). A character key still needs the realm it always had,
+-- so it is kept per character: ns.db.charRealms["<name> <surname>"] = realm name.
+--   1. a live non-empty GetRealmName() (a client that still tells it) is stored and wins;
+--   2. else the stored one: first read from the keys this character already has (snapshot, ledger,
+--      fishing, farm and craft log, auctions), only when they name exactly one realm;
+--   3. else one typed in on Settings (ns.SetCharRealm).
+-- Nothing else is used and nothing is guessed: nil means the realm is unknown and no key is built.
+-- House keys have no realm (Market.lua), so only character keys depend on this.
+local function Esc(text)
+	return (text:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"))
+end
+
+local function StoredRealm(full)
+	local tail = "%-" .. Esc(full) .. "$"
+	local found, count = nil, 0
+	local function See(realm)
+		if type(realm) == "string" and realm ~= "" and realm ~= found then
+			found = realm
+			count = count + 1
+		end
+	end
+	local function Keys(store)
+		for key in pairs(type(store) == "table" and store or {}) do
+			if type(key) == "string" then
+				local realm = key:match("^(.+)" .. tail)
+				if realm then
+					See(realm)
+				end
+			end
+		end
+	end
+	local db = ns.db
+	if db then
+		Keys(db.snapshots)
+		Keys(db.fishing)
+		Keys(db.farmLog)
+		Keys(db.crafted and db.crafted.chars)
+	end
+	local market = CraftWiseMarketDB
+	if type(market) == "table" then
+		Keys(market.ledger and market.ledger.chars)
+		Keys(market.auctions and market.auctions.chars)
+	end
+	return count == 1 and found or nil
+end
+
+local noStoredRealm = {} -- full name -> true: the keys held no single realm this session (not scanned again on every call)
+
+function ns.RealmName()
+	local live = GetRealmName and NameText(GetRealmName())
 	local full = ns.CharName()
-	if not full then
+	local db = ns.db
+	if live then
+		if db and full then
+			db.charRealms = type(db.charRealms) == "table" and db.charRealms or {}
+			db.charRealms[full] = live
+		end
+		return live
+	end
+	if not (db and full) then
 		return nil
 	end
-	return (GetRealmName and NameText(GetRealmName()) or "") .. "-" .. full
+	db.charRealms = type(db.charRealms) == "table" and db.charRealms or {}
+	local stored = NameText(db.charRealms[full])
+	if not stored and not noStoredRealm[full] then
+		stored = StoredRealm(full)
+		db.charRealms[full] = stored
+		noStoredRealm[full] = stored == nil or nil
+	end
+	return stored
+end
+
+-- A realm typed in on Settings for this character. Returns true when it was taken.
+function ns.SetCharRealm(text)
+	local full = ns.CharName()
+	text = type(text) == "string" and text:match("^%s*(.-)%s*$") or ""
+	if not (ns.db and full) or text == "" or #text > 64 or text:find("|", 1, true) then
+		return false
+	end
+	ns.db.charRealms = type(ns.db.charRealms) == "table" and ns.db.charRealms or {}
+	ns.db.charRealms[full] = text
+	noStoredRealm[full] = nil
+	ns.RepairEmptyRealm()
+	ns.Notify("REALM_CHANGED")
+	return true
+end
+
+-- nil while the name or the realm is unknown: writers wait, never write under "-<name>".
+function ns.CharKey()
+	local full = ns.CharName()
+	local realm = full and ns.RealmName()
+	if not realm then
+		return nil
+	end
+	return realm .. "-" .. full
 end
 
 -- Before #77 the key was "<realm>-<name>" without the surname, so characters with the same first name
@@ -359,7 +451,11 @@ function ns.MigrateCharKey()
 		migration = "none" -- the key has no surname, nothing changed
 		return migration
 	end
-	local oldKey = (GetRealmName and NameText(GetRealmName()) or "") .. "-" .. first
+	local realm = ns.RealmName()
+	if not realm then
+		return "pending"
+	end
+	local oldKey = realm .. "-" .. first
 	local newKey = ns.CharKey()
 	local snapshots, fishing, ledger = ns.db.snapshots or {}, ns.db.fishing or {}, LedgerStore()
 	local inLedger = ledger and ledger.chars[oldKey] ~= nil
@@ -446,6 +542,157 @@ function ns.MigrateCharKey()
 	migration = "legacy"
 	return migration
 end
+
+-- Repair (#382): what was written under "-<name>" (empty realm) while the client did not know the realm
+-- moves into the logged-in character's real key. Only the logged-in character's own empty key, never
+-- another name. Snapshot: newest wins. Ledger, crafts, fishing, farm and auctions merge, flips and ledger
+-- entries are re-keyed. Returns the list of what moved, nil when there was nothing.
+local function SumInto(into, from)
+	for k, v in pairs(from) do
+		if type(v) == "number" and type(into[k]) == "number" then
+			into[k] = into[k] + v
+		elseif into[k] == nil then
+			into[k] = v
+		end
+	end
+end
+
+function ns.RepairEmptyRealm()
+	local newKey = ns.db and ns.CharKey()
+	local full = newKey and ns.CharName()
+	if not newKey then
+		return nil
+	end
+	local oldKey = "-" .. full
+	local moved = {}
+	local db = ns.db
+	local snaps = db.snapshots
+	if snaps and snaps[oldKey] then
+		local snap = snaps[oldKey]
+		snaps[oldKey] = nil
+		if type(snap.char) == "table" and (snap.char.realm == nil or snap.char.realm == "") then
+			snap.char.realm = ns.RealmName()
+		end
+		if not snaps[newKey] or (snaps[newKey].t or 0) < (snap.t or 0) then
+			snaps[newKey] = snap
+		end
+		moved[#moved + 1] = "snapshot"
+	end
+	local fishing = db.fishing
+	if fishing and fishing[oldKey] then
+		local log = fishing[oldKey]
+		fishing[oldKey] = nil
+		local into = fishing[newKey]
+		if into then
+			into.catches, into.opened, into.seen = into.catches or {}, into.opened or {}, into.seen or {}
+			AppendList(into.catches, log.catches)
+			AppendList(into.opened, log.opened)
+			AppendList(into.seen, log.seen)
+		else
+			fishing[newKey] = log
+		end
+		moved[#moved + 1] = "fishing log"
+	end
+	local farm = db.farmLog
+	if farm and farm[oldKey] then
+		local log = farm[oldKey]
+		farm[oldKey] = nil
+		local into = farm[newKey]
+		if into then
+			into.history = into.history or {}
+			for _, h in ipairs(log.history or {}) do
+				into.history[#into.history + 1] = h
+			end
+			table.sort(into.history, function(a, b) return (a.t or a.start or 0) > (b.t or b.start or 0) end)
+			into.current = into.current or log.current
+		else
+			farm[newKey] = log
+		end
+		moved[#moved + 1] = "farm log"
+	end
+	local crafted = db.crafted and db.crafted.chars
+	if crafted and crafted[oldKey] then
+		local log = crafted[oldKey]
+		crafted[oldKey] = nil
+		local into = crafted[newKey]
+		if into then
+			for recipeID, rec in pairs(log) do
+				local mine = into[recipeID]
+				if not mine then
+					into[recipeID] = rec
+				else
+					mine.days = mine.days or {}
+					for day, d in pairs(rec.days or {}) do
+						if mine.days[day] then
+							SumInto(mine.days[day], d)
+						else
+							mine.days[day] = d
+						end
+					end
+					if rec.earlier then
+						mine.earlier = mine.earlier or {}
+						SumInto(mine.earlier, rec.earlier)
+					end
+					mine.speed = mine.speed or rec.speed
+				end
+			end
+		else
+			crafted[newKey] = log
+		end
+		moved[#moved + 1] = "craft log"
+	end
+	local market = CraftWiseMarketDB
+	if type(market) == "table" then
+		local ledger = LedgerStore()
+		if ledger then
+			local c = ledger.chars[oldKey]
+			ledger.chars[oldKey] = nil
+			local any = c ~= nil
+			if c then
+				if ledger.chars[newKey] then
+					MergeLedgerChar(ledger.chars[newKey], c)
+				else
+					ledger.chars[newKey] = c
+				end
+			end
+			for _, e in ipairs(ledger.entries) do
+				if e.c == oldKey then
+					e.c = newKey
+					any = true
+				end
+			end
+			if any then
+				moved[#moved + 1] = "ledger"
+			end
+		end
+		local auctions = type(market.auctions) == "table" and market.auctions.chars
+		if auctions and auctions[oldKey] then
+			local c = auctions[oldKey]
+			auctions[oldKey] = nil
+			local into = auctions[newKey]
+			if not into or (into.ownedAt or 0) < (c.ownedAt or 0) then
+				auctions[newKey] = c
+			end
+			moved[#moved + 1] = "auctions"
+		end
+		local flips = type(market.flips) == "table" and market.flips.rows
+		local flipsMoved
+		for _, r in ipairs(flips or {}) do
+			if r.c == oldKey then
+				r.c, flipsMoved = newKey, true
+			end
+		end
+		if flipsMoved then
+			moved[#moved + 1] = "flips"
+		end
+	end
+	if #moved == 0 then
+		return nil
+	end
+	ns.Print(("%s saved while the game did not know the realm moved to %s."):format(table.concat(moved, ", "), newKey))
+	return moved
+end
+
 
 ----------------------------------------------------------------------------------------------------
 -- Player values as last seen in the world (#123). During PLAYER_LOGOUT (logout, /reload, quit) the
@@ -535,9 +782,11 @@ end)
 
 ns.On("PLAYER_LOGIN", function()
 	ns.MigrateCharKey()
+	ns.RepairEmptyRealm()
 end)
 ns.On("PLAYER_ENTERING_WORLD", function()
 	ns.MigrateCharKey()
+	ns.RepairEmptyRealm()
 end)
 
 ----------------------------------------------------------------------------------------------------

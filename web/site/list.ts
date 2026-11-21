@@ -1,5 +1,6 @@
 // Item list (/): category tree, search, filters, sortable table, favourites (#97), crafting profit of recipe
 // items (#143).
+import { houseName } from "./lib/house";
 import { itemName, loadItemNames } from "./lib/itemnames";
 import { type Browse, type BrowseItem, type Categories, type House, get } from "./lib/api";
 import { mainHouse } from "./lib/housesel";
@@ -410,7 +411,7 @@ async function load(): Promise<void> {
 			if (!house) throw new Error("no house");
 			subline.textContent = `WoW: Forever, ${house.label}`;
 			clear(statusSlot, statusBar(house), h("span", { class: "hint" }, "Prices are marked stale after 24 h"));
-			clear(footnote, `Prices come from CraftWise scans of the ${house.label} on ${(house.realms ?? [house.realm]).join(" / ")}. Item icons are placeholders.`);
+			clear(footnote, `Prices come from CraftWise scans of the ${houseName(house)}. Item icons are placeholders.`);
 		}
 		if (!cats) {
 			cats = await get<Categories>(`/api/categories?house=${encodeURIComponent(house.key)}`);

@@ -13,8 +13,8 @@ import (
 // items 9001-9009 on "Stub Realm" (see the scenario there). The values below come from that run.
 const (
 	fixture = "testdata/CraftWise.lua"
-	horde   = "Stub Realm|H"
-	booty   = "Stub Realm|N:BootyBay"
+	horde   = "H"
+	booty   = "N:BootyBay"
 	charKey = "Stub Realm-Veli Tanner"
 )
 
@@ -43,7 +43,7 @@ func TestMarketHousesScansNames(t *testing.T) {
 		t.Fatalf("v %v prunedAt %v", m.V, m.PrunedAt)
 	}
 	h := m.Houses[horde]
-	if h.Kind != "faction" || h.Faction != "Horde" || h.Label != "Horde AH" || h.Realm != "Stub Realm" {
+	if h.Kind != "faction" || h.Faction != "Horde" || h.Label != "Horde AH" || h.Realm != "" {
 		t.Fatalf("horde house %+v", h)
 	}
 	b := m.Houses[booty]
@@ -292,7 +292,7 @@ func TestJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"9005:1234":{"Stub Realm|H":`, `"itemInfo":{"9001":{"q":1,"i":100001,"c":7,"s":5,`, `"snapshots":{"Stub Realm-Veli Tanner":`} {
+	for _, want := range []string{`"9005:1234":{"H":`, `"itemInfo":{"9001":{"q":1,"i":100001,"c":7,"s":5,`, `"snapshots":{"Stub Realm-Veli Tanner":`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("JSON lacks %s", want)
 		}
@@ -304,13 +304,13 @@ func TestProblemsKeepTheRest(t *testing.T) {
 	src := `
 CraftWiseMarketDB = {
 	["v"] = 1,
-	["houses"] = { ["R|H"] = { ["label"] = 5, ["kind"] = "faction" } },
+	["houses"] = { ["H"] = { ["label"] = 5, ["kind"] = "faction" } },
 	["items"] = {
-		[1] = { ["R|H"] = "not|a|valid|entry" },
-		[2] = { ["R|H"] = "1,2,3,4||" },
-		["x:y"] = { ["R|H"] = "1,2,3,4||" },
-		[3] = { ["R|H"] = { ["last"] = { ["t"] = 1, ["min"] = 2 }, ["raw"] = { { ["t"] = 5, ["tiers"] = { 10, 2, 20 } } } } },
-		[4] = { ["R|H"] = { ["last"] = { ["t"] = 1 }, ["raw"] = { { ["t"] = 5, ["total"] = 3, ["tiers"] = { 10, 2, 20, 1 } } }, ["days"] = { [20000] = { ["lo"] = 10 } } } },
+		[1] = { ["H"] = "not|a|valid|entry" },
+		[2] = { ["H"] = "1,2,3,4||" },
+		["x:y"] = { ["H"] = "1,2,3,4||" },
+		[3] = { ["H"] = { ["last"] = { ["t"] = 1, ["min"] = 2 }, ["raw"] = { { ["t"] = 5, ["tiers"] = { 10, 2, 20 } } } } },
+		[4] = { ["H"] = { ["last"] = { ["t"] = 1 }, ["raw"] = { { ["t"] = 5, ["total"] = 3, ["tiers"] = { 10, 2, 20, 1 } } }, ["days"] = { [20000] = { ["lo"] = 10 } } } },
 	},
 	["itemInfo"] = { [1] = "1,,,,", [2] = "bad", [3] = "1,,,,,5" },
 	["auctionator"] = { ["items"] = { [1] = "a,b,c", [2] = "a,b" } },
@@ -329,21 +329,21 @@ CraftWiseDB = { ["snapshots"] = { ["R-A B"] = { ["char"] = { ["level"] = "x", ["
 	want := []string{
 		`CraftWiseDB.snapshots["R-A B"].char.level: want number, got string`,
 		`CraftWiseMarketDB.auctionator.items[2]: malformed market entry: auctionator price "a,b": want 3 fields`,
-		`CraftWiseMarketDB.houses["R|H"].label: want string, got number`,
+		`CraftWiseMarketDB.houses["H"].label: want string, got number`,
 		`CraftWiseMarketDB.itemInfo[2]: malformed market entry: item info "bad": want 5 or 6 fields`,
 		`CraftWiseMarketDB.items["x:y"]: item key "x:y" is not an item ID`,
-		`CraftWiseMarketDB.items[1]["R|H"]: malformed market entry: want 3 parts separated by '|', got 4`,
-		`CraftWiseMarketDB.items[3]["R|H"].raw[1].tiers: odd number of values`,
+		`CraftWiseMarketDB.items[1]["H"]: malformed market entry: want 3 parts separated by '|', got 4`,
+		`CraftWiseMarketDB.items[3]["H"].raw[1].tiers: odd number of values`,
 		`CraftWiseMarketDB.ledger.entries[1].t: want an integer, got 1.5`,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("problems:\n%s", strings.Join(got, "\n"))
 	}
 	m := f.Market
-	if m.Houses["R|H"].Kind != "faction" || len(m.Items) != 2 || i64(m.Items[market.ItemKey{ItemID: 2}]["R|H"].Last.Listings) != 4 {
+	if m.Houses["H"].Kind != "faction" || len(m.Items) != 2 || i64(m.Items[market.ItemKey{ItemID: 2}]["H"].Last.Listings) != 4 {
 		t.Fatalf("market %+v", m)
 	}
-	table := m.Items[market.ItemKey{ItemID: 4}]["R|H"]
+	table := m.Items[market.ItemKey{ItemID: 4}]["H"]
 	if len(table.Raw) != 1 || table.Raw[0].Tiers[1] != (market.Tier{Price: 20, Qty: 1}) || i64(table.Days[20000].Lo) != 10 {
 		t.Fatalf("table entry %+v", table)
 	}

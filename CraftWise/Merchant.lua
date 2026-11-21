@@ -349,7 +349,7 @@ function M.Record()
 		m.faction, m.standing = nil, nil
 	end
 	m.reaction = UnitReaction and Number(UnitReaction("npc", "player")) or nil
-	m.realm = Text(GetRealmName and GetRealmName())
+	m.realm = ns.RealmName()
 	local key = CharKey()
 	m.char = key or m.char
 	local filter = GetMerchantFilter and Number(GetMerchantFilter()) or nil
@@ -792,7 +792,7 @@ end
 function M.CharDisplay(key)
 	local name = key:match("([^-]+)$") or key
 	local realm = key:sub(1, #key - #name - 1)
-	if realm == "" or realm == (Text(GetRealmName and GetRealmName()) or "") then
+	if realm == "" or realm == (ns.RealmName() or "") then
 		return name
 	end
 	return name .. "-" .. realm

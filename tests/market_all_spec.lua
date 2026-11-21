@@ -1,7 +1,7 @@
 -- Issue #90: every item of a full scan (last only outside the scope), Auctionator fallback export.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 
 local function Market(opts)
 	local ns, stub = LoadAddon(opts)

@@ -3,7 +3,7 @@
 local Make = dofile("tests/make_helpers.lua")
 local NOW = 1794000000
 local DAY = 86400
-local HORDE = "PvP|H"
+local HORDE = "H"
 local LEATHER, SCRAPS, THREAD, CURED, HIDE, SALT, PANTS = 2318, 2934, 2321, 4231, 783, 4289, 7282
 -- Light Leather Pants (9068): 10 Light Leather, 1 Fine Thread, 1 Cured Light Hide (bundled DB2 data).
 local PANTS_REAGENTS = { { itemID = LEATHER, quantity = 10 }, { itemID = THREAD, quantity = 1 }, { itemID = CURED, quantity = 1 } }

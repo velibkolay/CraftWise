@@ -45,7 +45,7 @@ it("Settings: the gear opens the page; the groups of the spec in its order; the 
 	eq(M.shown.page, "settings"); eq(M.shown.state, "custom")
 	local labels = {}
 	for _, g in ipairs(M.Settings.Groups()) do labels[#labels + 1] = g.label end
-	eq(table.concat(labels, ","), "Look,Prices,Tooltips,Bags and loot,Loot toast,Class trainer,Sale alert,Vendor loops,AH to vendor flips,Buying at the AH,Disenchant,Farm tracker,Fishing,AH rule,Interface,Snapshot,Linked characters,Other machine,Debug")
+	eq(table.concat(labels, ","), "Look,Prices,Tooltips,Bags and loot,Loot toast,Class trainer,Sale alert,Vendor loops,AH to vendor flips,Buying at the AH,Disenchant,Farm tracker,Fishing,AH rule,Interface,Snapshot,Linked characters,Realm,Other machine,Debug")
 	local body = M.SlotsOf("settings").body
 	eq(body.nav.width, 170)
 	local C = ns.Style.C
@@ -122,8 +122,8 @@ it("Settings › Prices: basis, house (only with data), reagent cost per view", 
 	eq(ns.db.settings.priceHouse, "faction")
 	assert(row("house").sub.text:find("No data yet:", 1, true) and row("house").sub.text:find("Booty Bay", 1, true), row("house").sub.text)
 	eq(row("house").holder.control.buttons[2].alpha, 0.4)
-	CraftWiseMarketDB.scans["PvP|N:BootyBay"] = { { t = NOW, kind = "full", items = 1 } }
-	CraftWiseMarketDB.houses["PvP|N:BootyBay"] = { realm = "PvP", kind = "neutral", label = "Booty Bay" }
+	CraftWiseMarketDB.scans["N:BootyBay"] = { { t = NOW, kind = "full", items = 1 } }
+	CraftWiseMarketDB.houses["N:BootyBay"] = { kind = "neutral", label = "Booty Bay" }
 	Seg(row("house"), 2)
 	eq(ns.db.settings.priceHouse, "BootyBay")
 	for i, view in ipairs(ns.COST_BASIS_VIEWS) do
@@ -236,16 +236,29 @@ it("Settings › AH rule: percent and copper steps, the example, Defaults (the o
 	eq(ns.db.settings.ahMinPercent, 20); eq(ns.db.settings.ahMinCopper, 10)
 end)
 
-it("Settings › Linked characters (#356): the status, Add a character and Sync now", function()
+it("Settings › Linked characters: the live link is off since the realm change, the line says so (#382)", function()
 	local ns, stub = LoadAddon()
-	ns.Link.Add("Kitchenchant")
+	eq(ns.Link.ENABLED, false)
 	local g = ns.Main.Settings.Group("link")
 	local keys = {}
 	for _, row in ipairs(g.rows) do keys[#keys + 1] = row.key end
-	eq(table.concat(keys, ","), "about,buttons,status,remove")
-	assert(g.rows[3].text():find("Velikopter Kitchenchant", 1, true) or g.rows[3].text():find("Kitchenchant", 1, true), g.rows[3].text())
-	eq(g.rows[2].buttons[1].text, "Add a character")
-	eq(g.rows[2].buttons[2].text, "Sync now")
+	eq(table.concat(keys, ","), "off")
+	local text = g.rows[1].text()
+	assert(text:find("off since the 20 Nov realm change", 1, true) and text:find("companion", 1, true), text)
+end)
+
+it("Settings › Realm (#382): shows the realm of the character, or says it is unknown; Set realm takes a typed one", function()
+	local ns, stub = LoadAddon()
+	stub.names.player, stub.surnames.player, stub.realm = "Velikopter", "Tanner", ""
+	local g = ns.Main.Settings.Group("realm")
+	local text = g.rows[2].text()
+	assert(text:find("unknown", 1, true), text)
+	eq(g.rows[3].buttons[1].text, "Set realm")
+	eq(ns.SetCharRealm("   "), false)
+	eq(ns.SetCharRealm("Some|Realm"), false)
+	eq(ns.SetCharRealm(" CAMWOW EU4 Realm 8 PvP "), true)
+	eq(g.rows[2].text(), "CAMWOW EU4 Realm 8 PvP")
+	eq(ns.CharKey(), "CAMWOW EU4 Realm 8 PvP-Velikopter Tanner")
 end)
 
 it("Settings › Snapshot: Save, Reload UI, when it was saved and what it holds", function()

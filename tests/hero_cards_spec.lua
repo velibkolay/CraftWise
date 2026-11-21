@@ -144,9 +144,9 @@ it("auction totals: reads the tracker's own summary", function()
 	eq(none, nil); assert(why, "a reason")
 	local list = ns.Auctions.List()
 	assert(list, "tracker has a list for the character")
-	list[#list + 1] = { i = 1, q = 2, unit = 100, st = "active", h = "PvP|H" }
-	list[#list + 1] = { i = 1, q = 1, st = "active", h = "PvP|H" } -- no buyout
-	list[#list + 1] = { i = 1, q = 5, st = "expired", h = "PvP|H" }
+	list[#list + 1] = { i = 1, q = 2, unit = 100, st = "active", h = "H" }
+	list[#list + 1] = { i = 1, q = 1, st = "active", h = "H" } -- no buyout
+	list[#list + 1] = { i = 1, q = 5, st = "expired", h = "H" }
 	local t = ns.HeroCards.AuctionTotals()
 	eq(t.ifAllSell.count, 2); eq(t.ifAllSell.noBuyout, 1); eq(t.returning.units, 5)
 	eq(t.ifAllSell.copper, 190, "200 less the 5% cut")

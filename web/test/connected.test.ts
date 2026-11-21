@@ -115,44 +115,45 @@ describe("grouping at read time", () => {
 		});
 	}
 
-	it("shows one Horde house, one Alliance house and one Gadgetzan for the proved realms; Realm 6 stays separate", async () => {
+	it("shows one Horde house, one Alliance house and one Gadgetzan for every realm: the realm is not part of a house (#382)", async () => {
 		await setup();
 		const hs = await getHouses();
 		const labelled = (kind: string, faction: string | null) => hs.filter((h) => h.kind === kind && h.faction === faction);
 		const horde4 = hs.find((h) => h.keys.includes(horde(R4)))!;
-		expect(horde4.keys).toEqual([horde(R4), horde(R8)]);
-		expect(horde4.realms).toEqual([R4, R8]);
-		expect(horde4.label).toBe("Realm 4 / Realm 8 (connected) · Horde AH");
+		expect(horde4.keys).toEqual([horde(R4), horde(R6), horde(R8)]);
+		expect(horde4.realms).toEqual([R4, R6, R8]);
+		expect(horde4.label).toBe("Horde AH");
 		expect(horde4.key).toBe(horde(R4));
 		expect(horde4.lastScan).toBe(t0 - 50); // the newest scan of its members
-		expect(labelled("faction", "Horde")).toHaveLength(2); // R4+R8 and R6
-		expect(labelled("faction", "Alliance")).toHaveLength(2); // opposite factions never merged into those
-		expect(labelled("neutral", null)).toHaveLength(2); // one Gadgetzan for R4+R8, one for R6
+		expect(labelled("faction", "Horde")).toHaveLength(1);
+		expect(labelled("faction", "Alliance")).toHaveLength(1); // opposite factions never merged into the Horde one
+		expect(labelled("neutral", null)).toHaveLength(1);
 		const g = hs.find((h) => h.keys.includes(gadget(R8)))!;
-		expect(g.keys).toEqual([gadget(R4), gadget(R8)]);
-		const six = hs.filter((h) => h.realm === R6);
-		expect(six).toHaveLength(3);
-		for (const h of six) {
-			expect(h.keys).toHaveLength(1);
-			expect(h.realms).toEqual([R6]);
-			expect(h.label).not.toContain("connected");
-		}
+		expect(g.keys).toEqual([gadget(R4), gadget(R6), gadget(R8)]);
 		// a Horde house is never in a group with an Alliance one
 		for (const h of hs) expect(new Set(h.keys.map((k) => k.split("|")[1]![0])).size).toBe(1);
 	});
 
-	it("without a pair nothing is grouped", async () => {
-		await send(token, { realms: [R4, R8] }, {});
+	it("an upload without a realm in the key is the same house, and its key stands for the group", async () => {
+		await setup();
+		const b = body({ houses: { H: { kind: "faction", faction: "Horde", label: "Horde AH" } }, scans: [{ house: "H", t: t0 - 10, kind: "full", items: 1, lastOnly: 0, source: "ui" }] });
+		expect((await call("POST", "/api/upload", { body: b, headers: bearer(token) })).status).toBe(200);
 		const hs = await getHouses();
-		expect(hs).toHaveLength(4);
-		for (const h of hs) expect(h.keys).toHaveLength(1);
+		const h = hs.find((x) => x.keys.includes("H"))!;
+		expect(h.key).toBe("H");
+		expect(h.keys).toEqual(["H", horde(R4), horde(R6), horde(R8)].sort());
+		expect(h.realms).toEqual([R4, R6, R8]); // the realm-less row has none
+		expect(h.lastScan).toBe(t0 - 10);
+		expect(hs.filter((x) => x.faction === "Horde")).toHaveLength(1);
+		const bad = body({ houses: { H: { realm: "Some Realm", kind: "faction", faction: "Horde", label: "Horde AH" } } });
+		expect((await call("POST", "/api/upload", { body: bad, headers: bearer(token) })).status).toBe(400);
 	});
 
-	it("deleting the pair undoes the grouping, the stored rows were never touched", async () => {
+	it("deleting the pairs changes nothing, the stored rows were never touched", async () => {
 		await setup();
+		const before = JSON.stringify(await getHouses());
 		await env.DB.prepare("DELETE FROM connected").run();
-		const hs = await getHouses();
-		expect(hs.every((h) => h.keys.length === 1)).toBe(true);
+		expect(JSON.stringify(await getHouses())).toBe(before);
 		expect((await env.DB.prepare("SELECT count(*) AS n FROM houses").first<{ n: number }>())!.n).toBe(9);
 	});
 
@@ -193,7 +194,7 @@ describe("read-time merge", () => {
 		const horde = res.markets.filter((m) => m.label.includes("Horde AH"));
 		expect(horde).toHaveLength(1);
 		expect(horde[0]!.house).toBe(`${R4}|H`);
-		expect(horde[0]!.label).toBe("Realm 4 / Realm 8 (connected) · Horde AH");
+		expect(horde[0]!.label).toBe("Horde AH");
 		expect(horde[0]!.current.min).toBe(150); // R8's, 60 s old, over R4's, 1 h old
 		// day -2: R4 n=1, R8 n=3 -> R8; day -3 only R4; day -1 only R8
 		expect(horde[0]!.days.filter((d) => d.typ !== null).map((d) => [today - d.day, d.typ, d.n])).toEqual([[3, 90, 4], [2, 99, 3], [1, 101, 2]]);
@@ -245,12 +246,11 @@ describe("read-time merge", () => {
 			up: { item: number; min: number; typical: number; typicalDays: number }[];
 		};
 		expect(m.up).toEqual([expect.objectContaining({ item: 2589, min: 200, typical: 100, typicalDays: 4 })]);
-		// Realm 8 alone, without the pair, has two days: too little history
+		// no pair is needed (#382): the same without the table
 		await env.DB.prepare("DELETE FROM connected").run();
 		await env.DB.prepare("DELETE FROM cache").run();
-		const alone = (await (await call("GET", `/api/movers?house=${encodeURIComponent(horde(R8))}`)).json()) as { up: unknown[]; down: unknown[] };
-		expect(alone.up).toEqual([]);
-		expect(alone.down).toEqual([]);
+		const again = (await (await call("GET", `/api/movers?house=${encodeURIComponent(horde(R8))}`)).json()) as typeof m;
+		expect(again.up).toEqual(m.up);
 	});
 });
 
@@ -274,7 +274,7 @@ describe("the sync download keeps house keys as uploaded", () => {
 describe("groupHouses (pure)", () => {
 	let id = 0;
 	const row = (key: string): HouseRow => {
-		const [realm, slot] = key.split("|") as [string, string];
+		const [realm, slot] = (key.includes("|") ? key.split("|") : ["", key]) as [string, string];
 		return {
 			id: ++id,
 			key,
@@ -288,27 +288,23 @@ describe("groupHouses (pure)", () => {
 		};
 	};
 
-	it("joins by pairs, transitively, by faction and by zone", () => {
-		const rows = ["A|H", "A|A", "A|N:Gadgetzan", "B|H", "B|A", "B|N:BootyBay", "B|N:Gadgetzan", "C|H", "D|H"].map(row);
-		const groups = groupHouses(rows, [{ a: "A", b: "B" }, { a: "B", b: "C" }]);
+	it("joins by slot, whatever the realm: faction with the same faction, neutral with the same zone", () => {
+		const rows = ["A|H", "A|A", "A|N:Gadgetzan", "B|H", "B|A", "B|N:BootyBay", "B|N:Gadgetzan", "C|H", "D|H", "H"].map(row);
+		const groups = groupHouses(rows);
 		const keysets = groups.map((g) => g.keys.join(" "));
-		expect(keysets).toContain("A|H B|H C|H");
+		expect(keysets).toContain("A|H B|H C|H D|H H");
 		expect(keysets).toContain("A|A B|A");
 		expect(keysets).toContain("A|N:Gadgetzan B|N:Gadgetzan");
 		expect(keysets).toContain("B|N:BootyBay");
-		expect(keysets).toContain("D|H"); // no proof
-		expect(groups).toHaveLength(5);
+		expect(groups).toHaveLength(4);
+		expect(groups.find((g) => g.keys.includes("H"))!.house.key).toBe("H"); // the realm-less row stands for it
 	});
 
-	it("a pair for a realm without houses changes nothing", () => {
-		const groups = groupHouses([row("X|H")], [{ a: "X", b: "Nowhere" }]);
-		expect(groups).toHaveLength(1);
-		expect(groups[0]!.house.label).toBe("Horde AH");
-	});
-
-	it("realm names without a number are shown whole", () => {
-		const g = groupHouses([row("Alpha|H"), row("Beta|H")], [{ a: "Alpha", b: "Beta" }])[0]!;
-		expect(g.house.label).toBe("Alpha / Beta (connected) · Horde AH");
+	it("without a realm-less row the key that sorts first stands for the group; the label stays plain", () => {
+		const g = groupHouses([row("Beta|H"), row("Alpha|H")])[0]!;
+		expect(g.house.key).toBe("Alpha|H");
+		expect(g.house.label).toBe("Horde AH");
+		expect(g.realms).toEqual(["Alpha", "Beta"]);
 	});
 });
 

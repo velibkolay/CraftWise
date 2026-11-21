@@ -2,7 +2,7 @@
 -- CraftWiseMarketDB. Entries in the packed format, invented data only.
 local NOW = 1794000000
 local DAY = 86400
-local HORDE, BOOTY = "PvP|H", "PvP|N:BootyBay"
+local HORDE, BOOTY = "H", "N:BootyBay"
 local TODAY = math.floor(NOW / DAY)
 
 local function Market(opts)
@@ -288,7 +288,7 @@ it("#241: malformed entries are skipped, not a Lua error, and the good ones stil
 		["junk"] = { [HORDE] = good },
 		["12:x"] = { [HORDE] = good },
 		[0] = { [HORDE] = good },
-		[108] = { ["Nowhere|H"] = good },
+		[108] = { ["Nowhere|X"] = good },
 		[109] = { [HORDE] = (good:gsub("|.*", "|1,2,3|")) }, -- a point with an odd tier list
 	}
 	items[100]["not a house"] = good

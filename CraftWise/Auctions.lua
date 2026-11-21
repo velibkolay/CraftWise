@@ -208,7 +208,7 @@ function A.DurationHours(index)
 end
 
 local function HouseKind(house)
-	return house and (house:find("|N:", 1, true) and "neutral" or "faction") or nil
+	return house and ((house:sub(1, 2) == "N:" or house:find("|N:", 1, true)) and "neutral" or "faction") or nil
 end
 
 -- Cut at a house: rate (nil = unverified) and ns.CutInfo's info (text, source).

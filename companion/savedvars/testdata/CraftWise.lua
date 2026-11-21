@@ -8,7 +8,7 @@ CraftWiseDB = {
 ["deposit"] = 60,
 ["durText"] = "24 Hours",
 ["expires"] = 1794003720,
-["house"] = "Stub Realm|H",
+["house"] = "H",
 ["houseLabel"] = "Horde AH",
 ["id"] = 7001,
 ["item"] = 9002,
@@ -38,7 +38,7 @@ CraftWiseDB = {
 ["expected"] = 5225,
 ["expectedNote"] = "5% cut (confirmed)",
 ["expires"] = 1793960520,
-["house"] = "Stub Realm|H",
+["house"] = "H",
 ["houseLabel"] = "Horde AH",
 ["id"] = 7002,
 ["item"] = 9004,
@@ -400,7 +400,7 @@ CraftWiseDB = {
 ["label"] = "Auctionator (house unknown)",
 },
 ["houses"] = {
-["Stub Realm|H"] = {
+["H"] = {
 ["items"] = 8,
 ["kind"] = "faction",
 ["label"] = "Horde AH",
@@ -411,7 +411,7 @@ CraftWiseDB = {
 ["lastRecorded"] = 1794005520,
 ["withHistory"] = 3,
 },
-["Stub Realm|N:BootyBay"] = {
+["N:BootyBay"] = {
 ["items"] = 3,
 ["kind"] = "neutral",
 ["label"] = "Booty Bay",
@@ -551,7 +551,7 @@ CraftWiseMarketDB = {
 ["dur"] = 2,
 ["durText"] = "24 Hours",
 ["exp"] = 1794003720,
-["h"] = "Stub Realm|H",
+["h"] = "H",
 ["i"] = 9002,
 ["id"] = 7001,
 ["kind"] = "commodity",
@@ -567,7 +567,7 @@ CraftWiseMarketDB = {
 ["dur"] = 1,
 ["durText"] = "12 Hours",
 ["exp"] = 1793960520,
-["h"] = "Stub Realm|H",
+["h"] = "H",
 ["i"] = 9004,
 ["id"] = 7002,
 ["kind"] = "item",
@@ -600,19 +600,17 @@ CraftWiseMarketDB = {
 ["cutSamples"] = {
 },
 ["houses"] = {
-["Stub Realm|H"] = {
+["H"] = {
 ["faction"] = "Horde",
 ["kind"] = "faction",
 ["label"] = "Horde AH",
-["realm"] = "Stub Realm",
 },
-["Stub Realm|N:BootyBay"] = {
+["N:BootyBay"] = {
 ["cut"] = {
 ["samples"] = 0,
 },
 ["kind"] = "neutral",
 ["label"] = "Booty Bay",
-["realm"] = "Stub Realm",
 },
 },
 ["itemInfo"] = {
@@ -629,31 +627,31 @@ CraftWiseMarketDB = {
 ["itemInfoV"] = 2,
 ["items"] = {
 [9001] = {
-["Stub Realm|H"] = "to3rio,39,c,1|1nc3qxc,14,2,,78,a,k,u;3s40,c,1,,6i,c|w1e,2z,s,2q,5i,b,1,;2,3m,0,k,14,2,1,i;2,39,0,0,c,1,1,",
-["Stub Realm|N:BootyBay"] = "to1soo,46,k,1|1nc3ldc,k,1,,8c,k|w1g,46,0,0,k,1,1,",
+["H"] = "to3rio,39,c,1|1nc3qxc,14,2,,78,a,k,u;3s40,c,1,,6i,c|w1e,2z,s,2q,5i,b,1,;2,3m,0,k,14,2,1,i;2,39,0,0,c,1,1,",
+["N:BootyBay"] = "to1soo,46,k,1|1nc3ldc,k,1,,8c,k|w1g,46,0,0,k,1,1,",
 },
 [9002] = {
-["Stub Realm|H"] = "to3rio,8m,a,1|1nc3qxc,f,1,,hs,f;3s40,a,1,,h8,a|w1e,8c,0,14,p,2,1,;2,8w,0,0,f,1,1,k;2,8m,0,0,a,1,1,",
-["Stub Realm|N:BootyBay"] = "to1soo,ci,2,1|1nc3ldc,2,1,,p0,2|w1g,ci,0,0,2,1,1,",
+["H"] = "to3rio,8m,a,1|1nc3qxc,f,1,,hs,f;3s40,a,1,,h8,a|w1e,8c,0,14,p,2,1,;2,8w,0,0,f,1,1,k;2,8m,0,0,a,1,1,",
+["N:BootyBay"] = "to1soo,ci,2,1|1nc3ldc,2,1,,p0,2|w1g,ci,0,0,2,1,1,",
 },
 [9003] = {
-["Stub Realm|H"] = "tnzxxc,1e,u,2,to1vgo||",
-["Stub Realm|N:BootyBay"] = "to1soo,28,5,1||",
+["H"] = "tnzxxc,1e,u,2,to1vgo||",
+["N:BootyBay"] = "to1soo,28,5,1||",
 },
 [9004] = {
-["Stub Realm|H"] = "to3rio,3s4,4,1|1nc3qxc,0,0,;3s40,4,1,,7k8,4|w1e,3pc,0,go,c,2,2,5;2,,,,0,0,1,3;2,3s4,0,0,4,1,1,",
+["H"] = "to3rio,3s4,4,1|1nc3qxc,0,0,;3s40,4,1,,7k8,4|w1e,3pc,0,go,c,2,2,5;2,,,,0,0,1,3;2,3s4,0,0,4,1,1,",
 },
 [9006] = {
-["Stub Realm|H"] = "tnzxxc,bko,2,1,to1vgo||",
+["H"] = "tnzxxc,bko,2,1,to1vgo||",
 },
 [9008] = {
-["Stub Realm|H"] = "tnzy0o,9l,7,,to1vgo||",
+["H"] = "tnzy0o,9l,7,,to1vgo||",
 },
 ["9005:1234"] = {
-["Stub Realm|H"] = "to1vgo,21aw,1,1,to3rio||",
+["H"] = "to1vgo,21aw,1,1,to3rio||",
 },
 ["9005:5678"] = {
-["Stub Realm|H"] = "tnzxxc,1pq8,1,1,to1vgo||",
+["H"] = "tnzxxc,1pq8,1,1,to1vgo||",
 },
 },
 ["ledger"] = {
@@ -706,7 +704,7 @@ CraftWiseMarketDB = {
 ["n"] = "Test Hide",
 ["q"] = 5,
 ["t"] = 1793919120,
-["w"] = "Stub Realm|H",
+["w"] = "H",
 },
 {
 ["c"] = "Stub Realm-Veli Tanner",
@@ -733,7 +731,7 @@ CraftWiseMarketDB = {
 },
 ["prunedAt"] = 1794005520,
 ["scans"] = {
-["Stub Realm|H"] = {
+["H"] = {
 {
 ["items"] = 3,
 ["kind"] = "full",
@@ -768,7 +766,7 @@ CraftWiseMarketDB = {
 ["t"] = 1794005520,
 },
 },
-["Stub Realm|N:BootyBay"] = {
+["N:BootyBay"] = {
 {
 ["items"] = 2,
 ["kind"] = "full",

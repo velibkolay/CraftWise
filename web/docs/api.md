@@ -62,11 +62,11 @@ are ignored on this endpoint.
 {
   "v": 1,
   "houses": {
-    "CAMWOW EU4 Realm 8 PvP|H": { "realm": "CAMWOW EU4 Realm 8 PvP", "kind": "faction", "faction": "Horde", "label": "Horde AH" },
-    "CAMWOW EU4 Realm 8 PvP|N:BootyBay": { "realm": "CAMWOW EU4 Realm 8 PvP", "kind": "neutral", "label": "Booty Bay" }
+    "H": { "kind": "faction", "faction": "Horde", "label": "Horde AH" },
+    "N:BootyBay": { "kind": "neutral", "label": "Booty Bay" }
   },
   "scans": {
-    "CAMWOW EU4 Realm 8 PvP|H": [ { "t": 1794400000, "kind": "full", "items": 1480, "lastOnly": 8520, "source": "auctionator" } ]
+    "H": [ { "t": 1794400000, "kind": "full", "items": 1480, "lastOnly": 8520, "source": "auctionator" } ]
   },
   "names": { "2589": "Linen Cloth" },
   "itemInfo": { "2589": { "q": 1, "i": 132889, "c": 7, "s": 5, "t": 1794400000, "p": 13 } },
@@ -74,7 +74,7 @@ are ignored on this endpoint.
   "subclassNames": { "7": { "5": "Cloth", "9": "Herb" } },
   "items": {
     "2589": {
-      "CAMWOW EU4 Realm 8 PvP|H": {
+      "H": {
         "last": { "t": 1794400000, "min": 95, "qty": 400, "listings": 6 },
         "raw": [ { "t": 1794400000, "total": 400, "listings": 6, "m": 120, "tiers": [ { "price": 95, "qty": 10 }, { "price": 100, "qty": 40 } ] } ],
         "days": { "20768": { "lo": 90, "typ": 100, "hi": 140, "qtyMax": 500, "listMax": 7, "n": 4, "gone": 20 } }
@@ -90,8 +90,8 @@ are ignored on this endpoint.
 | Field | Source in the SavedVariables | Rules |
 |---|---|---|
 | `v` | | `1` |
-| `houses` | `CraftWiseMarketDB.houses`: `realm`, `kind`, `faction`, `label` | Every house used in `scans` or `items` must be listed. Key `<realm>\|H`, `<realm>\|A` or `<realm>\|N:<Name>`; `realm` must match the key; faction houses carry `faction` (`H` = Horde, `A` = Alliance), neutral houses none. At most 20. |
-| `connected` | `CraftWiseMarketDB.connected` (#366): `{ "<realm>": { "<other realm>": firstSeen } }` | Optional. The realm pairs a linked character of the player answered from, so the two realms share an auction house; the addon records them both ways, nothing else (no guessed or outside lists). Realm names 1 to 64 characters without `\|`, never a realm with itself, `firstSeen` a time as in `scans` (`t`). At most 20 realms and 20 other realms per realm; one invalid value refuses the request. A pair is stored once with the earliest time, whichever side sent it; sending a stored pair again writes nothing. The companion sends it in every request, like `houses`. |
+| `houses` | `CraftWiseMarketDB.houses`: `realm`, `kind`, `faction`, `label` | Every house used in `scans` or `items` must be listed. Key `H`, `A` or `N:<Name>` (no realm, #382: the game hides the realm name from addons, and connected realms share their auction houses); an older companion may still send `<realm>\|H`, `<realm>\|A` or `<realm>\|N:<Name>` with a `realm` that must match the key, stored as before and read as the same house; faction houses carry `faction` (`H` = Horde, `A` = Alliance), neutral houses none. At most 20. |
+| `connected` | `CraftWiseMarketDB.connected` (#366): `{ "<realm>": { "<other realm>": firstSeen } }` | Optional, an older companion only (#382: the addon records no pairs any more, nothing reads the table). The realm pairs a linked character of the player answered from, so the two realms share an auction house; the addon records them both ways, nothing else (no guessed or outside lists). Realm names 1 to 64 characters without `\|`, never a realm with itself, `firstSeen` a time as in `scans` (`t`). At most 20 realms and 20 other realms per realm; one invalid value refuses the request. A pair is stored once with the earliest time, whichever side sent it; sending a stored pair again writes nothing. The companion sends it in every request, like `houses`. |
 | `scans` | `CraftWiseMarketDB.scans`: per house `t`, `kind`, `items`, `lastOnly`, `source` | `t` and `kind` (lower-case letters: `full`, `search`, `gear`) required. At most 200. Optional; drives "last scanned" per house. |
 | `names` | `CraftWiseMarketDB.names` | Optional. Names as the client gave them. |
 | `itemInfo` | `CraftWiseMarketDB.itemInfo` decoded (#92): `q` quality, `i` icon file ID, `c` class, `s` subclass, `t`, `p` vendor sell price per unit (#120, format 2; `0` = vendors don't buy it) | Optional. `t` is checked, not stored. `p` is missing in format 1 strings (older addon) and for items the client hasn't loaded yet. |
@@ -359,26 +359,27 @@ Response: `{ "ok": true, "received": { "snapshots", "auctions", "fishing", "ledg
 | `/api/categories?house=<key>` | `{ house, label, lastScan, computedAt, categories: [{ class, subclass, className, subclassName, items }] }`: items priced at the house (no random suffix) per item class and subclass; `class` and `subclass` are `null` for items without item info yet |
 | `/api/browse?house=<key>&class=<id>[&subclass=<id>]`, `...&q=<text>`, `...&ids=<id>,<id>` | `{ house, label, lastScan, today, more, items: [...] }`, the site's item list (#97), see below |
 
-### Connected realms (#366)
+### One house per slot (#382, was connected realms #366)
 
-Realms the player proved connected (`connected` in the upload) share one auction house. The read API groups them
-at read time; the stored rows stay per house key (nothing is migrated, deleting a row of `connected` undoes the
-grouping):
+The game stopped telling addons the realm name on 20 Nov 2026, and the connected realms of a group share their
+auction houses (the Horde AH of Realms 4, 6 and 8 showed the same lowest price on all 327 items compared). A
+house is `H`, `A` or `N:<Zone>`. Rows uploaded before have `<realm>|H` and the like. The read API treats every
+row of one slot as one house, whatever the realm; the stored rows stay per house key (nothing is migrated, no
+D1 migration was added). The `connected` table of #366 is no longer read:
 
-- Realms joined by pairs are one set (A-B and B-C make A, B, C). Within it a faction house joins the faction
-  house of the same faction (Horde with Horde; **opposite factions never merge**) and a neutral house joins
-  the neutral house of the same zone (`N:Gadgetzan` with `N:Gadgetzan`). A realm without a pair stays alone,
-  however likely it looks.
-- A group is one entry of `/api/houses`: `key` is the member key that sorts first, `keys` all member keys,
-  `realms` their realm names, `label` e.g. `Realm 4 / Realm 8 (connected) · Horde AH`, `lastScan` the newest of
-  its members. A group of one is as before (`realms` has its one realm).
+- A faction house joins the faction house of the same faction (Horde with Horde; **opposite factions never
+  merge**) and a neutral house joins the neutral house of the same zone (`N:Gadgetzan` with `N:Gadgetzan`). A
+  faction house never joins a neutral one.
+- A group is one entry of `/api/houses`: `key` is the realm-less member when there is one, else the member key
+  that sorts first; `keys` all member keys, `realms` the realm names of the old rows (empty for new ones),
+  `label` e.g. `Horde AH`, `lastScan` the newest of its members.
 - `house=<key>` in every endpoint takes any key of a group. `/api/scans?house=` lists the scans of all members
   (each with its own `house` key).
 - Per item and suffix the newest `last` wins and the newest depth stays. Daily rows merge as Market.lua merges
   entries: a CraftWise aggregate beats a day built from `last`, of two aggregates the one with more points (`n`)
   wins, two `last` days combine (lowest `lo`, highest `hi`, most units and listings). Raw points are the union by time.
   The top movers use the merged days and prices.
-- `GET /api/sync/market` is not grouped: it sends house keys as uploaded, the addon maps them itself (#358).
+- `GET /api/sync/market` is not grouped: it sends house keys as uploaded; the companion maps them to realm-less ones and merges them, newest entry wins (#382).
 
 A market of `/api/items/<id>`:
 

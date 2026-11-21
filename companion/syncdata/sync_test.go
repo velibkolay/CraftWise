@@ -75,25 +75,25 @@ func TestGoldenRoundTripThroughJSONAndFile(t *testing.T) {
 func TestRenderIsPlainLuaData(t *testing.T) {
 	one := int64(1)
 	m := &upload.PublicPayload{
-		Houses:        map[string]upload.House{"R|H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "R Horde"}},
-		Scans:         map[string][]upload.Scan{"R|H": {{T: 1794000000, Kind: "full", Items: &one, Source: "x"}}},
+		Houses:        map[string]upload.House{"H": {Realm: "R", Kind: "faction", Faction: "Horde", Label: "R Horde"}},
+		Scans:         map[string][]upload.Scan{"H": {{T: 1794000000, Kind: "full", Items: &one, Source: "x"}}},
 		Names:         map[int64]string{2589: "Linen " + bs + "Cloth\"\n"},
 		ItemInfo:      map[int64]market.ItemInfo{2589: {Quality: &one, Icon: &one}},
 		ClassNames:    map[int64]string{7: "Trade Goods"},
 		SubclassNames: map[int64]map[int64]string{7: {5: "Cloth"}},
 		Items: map[string]map[string]market.Entry{
-			"2589":     {"R|H": {Last: &market.Last{T: &one, Min: &one, Qty: &one}}},
-			"2589:123": {"R|H": {}},
+			"2589":     {"H": {Last: &market.Last{T: &one, Min: &one, Qty: &one}}},
+			"2589:123": {"H": {}},
 		},
 	}
 	got := string(Render(File{Written: 1763200000, Machine: "Mac", Market: m}))
 	for _, want := range []string{
 		"CraftWiseSync = {", "v = 1,", "written = 1763200000,", `machine = "Mac",`,
-		`["R|H"] = { realm = "R", kind = "faction", faction = "Horde", label = "R Horde" },`,
+		`["H"] = { kind = "faction", faction = "Horde", label = "R Horde" },`,
 		`{ t = 1794000000, kind = "full", items = 1, source = "x" },`,
 		`[2589] = "Linen ` + bs + bs + `Cloth` + bs + `"` + bs + `010",`,
 		`[2589] = "1,1,,,,",`, `[7] = "Trade Goods",`, `[7] = { [5] = "Cloth", },`,
-		`[2589] = {`, `["2589:123"] = {`, `["R|H"] = "1,1,1,||",`,
+		`[2589] = {`, `["2589:123"] = {`, `["H"] = "1,1,1,||",`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("file lacks %q\n%s", want, got)
@@ -250,5 +250,27 @@ func TestDownloadErrors(t *testing.T) {
 	_, until, err := Download(context.Background(), client(empty), 0, func() time.Time { return now })
 	if err != nil || until != 10_000-60 {
 		t.Errorf("until without a server time: %d %v", until, err)
+	}
+}
+
+// #382: a download (or a cache from before) with "<realm>|H" keys is held under the realm-less house, the
+// newer entry winning.
+func TestCacheMergesOldHouseKeys(t *testing.T) {
+	one, two := int64(100), int64(200)
+	entry := func(tm, min *int64) market.Entry { return market.Entry{Last: &market.Last{T: tm, Min: min, Qty: min}} }
+	c := NewCache("site")
+	c.Merge(&upload.PublicPayload{
+		Houses: map[string]upload.House{"R6|H": {Realm: "R6", Kind: "faction", Faction: "Horde", Label: "Horde AH"}},
+		Scans:  map[string][]upload.Scan{"R6|H": {{T: 5, Kind: "full"}}, "R8|H": {{T: 5, Kind: "full"}, {T: 6, Kind: "full"}}},
+		Items:  map[string]map[string]market.Entry{"1": {"R6|H": entry(&two, &two), "R8|H": entry(&one, &one)}},
+	})
+	if h, ok := c.Market.Houses["H"]; !ok || h.Realm != "" || len(c.Market.Houses) != 1 {
+		t.Errorf("houses %+v", c.Market.Houses)
+	}
+	if len(c.Market.Scans) != 1 || len(c.Market.Scans["H"]) != 2 {
+		t.Errorf("scans %+v", c.Market.Scans)
+	}
+	if got := *c.Market.Items["1"]["H"].Last.Min; got != 200 || len(c.Market.Items["1"]) != 1 {
+		t.Errorf("items %+v", c.Market.Items)
 	}
 }

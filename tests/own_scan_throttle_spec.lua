@@ -4,7 +4,7 @@
 -- the call, treats a drop before anything was sent as "the server never got it" (no cooldown, retry at once),
 -- shows a queued request as such, and records what happened. Invented data only.
 local NOW = 1794000000
-local HORDE = "PvP|H"
+local HORDE = "H"
 local EVENTS = {
 	sent = "AUCTION_HOUSE_THROTTLED_MESSAGE_SENT", queued = "AUCTION_HOUSE_THROTTLED_MESSAGE_QUEUED",
 	dropped = "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED", response = "AUCTION_HOUSE_THROTTLED_MESSAGE_RESPONSE_RECEIVED",

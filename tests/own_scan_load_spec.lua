@@ -4,7 +4,7 @@
 -- data is there, there is a phase with progress, and what stays unread is counted by reason and category.
 -- Invented data only.
 local NOW = 1794000000
-local HORDE = "PvP|H"
+local HORDE = "H"
 local ARMOR, WEAPON = 4, 2
 
 local function Load()

@@ -201,3 +201,163 @@ it("migration merges into a ledger character the new key started before it ran",
 	local catches = CraftWiseDB.fishing[TANNER].catches
 	eq(#catches, 2); eq(catches[1].zone, "Durotar", "sorted by time")
 end)
+
+-- #382: since the 20 Nov client patch GetRealmName() sometimes returns "" and writes landed under
+-- "-<name> <surname>". No key without a realm; the realm is remembered once the client tells it.
+it("realm unknown (GetRealmName returns \"\"): no key, nothing is written under \"-name\"", function()
+	local ns, stub = Login("Tanner", "Orc", "Hunter")
+	stub.realm = ""
+	-- a fresh session: the realm was never told
+	local ns2, stub2 = LoadAddon()
+	stub2.names.player, stub2.surnames.player, stub2.realm = "Velikopter", "Tanner", ""
+	eq(ns2.RealmName(), nil)
+	eq(ns2.CharKey(), nil, "no key while the realm is unknown")
+	eq(ns2.Ledger.CharKey(), nil)
+	eq(ns2.Snapshot.Key(), nil)
+	eq(ns2.Fishing.CharKey(), nil)
+	ns2.Ledger.Record("ahsell", 2589, 1, 15, "AH", 0)
+	for key in pairs(CraftWiseDB.snapshots or {}) do assert(key:sub(1, 1) ~= "-", "snapshot key " .. key) end
+	for key in pairs((CraftWiseMarketDB.ledger or { chars = {} }).chars) do assert(key:sub(1, 1) ~= "-", "ledger key " .. key) end
+	eq(#(CraftWiseMarketDB.ledger and CraftWiseMarketDB.ledger.entries or {}), 0, "no ledger entry written")
+	stub2.realm = REALM
+	eq(ns2.CharKey(), TANNER, "the key appears when the client tells the realm")
+	stub2.realm = ""
+	eq(ns2.CharKey(), TANNER, "and the known realm is kept for this session")
+	assert(ns ~= nil)
+end)
+
+it("repair: '-Name Surname' data moves into the real key at login, snapshot newest wins", function()
+	local EMPTY = "-Velikopter Tanner"
+	local saved = { db = {
+		snapshots = {
+			[EMPTY] = { v = 1, t = NOW - 100, char = { name = "Velikopter", surname = "Tanner", realm = "" } },
+			[TANNER] = { v = 1, t = NOW - 5000, char = { name = "Velikopter", surname = "Tanner", realm = REALM } },
+			["-Other Person"] = { v = 1, t = NOW, char = { name = "Other", realm = "" } },
+		},
+		fishing = { [EMPTY] = { catches = { { t = NOW - 10, zone = "Durotar", items = { [6291] = 1 } } }, opened = {} },
+			[TANNER] = { catches = { { t = NOW - 20, zone = "Durotar", items = { [6291] = 2 } } }, opened = {} } },
+		crafted = { chars = { [EMPTY] = { [1] = { days = { ["20261120"] = { crafts = 2 } } } },
+			[TANNER] = { [1] = { days = { ["20261120"] = { crafts = 3 } } } } }, before = {} },
+	}, market = { ledger = {
+		entries = { { t = NOW - 60, c = EMPTY, k = "ahsell", i = 2589, q = 1, m = 50, w = "AH" } },
+		chars = { [EMPTY] = { days = { ["2026-11-20"] = 50 }, pos = {} }, [TANNER] = { days = { ["2026-11-19"] = 10 }, pos = {} } },
+	}, flips = { rows = { { t = NOW, c = EMPTY, i = 1, q = 1, cost = 1, got = 2 } } } } }
+	local ns = Login("Tanner", "Orc", "Hunter", saved)
+	local db, market = CraftWiseDB, CraftWiseMarketDB
+	eq(db.snapshots[EMPTY], nil)
+	eq(db.snapshots[TANNER].t, NOW - 100, "the newer snapshot won")
+	eq(db.snapshots[TANNER].char.realm, REALM, "empty realm filled in")
+	assert(db.snapshots["-Other Person"], "another name is never touched")
+	eq(#db.fishing[TANNER].catches, 2); eq(db.fishing[EMPTY], nil)
+	eq(db.crafted.chars[TANNER][1].days["20261120"].crafts, 5); eq(db.crafted.chars[EMPTY], nil)
+	eq(market.ledger.chars[EMPTY], nil)
+	eq(market.ledger.chars[TANNER].days["2026-11-19"], 10)
+	eq(market.ledger.chars[TANNER].days["2026-11-20"], 50)
+	eq(market.ledger.entries[1].c, TANNER)
+	eq(market.flips.rows[1].c, TANNER)
+	local said = false
+	for _, m in ipairs(ns.printed) do if m:find("did not know the realm", 1, true) then said = true end end
+	assert(said, "says it once in chat")
+	eq(ns.RepairEmptyRealm(), nil, "nothing left to move")
+end)
+
+it("AH house needs no realm: the Scan AH house is set while the client tells nothing (#382)", function()
+	local ns, stub = LoadAddon()
+	stub.names.player, stub.surnames.player, stub.realm = "Velikopter", "Tanner", ""
+	stub.faction, stub.locale, stub.zone, stub.subzone = "Horde", "enUS", "Orgrimmar", ""
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	eq(ns.Market.CurrentHouse(), "H")
+	eq(ns.Market.HouseFor("faction"), "H")
+	eq((ns.Market.HouseFor("Gadgetzan")), "N:Gadgetzan")
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	eq(ns.Market.CurrentHouse(), nil)
+end)
+
+it("realm: with the client silent, the realm stored before is used: from the character's own keys, once", function()
+	local saved = { db = {
+		snapshots = { [TANNER] = { v = 1, t = NOW, char = { name = "Velikopter", surname = "Tanner", realm = REALM } } },
+		fishing = { ["Other Realm-Velikopter Wright"] = { catches = {}, opened = {} } },
+	}, market = {} }
+	local ns, stub = LoadAddon({ savedDB = saved.db, savedMarket = saved.market })
+	stub.names.player, stub.surnames.player, stub.realm = "Velikopter", "Tanner", ""
+	eq(ns.RealmName(), REALM, "read from the key this character already has")
+	eq(ns.CharKey(), TANNER)
+	eq(ns.db.charRealms["Velikopter Tanner"], REALM, "kept")
+	-- another character with no stored realm: unknown, no key
+	stub.surnames.player = "Nobody"
+	eq(ns.RealmName(), nil); eq(ns.CharKey(), nil)
+	eq(ns.SetCharRealm("Typed Realm"), true)
+	eq(ns.CharKey(), "Typed Realm-Velikopter Nobody")
+end)
+
+it("realm: two realms for one name are ambiguous: nothing is guessed", function()
+	local saved = { db = {
+		snapshots = { ["Realm A-Velikopter Tanner"] = { t = NOW, char = {} }, ["Realm B-Velikopter Tanner"] = { t = NOW, char = {} } },
+	}, market = {} }
+	local ns, stub = LoadAddon({ savedDB = saved.db, savedMarket = saved.market })
+	stub.names.player, stub.surnames.player, stub.realm = "Velikopter", "Tanner", ""
+	eq(ns.RealmName(), nil)
+	eq(ns.CharKey(), nil)
+end)
+
+it("realm: a live realm, when the client still tells it, is stored and wins", function()
+	local ns, stub = LoadAddon()
+	stub.names.player, stub.surnames.player, stub.realm = "Velikopter", "Tanner", REALM
+	eq(ns.RealmName(), REALM)
+	stub.realm = ""
+	eq(ns.RealmName(), REALM, "stored")
+end)
+
+it("house keys: old '<realm>|H' keys move to 'H', the newer entry wins, scans merge, auctions follow (#382)", function()
+	local M0 = LoadAddon()
+	local pack = M0.Market.EncodeEntry
+	local R6, R8 = "CAMWOW EU4 Realm 6 PvP", REALM
+	local old = pack({ last = { t = NOW - 3600, min = 100, qty = 5, listings = 1 } })
+	local new = pack({ last = { t = NOW - 60, min = 90, qty = 5, listings = 1 } })
+	local only8 = pack({ last = { t = NOW - 10, min = 7, qty = 1, listings = 1 } })
+	local market = { v = 1,
+		houses = { [R6 .. "|H"] = { realm = R6, kind = "faction", faction = "Horde", label = "Horde AH" },
+			[R8 .. "|H"] = { realm = R8, kind = "faction", faction = "Horde", label = "Horde AH" },
+			[R8 .. "|N:Gadgetzan"] = { realm = R8, kind = "neutral", label = "Gadgetzan", cut = { samples = 3, rate = 0.05 } } },
+		scans = { [R6 .. "|H"] = { { t = NOW - 7200, kind = "full", items = 10 } }, [R8 .. "|H"] = { { t = NOW - 100, kind = "full", items = 20 } } },
+		items = { [1] = { [R6 .. "|H"] = old, [R8 .. "|H"] = new }, [2] = { [R8 .. "|H"] = only8, [R8 .. "|N:Gadgetzan"] = old } },
+		ownScan = { house = R8 .. "|H" },
+		auctions = { v = 1, chars = { [TANNER] = { list = { { i = 1, h = R8 .. "|H", st = "active" } }, ownedHouse = R8 .. "|H" } } },
+	}
+	local ns = LoadAddon({ savedDB = {}, savedMarket = market })
+	local db = CraftWiseMarketDB
+	eq(db.houseKeysV, 2)
+	assert(db.houses["H"] and db.houses["N:Gadgetzan"], "realm-less houses")
+	eq(db.houses[R8 .. "|H"], nil); eq(db.houses[R6 .. "|H"], nil)
+	eq(db.houses["N:Gadgetzan"].cut.samples, 3, "the measured cut is kept")
+	eq(db.houses["H"].realm, nil)
+	eq(ns.Market.Current(1, "H").min, 90, "the newer entry won")
+	eq(db.items[1][R6 .. "|H"], nil)
+	eq(ns.Market.Current(2, "H").min, 7)
+	assert(db.items[2]["N:Gadgetzan"], "neutral entry moved")
+	eq(#db.scans["H"], 2, "scans of both realms merged"); eq(db.scans[R8 .. "|H"], nil)
+	eq(db.ownScan.house, "H")
+	eq(db.auctions.chars[TANNER].ownedHouse, "H"); eq(db.auctions.chars[TANNER].list[1].h, "H")
+	eq(ns.Market.HouseKeyOf(R6 .. "|N:BootyBay"), "N:BootyBay")
+	eq(ns.Market.HouseKeyOf("junk"), nil)
+end)
+
+it("Link: off since the realm change: no prefix, no whispers, no hello, no errors (#382)", function()
+	local ns, stub = LoadAddon()
+	local prefixes, sent = 0, 0
+	C_ChatInfo = C_ChatInfo or {}
+	C_ChatInfo.RegisterAddonMessagePrefix = function() prefixes = prefixes + 1 end
+	C_ChatInfo.SendAddonMessage = function() sent = sent + 1 end
+	stub.Fire("PLAYER_LOGIN")
+	stub.RunTimers()
+	eq(ns.Link.ENABLED, false)
+	eq(ns.Link.SyncNow(), 0)
+	eq(ns.Link.Hello("kitchenchant"), false)
+	ns.Link.Push()
+	stub.Fire("CHAT_MSG_ADDON", ns.Link.PREFIX, "H	2	Realm", "WHISPER", "Someone")
+	ns.printed = {}
+	ns.Print = function(m) ns.printed[#ns.printed + 1] = m end
+	ns.Link.Slash("sync")
+	assert(ns.printed[1] and ns.printed[1]:find("off since the 20 Nov realm change", 1, true), tostring(ns.printed[1]))
+	eq(prefixes, 0); eq(sent, 0)
+end)

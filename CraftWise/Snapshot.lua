@@ -60,7 +60,7 @@ function S.Character()
 	-- last seen in the world are used (#123, ns.PlayerValue in Core.lua); missing when none was seen.
 	local Value = ns.PlayerValue
 	local c = { name = name, surname = surname, level = Value("level", UnitLevel("player")) }
-	c.realm = GetRealmName and GetRealmName() or nil
+	c.realm = ns.RealmName()
 	if UnitFactionGroup then
 		c.faction = UnitFactionGroup("player")
 	end

@@ -1369,3 +1369,14 @@ Needs the companion with the private upload and a character whose auction tracke
 - Make > Crafted, window layout: the top card line reads "7 days N ... · profit 7 days X · total Y (K of N priced)"; the "(K of N priced)" part shows only when some crafts have no price. Y is the sum of the Profit total column of the rows. Pick a profession, a character or type in the filter box: Y and the counts follow the rows. A filter with no priced craft shows no total.
 - Hover the card: "Estimated profit", today / 7 days / total, "Total: K of N crafts priced", and the note that it is an estimate, not money received (Sell > Ledger has the real money).
 - Docked layout: the line stays short (no total); the total is in the card tooltip.
+
+## No realm name since the 20 Nov 2026 update (#382)
+The game gives addons no realm name (`GetRealmName()` and `GetNormalizedRealmName()` are empty, `GetRealmID()` is 0, `UnitFullName("player")` has no realm).
+- [ ] At the Horde AH in Orgrimmar the header's **Scan AH** button shows again. Search an item and close the AH: `/craftwise market <item>` lists "Horde AH" with the price. `/craftwise debug` and the saved `CraftWiseMarketDB` have the house `H`, no `<realm>|H`.
+- [ ] After the first login with this version, `CraftWiseMarketDB.houses`, `scans`, `items` have only `H`, `A` and `N:<Zone>` keys (the old `<realm>|...` ones are gone); the Horde prices of the other realm of the group are still there (the newer entry won). Settings > Profit prices and Make show prices as before.
+- [ ] Gadgetzan and Booty Bay: open each AH, search an item: it lands in `N:Gadgetzan` / `N:BootyBay`. Compare one item's lowest price with the same item at the same neutral house seen from another realm of the group.
+- [ ] Settings > Realm shows the realm this character had before (read from its saved snapshot/ledger/fishing keys). A new character (none saved) says "unknown" in red; nothing is saved for it (no snapshot, no ledger entry, no key starting with `-`) until **Set realm** takes a name; then the line shows it and what was waiting under `-<name>` moves to the real key (one chat line).
+- [ ] Data saved under `-Velikopter Tanner` (snapshot, ledger entries, craft log) moves into `<realm>-Velikopter Tanner` at the first login of that character; another character's login does not touch it.
+- [ ] Settings > Linked characters says the live link is off since the 20 Nov realm change and that sync runs through the companion; `/craftwise link` prints the same; no whisper goes out and no error shows (also with the old list of linked characters in the saved data).
+- [ ] Companion: after the update the next upload sends no (or only the new) prices, not the whole market again; the site's Horde AH shows one house. Log in on the other account after `/reload` there: it has the prices from the first.
+- [ ] No new key starting with `-` appears in `CraftWise.lua` / `CraftWiseMarketDB` after a normal session with AH sales.
