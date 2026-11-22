@@ -1404,3 +1404,12 @@ No TOC change, `/reload` is enough. At an open auction house the CraftWise panel
 - [ ] The header's **Scan AH** button and its 15 minute cooldown are exactly as before the refresh (no scan was asked for).
 - [ ] Buy button and key say "A price refresh is running: stop it first" while the refresh runs.
 - [ ] Settings > Buying at the AH > "Max per item without sales data" changes the default 2.
+
+## Craft run 3: sell lists and AH batches (#390)
+No TOC change, `/reload` is enough. Needs a basket made with **Use plan** at the AH (#388) holding a "vendor" craft and an "AH" craft, and the crafted items in the bags.
+- [ ] **Merchant:** open any vendor. The CraftWise panel (right of the merchant window) gets "Craft run: sell here (N, total)" with one line per vendor-channel craft: "6 x Leather Gloves · 1g 20s". A click on **Sell** sells that line's stacks at once (no timer, nothing else sells) and prints "Sold 6 x ... for ...". Items you marked Keep are not listed. Fully crafted by hand with no channel, the vendor-check items also show when the Make page says vendor wins.
+- [ ] A stack of a stackable item larger than the run made is left alone ("(N stay)"): the client sells whole stacks. Check what `UseContainerItem` does with a stack on Forever and tell the Scout if it sells less or more than the line says.
+- [ ] A line whose item is locked (being moved) is skipped; in combat the Sell buttons are off.
+- [ ] **AH:** the CraftWise panel has a **Post (N)** section under Craft run (click to fold). Per AH-channel craft: "Leather Gloves: post 2 now", then "bags 5 · listed 1 · sold 3 today · lowest 3g 40s", then where the demand figure comes from. The box on the right is the batch to keep listed; type a number, leave the box: the line follows, and 0 or empty goes back to the default (about half a day's sales, at least 1).
+- [ ] Post one on the AH's own Sell tab: "listed" goes up and "post N now" down by one. When the item sells (sale message), "listed" drops and "post N now" grows again. Nothing posts by itself.
+- [ ] "lowest" is the last listing seen at the profit house (search or scan), "no listing seen" without one. **Open question:** the Sell tab's own suggested price is what he posts at; if a one-click "post batch" is wanted, `C_AuctionHouse.PostItem`/`PostCommodity` need the item location and a hardware event: check on Forever and tell the Scout.

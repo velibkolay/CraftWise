@@ -23,6 +23,7 @@ MB.ITEM_BUTTONS = 12 -- MerchantItem1ItemButton ... MerchantItem12ItemButton
 local panel
 local picked -- itemID the typed quantity is for
 local rows = {} -- the basket line rows
+local sellRows = {} -- the craft run's sell lines (#390)
 local hooked = {}
 local vendorPlan -- Basket.Plan().split.vendor, kept until the basket, the bags or the prices change
 local pending -- a recomputation of the plan is scheduled
@@ -140,6 +141,47 @@ local function Row(i)
 	return r
 end
 
+-- The craft run's vendor list (#390): one line per crafted item that sells to a vendor, with its count and total, and a
+-- Sell button. A click sells that line's stacks through Junk.SellRunLine; nothing sells on its own.
+local function SellRow(i)
+	local r = sellRows[i]
+	if r then
+		return r
+	end
+	r = CreateFrame("Frame", nil, panel)
+	r:SetSize(MB.WIDTH - 24, 24)
+	r.text = Style.Text(r, "Small", "text")
+	r.text:SetPoint("LEFT", r, "LEFT", 0, 0)
+	r.text:SetWidth(MB.WIDTH - 24 - 70)
+	r.text:SetJustifyH("LEFT")
+	r.sell = Style.ActionButton(r, L["Sell"], 60, 22)
+	r.sell:SetPoint("RIGHT", r, "RIGHT", 0, 0)
+	r.sell:SetScript("OnClick", function(self)
+		local line = self:GetParent().line
+		if not line then
+			return
+		end
+		local sold, copper = ns.Junk.SellRunLine(line)
+		if sold and sold > 0 then
+			ns.Print((L["Sold %d × %s for %s."]):format(sold, ItemName(line.itemID), Money(copper)))
+		elseif sold == false then
+			ns.Print(copper .. ".")
+		end
+		MB.Update()
+	end)
+	sellRows[i] = r
+	return r
+end
+
+-- The text of a sell line: "6 × Leather Gloves · 1g 20s" (and the units a stack is too big to sell whole).
+function MB.SellText(line, name)
+	local text = (L["%d × %s · %s"]):format(line.count, name, Money(line.total))
+	if line.left and line.left > 0 then
+		text = text .. " " .. (L["(%d stay)"]):format(line.left)
+	end
+	return text
+end
+
 -- The basket line rows created so far (for the specs).
 function MB.Rows()
 	return rows
@@ -182,7 +224,33 @@ local function DrawLines()
 			end
 		end
 	end
-	panel:SetHeight(-y + (#lines > 0 and 30 or 12))
+	-- the craft run's vendor list
+	local sells, total = ns.Junk.RunList()
+	panel.runTitle:SetShown(#sells > 0)
+	if #sells > 0 then
+		y = y - (#lines > 0 and 8 or 0)
+		panel.runTitle:ClearAllPoints()
+		panel.runTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
+		panel.runTitle:SetText((L["Craft run: sell here (%d, %s)"]):format(#sells, Money(total)))
+		y = y - 4
+	end
+	for i = 1, math.max(#sells, #sellRows) do
+		local l = sells[i]
+		local r = l and SellRow(i) or sellRows[i]
+		if r then
+			r.line = l
+			r:SetShown(l ~= nil)
+			if l then
+				r.text:SetText(MB.SellText(l, ItemName(l.itemID)))
+				r.sell:SetEnabled(not ns.Junk.InCombat())
+				r:ClearAllPoints()
+				r:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y - 20)
+				y = y - 26
+			end
+		end
+	end
+	MB.sells = sells
+	panel:SetHeight(-y + ((#lines > 0 or #sells > 0) and 30 or 12))
 end
 
 -- Everything. The basket lines are drawn from the kept plan; with none (the basket changed, or the
@@ -256,6 +324,8 @@ local function Create()
 	panel.basketTitle = Style.Text(panel, "Small", "text3")
 	panel.basketTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -118)
 	panel.basketTitle:SetText(L["Basket: sold here"])
+	panel.runTitle = Style.Text(panel, "Small", "text3")
+	panel.runTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -118)
 	MB.panel = panel
 end
 

@@ -852,3 +852,66 @@ it("sold records nothing shows pending for hours are probably collected and not 
 	local totals = ns.HeroCards.AuctionTotals()
 	eq(totals.onItsWay.count, 2, "the card counts the pending ones only")
 end)
+
+----------------------------------------------------------------------------------------- craft run post list (#390)
+
+it("BatchDefault: about half a day's sales, at least 1; without data half of the setting", function()
+	local ns = Load()
+	local A = ns.Auctions
+	eq(A.BatchDefault(6, 2), 3); eq(A.BatchDefault(5, 2), 3, "2.5 rounds up"); eq(A.BatchDefault(0.4, 2), 1)
+	eq(A.BatchDefault(nil, 2), 1); eq(A.BatchDefault(nil, 6), 3)
+	local batch, custom = A.BatchOf(1, 6, 2)
+	eq(batch, 3); eq(custom, false)
+	A.SetBatch(1, 5)
+	batch, custom = A.BatchOf(1, 6, 2)
+	eq(batch, 5); eq(custom, true)
+	A.SetBatch(1, 0)
+	eq(A.BatchOf(1, 6, 2), 3, "0 goes back to the default")
+	A.SetBatch(1, 5000)
+	eq(A.BatchOf(1, 6, 2), A.BATCH_MAX)
+end)
+
+it("PostNow: keeps the batch listed, as many as the bags hold, never negative", function()
+	local ns = Load()
+	local A = ns.Auctions
+	eq(A.PostNow(2, 0, 5), 2); eq(A.PostNow(2, 1, 5), 1); eq(A.PostNow(2, 2, 5), 0); eq(A.PostNow(2, 3, 5), 0)
+	eq(A.PostNow(4, 0, 1), 1, "one in the bags")
+end)
+
+it("the post list: listed now and sold counts move the next batch; the price is the lowest seen", function()
+	local ns, stub = Load()
+	local A = ns.Auctions
+	ns.charDB.professions[165] = { recipes = { [900] = { learned = true, output = { itemID = PANTS, quantity = 1 } } } }
+	ns.Basket.Add(900, 165, 6, { channel = "AH", profitEach = 100, secEach = 5 })
+	stub.bagCount[PANTS] = 6
+	-- 28 sold in the 14 days before: 2 a day, batch 1; typed batch 2
+	for i = 1, 14 do
+		table.insert(A.List(), { i = PANTS, q = 2, st = "sold", soldT = NOW - i * 86400 + 60 })
+	end
+	local lines = A.RunPostLines(NOW)
+	eq(#lines, 1); eq(lines[1].units, 6); eq(lines[1].bags, 6); eq(lines[1].listed, 0)
+	eq(lines[1].batch, 1, "half of 2 a day"); eq(lines[1].postNow, 1)
+	A.SetBatch(PANTS, 2)
+	lines = A.RunPostLines(NOW)
+	eq(lines[1].batch, 2); eq(lines[1].postNow, 2); eq(lines[1].custom, true)
+	-- two listed: nothing to post until they sell
+	table.insert(A.List(), { i = PANTS, q = 2, st = "active", t = NOW })
+	lines = A.RunPostLines(NOW)
+	eq(lines[1].listed, 2); eq(lines[1].postNow, 0)
+	-- the tracker sees one sell: the next batch is one
+	for _, rec in ipairs(A.List()) do
+		if rec.st == "active" then rec.q, rec.st = 1, "active" end
+	end
+	table.insert(A.List(), { i = PANTS, q = 1, st = "sold", soldT = NOW - 60 })
+	lines = A.RunPostLines(NOW)
+	eq(lines[1].listed, 1); eq(lines[1].postNow, 1); eq(lines[1].sold, 3, "sold in the last day: the 2 of yesterday evening and the new 1")
+	eq(lines[1].price, nil, "no listing seen: no price made up")
+end)
+
+it("the post list is empty for vendor crafts and with no basket", function()
+	local ns, stub = Load()
+	eq(#ns.Auctions.RunPostLines(NOW), 0)
+	ns.charDB.professions[165] = { recipes = { [900] = { learned = true, output = { itemID = PANTS, quantity = 1 } } } }
+	ns.Basket.Add(900, 165, 2, { channel = "vendor", profitEach = 100, secEach = 5 })
+	eq(#ns.Auctions.RunPostLines(NOW), 0)
+end)

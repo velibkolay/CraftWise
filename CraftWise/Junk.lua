@@ -150,6 +150,90 @@ function Junk.Sell()
 	return true
 end
 
+-- Craft run (#390): the crafts of the run that sell to a vendor, listed at the merchant (UI/MerchantBuy.lua). One line per
+-- item: the whole stacks in the bags (up to what the run makes) and what the vendor pays. A click on a line sells its
+-- stacks, each one a UseContainerItem inside that click: no timer, nothing sells by itself.
+
+-- Pure: whole stacks to sell for one item. stacks = { { bag, slot, count, locked } } in bag order, units = what the
+-- run made. A stack is sold whole (the client sells whole stacks), so one larger than what is left of the run stays.
+-- Returns the stacks to sell, how many units that is and how many bag units of the item stay.
+function Junk.PickStacks(stacks, units)
+	local pick, count, held = {}, 0, 0
+	for _, s in ipairs(stacks) do
+		held = held + s.count
+		if not s.locked and count + s.count <= units then
+			pick[#pick + 1] = s
+			count = count + s.count
+		end
+	end
+	return pick, count, held - count
+end
+
+-- Pure: the merchant list. items = Auctions.RunItems filtered to "vendor", stacksOf(itemID) = the bag stacks, priceOf(itemID)
+-- = vendor price per unit (nil: none), keep = ns.db.keep. Lines with nothing to sell here are left out.
+-- { { itemID, units, count, stacks, left, each, total } } and the vendor total of the list.
+function Junk.RunVendorList(items, stacksOf, priceOf, keep)
+	local lines, total = {}, 0
+	for _, it in ipairs(items) do
+		local each = priceOf(it.itemID)
+		if each and each > 0 and not (keep and keep[it.itemID]) then
+			local pick, count, left = Junk.PickStacks(stacksOf(it.itemID), it.units)
+			if count > 0 then
+				lines[#lines + 1] = { itemID = it.itemID, units = it.units, count = count, stacks = pick, left = left,
+					each = each, total = each * count }
+				total = total + each * count
+			end
+		end
+	end
+	return lines, total
+end
+
+local function BagStacks(itemID)
+	local out = {}
+	for bag = 0, ns.LAST_BAG do
+		for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+			local item = C_Container.GetContainerItemInfo(bag, slot)
+			if item and item.itemID == itemID then
+				out[#out + 1] = { bag = bag, slot = slot, count = item.stackCount or 1, locked = item.isLocked and true or nil }
+			end
+		end
+	end
+	return out
+end
+
+function Junk.MerchantOpen()
+	return merchantOpen
+end
+
+-- The list for the open merchant: lines, total. Empty away from a merchant.
+function Junk.RunList()
+	if not (merchantOpen and ns.Auctions and ns.Basket) then
+		return {}, 0
+	end
+	return Junk.RunVendorList(ns.Auctions.RunItemsNow("vendor"), BagStacks, ns.GetVendorSellPrice, ns.db and ns.db.keep)
+end
+
+-- Sells one line of the list: each stack is checked again first. Returns units sold, copper; false, why when it can't.
+function Junk.SellRunLine(line)
+	if not merchantOpen then
+		return false, "No merchant is open"
+	end
+	if InCombat() then
+		return false, "Unavailable in combat"
+	end
+	local sold, copper = 0, 0
+	for _, s in ipairs(line.stacks) do
+		local item = C_Container.GetContainerItemInfo(s.bag, s.slot)
+		if item and item.itemID == line.itemID and not item.isLocked and (item.stackCount or 1) == s.count
+			and not (ns.db.keep and ns.db.keep[line.itemID]) then
+			C_Container.UseContainerItem(s.bag, s.slot)
+			sold = sold + s.count
+			copper = copper + line.each * s.count
+		end
+	end
+	return sold, copper
+end
+
 function Junk.Running()
 	return job ~= nil
 end
