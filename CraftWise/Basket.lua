@@ -31,7 +31,23 @@
 --   * Demand cap: an AH craft is planned at most as often as the item sells (his own AH sales of it, else the units
 --     observed leaving the profit house between scans, else Settings "Max per item without sales data", default 2);
 --     the source is told in the plan. Vendor sales have no cap.
--- Pure parts (Add, Remove, Combine, Split, Expected, DemandCap, SaleOf) take plain data so the specs can feed them.
+-- Craft list (#389): the run as a list to work through, in the profession window's side panel (UI/Main/Pages/Basket.lua)
+-- and in Make > Basket. Basket.CraftList(plan, bags) makes it from Basket.Plan():
+--   * lines: the crafts of intermediates first (the buy list's "craft instead of buy", deepest first), then the entries by
+--     profit per craft-second (profitEach / secEach; entries without both keep the plan's order after those that have them),
+--     an entry whose product is a reagent of another entry before that one; then the lines that are made.
+--   * a line: { kind = "intermediate" | "craft" | "made", recipeID, name, left, planned, made, channel, label, profitEach,
+--     secEach, pps, can (crafts the bags allow now), missing = { { itemID, short } } (for the next craft), state =
+--     "ready" | "partly" | "missing" | "made" }. Reagents are counted from the bags only (Holdings.Carried): what is in the
+--     bank cannot be crafted from.
+--   * Crafts tick by themselves: ns.OnCraft (Crafts.lua, the craft log's event, #205) calls Basket.OnCrafted(recipeID, name):
+--     an entry's count goes down by one (at zero it leaves the list) and db.basket.made[recipeID] = { n, profit, name,
+--     channel, profitEach, professionID } counts what was made, profit = the plan's profit per craft summed (nil when an
+--     entry had none: nothing is guessed). So an entry's count is the crafts LEFT; "left of planned" is count of count + made.
+--     Intermediates tick through the bags (BAGS_CHANGED): what is made leaves the needs. A new run (an empty basket gets an
+--     entry, "Use plan" with replace, Clear) forgets what was made. Nothing is crafted from here: the player presses Create.
+--   * summary: { left, madeTotal, madeProfit (nil when unknown), profitLeft, done = nothing left and something made }.
+-- Pure parts (Add, Remove, Combine, Split, Expected, DemandCap, SaleOf, CraftList) take plain data so the specs can feed them.
 local _, ns = ...
 
 local Basket = {}
@@ -72,6 +88,13 @@ function Basket.Find(recipeID)
 	end
 end
 
+-- An empty basket that still remembers a finished run (db.basket.made) starts a new run: the old tally goes.
+function Basket.FreshRun()
+	if ns.db and ns.db.basket and #Entries() == 0 then
+		ns.db.basket.made = nil
+	end
+end
+
 -- Adds `count` crafts of a recipe (default 1); the same recipe again adds to its count.
 -- extra (#388, optional): { channel, profitEach, secEach } of a planned craft, stored on the entry.
 function Basket.Add(recipeID, professionID, count, extra)
@@ -79,6 +102,7 @@ function Basket.Add(recipeID, professionID, count, extra)
 		return nil
 	end
 	count = Clamp(count)
+	Basket.FreshRun()
 	local e = Basket.Find(recipeID)
 	if e then
 		e.count = Clamp(e.count + count)
@@ -278,6 +302,257 @@ function Basket.Plan()
 	plan.flips = Basket.Flips()
 	plan.sale, plan.profit = Basket.Expected(expected)
 	return plan
+end
+
+----------------------------------------------------------------------------------------------------
+-- Craft list (#389)
+----------------------------------------------------------------------------------------------------
+
+Basket.CHANNEL_LABELS = { vendor = "Vendor", AH = "AH" }
+
+local function MadeTable()
+	ns.db.basket = ns.db.basket or { entries = {} }
+	ns.db.basket.made = ns.db.basket.made or {}
+	return ns.db.basket.made
+end
+
+-- Crafts of a recipe that its reagents allow from `bags` (itemID -> count), at most `left`; missing = what the next
+-- craft lacks, { { itemID, short } }.
+function Basket.CanCraft(reagents, bags, left)
+	local can, missing = nil, {}
+	for _, r in ipairs(reagents or {}) do
+		local q = r.quantity or 0
+		if q > 0 then
+			local held = bags[r.itemID] or 0
+			can = can and math.min(can, math.floor(held / q)) or math.floor(held / q)
+			if held < q then
+				missing[#missing + 1] = { itemID = r.itemID, short = q - held }
+			end
+		end
+	end
+	return math.min(can or 0, left or 0), missing
+end
+
+local function StateOf(can, left)
+	if can >= left then
+		return "ready"
+	end
+	return can > 0 and "partly" or "missing"
+end
+
+-- One craft succeeded (ns.OnCraft): the entry of that recipe has one craft less and the run's tally one more. At zero the
+-- entry leaves the basket (the tally keeps its line). Crafts of recipes that are not in the basket change nothing.
+function Basket.OnCrafted(recipeID, name)
+	local e = ns.db and Basket.Find(recipeID)
+	if not e then
+		return
+	end
+	local made = MadeTable()
+	local m = made[recipeID]
+	if not m then
+		m = { n = 0, profit = 0 }
+		made[recipeID] = m
+	end
+	m.n = m.n + 1
+	m.profit = m.profit and e.profitEach and (m.profit + e.profitEach) or nil
+	m.name, m.channel, m.profitEach, m.professionID = name or m.name, e.channel, e.profitEach, e.professionID
+	if e.count <= 1 then
+		local _, i = Basket.Find(recipeID)
+		table.remove(Entries(), i)
+	else
+		e.count = e.count - 1
+	end
+	Changed()
+end
+
+-- Pure: the crafts of intermediates that a list of needs asks for. need = { { itemID, quantity } }; counted(itemID) = units held;
+-- makers[itemID] = { { recipeID, reagents, output } }; chooser(itemID, depth, visiting) -> recipe | nil, the craft-or-buy
+-- decision at market prices (nil = buy). A reagent that is short is crafted when the chooser says so, or when its first maker's
+-- inputs are all held anyway; one level of intermediates under another at most (Balance.MAX_DEPTH). Returns { { itemID, recipeID,
+-- crafts, depth, reagents } }; units a craft makes beyond the need stay in the pool.
+function Basket.Intermediates(need, counted, makers, chooser)
+	local pool, out, at = {}, {}, {}
+	local function held(itemID)
+		if pool[itemID] == nil then
+			pool[itemID] = counted(itemID) or 0
+		end
+		return pool[itemID]
+	end
+	local maxDepth = ns.Balance and ns.Balance.MAX_DEPTH or 2
+	local function want(itemID, quantity, depth)
+		local have = held(itemID)
+		local take = math.min(have, quantity)
+		pool[itemID] = have - take
+		local short = quantity - take
+		if short <= 0 or depth >= maxDepth then
+			return
+		end
+		local recipe
+		for _, maker in ipairs(makers[itemID] or {}) do
+			local picked = chooser and chooser(itemID, depth, {})
+			recipe = picked and picked.recipeID == maker.recipeID and maker or recipe
+		end
+		if not recipe then
+			local first = (makers[itemID] or {})[1]
+			if first then
+				local yield = math.max(1, math.floor(first.output and first.output.quantity or 1))
+				local crafts, all = math.ceil(short / yield), true
+				for _, r in ipairs(first.reagents or {}) do
+					all = all and held(r.itemID) >= r.quantity * crafts
+				end
+				recipe = all and first or nil
+			end
+		end
+		if not recipe then
+			return
+		end
+		local yield = math.max(1, math.floor(recipe.output and recipe.output.quantity or 1))
+		local crafts = math.ceil(short / yield)
+		local line = at[itemID]
+		if line then
+			line.crafts = line.crafts + crafts
+		else
+			line = { itemID = itemID, recipeID = recipe.recipeID, crafts = crafts, depth = depth, reagents = recipe.reagents }
+			at[itemID] = line
+			out[#out + 1] = line
+		end
+		pool[itemID] = held(itemID) + crafts * yield - short
+		for _, r in ipairs(recipe.reagents or {}) do
+			want(r.itemID, r.quantity * crafts, depth + 1)
+		end
+	end
+	for _, n in ipairs(need or {}) do
+		want(n.itemID, n.quantity, 0)
+	end
+	return out
+end
+
+-- Profit per craft-second of an entry's planned figures, nil when either is missing.
+local function PerSecond(profitEach, secEach)
+	if profitEach and secEach and secEach > 0 then
+		return profitEach / secEach
+	end
+end
+
+-- The entries (plan.crafts) in craft order: best profit per second first, those without it after in the plan's order, an
+-- entry whose product another entry needs before that one.
+local function RunOrder(crafts)
+	local sorted = {}
+	for i, c in ipairs(crafts) do
+		c.pos, c.pps = i, PerSecond(c.entry.profitEach, c.entry.secEach)
+		sorted[i] = c
+	end
+	table.sort(sorted, function(a, b)
+		if (a.pps ~= nil) ~= (b.pps ~= nil) then
+			return a.pps ~= nil
+		end
+		if a.pps and a.pps ~= b.pps then
+			return a.pps > b.pps
+		end
+		return a.pos < b.pos
+	end)
+	local producer = {}
+	for _, c in ipairs(sorted) do
+		if c.row.outputItemID then
+			producer[c.row.outputItemID] = c
+		end
+	end
+	local out, placed = {}, {}
+	while #sorted > 0 do
+		local pick = 1
+		for i, c in ipairs(sorted) do
+			local blocked = false
+			for _, r in ipairs(c.row.reagents or {}) do
+				local p = producer[r.itemID]
+				if p and p ~= c and not placed[p] then
+					blocked = true
+					break
+				end
+			end
+			if not blocked then
+				pick = i
+				break
+			end
+		end
+		local c = table.remove(sorted, pick) -- a cycle (nothing unblocked) takes the first
+		placed[c] = true
+		out[#out + 1] = c
+	end
+	return out
+end
+
+-- The craft list of a plan (Basket.Plan()); bags = itemID -> count of what is carried. opts (specs): { counted = fn(itemID)
+-- -> units held in the counted places, makers = Balance.Makers() form, chooser = Balance.Chooser() form }. See the header.
+function Basket.CraftList(plan, bags, opts)
+	bags = bags or {}
+	local made = ns.db and ns.db.basket and ns.db.basket.made or {}
+	local lines, isEntry = {}, {}
+	for _, c in ipairs(plan.crafts or {}) do
+		isEntry[c.entry.recipeID] = true
+	end
+	-- Intermediates: the reagents of the crafts that the bags (and the other counted places) do not hold and a known recipe
+	-- makes, crafted from bought or held inputs, deepest first: they come before what uses them.
+	opts = opts or {}
+	local inter = {}
+	if #(plan.need or {}) > 0 then
+		local counted = opts.counted or (ns.Holdings and ns.Holdings.Counter()) or function(id) return bags[id] or 0 end
+		local makers = opts.makers or (ns.Balance and ns.Balance.Makers()) or {}
+		local chooser = opts.chooser or (ns.Balance and ns.Balance.Chooser())
+		for _, m in ipairs(Basket.Intermediates(plan.need, counted, makers, chooser)) do
+			if not isEntry[m.recipeID] then
+				local can, missing = Basket.CanCraft(m.reagents, bags, m.crafts)
+				inter[#inter + 1] = { kind = "intermediate", recipeID = m.recipeID, outputItemID = m.itemID, name = Basket.ItemName(m.itemID),
+					left = m.crafts, planned = m.crafts, made = 0, can = can, missing = missing, state = StateOf(can, m.crafts),
+					depth = m.depth }
+			end
+		end
+	end
+	table.sort(inter, function(a, b)
+		if a.depth ~= b.depth then
+			return a.depth > b.depth
+		end
+		return a.name < b.name
+	end)
+	for _, l in ipairs(inter) do
+		lines[#lines + 1] = l
+	end
+	for _, c in ipairs(RunOrder(plan.crafts or {})) do
+		local e, id = c.entry, c.entry.recipeID
+		local done = made[id] and made[id].n or 0
+		local can, missing = Basket.CanCraft(c.row.reagents, bags, c.count)
+		lines[#lines + 1] = { kind = "craft", recipeID = id, professionID = e.professionID, name = c.row.name,
+			outputItemID = c.row.outputItemID, icon = c.row.icon, left = c.count, planned = c.count + done, made = done,
+			channel = e.channel, label = e.channel and Basket.CHANNEL_LABELS[e.channel], profitEach = e.profitEach,
+			secEach = e.secEach, pps = c.pps, can = can, missing = missing, state = StateOf(can, c.count), craft = c }
+	end
+	-- What is made and has no craft left: ticked and last.
+	local finished = {}
+	for id, m in pairs(made) do
+		if not isEntry[id] then
+			finished[#finished + 1] = { kind = "made", recipeID = id, professionID = m.professionID, name = m.name or ("recipe " .. id),
+				left = 0, planned = m.n, made = m.n, channel = m.channel, label = m.channel and Basket.CHANNEL_LABELS[m.channel],
+				profitEach = m.profitEach, can = 0, missing = {}, state = "made" }
+		end
+	end
+	table.sort(finished, function(a, b)
+		return a.name < b.name
+	end)
+	for _, l in ipairs(finished) do
+		lines[#lines + 1] = l
+	end
+	local sum = { left = 0, madeTotal = 0, madeProfit = 0, profitLeft = 0 }
+	for _, m in pairs(made) do
+		sum.madeTotal = sum.madeTotal + m.n
+		sum.madeProfit = sum.madeProfit and m.profit and (sum.madeProfit + m.profit) or nil
+	end
+	for _, l in ipairs(lines) do
+		if l.kind == "craft" then
+			sum.left = sum.left + l.left
+			sum.profitLeft = sum.profitLeft and l.profitEach and (sum.profitLeft + l.profitEach * l.left) or nil
+		end
+	end
+	sum.done = sum.left == 0 and #(plan.crafts or {}) == 0 and #(plan.missing or {}) == 0 and sum.madeTotal > 0
+	return { lines = lines, summary = sum }
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -525,6 +800,7 @@ function Basket.UsePlan(plan, replace)
 	if replace then
 		ns.db.basket = { entries = {} }
 	end
+	Basket.FreshRun()
 	local n = 0
 	for _, l in ipairs(plan.lines or {}) do
 		local e = Basket.Find(l.recipeID)

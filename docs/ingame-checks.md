@@ -1404,3 +1404,13 @@ No TOC change, `/reload` is enough. At an open auction house the CraftWise panel
 - [ ] The header's **Scan AH** button and its 15 minute cooldown are exactly as before the refresh (no scan was asked for).
 - [ ] Buy button and key say "A price refresh is running: stop it first" while the refresh runs.
 - [ ] Settings > Buying at the AH > "Max per item without sales data" changes the default 2.
+
+## Craft run 2: craft list, live ticks, Done (#389)
+No TOC change, `/reload` is enough. Needs a basket with crafts from "Use plan" (#388) and the reagents bought. Nothing is crafted by CraftWise: you press Create.
+- [ ] **Next to the profession window:** open a profession with crafts in the basket. A "Craft list" panel sits at the right of the profession window: line one "N crafts left, expected profit ..." and one two-line row per craft. The panel is not there with an empty basket; the x hides it until the basket changes.
+- [ ] **Order:** crafts of intermediates come first (a recipe that makes a reagent of another craft), then the plan's crafts by profit per craft-second; an entry added by hand (no plan figures) comes after those. Compare with the Craft run section's order.
+- [ ] **Each row:** "N of M crafts  Recipe", then "AH" or "Vendor", the profit per craft, "ready" / "N ready" / "missing reagents" and what the next craft lacks. Hold only part of the reagents: the row says what is short. Bank items do not count as craftable (they count for the plan, not for this list).
+- [ ] **Click a row:** the recipe opens in the profession window (`C_TradeSkillUI.OpenRecipe`) and nothing is crafted. **Check:** does it also open when that recipe belongs to another profession than the open one? Say so on #389 if not.
+- [ ] **Live ticks:** craft one. The row goes "3 of 5" -> "2 of 5" at once (the craft event, not the bags), and a stack of crafts queued with a count ticks one at a time. At zero the row shows the tick and moves down as "N made". An intermediate row shrinks as the made items arrive in the bags.
+- [ ] **Done:** when everything is made the panel and Make > Basket say "Done: N crafts made, expected profit ...". A craft by hand of a recipe that is in the basket also ticks it (that is meant). Add a recipe or "Use plan" with replace: the tally starts again. Clear basket empties it.
+- [ ] **Make > Basket:** the same lines at the top of the list (intermediates first, then crafts, then made), the open row has "Open recipe" next to the count controls. Docked layout draws the same rows in two lines. The "To buy" lines count only the crafts left.
