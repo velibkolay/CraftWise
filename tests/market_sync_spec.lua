@@ -466,7 +466,7 @@ it("#241: merged prices are the prices: Current, Typical's days and the status l
 	Merge(M, File({ [100] = { [HORDE] = M.EncodeEntry(theirs) } }, { scans = { [HORDE] = { { t = NOW - 100, kind = "full", items = 5 } } } }))
 	eq(M.Current(100, HORDE).min, 90)
 	local typical = M.Typical(100, HORDE)
-	eq(typical.status, "ok"); eq(typical.days, 4, "three merged days and today, built from the merged point")
+	eq(typical.status, "ok"); eq(typical.days, 3, "today and the two merged days before it fall in the 3-day window, built from the merged point")
 	eq(M.LastRecorded(HORDE), nil, "nobody scanned here")
 	local shell = ns.Main
 	ns.ProfitHouse = function() return HORDE, "Horde AH" end

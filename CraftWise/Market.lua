@@ -54,8 +54,9 @@ local MAX_TIERS = 8
 local RAW_SECONDS = 48 * 3600
 local DAY_SECONDS = 86400
 local KEEP_DAYS = 30
-local TYPICAL_DAYS = 7
-local MIN_HISTORY_DAYS = 3
+local TYPICAL_DAYS = 3 -- the typical price is the median of the last 3 days (#394)
+local WINDOW_DAYS = 7 -- the low/high range, units gone and the day series keep a week
+local MIN_HISTORY_DAYS = 2
 local CHEAPEST_SHARE = 0.15
 local DEDUPE_SECONDS = 60 -- the same result set fires several events; identical data later is a new point
 local SCANS_KEPT = 30
@@ -227,7 +228,7 @@ function M.DayTypical(points)
 	return WeightedMedian(values)
 end
 
--- Median of the `typ` values in the last 7 days, rounded down, and how many days there were.
+-- Median of the `typ` values in the last 3 days (TYPICAL_DAYS), rounded down, and how many days there were.
 local function MedianOfDays(days, today)
 	local list = {}
 	for day = today - TYPICAL_DAYS + 1, today do
@@ -2445,7 +2446,7 @@ function M.Current(itemKey, house)
 	return { t = l.t, min = l.min, qty = l.qty, listings = l.listings, listed = not absent }
 end
 
--- Start (unix time) of the newest day the 7-day typical has a price for, nil without history (#376): an
+-- Start (unix time) of the newest day the typical has a price for, nil without history (#376): an
 -- observation older than that adds nothing to the typical.
 function M.NewestDayStart(itemKey, house)
 	local entry = db and GetEntry(itemKey, house)
@@ -2552,14 +2553,14 @@ end
 function M.Disappeared(itemKey, house)
 	local entry = db and GetEntry(itemKey, house)
 	local units, today = 0, DayNumber(time())
-	for day = today - TYPICAL_DAYS + 1, today do
+	for day = today - WINDOW_DAYS + 1, today do
 		local d = entry and entry.days[day]
 		units = units + (d and d.gone or 0)
 	end
 	return units
 end
 
--- Units seen leaving an item's market at one house in the last TYPICAL_DAYS days, and the days that had observations
+-- Units seen leaving an item's market at one house in the last WINDOW_DAYS days, and the days that had observations
 -- (#388, the demand of the craft run): { units, days }. "Observed drops" only: a cancel or an expiry looks the same, and
 -- a drop is only seen between two observations, so 0 units can also mean too few scans. Read only.
 function M.DropRate(itemKey, house, now)
@@ -2568,7 +2569,7 @@ function M.DropRate(itemKey, house, now)
 	end
 	now = now or time()
 	local days = 0
-	for _, d in ipairs(M.DaySeries(itemKey, house, TYPICAL_DAYS, now)) do
+	for _, d in ipairs(M.DaySeries(itemKey, house, WINDOW_DAYS, now)) do
 		if d.typ ~= nil then
 			days = days + 1
 		end
@@ -2682,7 +2683,7 @@ end
 -- The last n days (oldest first, today last) at one house: { { day, typ, lo }, ... }; typ and lo nil on
 -- days without data. Raw points not aggregated yet count for their day as AggregateEntry would count them.
 function M.DaySeries(itemKey, house, n, now)
-	n = n or TYPICAL_DAYS
+	n = n or WINDOW_DAYS
 	local today = DayNumber(now or time())
 	local entry = db and GetEntry(itemKey, house)
 	local rawByDay = {}
@@ -2730,7 +2731,7 @@ function M.Range(itemKey, house)
 	if not entry then
 		return nil
 	end
-	local first = DayNumber(time()) - TYPICAL_DAYS + 1
+	local first = DayNumber(time()) - WINDOW_DAYS + 1
 	local lo, hi
 	local function see(price)
 		if price then

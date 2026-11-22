@@ -46,7 +46,7 @@ local function Seed(itemID, house, o)
 	db.scans[house] = { { t = NOW - 7200, kind = "full", items = 500, source = "replicate" } }
 end
 
--- Testleather: in scope, five days of history (typical 9s 50c, latest tiers from 8s 50c), 214 listed.
+-- Testleather: in scope, five days of history (typical 9s 20c over 3 days, latest tiers from 8s 50c), 214 listed.
 local function SeedLeather()
 	Seed(LEATHER, HORDE, { typs = { 900, 920, 950, 980, 1020 }, los = { 850, 880, 900, 950, 1000 },
 		tiers = { 850, 40, 900, 174 }, total = 214, listings = 9 })
@@ -113,7 +113,7 @@ it("Items: rows say how many are listed (thin, vendor only), the typical price a
 	local I = M.Items
 	local leather = I.Row(LEATHER, NOW)
 	eq(leather.note, "214 listed")
-	eq(leather.priceText, ns.FormatCoins(950), "typical: median of the days")
+	eq(leather.priceText, ns.FormatCoins(920), "typical: median of the last 3 days")
 	-- first day 10s 20c, today 8s 50c (the latest point counts for today): -17 %
 	eq(leather.change, -17)
 	has(leather.changeText, "−17 %"); eq(leather.changeColor, "nokta")
@@ -140,7 +140,7 @@ it("Items: the card's figures, chart series, Used in and Where to buy", function
 	eq(card.name, "Testleather")
 	has(card.sub, "stacks of 20"); has(card.sub, "you have 6 in bags")
 	eq(card.subTip[1]:sub(1, 8), "Counted:")
-	eq(card.figures.typical.text, ns.FormatCoins(950))
+	eq(card.figures.typical.text, ns.FormatCoins(920))
 	eq(card.houses.rows[2].label, "Booty Bay", "other houses have their own section (#350)")
 	eq(table.concat(card.figures.typical.tip, "\n"):find("Booty Bay", 1, true), nil, "no longer on the Typical tip")
 	eq(card.figures.lowest.text, ns.FormatCoins(850))
@@ -217,7 +217,7 @@ it("Items page: the list and the card draw; Line objects for the chart with the 
 	eq(row.name.text, "Testleather"); eq(row.note.text, "214 listed"); eq(row.bg.shown, true)
 	local card = body.card
 	eq(card.name.text, "Testleather")
-	eq(card.figs[1].value.text, ns.FormatCoins(950))
+	eq(card.figs[1].value.text, ns.FormatCoins(920))
 	eq(card.chart.mode, "lines")
 	-- typical: 4 days with a price, 3 segments; lowest: dashed
 	local solid, dashed = 0, 0
