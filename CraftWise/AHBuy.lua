@@ -289,6 +289,7 @@ function AHBuy.Pick(line)
 	if S.busy then
 		return false
 	end
+	AHBuy.SweepStop() -- a pick ends a price refresh (#388)
 	DropQuote()
 	local t = S.target
 	if not (t and line and t.itemID == line.itemID and t.kind == line.kind) then
@@ -302,6 +303,7 @@ end
 
 -- One search of the picked line (a click, or the key later). Returns true or false, why.
 function AHBuy.Search()
+	AHBuy.SweepStop() -- a search of a line ends a price refresh (#388)
 	local t = S.target
 	if not t then
 		return false, Say("Pick a line first")
@@ -329,6 +331,7 @@ end
 -- round to the first; the picked line again after a purchase or an error (its results are old), when it was
 -- picked and not searched yet, or when it is the only one. One search, nothing more. Returns true or false, why.
 function AHBuy.Next()
+	AHBuy.SweepStop() -- the search key ends a price refresh (#388)
 	if S.busy then
 		return false, Say("Wait for the purchase")
 	end
@@ -362,6 +365,41 @@ function AHBuy.Next()
 	end
 	return AHBuy.Search()
 end
+
+----------------------------------------------------------------------------------------------------
+-- Refreshing the prices of a craft run's plan (#388): the run itself (searches, timers) is Market.lua's
+----------------------------------------------------------------------------------------------------
+
+function AHBuy.SweepRunning()
+	return ns.Market.SweepRunning()
+end
+
+function AHBuy.SweepStop(text)
+	return ns.Market.SweepStop(text)
+end
+
+-- Starts a price refresh of item IDs on a click; refused while a purchase is out or being asked. Returns true, or false and why.
+function AHBuy.SweepStart(items)
+	if S.busy or S.asking or S.phase == "quoting" or S.phase == "confirm" or S.phase == "buying" then
+		return false, Say("Finish or cancel the purchase first")
+	end
+	if not S.open then
+		return false, Say("Open the auction house first")
+	end
+	local ok, why = ns.Market.SweepStart(items)
+	if not ok then
+		return false, Say(why)
+	end
+	S.message = nil
+	Changed()
+	return true
+end
+
+-- The run ended (done, stopped, or the auction house closed): its last words go to the panel's line.
+ns.Listen("SWEEP_DONE", function(_, _, _, text)
+	Say(text)
+end)
+ns.Listen("SWEEP_STEP", Changed)
 
 ----------------------------------------------------------------------------------------------------
 -- Buying: the only code that calls PlaceBid, StartCommoditiesPurchase and ConfirmCommoditiesPurchase
@@ -469,6 +507,9 @@ local EnsureDialog -- below
 function AHBuy.Click()
 	if S.busy then
 		return false, Say("Wait for the purchase")
+	end
+	if AHBuy.SweepRunning() then
+		return false, Say("A price refresh is running: stop it first")
 	end
 	if S.phase == "confirm" then
 		return AHBuy.Confirm()

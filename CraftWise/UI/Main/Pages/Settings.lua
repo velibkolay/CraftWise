@@ -553,6 +553,18 @@ local function Groups()
 			sub = L["After a scan or search, items on the snipe list (AH panel) listed at or below the max price you typed go into the same toast as the flips. Nothing is bought by the toast."],
 			get = function() return S().snipeAlert ~= false end,
 			set = function(v) S().snipeAlert = v and true or false end },
+		{ key = "runmax", kind = "stepper", label = L["Max per item without sales data"],
+			sub = L["The AH panel's Craft run makes an AH item at most as often as it sells: your own AH sales of it, else the units seen leaving the market. Without either it plans this many crafts. Vendor sales have no limit."],
+			get = function() return ns.Basket.MaxWithoutData() end,
+			down = function()
+				S().craftRunMax = math.max(1, ns.Basket.MaxWithoutData() - 1)
+				Changed()
+			end,
+			up = function()
+				S().craftRunMax = math.min(100, ns.Basket.MaxWithoutData() + 1)
+				Changed()
+			end,
+			format = function(v) return tostring(v) end },
 	} }
 
 	groups[#groups + 1] = { key = "disenchant", label = L["Disenchant"], rows = {

@@ -94,6 +94,22 @@ function A.List(charKey)
 	return c and c.list or nil
 end
 
+-- Units of an item that sold at the AH since `since` (unix time), over every character of the account (#388, the
+-- demand cap of the craft run): records the client or the sale mail said sold ("sold", "settled"); a record whose
+-- units are not known (qtyUnknown) and one only guessed sold ("gone") are not counted.
+function A.SoldUnits(itemID, since)
+	local units = 0
+	for _, c in pairs(store and store.chars or {}) do
+		for _, rec in ipairs(c.list or {}) do
+			if rec.i == itemID and (rec.st == "sold" or rec.st == "settled") and not rec.qtyUnknown
+				and rec.soldT and rec.soldT >= since then
+				units = units + (rec.q or 0)
+			end
+		end
+	end
+	return units
+end
+
 -- A recorded sale (the money arrived, the ledger's "ahsell") of an item marked Junk (#214, #222, #227): the item does
 -- sell on the AH, so the mark goes and it is valued at the AH again. Listing, cancelling and expiring never get
 -- here. One chat line; the pages and bag advice refresh.

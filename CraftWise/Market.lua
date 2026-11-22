@@ -1362,6 +1362,170 @@ local function OnThrottleEvent(kind)
 end
 
 ----------------------------------------------------------------------------------------------------
+-- Refreshing the prices of a list of items (#388): one search per item, started by one click
+----------------------------------------------------------------------------------------------------
+-- Like Auctionator's shopping list: the click on the craft run's "Refresh prices" searches the items one after the
+-- other, each search sent when the answer to the one before has been read (our own recorder takes it after
+-- SEARCH_SETTLE_SECONDS) and the client's request throttle is ready. They are plain item and commodity searches
+-- (C_AuctionHouse.SendSearchQuery) recorded like any search; the whole list is never asked for (no replicate), so the
+-- 15 minute cooldown of our own scan is untouched. A second click stops it. Nothing is bought, listed or confirmed.
+-- Whether the client takes the chained searches without a click or key for each is checked in game
+-- (docs/ingame-checks.md); if it does not, the items time out and the end says how many got no answer.
+-- Started and stopped through AHBuy.SweepStart / SweepStop, which keep it apart from a purchase.
+M.SWEEP_SETTLE = 0.5 -- seconds after an answer before the next search: the recorder reads a search 0.3 s after its last event
+M.SWEEP_TIMEOUT = 10 -- seconds without an answer before the item is skipped (a placeholder until measured in game)
+M.SWEEP_WAIT = 0.5 -- seconds between two looks at the client's throttle
+M.SWEEP_WAIT_MAX = 40 -- looks before the run gives up (20 s)
+
+local sweep = { running = false, items = {}, i = 0, done = 0, missed = 0, waits = 0, waiting = nil, timer = nil }
+M.sweep = sweep
+
+local function SweepCancelTimer()
+	if sweep.timer then
+		sweep.timer:Cancel()
+		sweep.timer = nil
+	end
+end
+
+function M.SweepRunning()
+	return sweep.running
+end
+
+-- "Refreshing 3 of 12: Linen Cloth", nil when no run is going.
+function M.SweepText()
+	if not sweep.running then
+		return nil
+	end
+	local at = math.max(1, sweep.i)
+	local id = sweep.items[at]
+	local name = id and C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+	return ("Refreshing %d of %d: %s"):format(at, #sweep.items, name or "...")
+end
+
+local function SweepFinish(text)
+	SweepCancelTimer()
+	local done, total, missed = sweep.done, #sweep.items, sweep.missed
+	sweep.running, sweep.waiting = false, nil
+	text = text or ("Refreshed %d of %d items%s"):format(done, total, missed > 0 and (", %d got no answer"):format(missed) or "")
+	ns.Notify("SWEEP_DONE", done, total, missed, text)
+end
+
+function M.SweepStop(text)
+	if sweep.running then
+		SweepFinish(text or "Refresh stopped")
+		return true
+	end
+	return false
+end
+
+local SweepSend
+
+local function SweepAdvance()
+	sweep.timer = nil
+	if not sweep.running then
+		return
+	end
+	if sweep.i >= #sweep.items then
+		SweepFinish()
+		return
+	end
+	SweepSend()
+end
+
+local function SweepSorts(isCommodity)
+	local O = Enum and Enum.AuctionHouseSortOrder or {}
+	if isCommodity == false then
+		return { { sortOrder = O.Buyout, reverseSort = false }, { sortOrder = O.Bid, reverseSort = false } }
+	end
+	return { { sortOrder = O.Price, reverseSort = false }, { sortOrder = O.Name, reverseSort = false } }
+end
+
+function SweepSend()
+	sweep.timer = nil
+	if not sweep.running then
+		return
+	end
+	if not currentHouse then
+		SweepFinish("The auction house closed: refresh stopped")
+		return
+	end
+	if not ThrottleReady() then
+		sweep.waits = sweep.waits + 1
+		if sweep.waits > M.SWEEP_WAIT_MAX then
+			SweepFinish("The auction house stayed busy: refresh stopped")
+			return
+		end
+		sweep.timer = C_Timer.NewTimer(M.SWEEP_WAIT, SweepSend)
+		return
+	end
+	sweep.waits = 0
+	sweep.i = sweep.i + 1
+	local itemID = sweep.items[sweep.i]
+	local key = C_AuctionHouse.MakeItemKey(itemID)
+	local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(key)
+	sweep.waiting = itemID
+	C_AuctionHouse.SendSearchQuery(key, SweepSorts(info and info.isCommodity or nil), false)
+	sweep.timer = C_Timer.NewTimer(M.SWEEP_TIMEOUT, function()
+		sweep.timer = nil
+		if sweep.running and sweep.waiting == itemID then
+			sweep.missed, sweep.waiting = sweep.missed + 1, nil
+			SweepAdvance()
+		end
+	end)
+	ns.Notify("SWEEP_STEP")
+end
+
+-- Starts the run on a click: items = item IDs, searched in that order (duplicates once). Returns true, or false and why.
+function M.SweepStart(items)
+	if sweep.running then
+		return false, "A refresh is already running"
+	end
+	if not (db and currentHouse) then
+		return false, "Open the auction house first"
+	end
+	local seen, list = {}, {}
+	for _, id in ipairs(items or {}) do
+		if id and not seen[id] then
+			seen[id] = true
+			list[#list + 1] = id
+		end
+	end
+	if #list == 0 then
+		return false, "Nothing to refresh: build a plan first"
+	end
+	sweep.running, sweep.items, sweep.i, sweep.done, sweep.missed, sweep.waits, sweep.waiting = true, list, 0, 0, 0, 0, nil
+	SweepSend()
+	return true
+end
+
+-- The answer to the search in flight: the recorder reads it after its own settle time, the next search follows after ours.
+local function SweepAnswered(itemID)
+	if not (sweep.running and sweep.waiting and (itemID == nil or itemID == sweep.waiting)) then
+		return
+	end
+	SweepCancelTimer()
+	sweep.waiting, sweep.done = nil, sweep.done + 1
+	sweep.timer = C_Timer.NewTimer(M.SWEEP_SETTLE, SweepAdvance)
+	ns.Notify("SWEEP_STEP")
+end
+ns.On("COMMODITY_SEARCH_RESULTS_UPDATED", function(_, itemID)
+	SweepAnswered(itemID)
+end)
+ns.On("ITEM_SEARCH_RESULTS_UPDATED", function(_, itemKey)
+	SweepAnswered(itemKey and itemKey.itemID)
+end)
+ns.On("AUCTION_HOUSE_SHOW_ERROR", function()
+	if sweep.running and sweep.waiting then
+		SweepCancelTimer()
+		sweep.missed, sweep.waiting = sweep.missed + 1, nil
+		sweep.timer = C_Timer.NewTimer(M.SWEEP_SETTLE, SweepAdvance)
+	end
+end)
+ns.On("AUCTION_HOUSE_CLOSED", function()
+	M.SweepStop("The auction house closed: refresh stopped")
+end)
+
+----------------------------------------------------------------------------------------------------
 -- Full scan. Reads the replicate list over several frames, collects in memory, and only stores once
 -- every row was read: the list isn't reliable after the AH closes (Auctionator treats that as a
 -- failed scan), and a partial list would count most of the market as disappeared.
@@ -2393,6 +2557,23 @@ function M.Disappeared(itemKey, house)
 		units = units + (d and d.gone or 0)
 	end
 	return units
+end
+
+-- Units seen leaving an item's market at one house in the last TYPICAL_DAYS days, and the days that had observations
+-- (#388, the demand of the craft run): { units, days }. "Observed drops" only: a cancel or an expiry looks the same, and
+-- a drop is only seen between two observations, so 0 units can also mean too few scans. Read only.
+function M.DropRate(itemKey, house, now)
+	if not (db and GetEntry(itemKey, house)) then
+		return nil
+	end
+	now = now or time()
+	local days = 0
+	for _, d in ipairs(M.DaySeries(itemKey, house, TYPICAL_DAYS, now)) do
+		if d.typ ~= nil then
+			days = days + 1
+		end
+	end
+	return { units = M.Disappeared(itemKey, house), days = days }
 end
 
 -- Look up › Items (#157). Read only.

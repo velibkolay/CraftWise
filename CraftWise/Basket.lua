@@ -18,7 +18,20 @@
 --     (Loops.BETTER) or goes away and comes back. Lines tick off from the bags. The Auctionator list "CraftWise
 --     vendor flips" is rebuilt with each check, a max price per unit in every search string. Nothing is bought,
 --     bid on or confirmed here.
--- Pure parts (Add, Remove, Combine, Split, Expected) take plain data so the specs can feed them.
+-- Craft run (#388): the AH panel's "Craft run" section plans crafts from what the character knows (Profit.RunPlan,
+-- fed by Basket.RunCandidates) under a gold budget and a time limit and "Use plan" (Basket.UsePlan) puts them here.
+--   * An entry made from a plan carries three more fields, which the craft list (#389) and the sell lists (#390) read:
+--       channel    "vendor" | "AH": where the planned craft sells for more (or "vendor" under the Vendor-only filter)
+--       profitEach expected profit per craft in copper (sale after the cut or at the vendor, minus the reagents at their
+--                  buy value: what the bags hold counts at that value too, only the budget counts cash)
+--       secEach    crafting seconds per craft, the crafts of its intermediates included (measured median, else the
+--                  recipe's cast time from the client)
+--     Entries added by hand have none of the three (nil: nothing is guessed). Adding a recipe again keeps its count
+--     sum and takes the newer three.
+--   * Demand cap: an AH craft is planned at most as often as the item sells (his own AH sales of it, else the units
+--     observed leaving the profit house between scans, else Settings "Max per item without sales data", default 2);
+--     the source is told in the plan. Vendor sales have no cap.
+-- Pure parts (Add, Remove, Combine, Split, Expected, DemandCap, SaleOf) take plain data so the specs can feed them.
 local _, ns = ...
 
 local Basket = {}
@@ -60,7 +73,8 @@ function Basket.Find(recipeID)
 end
 
 -- Adds `count` crafts of a recipe (default 1); the same recipe again adds to its count.
-function Basket.Add(recipeID, professionID, count)
+-- extra (#388, optional): { channel, profitEach, secEach } of a planned craft, stored on the entry.
+function Basket.Add(recipeID, professionID, count, extra)
 	if not (ns.db and recipeID) then
 		return nil
 	end
@@ -71,6 +85,9 @@ function Basket.Add(recipeID, professionID, count)
 	else
 		e = { recipeID = recipeID, professionID = professionID, count = count }
 		table.insert(Entries(), e)
+	end
+	if extra then
+		e.channel, e.profitEach, e.secEach = extra.channel, extra.profitEach, extra.secEach
 	end
 	Changed()
 	return e
@@ -261,6 +278,267 @@ function Basket.Plan()
 	plan.flips = Basket.Flips()
 	plan.sale, plan.profit = Basket.Expected(expected)
 	return plan
+end
+
+----------------------------------------------------------------------------------------------------
+-- Craft run (#388)
+----------------------------------------------------------------------------------------------------
+
+Basket.RUN_MAX_DEFAULT = 2 -- crafts of an AH item without any sales data (Veli, #387), Settings "Max per item without sales data"
+Basket.SALES_DAYS = 14 -- the window of his own sales and the drops that set the demand: provisional, labelled in the plan
+
+function Basket.MaxWithoutData()
+	local n = ns.db and ns.db.settings and tonumber(ns.db.settings.craftRunMax)
+	return n and n >= 1 and math.floor(n) or Basket.RUN_MAX_DEFAULT
+end
+
+-- Crafting seconds of one craft: the measured median of the craft log (#251, #273), else the recipe's cast time from
+-- the client, said so. nil without either: the recipe is left out of the plan (a time is never made up).
+function Basket.CraftSeconds(recipeID)
+	local speed = ns.CraftLog and ns.CraftLog.Speed and ns.CraftLog.Speed(recipeID)
+	if speed then
+		return speed.sec, "measured"
+	end
+	local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(recipeID)
+	local ms = info and tonumber(info.castTime)
+	if ms and ms > 0 then
+		return ms / 1000, "cast time, not measured"
+	end
+	return nil
+end
+
+-- Pure: the most crafts of an AH item the demand supports. sold / drops = { units, days } | nil (his own AH sales, the
+-- units seen leaving the market), outQty = units one craft makes, fallback = the setting. Own sales win; drops are
+-- used only when they saw something (no drops can also mean too few scans). Returns cap (crafts), perDay, source
+-- ("sales" | "drops" | "default") and the text the plan shows.
+function Basket.DemandCap(sold, drops, outQty, fallback)
+	outQty = math.max(1, outQty or 1)
+	local function rate(r, source, text)
+		local perDay = r.units / math.max(1, r.days)
+		return math.max(1, math.ceil(perDay / outQty - 1e-9)), perDay, source, (text):format(r.units, r.days, perDay)
+	end
+	if sold and sold.units > 0 then
+		return rate(sold, "sales", "your sales: %d sold in %d days, %.1f a day")
+	end
+	if drops and drops.units > 0 and drops.days > 0 then
+		return rate(drops, "drops", "observed drops: %d units in %d days, %.1f a day (a cancel looks the same)")
+	end
+	return fallback, nil, "default", ("no sales data: at most %d"):format(fallback)
+end
+
+-- Pure: how a craft sells. options = ns.SaleOptions(item, units one craft makes): { vendor, auction = { net }, chosen }.
+-- vendorOnly takes the vendor price for every craft. The AH only counts with a known cut (net): an unverified cut
+-- gives a gross price that is not a profit. Returns channel ("vendor" | "AH"), copper per craft; nil, why without one.
+function Basket.SaleOf(options, vendorOnly)
+	local vendor = options and options.vendor
+	local hasVendor = vendor and vendor > 0
+	if vendorOnly then
+		if hasVendor then
+			return "vendor", vendor
+		end
+		return nil, "no vendor price"
+	end
+	local ah = options and options.auction and options.auction.net
+	if options and options.chosen == "auction" and ah then
+		return "AH", ah
+	end
+	if hasVendor then
+		return "vendor", vendor
+	end
+	if options and options.chosen == "auction" then
+		return nil, "the AH cut is not known"
+	end
+	return nil, "no price"
+end
+
+-- His own AH sales of an item over the window, and the units the profit house lost to drops: { units, days } each.
+local function SoldOf(itemID, now)
+	local units = ns.Auctions and ns.Auctions.SoldUnits and ns.Auctions.SoldUnits(itemID, now - Basket.SALES_DAYS * 86400) or 0
+	return { units = units, days = Basket.SALES_DAYS }
+end
+local function DropsOf(itemID, now)
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	if not (house and ns.Market and ns.Market.DropRate) then
+		return nil
+	end
+	return ns.Market.DropRate(itemID, house, now)
+end
+
+local function BuyValue(buy)
+	local cost = 0
+	for _, l in ipairs(buy) do
+		local q = ns.BuyQuote(l.itemID, l.quantity)
+		if not q then
+			return nil
+		end
+		cost = cost + q.cost
+	end
+	return cost
+end
+
+-- The candidates of the planner (see Profit.RunPlan): one per known recipe that makes an item, with its sale, its
+-- time, its demand cap and quote(n). skipped counts what was left out and why ({ noTime, noSale, noPrice }).
+function Basket.RunCandidates(opts)
+	opts = opts or {}
+	local cands, skipped = {}, { noTime = 0, noSale = 0, noPrice = 0 }
+	if not (ns.db and ns.charDB) then
+		return cands, skipped
+	end
+	local now = time()
+	local makers, chooser = ns.Balance.Makers(), ns.Balance.Chooser()
+	local function makersOf(itemID)
+		return makers[itemID]
+	end
+	local function none()
+		return 0
+	end
+	for professionID in pairs(ns.charDB.professions or {}) do
+		for _, row in ipairs(ns.BuildRows(professionID, false, "profit")) do
+			local out, qty = row.outputItemID, row.outputQuantity
+			if row.status == "known" and out and qty and qty > 0 and #(row.reagents or {}) > 0 then
+				local seconds, timeLabel = Basket.CraftSeconds(row.recipeID)
+				local channel, each = Basket.SaleOf(ns.SaleOptions(out, qty), opts.vendorOnly)
+				if not seconds then
+					skipped.noTime = skipped.noTime + 1
+				elseif not channel then
+					skipped.noSale = skipped.noSale + 1
+				else
+					local c = { recipeID = row.recipeID, professionID = professionID, name = row.name, outputItemID = out,
+						seconds = seconds, timeLabel = timeLabel, channel = channel, each = each, reagents = row.reagents }
+					if channel == "AH" then
+						local cap, _, _, text = Basket.DemandCap(SoldOf(out, now), DropsOf(out, now), qty, Basket.MaxWithoutData())
+						c.cap, c.capText = cap, text
+					end
+					c.quote = function(n)
+						local need = {}
+						for i, r in ipairs(row.reagents) do
+							need[i] = { itemID = r.itemID, quantity = r.quantity * n }
+						end
+						-- Worth: every reagent bought, none held, intermediates crafted where that is cheaper (the
+						-- bags hold things worth money: a craft is not free because the mats are in the bank).
+						local worth = BuyValue(ns.Balance.Expand(need, {}, none, makersOf, chooser, { [out] = true }).buy)
+						-- Cash: the same after the bags, which is what the budget counts.
+						local b = ns.ReagentBalance(need, 1, out)
+						if not (worth and b.complete) then
+							if n == 1 then
+								c.noPrice = true
+							end
+							return nil
+						end
+						local extra = 0
+						for _, made in ipairs(b.crafts) do
+							local id = made.info and made.info.recipe and made.info.recipe.recipeID
+							local sec = id and Basket.CraftSeconds(id)
+							if not sec then
+								return nil
+							end
+							extra = extra + made.crafts * sec
+						end
+						return { cost = worth, cash = b.total, seconds = extra }
+					end
+					cands[#cands + 1] = c
+				end
+			end
+		end
+	end
+	return cands, skipped
+end
+
+-- What a plan shows besides its lines (what to buy, the intermediates to craft, the items to search again): from the
+-- combined reagents of all its lines, through the same buy list as the basket's.
+local function FillPlanBuy(plan, reagentsOf)
+	local items = {}
+	for _, l in ipairs(plan.lines) do
+		items[#items + 1] = { reagents = reagentsOf[l.recipeID], count = l.count }
+	end
+	plan.need = Basket.Combine(items)
+	plan.buy, plan.crafts = {}, {}
+	if #plan.need > 0 then
+		local b = ns.ReagentBalance(plan.need, 1)
+		plan.buy, plan.crafts = b.buy, b.crafts
+	end
+	plan.split = Basket.Split(plan.buy)
+	-- The prices worth a fresh look: every reagent that is not a sure vendor buy and, unless everything sells to
+	-- vendors, the products (they decide AH or vendor).
+	local seen, search = {}, {}
+	local function add(itemID)
+		if itemID and not seen[itemID] then
+			seen[itemID] = true
+			search[#search + 1] = itemID
+		end
+	end
+	for _, l in ipairs(plan.buy) do
+		if not (l.quote and l.quote.source == "vendor") then
+			add(l.itemID)
+		end
+	end
+	if not (plan.opts and plan.opts.vendorOnly) then
+		for _, l in ipairs(plan.lines) do
+			add(l.outputItemID)
+		end
+	end
+	plan.search = search
+end
+
+-- The plan. opts: { budget = copper | nil, seconds = crafting time | nil, vendorOnly = bool }. Reads prices, recipes,
+-- bags and the sales records; changes nothing. Returns { lines, cost (cash to buy), profit, seconds, limit, opts,
+-- skipped, need, buy, crafts, split, search, t }.
+function Basket.BuildRun(opts)
+	opts = opts or {}
+	local cands, skipped = Basket.RunCandidates(opts)
+	local reagentsOf = {}
+	for _, c in ipairs(cands) do
+		reagentsOf[c.recipeID] = c.reagents
+	end
+	local plan = ns.Profit.RunPlan(cands, { budget = opts.budget, seconds = opts.seconds, total = function(lines)
+		local items = {}
+		for _, l in ipairs(lines) do
+			items[#items + 1] = { reagents = reagentsOf[l.recipeID], count = l.count }
+		end
+		local need = Basket.Combine(items)
+		if #need == 0 then
+			return 0
+		end
+		local b = ns.ReagentBalance(need, 1)
+		return b.complete and b.total or nil
+	end })
+	for _, c in ipairs(cands) do
+		if c.noPrice then
+			skipped.noPrice = skipped.noPrice + 1
+		end
+	end
+	plan.opts = { budget = opts.budget, seconds = opts.seconds, vendorOnly = opts.vendorOnly and true or false }
+	plan.skipped, plan.t = skipped, time()
+	FillPlanBuy(plan, reagentsOf)
+	return plan
+end
+if ns.Timed then
+	Basket.BuildRun = ns.Timed("Basket.lua craft run", Basket.BuildRun)
+end
+
+-- "Use plan": the plan's crafts into the basket, replacing what is there or added to it. One BASKET_CHANGED.
+-- Returns the number of crafts put in.
+function Basket.UsePlan(plan, replace)
+	if not (ns.db and plan) then
+		return 0
+	end
+	if replace then
+		ns.db.basket = { entries = {} }
+	end
+	local n = 0
+	for _, l in ipairs(plan.lines or {}) do
+		local e = Basket.Find(l.recipeID)
+		if e then
+			e.count = Clamp(e.count + l.count)
+		else
+			e = { recipeID = l.recipeID, professionID = l.professionID, count = Clamp(l.count) }
+			table.insert(Entries(), e)
+		end
+		e.channel, e.profitEach, e.secEach = l.channel, l.profitEach, l.secEach
+		n = n + l.count
+	end
+	Changed()
+	return n
 end
 
 ----------------------------------------------------------------------------------------------------

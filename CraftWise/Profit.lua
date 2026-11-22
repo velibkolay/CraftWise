@@ -296,3 +296,160 @@ function Profit.Comparator(key, desc)
 		return va < vb
 	end
 end
+
+----------------------------------------------------------------------------------------------------
+-- Craft run planner (#388): which crafts to make, how many, under a gold budget and a time limit
+----------------------------------------------------------------------------------------------------
+
+Profit.RUN_MAX_STEPS = 3000 -- crafts one plan can hold at most (a guard, not a limit anyone should meet)
+
+-- Pure: takes candidates with their figures already worked out (Basket.RunCandidates), reads nothing from the client.
+-- cands: { { recipeID, professionID, name, outputItemID, seconds (per craft), timeLabel, channel ("vendor" | "AH"),
+--            each (what one craft sells for after the cut or at the vendor), cap (most crafts the demand allows, nil =
+--            no cap), capText (where the cap comes from), quote(n) } }
+--   quote(n) -> { cost (what n crafts' reagents are worth at the cheaper of vendor and AH, the depth tiers walked for
+--                 n crafts, intermediates min(buy, craft), what the bags hold counted at that value too: profit),
+--                 cash (what is still to be bought after the bags: the budget), seconds (the crafts of intermediates
+--                 on top of the n crafts) } | nil when a price or a time is missing.
+-- opts: { budget = copper | nil, seconds = crafting time | nil, total = fn(lines) -> copper (the cash of all lines
+--         together, so reagents shared between two crafts and the bags count once) | nil }
+-- The best craft per crafting second is taken one craft at a time (the next craft's own profit, so the dearer depth tiers
+-- of a 40-unit purchase count) until the budget or the time is used or the demand cap is met.
+-- Returns { lines = { { recipeID, ..., count, profit, profitEach, seconds, secEach, cost, cash, channel, cap, capText,
+--           capped } } best first, cost (cash), profit, seconds, limit = "budget" | "time" | "supply" | "demand" | nil (what
+--           stopped the plan) }.
+function Profit.RunPlan(cands, opts)
+	opts = opts or {}
+	local state = {}
+	for i, c in ipairs(cands or {}) do
+		state[i] = { cand = c, n = 0, cost = 0, cash = 0, extra = 0 }
+	end
+	local limits = {}
+	local spent, secs, steps = 0, 0, 0
+	local picks = {} -- the states in the order their crafts were taken
+
+	-- The next craft of a state: { dCost, dCash, dSec, dProfit, pps } or nil (nothing more to take, limits[...] set).
+	local function Next(s)
+		local c = s.cand
+		if c.cap and s.n >= c.cap then
+			limits.demand = true
+			return nil
+		end
+		local q = c.quote(s.n + 1)
+		if not (q and q.cost and q.cash) then
+			if s.n > 0 then
+				limits.supply = true -- the first craft was priced, the next is not: the stored tiers hold no more
+			end
+			return nil
+		end
+		local dSec = (c.seconds or 0) + ((q.seconds or 0) - s.extra)
+		local dProfit = c.each - (q.cost - s.cost)
+		if dSec <= 0 or dProfit <= 0 then
+			return nil
+		end
+		return { dCost = q.cost - s.cost, dCash = q.cash - s.cash, dSec = dSec, dProfit = dProfit, pps = dProfit / dSec,
+			q = q }
+	end
+	for _, s in ipairs(state) do
+		s.next = Next(s)
+	end
+
+	while steps < Profit.RUN_MAX_STEPS do
+		local best
+		for _, s in ipairs(state) do
+			local nx = s.next
+			if nx then
+				if opts.budget and spent + nx.dCash > opts.budget then
+					limits.budget = true
+					s.next = nil
+				elseif opts.seconds and secs + nx.dSec > opts.seconds then
+					limits.time = true
+					s.next = nil
+				elseif not best or nx.pps > best.next.pps
+					or (nx.pps == best.next.pps and (nx.dProfit > best.next.dProfit
+						or (nx.dProfit == best.next.dProfit and tostring(s.cand.name or "") < tostring(best.cand.name or "")))) then
+					best = s
+				end
+			end
+		end
+		if not best then
+			break
+		end
+		local nx = best.next
+		best.n, best.cost, best.cash, best.extra = best.n + 1, nx.q.cost, nx.q.cash, nx.q.seconds or 0
+		spent, secs, steps = spent + nx.dCash, secs + nx.dSec, steps + 1
+		picks[#picks + 1] = best
+		best.next = Next(best)
+	end
+
+	local function Lines()
+		local out = {}
+		for _, s in ipairs(state) do
+			if s.n > 0 then
+				local c = s.cand
+				local seconds = s.n * (c.seconds or 0) + s.extra
+				local profit = s.n * c.each - s.cost
+				out[#out + 1] = { recipeID = c.recipeID, professionID = c.professionID, name = c.name, outputItemID = c.outputItemID,
+					count = s.n, channel = c.channel, profit = profit, profitEach = profit / s.n, seconds = seconds,
+					secEach = seconds / s.n, cost = s.cost, cash = s.cash, cap = c.cap, capText = c.capText, timeLabel = c.timeLabel,
+					capped = c.cap ~= nil and s.n >= c.cap, sales = s.n * c.each, pps = seconds > 0 and profit / seconds or 0 }
+			end
+		end
+		table.sort(out, function(a, b)
+			if a.pps ~= b.pps then
+				return a.pps > b.pps
+			end
+			if a.profit ~= b.profit then
+				return a.profit > b.profit
+			end
+			return tostring(a.name or "") < tostring(b.name or "")
+		end)
+		return out
+	end
+
+	-- The independent sums can spend a shared reagent or a held stack twice: the cash of all the lines together decides.
+	-- It is nil when the lines together need more than the AH lists (two crafts sharing a reagent whose tiers run out):
+	-- crafts come off the end of the plan until it can be bought, in steps while it is far off.
+	local lines = Lines()
+	local cash
+	if opts.total and #lines > 0 then
+		cash = opts.total(lines)
+		local guard = 0
+		while #picks > 0 and guard < 400 and (cash == nil or (opts.budget and cash > opts.budget)) do
+			guard = guard + 1
+			for _ = 1, cash == nil and math.ceil(#picks / 20) or 1 do
+				local s = table.remove(picks)
+				if not s then
+					break
+				end
+				s.n = s.n - 1
+				local q = s.n > 0 and s.cand.quote(s.n) or nil
+				if q then
+					s.cost, s.cash, s.extra = q.cost, q.cash, q.seconds or 0
+				else
+					s.n, s.cost, s.cash, s.extra = 0, 0, 0, 0
+				end
+			end
+			if cash == nil then
+				limits.supply = true
+			else
+				limits.budget = true
+			end
+			lines = Lines()
+			cash = 0
+			if #lines > 0 then
+				cash = opts.total(lines)
+			end
+		end
+	end
+	local plan = { lines = lines, cost = 0, profit = 0, seconds = 0, sales = 0 }
+	for _, l in ipairs(lines) do
+		plan.cost, plan.profit, plan.seconds, plan.sales = plan.cost + l.cash, plan.profit + l.profit, plan.seconds + l.seconds, plan.sales + l.sales
+	end
+	if cash then
+		plan.cost = cash
+	end
+	plan.limit = (limits.budget and "budget") or (limits.time and "time") or (limits.supply and "supply")
+		or (limits.demand and "demand") or nil
+	return plan
+end

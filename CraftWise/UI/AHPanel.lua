@@ -5,6 +5,8 @@
 --   * the Search button searches the picked line again;
 --   * the Buy button's OnClick calls AHBuy.Click: the one place a purchase can start from this panel.
 -- Nothing here buys, searches or lists on an event or a timer.
+-- Craft run (#388): the section at the top plans crafts under a budget and a time (Basket.BuildRun), "Use plan" puts them
+-- into the basket and "Refresh prices" searches the plan's items one by one (AHBuy.SweepStart). Each starts from a click.
 -- Part 2 (#315): the snipe list lives here too. Lines of the list are marked "snipe" and have a × to remove them;
 -- a click on any line also fills the form below (item, max price per unit, "up to"), where Veli types his
 -- max price (3g 40s 5c) and saves it. The two keys (AHBuy.lua) walk and buy these same lines.
@@ -270,6 +272,440 @@ function P.ResultText(r, isCommodity)
 	return t
 end
 
+----------------------------------------------------------------------------------------------------
+-- Craft run (#388): plan from the known crafts under a budget and a time, then "Use plan" into the basket
+----------------------------------------------------------------------------------------------------
+-- The section at the top of the panel. Building the plan, using it and refreshing prices each start from a click here;
+-- the buying is the Buy panel's and the key's (AHBuy.lua), the searching of the refresh is AHBuy.SweepStart.
+
+P.RUN_LINES = 6 -- plan lines drawn (the rest are counted)
+P.RUN_BUY = 5 -- buy lines drawn
+P.RUN_MODE_W = 170 -- width of the budget mode button
+P.RUN_ROW = 44 -- a plan line is three text lines: the craft, its figures, where the demand cap comes from
+P.runPlan = nil -- the last plan built (kept until the next one)
+P.runStatus = nil -- what the section says under its buttons
+
+local runLines, runBuys = {}, {}
+
+function P.RunState()
+	if not ns.db then
+		return { open = false, mode = "none", budgetText = "", minutes = "", vendorOnly = false }
+	end
+	ns.db.craftRun = ns.db.craftRun or { open = false, mode = "none", budgetText = "", minutes = "", vendorOnly = false }
+	return ns.db.craftRun
+end
+
+P.MODES = { "none", "bags", "typed" }
+
+function P.RunModeText(st)
+	if st.mode == "bags" then
+		return L["Budget: gold in bags"] .. (GetMoney and (" " .. Money(GetMoney())) or "")
+	elseif st.mode == "typed" then
+		return L["Budget: typed"]
+	end
+	return L["Budget: no limit"]
+end
+
+-- The budget in copper from the mode: nil = no limit. A typed budget that does not read gives nil and why.
+function P.RunBudget()
+	local st = P.RunState()
+	if st.mode == "bags" then
+		return GetMoney and GetMoney() or nil
+	elseif st.mode == "typed" then
+		local copper = ns.Snipe.ParsePrice(st.budgetText)
+		if not copper then
+			return nil, L["Budget: type it like 50g or 12g 50s"]
+		end
+		return copper
+	end
+	return nil
+end
+
+-- The crafting time in seconds from the minutes box: nil = no limit. A box that does not read gives nil and why.
+function P.RunSeconds()
+	local text = tostring(P.RunState().minutes or ""):gsub("%s+", "")
+	if text == "" then
+		return nil
+	end
+	local n = tonumber(text)
+	if not (n and n > 0) then
+		return nil, L["Minutes: a number above 0, or empty for no limit"]
+	end
+	return n * 60
+end
+
+local function Minutes(seconds)
+	return ns.CraftLog.FormatDuration(seconds)
+end
+
+local function PerMinute(profit, seconds)
+	if not (profit and seconds and seconds > 0) then
+		return nil
+	end
+	return Money(math.floor(profit / seconds * 60)) .. "/" .. L["min"]
+end
+
+-- First line of a plan line: "6 × Leather Gloves · AH".
+function P.RunLineName(l)
+	return ("%d × %s · %s"):format(l.count, l.name or ItemName(l.outputItemID), l.channel)
+end
+
+-- Second line: "profit 12g (2g each) · 4 min · 3g/min", and "(cast time, not measured)" when the time is not measured.
+function P.RunLineDetail(l)
+	local t = L["profit"] .. " " .. Money(math.floor(l.profit)) .. " (" .. Money(math.floor(l.profitEach)) .. " " .. L["each"] .. ") · "
+		.. Minutes(l.seconds)
+	local pm = PerMinute(l.profit, l.seconds)
+	if pm then
+		t = t .. " · " .. pm
+	end
+	if l.timeLabel and l.timeLabel ~= "measured" then
+		t = t .. " (" .. L[l.timeLabel] .. ")"
+	end
+	return t
+end
+
+-- Third line: where the demand cap comes from, "vendor: no limit" for a vendor sale.
+function P.RunLineSource(l)
+	if l.channel == "vendor" then
+		return L["sells to a vendor: no demand limit"]
+	end
+	return (l.capText or "") .. (l.capped and (" · " .. L["limit reached"]) or "")
+end
+
+-- "Cost 45g · profit 80g · 38 min · 2g/min" (cost = what is still to be bought after the bags).
+function P.RunTotals(plan)
+	local t = L["Cost"] .. " " .. Money(plan.cost) .. " · " .. L["profit"] .. " " .. Money(math.floor(plan.profit)) .. " · " .. Minutes(plan.seconds)
+	local pm = PerMinute(plan.profit, plan.seconds)
+	return pm and (t .. " · " .. pm) or t
+end
+
+-- Why the plan stops where it does, and what was left out.
+function P.RunLimitText(plan)
+	local parts = {}
+	if plan.limit == "budget" then
+		parts[#parts + 1] = L["Stopped by the budget"]
+	elseif plan.limit == "time" then
+		parts[#parts + 1] = L["Stopped by the time"]
+	elseif plan.limit == "demand" then
+		parts[#parts + 1] = L["Stopped by the demand: more would not sell"]
+	elseif plan.limit == "supply" then
+		parts[#parts + 1] = L["Stopped by the AH supply: not enough is listed"]
+	end
+	local s = plan.skipped or {}
+	if (s.noTime or 0) > 0 then
+		parts[#parts + 1] = (L["%d without a craft time"]):format(s.noTime)
+	end
+	if (s.noSale or 0) > 0 then
+		parts[#parts + 1] = (L["%d with no sale price"]):format(s.noSale)
+	end
+	if (s.noPrice or 0) > 0 then
+		parts[#parts + 1] = (L["%d with a reagent price missing"]):format(s.noPrice)
+	end
+	return #parts > 0 and table.concat(parts, " · ") or nil
+end
+
+-- A buy line: "40 × Linen Cloth · AH 12g" or "· vendor 3g".
+function P.RunBuyText(l)
+	local where
+	if not l.quote then
+		where = L["no price"]
+	elseif l.quote.source == "vendor" then
+		where = L["vendor"] .. " " .. Money(l.quote.cost)
+	else
+		where = "AH " .. Money(l.quote.cost)
+	end
+	return ("%d × %s · %s"):format(l.quantity, ItemName(l.itemID), where)
+end
+
+-- The line under the section's buttons after a build.
+function P.RunSummary(plan)
+	if #plan.lines == 0 then
+		return L["Nothing earns under these limits"]
+	end
+	return (L["%d crafts planned"]):format(#plan.lines)
+end
+
+function P.RunBuild()
+	local st = P.RunState()
+	local budget, why = P.RunBudget()
+	local seconds, why2 = P.RunSeconds()
+	if why or why2 then
+		P.runStatus = why or why2
+		P.Update()
+		return nil
+	end
+	local plan = ns.Basket.BuildRun({ budget = budget, seconds = seconds, vendorOnly = st.vendorOnly })
+	P.runPlan = plan
+	P.runStatus = P.RunSummary(plan)
+	P.Update()
+	return plan
+end
+
+function P.RunUse(replace)
+	local plan = P.runPlan
+	if not (plan and #plan.lines > 0) then
+		P.runStatus = L["Build a plan first"]
+		P.Update()
+		return 0
+	end
+	local n = ns.Basket.UsePlan(plan, replace)
+	P.runStatus = (L["%d crafts are in the basket: buy with the Buy panel or the AH: buy best key"]):format(n)
+	P.Update()
+	return n
+end
+
+function P.RunRefresh()
+	if ns.AHBuy.SweepRunning() then
+		ns.AHBuy.SweepStop()
+		return
+	end
+	local plan = P.runPlan
+	if not (plan and #plan.search > 0) then
+		P.runStatus = L["Build a plan first"]
+		P.Update()
+		return
+	end
+	ns.AHBuy.SweepStart(plan.search)
+end
+
+-- A finished or stopped refresh rebuilds the plan from the new prices (a plan was there, same limits).
+ns.Listen("SWEEP_DONE", function()
+	if P.runPlan and ns.db then
+		P.RunBuild()
+	end
+end)
+
+local function RunLineRow(i)
+	local r = runLines[i]
+	if r then
+		return r
+	end
+	r = {}
+	for k, color in ipairs({ "text", "text2", "text3" }) do
+		r[k] = Style.Text(panel, "Small", color)
+		r[k]:SetWidth(P.WIDTH - 24)
+		r[k]:SetJustifyH("LEFT")
+	end
+	runLines[i] = r
+	return r
+end
+
+local function RunBuyRow(i)
+	local fs = runBuys[i]
+	if not fs then
+		fs = Style.Text(panel, "Small", "text2")
+		fs:SetWidth(P.WIDTH - 24)
+		fs:SetJustifyH("LEFT")
+		runBuys[i] = fs
+	end
+	return fs
+end
+
+local function Put(frame, x, y)
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
+end
+
+-- Draws the section from y; returns the y below it.
+local function DrawRun(y)
+	local st = P.RunState()
+	local run = panel.run
+	Put(run.head, 12, y)
+	run.head:SetLabel((st.open and "- " or "+ ") .. L["Craft run"])
+	y = y - 28
+	local widgets = { run.mode, run.budget, run.minutes, run.minLabel, run.vendor, run.build, run.refresh, run.use, run.add,
+		run.totals, run.limit, run.buyHead, run.status, run.more, run.buyMore }
+	for _, w in ipairs(widgets) do
+		w:SetShown(false)
+	end
+	if not st.open then
+		for _, r in ipairs(runLines) do
+			for _, fs in ipairs(r) do
+				fs:Hide()
+			end
+		end
+		for _, fs in ipairs(runBuys) do
+			fs:Hide()
+		end
+		return y
+	end
+	local sweeping = ns.AHBuy.SweepRunning()
+	Put(run.mode, 12, y)
+	run.mode:SetLabel(P.RunModeText(st))
+	run.mode:SetShown(true)
+	run.budget:SetShown(st.mode == "typed")
+	if st.mode == "typed" then
+		Put(run.budget, 12 + P.RUN_MODE_W + 6, y)
+		if run.budget:GetText() ~= (st.budgetText or "") then
+			run.budget:SetText(st.budgetText or "")
+		end
+	end
+	y = y - 28
+	Put(run.minutes, 12, y)
+	run.minutes:SetShown(true)
+	if run.minutes:GetText() ~= (st.minutes or "") then
+		run.minutes:SetText(st.minutes or "")
+	end
+	Put(run.minLabel, 12 + 44, y - 6)
+	run.minLabel:SetShown(true)
+	Put(run.vendor, 12 + 44 + 60, y - 4)
+	run.vendor:SetChecked(st.vendorOnly)
+	run.vendor:SetShown(true)
+	y = y - 30
+	Put(run.build, 12, y)
+	run.build:SetShown(true)
+	Put(run.refresh, 12 + 86, y)
+	run.refresh:SetLabel(sweeping and L["Stop"] or L["Refresh prices"])
+	run.refresh:SetShown(true)
+	run.refresh:SetEnabled(sweeping or (P.runPlan ~= nil and #P.runPlan.search > 0))
+	y = y - 30
+	local plan = P.runPlan
+	local shown = 0
+	if plan then
+		for i = 1, math.min(#plan.lines, P.RUN_LINES) do
+			local l, r = plan.lines[i], RunLineRow(i)
+			r[1]:SetText(P.RunLineName(l))
+			r[2]:SetText(P.RunLineDetail(l))
+			r[3]:SetText(P.RunLineSource(l))
+			for k = 1, 3 do
+				Put(r[k], 12, y - (k - 1) * 13)
+				r[k]:Show()
+			end
+			y = y - P.RUN_ROW
+			shown = i
+		end
+		if #plan.lines > shown then
+			run.more:SetText((L["+%d more crafts in the plan: Use plan puts all of them in"]):format(#plan.lines - shown))
+			Put(run.more, 12, y)
+			run.more:SetShown(true)
+			y = y - 16
+		end
+		if #plan.lines > 0 then
+			run.totals:SetText(P.RunTotals(plan))
+			Put(run.totals, 12, y)
+			run.totals:SetShown(true)
+			y = y - 16
+		end
+		local limit = P.RunLimitText(plan)
+		if limit then
+			run.limit:SetText(limit)
+			Put(run.limit, 12, y)
+			run.limit:SetShown(true)
+			y = y - 16
+		end
+		if #plan.buy > 0 then
+			run.buyHead:SetText(L["To buy"] .. " (" .. #plan.buy .. ")")
+			Put(run.buyHead, 12, y)
+			run.buyHead:SetShown(true)
+			y = y - 16
+			for i = 1, math.min(#plan.buy, P.RUN_BUY) do
+				local fs = RunBuyRow(i)
+				fs:SetText(P.RunBuyText(plan.buy[i]))
+				Put(fs, 12, y)
+				fs:Show()
+				y = y - 14
+			end
+			if #plan.buy > P.RUN_BUY then
+				run.buyMore:SetText((L["+%d more lines"]):format(#plan.buy - P.RUN_BUY))
+				Put(run.buyMore, 12, y)
+				run.buyMore:SetShown(true)
+				y = y - 14
+			end
+		end
+		local have = #plan.lines > 0
+		Put(run.use, 12, y - 4)
+		run.use:SetShown(have)
+		Put(run.add, 12 + 110, y - 4)
+		run.add:SetShown(have)
+		if have then
+			y = y - 32
+		end
+	end
+	for i = shown + 1, #runLines do
+		for _, fs in ipairs(runLines[i]) do
+			fs:Hide()
+		end
+	end
+	for i = (plan and math.min(#plan.buy, P.RUN_BUY) or 0) + 1, #runBuys do
+		runBuys[i]:Hide()
+	end
+	local text = (sweeping and ns.Market.SweepText()) or P.runStatus
+	if text then
+		run.status:SetText(text)
+		Put(run.status, 12, y)
+		run.status:SetShown(true)
+		y = y - 18
+	end
+	return y - 6
+end
+
+-- The section's widgets (Create passes its edit box maker).
+local function CreateRun(Box)
+	local run = {}
+	panel.run = run
+	run.head = Style.LineButton(panel, L["Craft run"], 110)
+	run.head:SetScript("OnClick", function()
+		local st = P.RunState()
+		st.open = not st.open
+		P.Update()
+	end)
+	run.mode = Style.LineButton(panel, L["Budget: no limit"], P.RUN_MODE_W)
+	run.mode:SetScript("OnClick", function()
+		local st = P.RunState()
+		local at = 1
+		for i, m in ipairs(P.MODES) do
+			if m == st.mode then
+				at = i
+			end
+		end
+		st.mode = P.MODES[at % #P.MODES + 1]
+		P.Update()
+	end)
+	run.budget = Box(80)
+	run.budget:SetScript("OnTextChanged", function(self, user)
+		if user then
+			P.RunState().budgetText = self:GetText()
+		end
+	end)
+	run.minutes = Box(40, true)
+	run.minutes:SetScript("OnTextChanged", function(self, user)
+		if user then
+			P.RunState().minutes = self:GetText()
+		end
+	end)
+	run.minLabel = Style.Text(panel, "Small", "text2")
+	run.minLabel:SetText(L["minutes"])
+	run.vendor = Style.Checkbox(panel, L["Vendor only"], false, function(checked)
+		P.RunState().vendorOnly = checked and true or false
+	end)
+	run.build = Style.ActionButton(panel, L["Build plan"], 80, 24)
+	run.build:SetScript("OnClick", function()
+		P.RunBuild()
+	end)
+	run.refresh = Style.LineButton(panel, L["Refresh prices"], 110)
+	run.refresh:SetScript("OnClick", function()
+		P.RunRefresh()
+	end)
+	run.use = Style.ActionButton(panel, L["Use plan"], 104, 24)
+	run.use:SetScript("OnClick", function()
+		P.RunUse(true)
+	end)
+	run.add = Style.LineButton(panel, L["Add to basket"], 110)
+	run.add:SetScript("OnClick", function()
+		P.RunUse(false)
+	end)
+	run.totals = Style.Text(panel, "Small", "text")
+	run.limit = Style.Text(panel, "Small", "text3")
+	run.buyHead = Style.Text(panel, "Small", "text3")
+	run.more = Style.Text(panel, "Small", "text3")
+	run.buyMore = Style.Text(panel, "Small", "text3")
+	run.status = Style.Text(panel, "Small", "text2")
+	for _, fs in ipairs({ run.totals, run.limit, run.more, run.status }) do
+		fs:SetWidth(P.WIDTH - 24)
+		fs:SetJustifyH("LEFT")
+	end
+end
+
 local function LineRow(i)
 	local r = lines[i]
 	if r then
@@ -331,7 +767,7 @@ function P.Update()
 		return
 	end
 	local AB, S = ns.AHBuy, ns.AHBuy.state
-	local y = -30
+	local y = DrawRun(-30)
 	local list = P.Lines()
 	local model = P.Model(list)
 	panel.linesTitle:SetShown(#list > 0)
@@ -529,6 +965,7 @@ local function Create()
 	panel.saveButton:SetScript("OnClick", function()
 		P.Save()
 	end)
+	CreateRun(Box)
 	panel.formStatus = Style.Text(panel, "Small", "text2")
 	panel.formStatus:SetWidth(P.WIDTH - 24)
 	panel.formStatus:SetJustifyH("LEFT")
