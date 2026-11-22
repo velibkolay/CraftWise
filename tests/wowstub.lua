@@ -29,6 +29,16 @@ function frameMeta.SetChecked(self, v) self.checked = v end
 local function widget() return setmetatable({ events = {}, scripts = {} }, frameMeta) end
 function frameMeta.CreateFontString() return widget() end
 function frameMeta.GetStringWidth() return 80 end
+-- Wrapped text: 12 per line, 6 per character over the width the spec or the code set (340 when none; 0 for no text).
+function frameMeta.GetStringHeight(self)
+	local t = self.text
+	if not t or t == "" then return 0 end
+	local lines = 0
+	for part in (t .. "\n"):gmatch("(.-)\n") do
+		lines = lines + math.max(1, math.ceil(#part * 6 / (self.width or 340)))
+	end
+	return lines * 12
+end
 function frameMeta.GetFrameLevel() return 2 end
 function frameMeta.CreateTexture() return widget() end
 -- Line objects (Region:CreateLine): start and end points, thickness and colour are recorded.

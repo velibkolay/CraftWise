@@ -67,6 +67,9 @@ function Set.ResetPositions()
 	if ns.LootToast and ns.LootToast.ResetPosition then
 		ns.LootToast.ResetPosition()
 	end
+	if M.BasketPage and M.BasketPage.ResetPanelPosition then
+		M.BasketPage.ResetPanelPosition() -- the craft list panel (#397)
+	end
 end
 
 function Set.SetScale(v)

@@ -576,6 +576,36 @@ function B.QueuePanel()
 	end
 end
 
+-- Where the panel sits (#397): the spot the player dragged it to (account-wide, settings.craftListPos), else beside the
+-- profession window. The saved spot is kept on the screen.
+local function PlacePanel()
+	panel:ClearAllPoints()
+	local pos = ns.db and ns.db.settings.craftListPos
+	if pos and pos.point then
+		panel:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
+	else
+		panel:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", 4, -30)
+	end
+end
+
+local function SavePanelPosition()
+	local point, _, relPoint, x, y = panel:GetPoint(1)
+	if point and ns.db then
+		ns.db.settings.craftListPos = { point = point, relPoint = relPoint, x = x, y = y }
+	end
+end
+
+-- Back beside the profession window (right-click the title, or Settings > Look > Reset window positions).
+function B.ResetPanelPosition()
+	if ns.db then
+		ns.db.settings.craftListPos = {}
+	end
+	if panel then
+		panel:StopMovingOrSizing()
+		PlacePanel()
+	end
+end
+
 -- Makes the panel once the profession window exists.
 function B.EnsurePanel()
 	if panel or not (ProfessionsFrame and type(ProfessionsFrame.GetFrameLevel) == "function") then
@@ -583,9 +613,33 @@ function B.EnsurePanel()
 	end
 	panel = CreateFrame("Frame", "CraftWiseCraftList", ProfessionsFrame)
 	panel:SetSize(B.PANEL_WIDTH, 120)
-	panel:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", 4, -30)
+	PlacePanel()
 	panel:SetFrameLevel((ProfessionsFrame:GetFrameLevel() or 1) + 5)
+	panel:SetMovable(true)
+	panel:SetClampedToScreen(true)
 	panel.sheet = Style.Sheet(panel, nil, nil, 10, true)
+	-- The title is the handle: left button drags, right click goes back to the default place. Only this strip and the
+	-- rows and buttons take the mouse; the sheet around them does not.
+	panel.handle = CreateFrame("Button", nil, panel)
+	panel.handle:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+	panel.handle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -34, 0)
+	panel.handle:SetHeight(28)
+	panel.handle:RegisterForDrag("LeftButton")
+	panel.handle:RegisterForClicks("RightButtonUp")
+	panel.handle:SetScript("OnDragStart", function()
+		panel:StartMoving()
+	end)
+	panel.handle:SetScript("OnDragStop", function()
+		panel:StopMovingOrSizing()
+		SavePanelPosition()
+	end)
+	panel.handle:SetScript("OnClick", B.ResetPanelPosition)
+	panel.handle:SetScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Craft list"], L["Drag to move. Right-click for the default place."])
+	end)
+	panel.handle:SetScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
 	panel.title = Style.Text(panel, "BodyBold", "text")
 	panel.title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -10)
 	panel.title:SetText(L["Craft list"])
