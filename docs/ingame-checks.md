@@ -1388,3 +1388,19 @@ No TOC change, `/reload` is enough. Sell › Flips and the Ledger positions.
 - [ ] A real AH to vendor flip of a stackable item still shows as a row, also after you equipped some other item.
 - [ ] Left-click a flip row: the row turns grey, the profit cell says "not a flip", the hero, "Average per flip" and the best list drop it; the row's tooltip says to click to count it again. Click again: it counts again. The mark survives `/reload`. Right-click still opens the item menu.
 - [ ] Docked layout (narrow window): same greying and "not a flip" in the row's result; clicking the row toggles it.
+
+## Craft run 1: plan, demand cap, refresh prices (#388)
+No TOC change, `/reload` is enough. At an open auction house the CraftWise panel has a **Craft run** line at the top (click it to open). Needs a character with known recipes, prices from earlier searches or scans, and ideally some craft log and AH sales.
+- [ ] **Build plan** with no limits: lines read "N x Recipe · AH" or "· vendor", with profit, minutes, profit per minute and where the demand cap comes from ("your sales: ...", "observed drops: ... (a cancel looks the same)" or "no sales data: at most 2"). Totals show the cash still to buy after the bags, the profit and the minutes. A vendor-sale line says "sells to a vendor: no demand limit".
+- [ ] A recipe shows "(cast time, not measured)" until the craft log has 5 timed gaps for it; compare the cast time with what the game shows. Recipes without any time are counted as "N without a craft time" and left out. **Check:** does `C_Spell.GetSpellInfo(recipeID).castTime` return the profession cast for a recipe spell on Forever? If not, the plan stays empty for unmeasured recipes: tell the Scout.
+- [ ] **Budget** button cycles "no limit", "gold in bags" (shows the gold) and "typed" (type `50g` or `12g 50s`). A bad text says how to type it and builds nothing. The **minutes** box limits the crafting time; both together: the plan stops at the first limit and says "Stopped by the budget" or "the time".
+- [ ] **Vendor only** plans every craft at the vendor price: all lines say "vendor", no demand cap.
+- [ ] Hold some reagents in the bags: the plan's profit still counts them at their AH price, the "Cost" total only the part still to buy.
+- [ ] A craft with a cheaper-to-craft intermediate (Cured Light Hide): the intermediate is crafted, its time is in the line's minutes, and the "To buy" list has its inputs, not the cured hide.
+- [ ] **Use plan** replaces the basket's crafts, **Add to basket** adds to them. Make > Basket shows them; the Buy panel's lines and the "AH: buy best" key work as before. Nothing is bought by the section.
+- [ ] **Refresh prices** (one click): the status line walks "Refreshing 3 of 12: Linen Cloth" through the plan's reagents and products with no further click or key, and ends "Refreshed 12 of 12 items". The plan is built again from the new prices. The button reads "Stop" meanwhile; a second click stops it ("Refresh stopped").
+  - **Open question (client):** if the items time out ("N got no answer") the client wants a click or key per search. Say so on #388: the refresh then steps with the existing "AH: search next" key.
+  - `/craftwise market <item>` shows the new observation for a refreshed item. Browsing or searching by hand still works while it runs; a line pick or the search key stops it.
+- [ ] The header's **Scan AH** button and its 15 minute cooldown are exactly as before the refresh (no scan was asked for).
+- [ ] Buy button and key say "A price refresh is running: stop it first" while the refresh runs.
+- [ ] Settings > Buying at the AH > "Max per item without sales data" changes the default 2.
