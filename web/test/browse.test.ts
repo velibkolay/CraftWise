@@ -83,7 +83,7 @@ describe("browse", () => {
 		expect(body.items.map((i) => i.name)).toEqual(["Linen Cloth", "Silk Cloth"]);
 		const linen = body.items[0]!;
 		expect(linen.current).toMatchObject({ min: 150, qty: 300, listings: 4, listed: true });
-		expect(linen.typical).toEqual({ status: "too_little_history", days: 2 });
+		expect(linen.typical).toEqual({ status: "ok", price: 115, days: 2 }); // today-7 is outside the 3-day window
 		expect(linen.days.map((d) => d.day)).toEqual([today - 7, today - 1, today]);
 		expect(linen.days[0]).toEqual({ day: today - 7, src: "craftwise", lo: 95, typ: 100, hi: 120, qtyMax: 100 });
 		expect(body.items[1]!.days).toEqual([{ day: today, src: "last", lo: 900, typ: null, hi: 900, qtyMax: 20 }]);

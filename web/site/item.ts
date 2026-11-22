@@ -239,7 +239,7 @@ function render(d: ItemDetail, house: House | null): void {
 	const ch = m ? changes(m.days, today) : { c24: null, c7: null };
 	const typ = m?.typical;
 	const tipRows: (Node | null)[] = [
-		h("p", { class: "row" }, h("span", { class: "lbl" }, "Market price, 7 days"), typ?.status === "ok" ? moneyEl(typ.price) : h("span", { class: "hint" }, typ ? `${typ.days} of 3 days` : "no data")),
+		h("p", { class: "row" }, h("span", { class: "lbl" }, "Market price, 3 days"), typ?.status === "ok" ? moneyEl(typ.price) : h("span", { class: "hint" }, typ ? `${typ.days} of 2 days` : "no data")),
 		h("p", { class: "row" }, h("span", { class: "lbl" }, "Lowest now"), !cur ? h("span", { class: "hint" }, "no data") : cur.listed ? moneyEl(cur.min) : h("span", { class: "hint" }, "not listed")),
 		h(
 			"p",
@@ -378,7 +378,7 @@ function sellPriceLine(it: ItemInfo | null): HTMLElement | null {
 	return h("p", { class: "row" }, h("span", { class: "lbl" }, "Sell Price"), moneyEl(it.sellPrice));
 }
 
-// Auction House or Vendor (#120): one unit on the auction house after the 5% cut (the 7-day typical
+// Auction House or Vendor (#120): one unit on the auction house after the 5% cut (the 3-day typical
 // price, else the lowest listing) against what a vendor pays, the better one marked.
 function sellBlock(m: Market | null, it: ItemInfo | null): HTMLElement | null {
 	const typ = m?.typical.status === "ok" ? m.typical.price : null;

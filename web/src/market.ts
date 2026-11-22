@@ -10,8 +10,8 @@ export type Typical =
 	| { status: "too_little_history"; days: number }
 	| { status: "no_data"; days: 0 };
 
-// Market.lua M.Typical / MedianOfDays: median of the daily `typ` values of the last 7 days
-// (today included), rounded down; "too_little_history" below 3 such days.
+// Market.lua M.Typical / MedianOfDays: median of the daily `typ` values of the last 3 days
+// (today included), rounded down; "too_little_history" below 2 such days.
 export function typical(days: { day: number; typ: number | null }[], today: number, anyData: boolean): Typical {
 	if (!anyData) return { status: "no_data", days: 0 };
 	const list = days

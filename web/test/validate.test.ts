@@ -157,16 +157,17 @@ describe("private upload shape", () => {
 
 describe("market rules (Market.lua)", () => {
 	const today = 20000;
-	it("typical: median of the last 7 days' typ, at least 3 days", () => {
+	it("typical: median of the last 3 days' typ, at least 2 days", () => {
 		const d = (day: number, typ: number | null) => ({ day, typ });
 		expect(typical([], today, false)).toEqual({ status: "no_data", days: 0 });
-		expect(typical([d(today, 5), d(today - 1, 7)], today, true)).toEqual({ status: "too_little_history", days: 2 });
+		expect(typical([d(today, 5)], today, true)).toEqual({ status: "too_little_history", days: 1 });
+		expect(typical([d(today, 5), d(today - 1, 7)], today, true)).toEqual({ status: "ok", price: 6, days: 2 });
 		expect(typical([d(today, 5), d(today - 1, 7), d(today - 2, 9), d(today - 7, 1)], today, true)).toEqual({ status: "ok", price: 7, days: 3 });
-		expect(typical([d(today, 5), d(today - 1, 8), d(today - 2, 9), d(today - 3, 1), d(today - 4, null)], today, true)).toEqual({
-			status: "ok",
-			price: 6,
-			days: 4,
-		});
+		// the window edge: today, today-1 and today-2 are in, today-3 is out
+		expect(typical([d(today, 5), d(today - 1, 8), d(today - 2, 9), d(today - 3, 1)], today, true)).toEqual({ status: "ok", price: 8, days: 3 });
+		expect(typical([d(today, 5), d(today - 3, 7)], today, true)).toEqual({ status: "too_little_history", days: 1 });
+		// a day without a typical does not count towards the 2-day minimum
+		expect(typical([d(today, 5), d(today - 1, null)], today, true)).toEqual({ status: "too_little_history", days: 1 });
 	});
 
 	it("listed: off after the observation, or an empty latest point", () => {

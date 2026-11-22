@@ -79,8 +79,9 @@ export const BROWSE_DAYS = 9; // daily rows per item: enough for a change agains
 export const PUBLIC_MAX_AGE = 60; // Cache-Control for public reads, seconds
 
 // The same rules as CraftWise/Market.lua.
-export const TYPICAL_DAYS = 7;
-export const MIN_HISTORY_DAYS = 3;
+export const TYPICAL_DAYS = 3; // the typical is the median of the last 3 days (#394, #396)
+export const MIN_HISTORY_DAYS = 2; // ... with at least 2 of them scanned
+export const WINDOW_DAYS = 7; // Market.lua WINDOW_DAYS: the week of the range, history and day series
 
 // Download of the merged market (#238, GET /api/sync/market).
 export const SYNC_LIMIT = 200; // entries (price rows and packed variant rows) per page
