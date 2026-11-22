@@ -556,8 +556,22 @@ local function Groups()
 			sub = L["After a scan or search, items on the snipe list (AH panel) listed at or below the max price you typed go into the same toast as the flips. Nothing is bought by the toast."],
 			get = function() return S().snipeAlert ~= false end,
 			set = function(v) S().snipeAlert = v and true or false end },
+		{ key = "runhours", kind = "seg", label = L["Listing duration"],
+			sub = L["The Craft run plans an AH item only as often as one listing of this length sells (your own sales a day x hours / 24), and the Post list says how many to post at once. The choices are the durations the auction house's Sell tab offers."],
+			options = function()
+				local out = {}
+				for _, h in ipairs(ns.Basket.ListingOptions()) do
+					out[#out + 1] = { value = h, label = (L["%d h"]):format(h) }
+				end
+				return out
+			end,
+			get = function() return ns.Basket.ListingHours() end,
+			set = function(v)
+				S().craftRunHours = v
+				Changed()
+			end },
 		{ key = "runmax", kind = "stepper", label = L["Max per item without sales data"],
-			sub = L["The AH panel's Craft run makes an AH item at most as often as it sells: your own AH sales of it, else the units seen leaving the market. Without either it plans this many crafts. Vendor sales have no limit."],
+			sub = L["The AH panel's Craft run makes an AH item at most as often as one listing sells (your own AH sales of it). Without sales data it plans this many crafts. Vendor sales have no limit."],
 			get = function() return ns.Basket.MaxWithoutData() end,
 			down = function()
 				S().craftRunMax = math.max(1, ns.Basket.MaxWithoutData() - 1)

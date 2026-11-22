@@ -107,23 +107,51 @@ end)
 
 ---------------------------------------------------------------------------------------- the demand cap and the sale
 
-it("DemandCap: own sales first, then observed drops, then the default; each says what it is", function()
+it("DemandCap: the sales of one listing set the cap; drops are only information (#399)", function()
 	local ns = LoadAddon()
 	local B = ns.Basket
-	local cap, perDay, source, text = B.DemandCap({ units = 28, days = 14 }, { units = 100, days = 7 }, 1, 2)
-	eq(cap, 2); eq(source, "sales"); eq(perDay, 2); eq(text, "your sales: 28 sold in 14 days, 2.0 a day")
-	cap, perDay, source, text = B.DemandCap({ units = 0, days = 14 }, { units = 14, days = 7 }, 1, 2)
-	eq(cap, 2); eq(source, "drops"); eq(text, "observed drops: 14 units in 7 days, 2.0 a day (a cancel looks the same)")
-	cap, _, source, text = B.DemandCap({ units = 0, days = 14 }, { units = 21, days = 7 }, 1, 2)
-	eq(cap, 3); eq(source, "drops")
-	cap, perDay, source, text = B.DemandCap({ units = 0, days = 14 }, { units = 0, days = 7 }, 1, 2)
-	eq(cap, 2); eq(perDay, nil); eq(source, "default"); eq(text, "no sales data: at most 2", "no drops can also mean too few scans: never a rate")
-	cap, _, source = B.DemandCap(nil, nil, 1, 5)
-	eq(cap, 5); eq(source, "default")
-	cap = B.DemandCap({ units = 6, days = 14 }, nil, 1, 2)
-	eq(cap, 1, "a slow seller still gets one craft: 6 in 14 days is 0.4 a day")
-	cap = B.DemandCap({ units = 28, days = 14 }, nil, 2, 2)
-	eq(cap, 1, "a craft makes 2 units: 2 a day is 1 craft")
+	-- 84 sold in 14 days = 6 a day: 2 in 8 h
+	local cap, perDay, source, text = B.DemandCap({ units = 84, days = 14 }, { units = 100, days = 7 }, 1, 2, 8)
+	eq(cap, 2); eq(source, "sales"); eq(perDay, 6)
+	eq(text, "your sales: 84 in 14 days, 2.0 in 8 h: 2 · observed drops: 100 units in 7 days, 14.3 a day (not used: a cancel looks the same)")
+	-- the issue's example: 11 in 14 days is 0.3 in 8 h, at least 1
+	cap, _, _, text = B.DemandCap({ units = 11, days = 14 }, nil, 1, 2, 8)
+	eq(cap, 1); eq(text, "your sales: 11 in 14 days, 0.3 in 8 h: 1")
+	-- rounded down: 2 a day is 0.67 in 8 h (1), 2 in 24 h, 4 in 48 h
+	eq((B.DemandCap({ units = 28, days = 14 }, nil, 1, 2, 8)), 1)
+	eq((B.DemandCap({ units = 28, days = 14 }, nil, 1, 2, 24)), 2)
+	eq((B.DemandCap({ units = 28, days = 14 }, nil, 1, 2, 48)), 4)
+	eq((B.DemandCap({ units = 84, days = 14 }, nil, 1, 2, 12)), 3, "6 a day x 12 h = 3")
+	-- a craft makes 2: 6 a day x 24 h / 2 = 3 crafts
+	eq((B.DemandCap({ units = 84, days = 14 }, nil, 2, 2, 24)), 3)
+	-- no own sales: the setting, whatever the drops say (they used to raise it)
+	cap, perDay, source, text = B.DemandCap({ units = 0, days = 14 }, { units = 317, days = 7 }, 1, 2, 8)
+	eq(cap, 2); eq(perDay, nil); eq(source, "default")
+	eq(text, "no sales data: at most 2 · observed drops: 317 units in 7 days, 45.3 a day (not used: a cancel looks the same)")
+	cap, _, source, text = B.DemandCap(nil, nil, 1, 5)
+	eq(cap, 5); eq(source, "default"); eq(text, "no sales data: at most 5")
+	eq((B.DemandCap({ units = 6, days = 14 }, nil, 1, 2, 8)), 1, "a slow seller still gets one craft")
+end)
+
+it("Listing duration (#399): the choices are what the sell frame's text says, the setting must be one of them", function()
+	local ns = LoadAddon()
+	local B = ns.Basket
+	eq(#B.ListingOptions(), 1, "no readable text: only the confirmed 8 h"); eq(B.ListingOptions()[1], 8)
+	eq(B.ListingHours(), 8)
+	GetLocale = function() return "enUS" end
+	AUCTION_DURATION_ONE, AUCTION_DURATION_TWO, AUCTION_DURATION_THREE = "8 Hours", "24 Hours", "48 Hours"
+	local o = B.ListingOptions()
+	eq(#o, 3); eq(o[1], 8); eq(o[2], 24); eq(o[3], 48)
+	eq(B.ListingHours(), 8, "default")
+	ns.db.settings.craftRunHours = 24
+	eq(B.ListingHours(), 24)
+	ns.db.settings.craftRunHours = 12
+	eq(B.ListingHours(), 8, "not offered: the default")
+	AUCTION_DURATION_ONE, AUCTION_DURATION_TWO, AUCTION_DURATION_THREE = "12 Hours", "24 Hours", "48 Hours"
+	eq(B.ListingHours(), 12, "the setting when the client offers it")
+	ns.db.settings.craftRunHours = 99
+	eq(B.ListingHours(), 12, "no 8 h offered either: the first choice")
+	AUCTION_DURATION_ONE, AUCTION_DURATION_TWO, AUCTION_DURATION_THREE, GetLocale = nil, nil, nil, nil
 end)
 
 it("SaleOf: the AH when it pays more and its cut is known, else the vendor; vendor only always the vendor", function()
@@ -329,25 +357,27 @@ it("BuildRun: the time limit and the budget limit shrink the plan; both together
 	assert(both.profit <= timed.profit and both.profit <= poor.profit)
 end)
 
-it("Demand: his own AH sales set the cap, else observed drops, each named in the plan's line", function()
+it("Demand: his own AH sales of one listing set the cap, else the setting; drops are named but never used (#399)", function()
 	local ns = Load({ cap = 9 })
-	ns.Auctions.List()[1] = { i = BELT, n = "Test Belt", q = 28, st = "sold", soldT = NOW - 3 * DAY, kind = "commodity", h = HORDE }
+	ns.Auctions.List()[1] = { i = BELT, n = "Test Belt", q = 84, st = "sold", soldT = NOW - 3 * DAY, kind = "commodity", h = HORDE }
 	local belt = ByName(ns.Basket.BuildRun({}))["Test Belt"]
-	eq(belt.count, 2, "28 sold in 14 days = 2 a day"); eq(belt.capText, "your sales: 28 sold in 14 days, 2.0 a day")
+	eq(belt.count, 2, "84 sold in 14 days = 6 a day = 2 in 8 h"); eq(belt.capText, "your sales: 84 in 14 days, 2.0 in 8 h: 2")
+	ns.db.settings.craftRunHours = 24 -- not offered by the stub's client: still 8 h
+	eq(ByName(ns.Basket.BuildRun({}))["Test Belt"].count, 2)
 	-- a sale older than the window, or one whose units are not known, counts for nothing
 	ns.Auctions.List()[1] = { i = BELT, q = 28, st = "sold", soldT = NOW - 20 * DAY }
 	ns.Auctions.List()[2] = { i = BELT, q = 28, st = "sold", soldT = NOW - DAY, qtyUnknown = true }
 	ns.Auctions.List()[3] = { i = BELT, q = 28, st = "gone", soldT = NOW - DAY }
 	belt = ByName(ns.Basket.BuildRun({}))["Test Belt"]
 	eq(belt.count, 9, "no sales: the setting (9 here)"); eq(belt.capText, "no sales data: at most 9")
-	-- observed drops: 21 units left in the 3 days with data = 7 a day
+	-- observed drops: 21 units left in the 3 days with data = 7 a day: in the text, not in the cap
 	Seed(BELT, 200, { 200, 4 }, 21)
 	belt = ByName(ns.Basket.BuildRun({}))["Test Belt"]
-	eq(belt.capText, "observed drops: 21 units in 3 days, 7.0 a day (a cancel looks the same)"); eq(belt.count, 7)
-	-- own sales still win over drops
+	eq(belt.capText, "no sales data: at most 9 · observed drops: 21 units in 3 days, 7.0 a day (not used: a cancel looks the same)"); eq(belt.count, 9)
+	-- own sales: 14 in 14 days is 0.3 in 8 h, one craft
 	ns.Auctions.List()[4] = { i = BELT, q = 14, st = "settled", soldT = NOW - DAY }
 	belt = ByName(ns.Basket.BuildRun({}))["Test Belt"]
-	eq(belt.count, 1); eq(belt.capText, "your sales: 14 sold in 14 days, 1.0 a day")
+	eq(belt.count, 1); assert(belt.capText:find("your sales: 14 in 14 days, 0.3 in 8 h: 1", 1, true), belt.capText)
 end)
 
 ---------------------------------------------------------------------------------------- Use plan
@@ -603,13 +633,32 @@ it("Panel rows (#397): a long wrapped line makes the plan line, the Post entry a
 	-- the Post list: lines of the run's AH items
 	local before = P.panel.height
 	local pl = P.PostSource
-	P.PostLines = function() return { { itemID = BELT, postNow = 2, bags = 3, listed = 0, batch = 2, price = 100, sold = 0, demandText = "" } } end
+	P.PostLines = function() return { { itemID = BELT, units = 2, postNow = 2, bags = 3, listed = 0, hours = 8, price = 100, sold = 0, demandText = "" } } end
 	ns.Auctions.RunPostLines = P.PostLines
 	P.Update()
 	local one = P.panel.height
 	assert(one > before, "a Post entry adds height")
-	P.PostSource = function() return ("batch: about half a day's sales "):rep(20) end
+	P.PostSource = function() return ("your sales: long text "):rep(20) end
 	P.Update()
 	assert(P.panel.height > one + 24, "a long batch line pushes the rest down")
 	P.PostSource = pl
+end)
+
+it("Post list (#399): the line says post all N now with the hours, no batch box; the setting is on the Settings page", function()
+	local ns, stub = Load({ cap = 5 })
+	local P = Panel(ns, stub)
+	eq(P.PostLineText({ postNow = 5, units = 5, bags = 5, listed = 0, hours = 8 }, "Bracers"), "Bracers: post all 5 now (8 h)")
+	eq(P.PostLineText({ postNow = 3, units = 5, bags = 3, listed = 0, hours = 24 }, "Bracers"), "Bracers: post 3 now (24 h)")
+	eq(P.PostLineText({ postNow = 0, units = 5, bags = 0, listed = 0, hours = 8 }, "Bracers"), "Bracers: none in the bags")
+	eq(P.PostLineText({ postNow = 0, units = 5, bags = 5, listed = 5, hours = 8 }, "Bracers"), "Bracers: listed 5 of 5")
+	eq(P.PostSource({ demandText = "your sales: 11 in 14 days, 0.3 in 8 h: 1" }), "your sales: 11 in 14 days, 0.3 in 8 h: 1")
+	eq(ns.Auctions.BatchOf, nil, "the batch is gone"); eq(ns.Auctions.SetBatch, nil)
+	local found
+	for _, g in ipairs(ns.Main.Settings.Groups()) do
+		for _, row in ipairs(g.rows) do
+			if row.key == "runhours" then found = row end
+		end
+	end
+	assert(found, "Settings has a Listing duration row")
+	eq(found.get(), 8); eq(#found.options(), 1); eq(found.options()[1].value, 8)
 end)

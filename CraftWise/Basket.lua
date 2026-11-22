@@ -560,7 +560,42 @@ end
 ----------------------------------------------------------------------------------------------------
 
 Basket.RUN_MAX_DEFAULT = 2 -- crafts of an AH item without any sales data (Veli, #387), Settings "Max per item without sales data"
-Basket.SALES_DAYS = 14 -- the window of his own sales and the drops that set the demand: provisional, labelled in the plan
+Basket.SALES_DAYS = 14 -- the window of his own sales that sets the demand: provisional, labelled in the plan
+Basket.LISTING_DEFAULT = 8 -- hours one listing runs (#399): he posts everything at once as 8-hour auctions (confirmed in game)
+
+-- The listing durations the sell frame offers, in hours (#399). Blizzard's Forever sell frame has three (the dropdown
+-- AUCTION_DURATION_ONE..THREE, index 1-3); their hours are only in the client's own text, so they are read from it
+-- (Auctions.DurationHours, English clients). Where the text can't be read, only the confirmed 8 h is offered.
+function Basket.ListingOptions()
+	local out = {}
+	for i = 1, 3 do
+		local h = ns.Auctions and ns.Auctions.DurationHours and ns.Auctions.DurationHours(i)
+		if h and h > 0 then
+			out[#out + 1] = h
+		end
+	end
+	if #out == 0 then
+		out[1] = Basket.LISTING_DEFAULT
+	end
+	return out
+end
+
+-- The chosen listing hours: the setting when the sell frame offers it, else 8 when offered, else the first offered.
+function Basket.ListingHours()
+	local options = Basket.ListingOptions()
+	local want = ns.db and ns.db.settings and tonumber(ns.db.settings.craftRunHours) or Basket.LISTING_DEFAULT
+	for _, h in ipairs(options) do
+		if h == want then
+			return h
+		end
+	end
+	for _, h in ipairs(options) do
+		if h == Basket.LISTING_DEFAULT then
+			return h
+		end
+	end
+	return options[1]
+end
 
 function Basket.MaxWithoutData()
 	local n = ns.db and ns.db.settings and tonumber(ns.db.settings.craftRunMax)
@@ -582,23 +617,26 @@ function Basket.CraftSeconds(recipeID)
 	return nil
 end
 
--- Pure: the most crafts of an AH item the demand supports. sold / drops = { units, days } | nil (his own AH sales, the
--- units seen leaving the market), outQty = units one craft makes, fallback = the setting. Own sales win; drops are
--- used only when they saw something (no drops can also mean too few scans). Returns cap (crafts), perDay, source
--- ("sales" | "drops" | "default") and the text the plan shows.
-function Basket.DemandCap(sold, drops, outQty, fallback)
+-- Pure: the most crafts of an AH item one listing can sell (#399). sold = { units, days } | nil (his own AH sales),
+-- drops = { units, days } | nil (the units seen leaving the market: information only, they also count cancels, expiries
+-- and other sellers, so they never set the cap), outQty = units one craft makes, fallback = the setting, hours = the
+-- listing duration. With own sales: sales a day x hours / 24, divided by outQty, rounded down, at least 1. Without:
+-- the fallback. Returns cap (crafts), perDay, source ("sales" | "default") and the text the plan shows.
+function Basket.DemandCap(sold, drops, outQty, fallback, hours)
 	outQty = math.max(1, outQty or 1)
-	local function rate(r, source, text)
-		local perDay = r.units / math.max(1, r.days)
-		return math.max(1, math.ceil(perDay / outQty - 1e-9)), perDay, source, (text):format(r.units, r.days, perDay)
+	hours = hours or Basket.LISTING_DEFAULT
+	local info = ""
+	if drops and drops.units > 0 and drops.days > 0 then
+		info = (" · observed drops: %d units in %d days, %.1f a day (not used: a cancel looks the same)"):format(drops.units,
+			drops.days, drops.units / math.max(1, drops.days))
 	end
 	if sold and sold.units > 0 then
-		return rate(sold, "sales", "your sales: %d sold in %d days, %.1f a day")
+		local perDay = sold.units / math.max(1, sold.days)
+		local expected = perDay * hours / 24
+		local cap = math.max(1, math.floor(expected / outQty + 1e-9))
+		return cap, perDay, "sales", ("your sales: %d in %d days, %.1f in %d h: %d"):format(sold.units, sold.days, expected, hours, cap) .. info
 	end
-	if drops and drops.units > 0 and drops.days > 0 then
-		return rate(drops, "drops", "observed drops: %d units in %d days, %.1f a day (a cancel looks the same)")
-	end
-	return fallback, nil, "default", ("no sales data: at most %d"):format(fallback)
+	return fallback, nil, "default", ("no sales data: at most %d"):format(fallback) .. info
 end
 
 -- Pure: how a craft sells. options = ns.SaleOptions(item, units one craft makes): { vendor, auction = { net }, chosen }.
@@ -681,7 +719,7 @@ function Basket.RunCandidates(opts)
 					local c = { recipeID = row.recipeID, professionID = professionID, name = row.name, outputItemID = out,
 						seconds = seconds, timeLabel = timeLabel, channel = channel, each = each, reagents = row.reagents }
 					if channel == "AH" then
-						local cap, _, _, text = Basket.DemandCap(SoldOf(out, now), DropsOf(out, now), qty, Basket.MaxWithoutData())
+						local cap, _, _, text = Basket.DemandCap(SoldOf(out, now), DropsOf(out, now), qty, Basket.MaxWithoutData(), Basket.ListingHours())
 						c.cap, c.capText = cap, text
 					end
 					c.quote = function(n)
