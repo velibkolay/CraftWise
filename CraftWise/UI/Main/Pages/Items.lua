@@ -5,7 +5,7 @@
 --   in the market scope, Market.InScope), Recent (items looked up here); a search replaces the chip's list.
 --   Row: name, listings note ("214 listed", "3 listed · thin", "vendor only"), typical price, 7-day change.
 --   Right card: icon 40, name, class and stack, what you hold (Holdings), the Watched toggle (with #165);
---   Typical 7 days, Lowest now, On the AH, 7 days change; a chart of typical (solid) and lowest (dashed)
+--   Typical 3 days, Lowest now, On the AH, 7 days change; a chart of typical (solid) and lowest (dashed)
 --   per day with the nokta on the latest point (Line objects; seven 4 unit day bars where the client has
 --   no CreateLine); Used in (UsedIn); Where to buy (Merchant), vendor sell price, your last purchase.
 --   Outside the market scope only the latest price is kept: "latest only" and no chart.
@@ -1346,13 +1346,13 @@ function Items.Card(itemID, now)
 	local fig = {}
 	local typical = p.typical
 	if p.lastOnly then
-		fig.typical = { text = Style.Hex("text3") .. L["latest only"] .. "|r", tip = { L["Typical, 7 days"], L["Outside the market scope only the latest price is kept."] } }
+		fig.typical = { text = Style.Hex("text3") .. L["latest only"] .. "|r", tip = { L["Typical, 3 days"], L["Outside the market scope only the latest price is kept."] } }
 	elseif typical and typical.status == "ok" then
-		fig.typical = { text = ns.FormatCoins(typical.price), tip = { L["Typical, 7 days"], (L["Median of %d days at %s."]):format(typical.days, houseLine) } }
+		fig.typical = { text = ns.FormatCoins(typical.price), tip = { L["Typical, 3 days"], (L["Median of %d days at %s."]):format(typical.days, houseLine) } }
 	elseif typical and typical.status == Mk.TOO_LITTLE_HISTORY then
-		fig.typical = { text = M.NoPriceText(), tip = { L["Typical, 7 days"], (L["Too little history: %d of %d days."]):format(typical.days, Mk.MIN_HISTORY_DAYS) } }
+		fig.typical = { text = M.NoPriceText(), tip = { L["Typical, 3 days"], (L["Too little history: %d of %d days."]):format(typical.days, Mk.MIN_HISTORY_DAYS) } }
 	else
-		fig.typical = { text = M.NoPriceText(), tip = { L["Typical, 7 days"], (L["Nothing recorded at %s."]):format(houseLine) } }
+		fig.typical = { text = M.NoPriceText(), tip = { L["Typical, 3 days"], (L["Nothing recorded at %s."]):format(houseLine) } }
 	end
 	local cur = p.current
 	if cur and cur.listed then
@@ -1759,7 +1759,7 @@ local function KVBlock(parent, title)
 end
 
 local FIGURES = {
-	{ key = "typical", label = "Typical, 7 days", font = "FigureL" },
+	{ key = "typical", label = "Typical, 3 days", font = "FigureL" },
 	{ key = "lowest", label = "Lowest now", font = "FigureBold" },
 	{ key = "listed", label = "On the AH", font = "FigureBold" },
 	{ key = "change", label = "7 days", font = "FigureBold" },
