@@ -761,6 +761,128 @@ local function ResultText(i)
 	return fs
 end
 
+----------------------------------------------------------------------------------------------------
+-- Craft run (#390): post the run's AH items in batches. A line says how many to post now to keep a batch listed; the
+-- posting is the player's click on Blizzard's sell frame (nothing here posts, and nothing runs on a timer). The batch is
+-- typed in the line's box (default about half a day's sales, Auctions.BatchDefault); after sales the tracker sees, the
+-- line shows the next batch.
+----------------------------------------------------------------------------------------------------
+
+P.POST_LINES = 6
+P.POST_ROW = 44
+local postRows = {}
+P.postOpen = true
+
+-- "Leather Gloves: post 2 now" (nothing to post: "Leather Gloves: listed 3 of 3").
+function P.PostLineText(l, name)
+	if l.postNow > 0 then
+		return (L["%s: post %d now"]):format(name, l.postNow)
+	end
+	if l.bags == 0 then
+		return (L["%s: none in the bags"]):format(name)
+	end
+	return (L["%s: batch of %d is listed"]):format(name, l.batch)
+end
+
+-- "bags 5 · listed 1 · sold 3 today · lowest 3g 40s" and where the default batch comes from.
+function P.PostDetail(l)
+	local parts = { (L["bags %d"]):format(l.bags), (L["listed %d"]):format(l.listed) }
+	if l.sold and l.sold > 0 then
+		parts[#parts + 1] = (L["sold %d today"]):format(l.sold)
+	end
+	parts[#parts + 1] = l.price and (L["lowest %s"]):format(Money(l.price)) or L["no listing seen"]
+	return table.concat(parts, " · ")
+end
+
+function P.PostSource(l)
+	return (l.custom and L["batch typed by you"] or L["batch: about half a day's sales"]) .. " · " .. (l.demandText or "")
+end
+
+local function PostRow(i)
+	local r = postRows[i]
+	if r then
+		return r
+	end
+	r = {}
+	for k, color in ipairs({ "text", "text2", "text3" }) do
+		r[k] = Style.Text(panel, "Small", color)
+		r[k]:SetWidth(P.WIDTH - 24 - (k == 1 and 50 or 0))
+		r[k]:SetJustifyH("LEFT")
+	end
+	r.box = CreateFrame("EditBox", nil, panel)
+	r.box:SetSize(40, 22)
+	r.box:SetAutoFocus(false)
+	r.box:SetNumeric(true)
+	r.box:SetMaxLetters(3)
+	r.box:SetFontObject(Style.Fonts.Small)
+	r.box:SetTextInsets(6, 6, 0, 0)
+	r.box.border = Style.Border(r.box, Style.C.ruleStrong)
+	r.box:SetScript("OnEnterPressed", function(self)
+		self:ClearFocus()
+	end)
+	r.box:SetScript("OnEscapePressed", function(self)
+		self:ClearFocus()
+	end)
+	r.box:SetScript("OnEditFocusLost", function(self)
+		if self.itemID then
+			ns.Auctions.SetBatch(self.itemID, self:GetText())
+			P.Update()
+		end
+	end)
+	postRows[i] = r
+	return r
+end
+
+function P.PostLines()
+	return ns.Auctions.RunPostLines()
+end
+
+-- Draws the section from y; returns the y below it.
+local function DrawPost(y)
+	local list = ns.Auctions.RunPostLines()
+	P.postLines = list
+	panel.postHead:SetShown(#list > 0)
+	local shown = 0
+	if #list > 0 then
+		Put(panel.postHead, 12, y)
+		panel.postHead:SetLabel((P.postOpen and "- " or "+ ") .. (L["Post (%d)"]):format(#list))
+		y = y - 28
+		if P.postOpen then
+			for i = 1, math.min(#list, P.POST_LINES) do
+				local l, r = list[i], PostRow(i)
+				local name = ItemName(l.itemID)
+				r[1]:SetText(P.PostLineText(l, name))
+				r[2]:SetText(P.PostDetail(l))
+				r[3]:SetText(P.PostSource(l))
+				for k = 1, 3 do
+					Put(r[k], 12, y - (k - 1) * 13)
+					r[k]:Show()
+				end
+				Put(r.box, P.WIDTH - 12 - 40, y + 2)
+				r.box.itemID = l.itemID
+				if not r.box:HasFocus() and r.box:GetText() ~= tostring(l.batch) then
+					r.box:SetText(tostring(l.batch))
+				end
+				r.box:Show()
+				y = y - P.POST_ROW
+				shown = i
+			end
+		end
+	end
+	for i = shown + 1, #postRows do
+		for k = 1, 3 do
+			postRows[i][k]:Hide()
+		end
+		postRows[i].box:Hide()
+	end
+	panel.postNote:SetShown(shown > 0)
+	if shown > 0 then
+		Put(panel.postNote, 12, y)
+		y = y - 28
+	end
+	return y
+end
+
 -- Draws everything from AHBuy's state.
 function P.Update()
 	if not (panel and panel:IsShown()) then
@@ -768,6 +890,7 @@ function P.Update()
 	end
 	local AB, S = ns.AHBuy, ns.AHBuy.state
 	local y = DrawRun(-30)
+	y = DrawPost(y)
 	local list = P.Lines()
 	local model = P.Model(list)
 	panel.linesTitle:SetShown(#list > 0)
@@ -966,6 +1089,15 @@ local function Create()
 		P.Save()
 	end)
 	CreateRun(Box)
+	panel.postHead = Style.LineButton(panel, L["Post"], 150)
+	panel.postHead:SetScript("OnClick", function()
+		P.postOpen = not P.postOpen
+		P.Update()
+	end)
+	panel.postNote = Style.Text(panel, "Small", "text3")
+	panel.postNote:SetWidth(P.WIDTH - 24)
+	panel.postNote:SetJustifyH("LEFT")
+	panel.postNote:SetText(L["The box is the batch to keep listed. Post with the auction house's own Sell tab; the lowest price is the last one seen."])
 	panel.formStatus = Style.Text(panel, "Small", "text2")
 	panel.formStatus:SetWidth(P.WIDTH - 24)
 	panel.formStatus:SetJustifyH("LEFT")
@@ -1007,7 +1139,7 @@ local function NameArrived(_, itemID)
 end
 ns.On("ITEM_DATA_LOAD_RESULT", NameArrived)
 ns.On("GET_ITEM_INFO_RECEIVED", NameArrived)
-for _, name in ipairs({ "BASKET_CHANGED", "BAGS_CHANGED", "PRICES_CHANGED", "SNIPE_CHANGED" }) do
+for _, name in ipairs({ "BASKET_CHANGED", "BAGS_CHANGED", "PRICES_CHANGED", "SNIPE_CHANGED", "AUCTIONS_CHANGED" }) do
 	ns.Listen(name, function()
 		cached = nil
 		P.Update()

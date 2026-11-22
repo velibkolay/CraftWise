@@ -110,6 +110,162 @@ function A.SoldUnits(itemID, since)
 	return units
 end
 
+----------------------------------------------------------------------------------------------------
+-- Craft run sell lists (#390): what the run's crafts are to sell where. Lists only; the merchant list sells on a click
+-- (Junk.lua, UI/MerchantBuy.lua) and the AH list tells how many to post (UI/AHPanel.lua), the posting itself is the
+-- player's click on Blizzard's sell frame. Nothing here posts, sells or runs on a timer.
+----------------------------------------------------------------------------------------------------
+
+A.BATCH_MAX = 999
+
+-- The item a basket entry makes and how many per craft: the learned recipe's output, else the bundled recipe's.
+function A.RunOutput(entry)
+	local prof = ns.charDB and ns.charDB.professions and ns.charDB.professions[entry.professionID]
+	local recipe = prof and prof.recipes and prof.recipes[entry.recipeID]
+	local out = recipe and recipe.output
+	if not out and ns.RecipeFallback then
+		local _, o = ns.RecipeFallback(entry.recipeID)
+		out = o
+	end
+	if out and out.itemID then
+		return out.itemID, math.max(1, math.floor(out.quantity or 1))
+	end
+end
+
+-- An entry made by hand has no channel: the vendor check (the sale the Make page chooses) decides, "vendor" or nothing.
+function A.RunChannelOf(itemID, qty)
+	local o = ns.SaleOptions and ns.SaleOptions(itemID, qty)
+	if o and o.chosen == "vendor" and (o.vendor or 0) > 0 then
+		return "vendor"
+	end
+end
+
+-- Pure: the run's items to sell, one per item and channel, in basket order: { { itemID, channel, units } }.
+-- entries = Basket.Entries(), outputOf(entry) -> itemID, units per craft, channelOf(itemID, qty) -> "vendor" | nil for an
+-- entry without a channel (made by hand). A planned craft keeps its channel ("vendor" | "AH").
+function A.RunItems(entries, outputOf, channelOf)
+	local out, at = {}, {}
+	for _, e in ipairs(entries or {}) do
+		local itemID, qty = outputOf(e)
+		if itemID then
+			local channel = e.channel
+			if not channel then
+				channel = channelOf and channelOf(itemID, qty)
+			end
+			if channel == "vendor" or channel == "AH" then
+				local key = channel .. itemID
+				local line = at[key]
+				if not line then
+					line = { itemID = itemID, channel = channel, units = 0 }
+					at[key] = line
+					out[#out + 1] = line
+				end
+				line.units = line.units + (e.count or 1) * qty
+			end
+		end
+	end
+	return out
+end
+
+function A.RunItemsNow(channel)
+	local all = A.RunItems(ns.Basket.Entries(), A.RunOutput, A.RunChannelOf)
+	local out = {}
+	for _, l in ipairs(all) do
+		if l.channel == channel then
+			out[#out + 1] = l
+		end
+	end
+	return out
+end
+
+-- Pure: the default batch, about half a day's sales and at least 1. perDay = units sold a day (nil without data), fallback =
+-- the setting "Max per item without sales data": half of it.
+function A.BatchDefault(perDay, fallback)
+	if perDay then
+		return math.max(1, math.floor(perDay / 2 + 0.5))
+	end
+	return math.max(1, math.floor((fallback or 2) / 2))
+end
+
+-- The batch of an item: what the player typed, else the default.
+function A.BatchOf(itemID, perDay, fallback)
+	local typed = ns.db and ns.db.craftBatch and ns.db.craftBatch[itemID]
+	if typed then
+		return typed, true
+	end
+	return A.BatchDefault(perDay, fallback), false
+end
+
+-- Saves the typed batch of an item (1 to BATCH_MAX); nil or 0 goes back to the default.
+function A.SetBatch(itemID, n)
+	if not ns.db then
+		return
+	end
+	n = math.floor(tonumber(n) or 0)
+	ns.db.craftBatch = ns.db.craftBatch or {}
+	ns.db.craftBatch[itemID] = n >= 1 and math.min(n, A.BATCH_MAX) or nil
+end
+
+-- Pure: how many to post now: keep `batch` listed, as many as the bags hold.
+function A.PostNow(batch, listed, inBags)
+	return math.max(0, math.min(batch - listed, inBags))
+end
+
+-- Units of an item that are listed now: the active auctions of this character (the tracker's list).
+function A.ListedUnits(itemID, charKey)
+	local units = 0
+	for _, rec in ipairs(A.List(charKey) or {}) do
+		if rec.i == itemID and rec.st == "active" then
+			units = units + (rec.q or 0)
+		end
+	end
+	return units
+end
+
+-- Units a day and where the figure comes from, as the plan reads it (Basket.DemandCap): own sales, else observed drops,
+-- else nothing (perDay nil, the text says "no sales data").
+function A.DemandOf(itemID, now)
+	now = now or time()
+	local B = ns.Basket
+	local sold = { units = A.SoldUnits(itemID, now - B.SALES_DAYS * 86400), days = B.SALES_DAYS }
+	local house = ns.ProfitHouse and ns.ProfitHouse()
+	local drops = house and ns.Market and ns.Market.DropRate and ns.Market.DropRate(itemID, house, now) or nil
+	local _, perDay, source, text = B.DemandCap(sold, drops, 1, B.MaxWithoutData())
+	return perDay, source, text
+end
+
+-- The lowest listing now at the profit house per unit (copper) and its label; nil without one. "Now" is the lowest listing
+-- the last scan or search saw, no typical price and no other source (#376).
+function A.PostPrice(itemID)
+	local quote = ns.NowPrices and ns.NowPrices(ns.AuctionQuote, itemID)
+	if quote and quote.copper then
+		return quote.copper, quote.label
+	end
+end
+
+-- Pure: one line of the AH post list. in = { itemID, units (of the run), batch, bags, listed, sold (units sold lately),
+-- price }. postNow keeps `batch` listed from what the bags hold.
+function A.PostLine(l)
+	return { itemID = l.itemID, units = l.units, batch = l.batch, bags = l.bags, listed = l.listed, sold = l.sold,
+		price = l.price, priceLabel = l.priceLabel, postNow = A.PostNow(l.batch, l.listed, l.bags),
+		demandText = l.demandText, custom = l.custom }
+end
+
+-- The AH post list of the run: every "AH" item of the basket with what the bags and the tracker say.
+function A.RunPostLines(now)
+	now = now or time()
+	local lines = {}
+	for _, it in ipairs(A.RunItemsNow("AH")) do
+		local perDay, _, text = A.DemandOf(it.itemID, now)
+		local batch, custom = A.BatchOf(it.itemID, perDay, ns.Basket.MaxWithoutData())
+		local price, label = A.PostPrice(it.itemID)
+		lines[#lines + 1] = A.PostLine({ itemID = it.itemID, units = it.units, batch = batch, custom = custom,
+			bags = C_Item.GetItemCount(it.itemID) or 0, listed = A.ListedUnits(it.itemID),
+			sold = A.SoldUnits(it.itemID, now - 86400), price = price, priceLabel = label, demandText = text })
+	end
+	return lines
+end
+
 -- A recorded sale (the money arrived, the ledger's "ahsell") of an item marked Junk (#214, #222, #227): the item does
 -- sell on the AH, so the mark goes and it is valued at the AH again. Listing, cancelling and expiring never get
 -- here. One chat line; the pages and bag advice refresh.

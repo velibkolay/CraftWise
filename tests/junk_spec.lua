@@ -362,3 +362,64 @@ it("Bags page: a junk row's icon is dimmed like the slot, a kept row only greyed
 	local kept = P.DockedRow({ kept = true, name = "Linen", itemID = 100 })
 	eq(kept.desaturate, true); eq(kept.dim, nil)
 end)
+
+----------------------------------------------------------------------------------------- craft run vendor list (#390)
+
+it("RunItems: a planned craft keeps its channel, a hand-made entry is listed only when the vendor check says vendor", function()
+	local ns = setup()
+	local outs = { [1] = { 10, 2 }, [2] = { 20, 1 }, [3] = { 30, 1 }, [4] = { 10, 2 } }
+	local function outputOf(e) return outs[e.recipeID][1], outs[e.recipeID][2] end
+	local function channelOf(itemID) return itemID == 30 and "vendor" or nil end
+	local items = ns.Auctions.RunItems({
+		{ recipeID = 1, count = 3, channel = "vendor" },
+		{ recipeID = 2, count = 2, channel = "AH" },
+		{ recipeID = 3, count = 1 }, -- by hand, the vendor check says vendor
+		{ recipeID = 4, count = 1 }, -- by hand, the vendor check has no say
+		{ recipeID = 1, count = 1, channel = "vendor" },
+	}, outputOf, channelOf)
+	eq(#items, 3)
+	eq(items[1].itemID, 10); eq(items[1].channel, "vendor"); eq(items[1].units, 8, "4 crafts x 2")
+	eq(items[2].itemID, 20); eq(items[2].channel, "AH"); eq(items[2].units, 2)
+	eq(items[3].itemID, 30); eq(items[3].channel, "vendor")
+end)
+
+it("PickStacks: whole stacks only, never more than the run made, locked ones stay", function()
+	local ns = setup()
+	local J = ns.Junk
+	local pick, count, left = J.PickStacks({ { count = 5 }, { count = 5 }, { count = 5, locked = true }, { count = 1 } }, 11)
+	eq(#pick, 3); eq(count, 11); eq(left, 5, "the locked stack stays")
+	pick, count, left = J.PickStacks({ { count = 20 } }, 6)
+	eq(#pick, 0); eq(count, 0); eq(left, 20, "a stack bigger than the run is never split")
+end)
+
+it("RunVendorList: count and vendor total per line; kept items, items without a vendor price and empty bags are left out", function()
+	local ns = setup()
+	local stacks = { [1] = { { count = 4 } }, [2] = { { count = 2 } }, [3] = { { count = 1 } }, [4] = {} }
+	local price = { [1] = 50, [2] = 100, [4] = 10 }
+	local lines, total = ns.Junk.RunVendorList({
+		{ itemID = 1, units = 6 }, { itemID = 2, units = 2 }, { itemID = 3, units = 1 }, { itemID = 4, units = 3 },
+	}, function(id) return stacks[id] end, function(id) return price[id] end, { [2] = true })
+	eq(#lines, 1, "2 is kept, 3 has no price, 4 has nothing in the bags")
+	eq(lines[1].itemID, 1); eq(lines[1].count, 4); eq(lines[1].total, 200); eq(total, 200)
+end)
+
+it("the merchant list sells a line with one click and checks each stack first", function()
+	local ns, stub = setup()
+	stub.items[600] = { name = "Leather Gloves", sellPrice = 300 }
+	stub.bags[1] = { { itemID = 600, stackCount = 1 }, { itemID = 600, stackCount = 1 }, { itemID = 600, stackCount = 1 } }
+	ns.charDB.professions[165] = { recipes = { [900] = { learned = true, output = { itemID = 600, quantity = 1 } } } }
+	ns.Basket.Add(900, 165, 2, { channel = "vendor", profitEach = 100, secEach = 5 })
+	stub.Fire("MERCHANT_SHOW")
+	local lines, total = ns.Junk.RunList()
+	eq(#lines, 1); eq(lines[1].count, 2, "two were made, three are in the bags"); eq(total, 600)
+	stub.bags[1][2] = { itemID = 600, stackCount = 1, isLocked = true }
+	local sold, copper = ns.Junk.SellRunLine(lines[1])
+	eq(sold, 1, "the stack that locked meanwhile is skipped"); eq(copper, 300)
+	eq(#stub.sold, 1)
+	ns.Junk.RunList() -- away from the merchant nothing is listed
+	stub.Fire("MERCHANT_CLOSED")
+	local none = ns.Junk.RunList()
+	eq(#none, 0)
+	local ok, why = ns.Junk.SellRunLine(lines[1])
+	eq(ok, false); assert(why:find("merchant"))
+end)
