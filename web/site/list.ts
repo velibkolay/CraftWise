@@ -537,7 +537,7 @@ function renderTable(): void {
 	const count = list.length === rows.length ? `${rows.length} items` : `${list.length} of ${rows.length} items`;
 	const priceNote = recipes && pricing === "loading" ? ", pricing the recipes" : recipes && pricing === "failed" ? ", the recipe prices could not be loaded" : "";
 	clear(heading, title(), " ", h("span", { class: "hint count" }, count + (data.more ? ", first 500 shown" : "") + priceNote));
-	clear(colHint, recipes ? "Profit is one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more) minus its reagents, each where it is cheaper: AH or vendor. Pays back: crafts until the recipe's AH price is earned back. Press a profit for the breakdown." : "Market Price is the typical price of the last 7 days. Vendor is what a vendor pays for one. Listed is units on the auction house.");
+	clear(colHint, recipes ? "Profit is one craft's product at the Horde AH after the 5% cut (or a vendor, if it pays more) minus its reagents, each where it is cheaper: AH or vendor. Pays back: crafts until the recipe's AH price is earned back. Press a profit for the breakdown." : "Market Price is the typical price of the last 3 days. Vendor is what a vendor pays for one. Listed is units on the auction house.");
 	vendorHint.hidden = !recipes;
 	document.title = `${title()} - Velikopter Market`;
 

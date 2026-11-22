@@ -413,7 +413,7 @@ function wareRow(w: C.Ware, m: C.Merchant, now: number): HTMLElement {
 			: h("span", {}, w.req, w.reqMet ? h("span", { class: "hint" }, " (met)") : null)
 		: h("span", { class: "hint" }, "–");
 	const value = w.value
-		? h("span", { title: w.value.basis === "current" ? `Horde AH lowest${w.value.t !== null ? `, ${age(now - w.value.t)}` : ""}, after the 5% cut` : "7-day typical at the Horde AH (not listed now), after the 5% cut" }, money(w.value.copper), w.value.basis === "typical" ? h("span", { class: "cr-src hint", "aria-hidden": "true" }, "t") : null)
+		? h("span", { title: w.value.basis === "current" ? `Horde AH lowest${w.value.t !== null ? `, ${age(now - w.value.t)}` : ""}, after the 5% cut` : "3-day typical at the Horde AH (not listed now), after the 5% cut" }, money(w.value.copper), w.value.basis === "typical" ? h("span", { class: "cr-src hint", "aria-hidden": "true" }, "t") : null)
 		: h("span", { class: "hint" }, "unknown");
 	return h(
 		"tr",
@@ -474,7 +474,7 @@ function renderSpend(): void {
 					),
 				)
 			: h("p", { class: "notice" }, "No Favor merchant recorded yet. Open a merchant that sells for Merchant's Favor (e.g. Pawani in The Barrens) with the addon on."),
-		h("p", { class: "hint note" }, "AH value: the Horde AH's current lowest price after the 5% cut (t = the 7-day typical, for items not listed now), for the whole purchase, minus any copper the merchant asks on top, per Favor point. Items without an AH price are unknown; many Favor items cannot be sold."),
+		h("p", { class: "hint note" }, "AH value: the Horde AH's current lowest price after the 5% cut (t = the 3-day typical, for items not listed now), for the whole purchase, minus any copper the merchant asks on top, per Favor point. Items without an AH price are unknown; many Favor items cannot be sold."),
 	);
 }
 

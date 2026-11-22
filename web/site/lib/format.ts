@@ -264,7 +264,7 @@ export const AH_CUT = 0.05;
 
 export interface SellChoice {
 	ah: number | null; // one unit on the auction house after the cut
-	ahBasis: "typical" | "lowest" | null; // the 7-day typical price, else the lowest listing
+	ahBasis: "typical" | "lowest" | null; // the 3-day typical price, else the lowest listing
 	vendor: number | null; // what a vendor pays; 0 = vendors don't buy it; null = not known
 	best: "ah" | "vendor" | null;
 }

@@ -236,16 +236,16 @@ describe("read-time merge", () => {
 		const lots = (n: number) => Array.from({ length: n }, (_, i) => day(i + 1, 100));
 		await send(token, { realms: [R4, R8], connected: { [R4]: { [R8]: t0 - 5 } } }, {
 			items: { [ITEM]: { n: "Linen Cloth", q: 1 } },
-			// 2 days at each house: neither has the 3 days a typical price needs, together they have 4
+			// 1 day at each house: neither has the 2 days a typical price needs, together they have 2 (day 3 is out of the 3-day window)
 			prices: [
-				{ item: ITEM, house: horde(R4), last: { t: t0 - 60, min: 200, qty: 10, listings: 2 }, days: lots(2) },
-				{ item: ITEM, house: horde(R8), last: { t: t0 - 90, min: 150, qty: 10, listings: 2 }, days: lots(4).slice(2) },
+				{ item: ITEM, house: horde(R4), last: { t: t0 - 60, min: 200, qty: 10, listings: 2 }, days: lots(1) },
+				{ item: ITEM, house: horde(R8), last: { t: t0 - 90, min: 150, qty: 10, listings: 2 }, days: [day(2, 100), day(3, 100)] },
 			],
 		});
 		const m = (await (await call("GET", `/api/movers?house=${encodeURIComponent(horde(R4))}`)).json()) as {
 			up: { item: number; min: number; typical: number; typicalDays: number }[];
 		};
-		expect(m.up).toEqual([expect.objectContaining({ item: 2589, min: 200, typical: 100, typicalDays: 4 })]);
+		expect(m.up).toEqual([expect.objectContaining({ item: 2589, min: 200, typical: 100, typicalDays: 2 })]);
 		// no pair is needed (#382): the same without the table
 		await env.DB.prepare("DELETE FROM connected").run();
 		await env.DB.prepare("DELETE FROM cache").run();

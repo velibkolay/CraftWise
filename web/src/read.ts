@@ -269,7 +269,7 @@ function mergeDays(rows: DailyRow[], variantDays: VariantDayRow[]): DailyRow[] {
 }
 
 export async function itemDetail(env: Env, url: URL, id: number, now: number): Promise<Response> {
-	const days = intParam(url, "days", L.HISTORY_DAYS, L.TYPICAL_DAYS, L.HISTORY_DAYS_MAX);
+	const days = intParam(url, "days", L.HISTORY_DAYS, L.WINDOW_DAYS, L.HISTORY_DAYS_MAX);
 	const hours = intParam(url, "hours", L.RAW_HOURS, 0, L.RAW_HOURS_MAX);
 	const today = dayNumber(now);
 	const db = env.DB;
@@ -414,7 +414,7 @@ export async function movers(env: Env, url: URL, now: number): Promise<Response>
 	if (cached && cached.t >= (house.last_scan ?? 0) && dayNumber(cached.t) === today) {
 		result = JSON.parse(cached.data);
 	} else {
-		// Items with a typical price (>= 3 of the last 7 days) and a recent price; SQLite does the
+		// Items with a typical price (>= 2 of the last 3 days) and a recent price; SQLite does the
 		// join so only those rows reach the Worker.
 		const results =
 			group.ids.length === 1

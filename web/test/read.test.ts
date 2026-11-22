@@ -8,7 +8,7 @@ const today = Math.floor(t0 / DAY);
 
 // Linen Cloth: 5 days of CraftWise history at the Horde AH, current min well above typical.
 // Peacebloom: 3 days, current min below typical. Purple Lotus: outside the scope (no typical).
-// Silverleaf: 2 days only (too little history).
+// Silverleaf: 1 day only (too little history).
 beforeAll(async () => {
 	await clearData();
 	const token = await makeToken("public");
@@ -45,7 +45,7 @@ beforeAll(async () => {
 				days: [day(2, 60), day(1, 61), day(0, 59)],
 			},
 			{ item: "8831", house: HORDE, last: { t: t0, min: 900, qty: 2, listings: 1 } },
-			{ item: "765", house: HORDE, last: { t: t0, min: 10, qty: 2, listings: 1 }, days: [day(1, 50), day(0, 50)] },
+			{ item: "765", house: HORDE, last: { t: t0, min: 10, qty: 2, listings: 1 }, days: [day(0, 50)] },
 		],
 	});
 	expect(res.status).toBe(200);
@@ -116,7 +116,7 @@ describe("public read API", () => {
 			suffix: 0,
 			current: { t: t0, min: 150, qty: 300, listings: 4, listed: true },
 			depth: { t: t0, total: 300, tiers: [{ price: 150, qty: 20 }, { price: 160, qty: 280 }] },
-			typical: { status: "ok", price: 100, days: 5 },
+			typical: { status: "ok", price: 100, days: 3 },
 		});
 		expect((horde.days as unknown[]).length).toBe(5);
 		expect((horde.days as Record<string, unknown>[])[0]).toEqual({
@@ -147,7 +147,7 @@ describe("public read API", () => {
 		expect(res.status).toBe(200);
 		const body = await res.json<{ up: Record<string, unknown>[]; down: Record<string, unknown>[]; computedAt: number }>();
 		expect(body.up).toEqual([
-			{ item: 2589, suffix: 0, name: "Linen Cloth", quality: 1, icon: 132889, t: t0, min: 150, qty: 300, listings: 4, typical: 100, typicalDays: 5, change: 0.5 },
+			{ item: 2589, suffix: 0, name: "Linen Cloth", quality: 1, icon: 132889, t: t0, min: 150, qty: 300, listings: 4, typical: 100, typicalDays: 3, change: 0.5 },
 		]);
 		expect(body.down.map((m) => [m.name, m.typical, m.change])).toEqual([["Peacebloom", 60, -0.5]]);
 		const cached = await env.DB.prepare("SELECT count(*) AS n FROM cache").first<{ n: number }>();

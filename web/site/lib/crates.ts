@@ -21,7 +21,7 @@ export interface AhPrice {
 	t: number; // when it was seen
 	min: number | null; // lowest unit price
 	listed: boolean; // false: the latest full scan didn't list it
-	typical: number | null; // median daily typical of 7 days, when there is one
+	typical: number | null; // median daily typical of 3 days, when there is one
 }
 
 // A price as the page uses it: where it comes from and when it was seen.
@@ -269,7 +269,7 @@ export function standingMet(req: string | null, now: string | null): boolean | n
 	return r < 0 || n < 0 ? null : n >= r;
 }
 
-// AH value of one ware: the current lowest listed price, else the 7-day typical, after the house cut.
+// AH value of one ware: the current lowest listed price, else the 3-day typical, after the house cut.
 export function wareValue(price: AhPrice | undefined, stack: number): Ware["value"] {
 	if (!price) return null;
 	if (price.listed && price.min !== null) return { copper: Math.floor(price.min * stack * (1 - AH_CUT)), basis: "current", t: price.t };

@@ -93,7 +93,7 @@ export function itemsNeeded(data: RecipeData, recipeItems: number[]): number[] {
 
 // One item's Horde AH price and vendor sell price, as /api/browse gives them.
 export interface Quote {
-	typical: number | null; // the 7-day typical price, when there is one
+	typical: number | null; // the 3-day typical price, when there is one
 	lowest: number | null; // the lowest listing, while listed
 	sellPrice: number | null; // what a vendor pays (0 = vendors don't buy it, null = not known)
 	units?: number | null; // units listed now (with `lowest`)

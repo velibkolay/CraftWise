@@ -397,8 +397,8 @@ A market of `/api/items/<id>`:
 - `current`: the latest observation; `listed` false when a later full scan didn't list the item or
   the latest raw point had no units (`Market.lua` `M.Current`).
 - `depth`: cheapest tiers of the latest raw point (scope items only, else `null`).
-- `typical`: as `Market.lua` `M.Typical`: median of the daily typical of the last 7 days, rounded
-  down; `too_little_history` below 3 such days, `no_data` without any data. Items outside the scope
+- `typical`: as `Market.lua` `M.Typical`: median of the daily typical of the last 3 days, rounded
+  down; `too_little_history` below 2 such days, `no_data` without any data. Items outside the scope
   have no daily typical, so their typical is always `too_little_history`.
 - `days`: the last `days` days (7..3650), `src` `craftwise` (the addon's aggregate) or `last` (built
   from observations, see above). `raw`: points of the last `hours` hours (0..720).
@@ -406,7 +406,7 @@ A market of `/api/items/<id>`:
 Top movers (`up` / `down`, at most 25 each, `limit` 1..25): items of one house whose current lowest
 price is furthest above / below their typical price, as
 `{ item, suffix, name, quality, icon, t, min, qty, listings, typical, typicalDays, change }` with
-`change = (min - typical) / typical`. Only items with a typical price (at least 3 of the last 7 days
+`change = (min - typical) / typical`. Only items with a typical price (at least 2 of the last 3 days
 of CraftWise history) and a listed price seen in the last 2 days. `qty` and `listings` come with
 every price: a jump at a thin market is no trend. Cached in D1 until the house's next scan or the
 next UTC day.
