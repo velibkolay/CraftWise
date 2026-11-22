@@ -679,6 +679,9 @@ function ns.OnCraft(recipeID)
 	end
 	local clock = GetTime and GetTime() or nil
 	CL.Record(recipeID, recipe, nil, clock, TakeCast(recipeID, clock)) -- every craft counts, with or without a skill update (#205)
+	if ns.Basket and ns.Basket.OnCrafted then
+		ns.Basket.OnCrafted(recipeID, recipe.name) -- the craft list ticks (#389)
+	end
 	ns.CheckSkills()
 	local now = Now()
 	local craft = { recipeID = recipeID, prof = prof, skill = tracked[prof], difficulty = recipe.difficulty, time = now }

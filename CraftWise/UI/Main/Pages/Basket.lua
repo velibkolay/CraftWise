@@ -19,7 +19,7 @@ local Style, L = ns.Style, ns.L
 local B = {}
 M.BasketPage = B
 
-local ORDER = { craft = 0, flip = 0.5, auction = 1, vendor = 2, unknown = 3, done = 4 }
+local ORDER = { intermediate = -1, craft = 0, made = 0.25, flip = 0.5, auction = 1, vendor = 2, unknown = 3, done = 4 }
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
@@ -55,18 +55,74 @@ local function Icon(itemID)
 	return itemID and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID) or nil
 end
 
--- The rows of a plan (Basket.Plan()).
-function B.Rows(plan)
-	local rows = {}
-	for i, c in ipairs(plan.crafts) do
-		local r = NewRow("craft", "craft:" .. c.entry.recipeID, c.row.name, c.row.outputItemID, c.row.icon)
-		r.craft, r.rank = c, i -- the plan lists the crafts by profit % (#197)
+-- Where a craft sells and whether the bags hold its reagents, as one short text.
+function B.StateText(ln)
+	if ln.state == "made" then
+		return L["made"]
+	elseif ln.state == "ready" then
+		return L["ready"]
+	elseif ln.state == "partly" then
+		return (L["%d ready"]):format(ln.can)
+	end
+	return L["missing reagents"]
+end
+
+function B.CountText(ln)
+	if ln.made > 0 or ln.left ~= ln.planned then
+		return (L["%d of %d crafts"]):format(ln.left, ln.planned)
+	end
+	return (L["%d crafts"]):format(ln.left)
+end
+
+-- The cells of one craft-list line (kind craft, intermediate or made).
+function B.FillRun(r, ln)
+	local label = ln.label and L[ln.label] or (ln.kind == "intermediate" and L["intermediate"] or L["craft"])
+	local where = label .. ", " .. B.StateText(ln)
+	local c = ln.craft
+	local each, total, color = M.DASH, M.DASH, "text3"
+	if ln.profitEach then
+		local text
+		text, color = MK.Signed(math.floor(ln.profitEach + 0.5))
+		each = text
+		if ln.kind ~= "made" then
+			total, color = MK.Signed(math.floor(ln.profitEach * ln.left + 0.5))
+		else
+			total, color = MK.Signed(math.floor(ln.profitEach * ln.made + 0.5))
+		end
+	elseif c then
 		local profit = c.row.vendorProfit and c.row.vendorProfit * c.count or nil
-		local total, color = M.DASH, "text3"
 		if profit then
 			total, color = MK.Signed(profit)
 		end
-		Fill(r, (L["%d crafts"]):format(c.count), L["craft"], c.row.vendorSale and ns.FormatCoins(c.row.vendorSale) or M.DASH, total, color, "text")
+		each = c.row.vendorSale and ns.FormatCoins(c.row.vendorSale) or M.DASH
+	end
+	if ln.state == "made" or (ln.kind == "craft" and ln.left == 0) then
+		r.view.nameColor, r.view.colors.name = "text3", "text3"
+		color = "text3"
+	end
+	Fill(r, B.CountText(ln), where, each, total, color, ln.state == "missing" and "text3" or "text")
+end
+
+-- The reagents the next craft lacks, as text for the open line.
+function B.MissingText(ln)
+	local names = {}
+	for _, m in ipairs(ln.missing or {}) do
+		names[#names + 1] = ("%d %s"):format(m.short, MK.ItemName(m.itemID))
+	end
+	return table.concat(names, ", ")
+end
+
+-- The rows of a plan (Basket.Plan()).
+function B.Rows(plan)
+	local rows = {}
+	-- The craft list (#389): intermediates first, the crafts by profit per craft-second, what is made last.
+	local list = ns.Basket.CraftList(plan, ns.Holdings.Carried())
+	plan.list = list
+	for i, ln in ipairs(list.lines) do
+		local r = NewRow(ln.kind, ln.kind .. ":" .. ln.recipeID, ln.name, ln.outputItemID, ln.icon or Icon(ln.outputItemID))
+		r.run, r.craft, r.rank = ln, ln.craft, i
+		r.recipeID = ln.recipeID
+		B.FillRun(r, ln)
 		rows[#rows + 1] = r
 	end
 	local function ItemRows(lines, kind, where)
@@ -117,6 +173,16 @@ end
 
 function B.Hero(plan)
 	local label = L["Basket"]
+	local sum = plan.list and plan.list.summary
+	if sum and sum.done then
+		local figure, color = M.DASH, "text3"
+		if sum.madeProfit then
+			figure, color = MK.Signed(math.floor(sum.madeProfit + 0.5))
+		end
+		return { label = label, name = L["Done"], nameColor = "text",
+			sub = (L["%d crafts made"]):format(sum.madeTotal),
+			figureLabel = L["Expected profit of the crafts made"], figure = figure, figureColor = color }
+	end
 	local flips = plan.flips or {}
 	if #plan.crafts == 0 and #flips > 0 then
 		local profit = 0
@@ -164,7 +230,7 @@ function B.Model(ctx)
 		rows = rows,
 		hero = B.Hero(plan),
 		listTitle = (L["%d lines"]):format(#rows),
-		listNote = L["crafts, AH → vendor, then AH, vendor, in bags"],
+		listNote = L["crafts in order (profit per second), AH → vendor, then AH, vendor, in bags"],
 		empty = L["The basket is empty. Open a recipe in Make › Craft and use Add to basket."],
 		footer = L["To buy = reagents of the crafts minus what is in your bags, each at the cheaper of the AH and a vendor"]
 			.. " · " .. L["Prices"] .. ": " .. MK.PriceBasisText(),
@@ -211,7 +277,26 @@ function B.Open(content, r, ctx)
 		return fs
 	end
 	local Bk = ns.Basket
-	if r.kind == "craft" then
+	-- Every craft-list line: Open the recipe in the profession window (the player presses Create there).
+	local function OpenButton(anchor, dx, y)
+		local open = pool:Button(L["Open recipe"], function()
+			MK.OpenRecipe(r.recipeID)
+		end, { L["Open recipe"], L["Shows the recipe in the profession window. You press Create yourself."] }, 24)
+		if anchor then
+			open:SetPoint("LEFT", anchor, "RIGHT", dx, 0)
+		else
+			open:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y)
+		end
+		open:SetShown(MK.CanOpenRecipe(r))
+		return open
+	end
+	if r.kind == "intermediate" or r.kind == "made" then
+		local open = OpenButton(nil, 0, -4)
+		local text = r.kind == "made" and (L["%d made."]):format(r.run.made)
+			or (r.run.state == "ready" and L["The bags hold what these crafts need."] or (L["Missing for the next craft: %s."]):format(B.MissingText(r.run)))
+		local fs = pool:Text("Small", "text3", text)
+		fs:SetPoint("LEFT", open, "RIGHT", 12, 0)
+	elseif r.kind == "craft" then
 		local c = r.craft
 		local minus = pool:Button("−", function()
 			Bk.SetCount(c.entry.recipeID, c.count - 1)
@@ -249,6 +334,11 @@ function B.Open(content, r, ctx)
 			Bk.Remove(c.entry.recipeID)
 		end, { L["Remove from basket"] }, 24)
 		remove:SetPoint("LEFT", last, "RIGHT", 12, 0)
+		local open = OpenButton(remove, 12)
+		if r.run and r.run.state ~= "ready" and #r.run.missing > 0 then
+			local fs = pool:Text("Small", "text3", (L["Missing for the next craft: %s."]):format(B.MissingText(r.run)))
+			fs:SetPoint("LEFT", open, "RIGHT", 12, 0)
+		end
 	elseif r.kind == "flip" then
 		local f = r.line
 		local held = Bk.FlipHeld(f)
@@ -340,6 +430,198 @@ function B.AuctionatorList()
 		ns.Print(why .. ".")
 	end
 end
+
+----------------------------------------------------------------------------------------------------
+-- Craft list next to the profession window (#389)
+----------------------------------------------------------------------------------------------------
+-- A panel on the right of the profession window (like "To send" at the trade window, TradeFill.lua) lists the crafts
+-- of the basket in order: intermediates first, then by profit per craft-second, what is made ticked and last. A click
+-- on a line opens the recipe there (C_TradeSkillUI.OpenRecipe); the player presses Create, nothing is crafted from here.
+-- It redraws on BASKET_CHANGED (a craft ticked, an entry added) and BAGS_CHANGED, at most 4 times a second. The x hides
+-- it until the basket changes next; it is not there while the basket has nothing to craft or tally.
+B.PANEL_WIDTH, B.PANEL_ROWS, B.PANEL_ROW = 290, 9, 34
+B.PANEL_THROTTLE = 0.25
+
+-- Pure over the craft list: what the panel says. { title, sub, rows = { { name, count, sub, tick, state, recipeID, tip } },
+-- more = lines not shown } | nil when there is nothing to show.
+function B.PanelModel(list)
+	if not list or #list.lines == 0 then
+		return nil
+	end
+	local sum = list.summary
+	local model = { title = L["Craft list"], rows = {} }
+	if sum.done then
+		local text = (L["Done: %d crafts made"]):format(sum.madeTotal)
+		if sum.madeProfit then
+			text = text .. ", " .. (L["expected profit %s"]):format(ns.FormatCoins(math.floor(sum.madeProfit + 0.5)))
+		end
+		model.sub = text
+	else
+		local text = (L["%d crafts left"]):format(sum.left)
+		if sum.profitLeft then
+			text = text .. ", " .. (L["expected profit %s"]):format(ns.FormatCoins(math.floor(sum.profitLeft + 0.5)))
+		end
+		if sum.madeTotal > 0 then
+			text = text .. ", " .. (L["%d made"]):format(sum.madeTotal)
+		end
+		model.sub = text
+	end
+	for i, ln in ipairs(list.lines) do
+		local parts = {}
+		if ln.label then
+			parts[#parts + 1] = L[ln.label]
+		end
+		if ln.profitEach then
+			parts[#parts + 1] = (L["%s each"]):format(ns.FormatCoins(math.floor(ln.profitEach + 0.5)))
+		end
+		parts[#parts + 1] = B.StateText(ln)
+		if ln.state ~= "ready" and ln.state ~= "made" and #ln.missing > 0 then
+			parts[#parts + 1] = (L["needs %s"]):format(B.MissingText(ln))
+		end
+		model.rows[i] = { name = ln.name, count = ln.state == "made" and (L["%d made"]):format(ln.made) or B.CountText(ln),
+			sub = table.concat(parts, ", "), tick = ln.left == 0, state = ln.state, recipeID = ln.recipeID,
+			intermediate = ln.kind == "intermediate" }
+	end
+	return model
+end
+
+local panel, dismissed, queued
+
+local function PanelRow(i)
+	local rows = panel.rows
+	if rows[i] then
+		return rows[i]
+	end
+	local r = CreateFrame("Button", nil, panel)
+	r:SetSize(B.PANEL_WIDTH - 24, B.PANEL_ROW - 2)
+	r:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -(58 + (i - 1) * B.PANEL_ROW))
+	r.hover = r:CreateTexture(nil, "BACKGROUND")
+	r.hover:SetAllPoints(r)
+	Style.Fill(r.hover, Style.C.card)
+	r.hover:Hide()
+	r.tick = r:CreateTexture(nil, "ARTWORK")
+	r.tick:SetSize(14, 14)
+	r.tick:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -2)
+	r.tick:SetTexture("Interface\Buttons\UI-CheckBox-Check")
+	r.name = Style.Text(r, "Body", "text")
+	r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 20, 0)
+	r.name:SetWidth(B.PANEL_WIDTH - 24 - 20)
+	r.name:SetJustifyH("LEFT")
+	r.name:SetWordWrap(false)
+	r.sub = Style.Text(r, "Small", "text3")
+	r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -1)
+	r.sub:SetWidth(B.PANEL_WIDTH - 24 - 20)
+	r.sub:SetJustifyH("LEFT")
+	r.sub:SetWordWrap(false)
+	r:SetScript("OnClick", function(self)
+		if self.recipeID then
+			MK.OpenRecipe(self.recipeID)
+		end
+	end)
+	r:SetScript("OnEnter", function(self)
+		self.hover:Show()
+		Style.ShowTip(self, self.name:GetText() or "", L["Click to open the recipe. You press Create yourself."])
+	end)
+	r:SetScript("OnLeave", function(self)
+		self.hover:Hide()
+		Style.HideTip(self)
+	end)
+	rows[i] = r
+	return r
+end
+
+function B.DrawPanel()
+	queued = false
+	if not panel then
+		return
+	end
+	local model = ns.db and B.PanelModel(ns.Basket.CraftList(ns.Basket.Plan(), ns.Holdings.Carried()))
+	if not model or dismissed then
+		panel:Hide()
+		return
+	end
+	panel:Show()
+	panel.sub:SetText(model.sub)
+	local shown = math.min(#model.rows, B.PANEL_ROWS)
+	for i = 1, shown do
+		local row, r = model.rows[i], PanelRow(i)
+		r.recipeID = row.recipeID
+		r.tick:SetShown(row.tick)
+		local text = row.count .. "  " .. (row.name or "")
+		r.name:SetText(text)
+		local c = Style.Color((row.tick and "text3") or "text")
+		r.name:SetTextColor(c[1], c[2], c[3], 1)
+		r.sub:SetText(row.sub)
+		r:Show()
+	end
+	for i = shown + 1, #panel.rows do
+		panel.rows[i]:Hide()
+	end
+	panel.more:SetText(#model.rows > shown and (L["+%d more in Make > Basket"]):format(#model.rows - shown) or "")
+	panel:SetHeight(58 + shown * B.PANEL_ROW + 26)
+	panel.more:ClearAllPoints()
+	panel.more:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -(58 + shown * B.PANEL_ROW + 4))
+end
+
+-- Redraws soon, once for a burst of events.
+function B.QueuePanel()
+	if not panel or queued then
+		return
+	end
+	queued = true
+	if C_Timer and C_Timer.After then
+		C_Timer.After(B.PANEL_THROTTLE, B.DrawPanel)
+	else
+		B.DrawPanel()
+	end
+end
+
+-- Makes the panel once the profession window exists.
+function B.EnsurePanel()
+	if panel or not (ProfessionsFrame and type(ProfessionsFrame.GetFrameLevel) == "function") then
+		return panel ~= nil
+	end
+	panel = CreateFrame("Frame", "CraftWiseCraftList", ProfessionsFrame)
+	panel:SetSize(B.PANEL_WIDTH, 120)
+	panel:SetPoint("TOPLEFT", ProfessionsFrame, "TOPRIGHT", 4, -30)
+	panel:SetFrameLevel((ProfessionsFrame:GetFrameLevel() or 1) + 5)
+	panel.sheet = Style.Sheet(panel, nil, nil, 10, true)
+	panel.title = Style.Text(panel, "BodyBold", "text")
+	panel.title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -10)
+	panel.title:SetText(L["Craft list"])
+	panel.sub = Style.Text(panel, "Small", "text2")
+	panel.sub:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -30)
+	panel.sub:SetWidth(B.PANEL_WIDTH - 24)
+	panel.sub:SetJustifyH("LEFT")
+	panel.more = Style.Text(panel, "Small", "text3")
+	panel.close = Style.ActionButton(panel, "x", 22, 18)
+	panel.close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
+	panel.close:SetScript("OnClick", function()
+		dismissed = true
+		panel:Hide()
+	end)
+	panel.rows = {}
+	panel:Hide()
+	B.panel = panel
+	if ProfessionsFrame.HookScript then
+		ProfessionsFrame:HookScript("OnShow", B.QueuePanel)
+	end
+	B.QueuePanel()
+	return true
+end
+
+ns.Listen("BASKET_CHANGED", function()
+	dismissed = false
+	B.QueuePanel()
+end)
+ns.Listen("BAGS_CHANGED", B.QueuePanel)
+ns.On("TRADE_SKILL_SHOW", B.EnsurePanel)
+ns.On("PLAYER_LOGIN", B.EnsurePanel)
+ns.On("ADDON_LOADED", function(_, name)
+	if name == "Blizzard_Professions" then
+		B.EnsurePanel()
+	end
+end)
 
 M.RegisterPage({
 	key = "basket", section = "make", label = L["Basket"], order = 4, title = L["Basket"],
