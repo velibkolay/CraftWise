@@ -506,6 +506,16 @@ local function Put(frame, x, y)
 	frame:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
 end
 
+-- Puts the strings one under the other from y, each as tall as its (wrapped) text, so a long line pushes the next one down
+-- instead of being drawn over it (#397). Returns the y under the last one.
+function P.Stack(strings, x, y)
+	for _, fs in ipairs(strings) do
+		Put(fs, x, y)
+		y = y - math.max(fs:GetStringHeight() or 0, 0) - 1
+	end
+	return y
+end
+
 -- Draws the section from y; returns the y below it.
 local function DrawRun(y)
 	local st = P.RunState()
@@ -568,10 +578,9 @@ local function DrawRun(y)
 			r[2]:SetText(P.RunLineDetail(l))
 			r[3]:SetText(P.RunLineSource(l))
 			for k = 1, 3 do
-				Put(r[k], 12, y - (k - 1) * 13)
 				r[k]:Show()
 			end
-			y = y - P.RUN_ROW
+			y = P.Stack(r, 12, y) - 5 -- as tall as the wrapped text (#397)
 			shown = i
 		end
 		if #plan.lines > shown then
@@ -721,7 +730,7 @@ local function LineRow(i)
 	r.each:SetPoint("TOPRIGHT", r, "TOPRIGHT", -4, -3)
 	r.each:SetJustifyH("RIGHT")
 	r.detail = Style.Text(r, "Small", "text2")
-	r.detail:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -17)
+	r.detail:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -2) -- under the name, wherever it ends (#397)
 	r.detail:SetWidth(P.WIDTH - 30)
 	r.detail:SetJustifyH("LEFT")
 	r.mark = r:CreateTexture(nil, "BACKGROUND")
@@ -748,6 +757,12 @@ local function LineRow(i)
 	end)
 	lines[i] = r
 	return r
+end
+
+-- A flips line is as tall as its name and its detail (each wrapped), never shorter than P.ROW.
+function P.LineHeight(r)
+	local top = math.max(r.text:GetStringHeight() or 0, r.each:GetStringHeight() or 0)
+	return math.max(P.ROW, 3 + top + 2 + (r.detail:GetStringHeight() or 0) + 4)
 end
 
 local function ResultText(i)
@@ -855,7 +870,6 @@ local function DrawPost(y)
 				r[2]:SetText(P.PostDetail(l))
 				r[3]:SetText(P.PostSource(l))
 				for k = 1, 3 do
-					Put(r[k], 12, y - (k - 1) * 13)
 					r[k]:Show()
 				end
 				Put(r.box, P.WIDTH - 12 - 40, y + 2)
@@ -864,7 +878,7 @@ local function DrawPost(y)
 					r.box:SetText(tostring(l.batch))
 				end
 				r.box:Show()
-				y = y - P.POST_ROW
+				y = P.Stack(r, 12, y) - 5 -- as tall as the wrapped text (#397)
 				shown = i
 			end
 		end
@@ -950,7 +964,9 @@ function P.Update()
 			r.mark:SetShown(S.target and S.target.itemID == l.itemID and S.target.kind == l.kind)
 			r:ClearAllPoints()
 			r:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
-			y = y - P.ROW
+			local h = P.LineHeight(r)
+			r:SetHeight(h)
+			y = y - h
 		elseif lines[i] then
 			lines[i].line = nil
 			lines[i]:Hide()

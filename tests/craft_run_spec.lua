@@ -564,3 +564,52 @@ it("Refresh: when the run ends the plan is built again with the new prices", fun
 	end
 	assert(ns.AHPanel.runPlan ~= first, "a new plan after the run")
 end)
+
+---------------------------------------------------------------------------------------- row heights (#397)
+
+it("Panel rows (#397): Stack puts each string under the one above, as tall as its wrapped text", function()
+	local host = CreateFrame("Frame")
+	local function Str(text, width)
+		local fs = host:CreateFontString()
+		fs:SetWidth(width); fs:SetText(text)
+		return fs
+	end
+	local ns, stub = Load({ cap = 5 })
+	local P = Panel(ns, stub)
+	local short, long = Str("one line", 316), Str(("word "):rep(120), 316) -- 600 chars = 4 lines at 6 per char over 316
+	local third = Str("last", 316)
+	assert(long:GetStringHeight() > short:GetStringHeight() * 2, "the stub wraps the long text")
+	local y = P.Stack({ short, long, third }, 12, -100)
+	local function top(fs) return fs.points[1][5] end
+	eq(top(short), -100)
+	eq(top(long), -100 - short:GetStringHeight() - 1)
+	eq(top(third), top(long) - long:GetStringHeight() - 1)
+	eq(y, top(third) - third:GetStringHeight() - 1)
+end)
+
+it("Panel rows (#397): a long wrapped line makes the plan line, the Post entry and the section below taller", function()
+	local ns, stub = Load({ cap = 5 })
+	local P = Panel(ns, stub)
+	P.RunState().open = true
+	P.RunBuild()
+	local base = P.panel.height
+	local source = P.RunLineSource
+	P.RunLineSource = function() return ("long text "):rep(80) end
+	P.Update()
+	assert(P.panel.height > base + 24, "the plan lines grew with their text: " .. base .. " -> " .. P.panel.height)
+	P.RunLineSource = source
+	P.Update()
+	eq(P.panel.height, base, "and shrink back")
+	-- the Post list: lines of the run's AH items
+	local before = P.panel.height
+	local pl = P.PostSource
+	P.PostLines = function() return { { itemID = BELT, postNow = 2, bags = 3, listed = 0, batch = 2, price = 100, sold = 0, demandText = "" } } end
+	ns.Auctions.RunPostLines = P.PostLines
+	P.Update()
+	local one = P.panel.height
+	assert(one > before, "a Post entry adds height")
+	P.PostSource = function() return ("batch: about half a day's sales "):rep(20) end
+	P.Update()
+	assert(P.panel.height > one + 24, "a long batch line pushes the rest down")
+	P.PostSource = pl
+end)

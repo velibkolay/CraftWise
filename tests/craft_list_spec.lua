@@ -249,3 +249,49 @@ it("Panel: it sits on the profession window, lists the crafts, and a click opens
 	B.DrawPanel()
 	eq(B.panel:IsShown(), false, "nothing to craft: no panel")
 end)
+
+it("Panel position (#397): dragging by the title saves it account-wide, a reload puts it back, right-click resets", function()
+	local ns, stub = Load()
+	local B = ns.Main.BasketPage
+	ProfessionsFrame = CreateFrame("Frame", "ProfessionsFrame")
+	ProfessionsFrame.CraftingPage = {}
+	stub.Fire("TRADE_SKILL_SHOW")
+	local panel = B.panel
+	local p1, rel = panel:GetPoint(1)
+	eq(p1, "TOPLEFT"); eq(rel, ProfessionsFrame, "beside the profession window until it is moved")
+	eq(panel.movable ~= false, true)
+	local handle = panel.handle
+	handle:GetScript("OnDragStart")(handle)
+	panel:ClearAllPoints(); panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 120, 640) -- where the client left it
+	handle:GetScript("OnDragStop")(handle)
+	local pos = ns.db.settings.craftListPos
+	eq(pos.point, "TOPLEFT"); eq(pos.relPoint, "BOTTOMLEFT"); eq(pos.x, 120); eq(pos.y, 640)
+	-- a new session (the same saved data) opens it there
+	local ns2, stub2 = LoadAddon({ savedDB = ns.db })
+	ProfessionsFrame = CreateFrame("Frame", "ProfessionsFrame")
+	ProfessionsFrame.CraftingPage = {}
+	stub2.Fire("TRADE_SKILL_SHOW")
+	local p2, rel2, rp2, x2, y2 = ns2.Main.BasketPage.panel:GetPoint(1)
+	eq(p2, "TOPLEFT"); eq(rel2, UIParent); eq(rp2, "BOTTOMLEFT"); eq(x2, 120); eq(y2, 640)
+	-- right-click on the title: back beside the profession window, and nothing is saved
+	local h2 = ns2.Main.BasketPage.panel.handle
+	h2:GetScript("OnClick")(h2)
+	local p3, rel3 = ns2.Main.BasketPage.panel:GetPoint(1)
+	eq(rel3, ProfessionsFrame); eq(ns2.db.settings.craftListPos.point, nil)
+	-- Settings > Look > Reset window positions does the same
+	panel = ns2.Main.BasketPage.panel
+	panel:ClearAllPoints(); panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 5, 5)
+	ns2.Main.Settings.ResetPositions()
+	eq(({ panel:GetPoint(1) })[2], ProfessionsFrame)
+end)
+
+it("Panel position (#397): only the title strip takes the mouse for the drag, and the panel is clamped to the screen", function()
+	local ns, stub = Load()
+	local B = ns.Main.BasketPage
+	ProfessionsFrame = CreateFrame("Frame", "ProfessionsFrame")
+	ProfessionsFrame.CraftingPage = {}
+	stub.Fire("TRADE_SKILL_SHOW")
+	eq(B.panel.handle:GetParent(), B.panel)
+	assert(B.panel.handle.scripts.OnDragStart and B.panel.handle.scripts.OnDragStop)
+	eq(B.panel.scripts.OnDragStart, nil, "the sheet itself is not a drag handle")
+end)
