@@ -116,8 +116,6 @@ end
 -- player's click on Blizzard's sell frame. Nothing here posts, sells or runs on a timer.
 ----------------------------------------------------------------------------------------------------
 
-A.BATCH_MAX = 999
-
 -- The item a basket entry makes and how many per craft: the learned recipe's output, else the bundled recipe's.
 function A.RunOutput(entry)
 	local prof = ns.charDB and ns.charDB.professions and ns.charDB.professions[entry.professionID]
@@ -178,37 +176,9 @@ function A.RunItemsNow(channel)
 	return out
 end
 
--- Pure: the default batch, about half a day's sales and at least 1. perDay = units sold a day (nil without data), fallback =
--- the setting "Max per item without sales data": half of it.
-function A.BatchDefault(perDay, fallback)
-	if perDay then
-		return math.max(1, math.floor(perDay / 2 + 0.5))
-	end
-	return math.max(1, math.floor((fallback or 2) / 2))
-end
-
--- The batch of an item: what the player typed, else the default.
-function A.BatchOf(itemID, perDay, fallback)
-	local typed = ns.db and ns.db.craftBatch and ns.db.craftBatch[itemID]
-	if typed then
-		return typed, true
-	end
-	return A.BatchDefault(perDay, fallback), false
-end
-
--- Saves the typed batch of an item (1 to BATCH_MAX); nil or 0 goes back to the default.
-function A.SetBatch(itemID, n)
-	if not ns.db then
-		return
-	end
-	n = math.floor(tonumber(n) or 0)
-	ns.db.craftBatch = ns.db.craftBatch or {}
-	ns.db.craftBatch[itemID] = n >= 1 and math.min(n, A.BATCH_MAX) or nil
-end
-
--- Pure: how many to post now: keep `batch` listed, as many as the bags hold.
-function A.PostNow(batch, listed, inBags)
-	return math.max(0, math.min(batch - listed, inBags))
+-- Pure: how many to post now (#399): all the run's units of the item that are not listed yet, as many as the bags hold.
+function A.PostNow(units, listed, inBags)
+	return math.max(0, math.min(units - listed, inBags))
 end
 
 -- Units of an item that are listed now: the active auctions of this character (the tracker's list).
@@ -222,15 +192,15 @@ function A.ListedUnits(itemID, charKey)
 	return units
 end
 
--- Units a day and where the figure comes from, as the plan reads it (Basket.DemandCap): own sales, else observed drops,
--- else nothing (perDay nil, the text says "no sales data").
+-- Units a day and where the figure comes from, as the plan reads it (Basket.DemandCap): own sales, else nothing (perDay
+-- nil, the text says "no sales data"; observed drops are information in the text only).
 function A.DemandOf(itemID, now)
 	now = now or time()
 	local B = ns.Basket
 	local sold = { units = A.SoldUnits(itemID, now - B.SALES_DAYS * 86400), days = B.SALES_DAYS }
 	local house = ns.ProfitHouse and ns.ProfitHouse()
 	local drops = house and ns.Market and ns.Market.DropRate and ns.Market.DropRate(itemID, house, now) or nil
-	local _, perDay, source, text = B.DemandCap(sold, drops, 1, B.MaxWithoutData())
+	local _, perDay, source, text = B.DemandCap(sold, drops, 1, B.MaxWithoutData(), B.ListingHours())
 	return perDay, source, text
 end
 
@@ -243,12 +213,12 @@ function A.PostPrice(itemID)
 	end
 end
 
--- Pure: one line of the AH post list. in = { itemID, units (of the run), batch, bags, listed, sold (units sold lately),
--- price }. postNow keeps `batch` listed from what the bags hold.
+-- Pure: one line of the AH post list. in = { itemID, units (of the run), bags, listed, sold (units sold lately), price,
+-- hours }. postNow is every unit of the run not listed yet that the bags hold, to be listed for `hours` (#399).
 function A.PostLine(l)
-	return { itemID = l.itemID, units = l.units, batch = l.batch, bags = l.bags, listed = l.listed, sold = l.sold,
-		price = l.price, priceLabel = l.priceLabel, postNow = A.PostNow(l.batch, l.listed, l.bags),
-		demandText = l.demandText, custom = l.custom }
+	return { itemID = l.itemID, units = l.units, bags = l.bags, listed = l.listed, sold = l.sold,
+		price = l.price, priceLabel = l.priceLabel, postNow = A.PostNow(l.units, l.listed, l.bags),
+		demandText = l.demandText, hours = l.hours }
 end
 
 -- The AH post list of the run: every "AH" item of the basket with what the bags and the tracker say.
@@ -256,10 +226,9 @@ function A.RunPostLines(now)
 	now = now or time()
 	local lines = {}
 	for _, it in ipairs(A.RunItemsNow("AH")) do
-		local perDay, _, text = A.DemandOf(it.itemID, now)
-		local batch, custom = A.BatchOf(it.itemID, perDay, ns.Basket.MaxWithoutData())
+		local _, _, text = A.DemandOf(it.itemID, now)
 		local price, label = A.PostPrice(it.itemID)
-		lines[#lines + 1] = A.PostLine({ itemID = it.itemID, units = it.units, batch = batch, custom = custom,
+		lines[#lines + 1] = A.PostLine({ itemID = it.itemID, units = it.units, hours = ns.Basket.ListingHours(),
 			bags = C_Item.GetItemCount(it.itemID) or 0, listed = A.ListedUnits(it.itemID),
 			sold = A.SoldUnits(it.itemID, now - 86400), price = price, priceLabel = label, demandText = text })
 	end

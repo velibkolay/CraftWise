@@ -777,29 +777,31 @@ local function ResultText(i)
 end
 
 ----------------------------------------------------------------------------------------------------
--- Craft run (#390): post the run's AH items in batches. A line says how many to post now to keep a batch listed; the
--- posting is the player's click on Blizzard's sell frame (nothing here posts, and nothing runs on a timer). The batch is
--- typed in the line's box (default about half a day's sales, Auctions.BatchDefault); after sales the tracker sees, the
--- line shows the next batch.
+-- Craft run (#390, #399): post the run's AH items all at once. A line says how many to post now and for how long (the
+-- listing duration setting, 8 h by default); the posting is the player's click on Blizzard's sell frame (nothing here
+-- posts, and nothing runs on a timer). The cap of the plan is what one such listing sells, so there are no batches.
 ----------------------------------------------------------------------------------------------------
 
 P.POST_LINES = 6
-P.POST_ROW = 44
 local postRows = {}
 P.postOpen = true
 
--- "Leather Gloves: post 2 now" (nothing to post: "Leather Gloves: listed 3 of 3").
+-- "Leather Gloves: post all 5 now (8 h)" ("post 2 now" when part of it is listed or not in the bags; nothing to post:
+-- "none in the bags" or "listed 3 of 3").
 function P.PostLineText(l, name)
 	if l.postNow > 0 then
-		return (L["%s: post %d now"]):format(name, l.postNow)
+		if l.postNow >= l.units then
+			return (L["%s: post all %d now (%d h)"]):format(name, l.postNow, l.hours)
+		end
+		return (L["%s: post %d now (%d h)"]):format(name, l.postNow, l.hours)
 	end
 	if l.bags == 0 then
 		return (L["%s: none in the bags"]):format(name)
 	end
-	return (L["%s: batch of %d is listed"]):format(name, l.batch)
+	return (L["%s: listed %d of %d"]):format(name, l.listed, l.units)
 end
 
--- "bags 5 · listed 1 · sold 3 today · lowest 3g 40s" and where the default batch comes from.
+-- "bags 5 · listed 1 · sold 3 today · lowest 3g 40s".
 function P.PostDetail(l)
 	local parts = { (L["bags %d"]):format(l.bags), (L["listed %d"]):format(l.listed) }
 	if l.sold and l.sold > 0 then
@@ -809,8 +811,9 @@ function P.PostDetail(l)
 	return table.concat(parts, " · ")
 end
 
+-- Where the plan's amount comes from (the cap text of the plan: your sales in one listing).
 function P.PostSource(l)
-	return (l.custom and L["batch typed by you"] or L["batch: about half a day's sales"]) .. " · " .. (l.demandText or "")
+	return l.demandText or ""
 end
 
 local function PostRow(i)
@@ -821,29 +824,9 @@ local function PostRow(i)
 	r = {}
 	for k, color in ipairs({ "text", "text2", "text3" }) do
 		r[k] = Style.Text(panel, "Small", color)
-		r[k]:SetWidth(P.WIDTH - 24 - (k == 1 and 50 or 0))
+		r[k]:SetWidth(P.WIDTH - 24)
 		r[k]:SetJustifyH("LEFT")
 	end
-	r.box = CreateFrame("EditBox", nil, panel)
-	r.box:SetSize(40, 22)
-	r.box:SetAutoFocus(false)
-	r.box:SetNumeric(true)
-	r.box:SetMaxLetters(3)
-	r.box:SetFontObject(Style.Fonts.Small)
-	r.box:SetTextInsets(6, 6, 0, 0)
-	r.box.border = Style.Border(r.box, Style.C.ruleStrong)
-	r.box:SetScript("OnEnterPressed", function(self)
-		self:ClearFocus()
-	end)
-	r.box:SetScript("OnEscapePressed", function(self)
-		self:ClearFocus()
-	end)
-	r.box:SetScript("OnEditFocusLost", function(self)
-		if self.itemID then
-			ns.Auctions.SetBatch(self.itemID, self:GetText())
-			P.Update()
-		end
-	end)
 	postRows[i] = r
 	return r
 end
@@ -872,12 +855,6 @@ local function DrawPost(y)
 				for k = 1, 3 do
 					r[k]:Show()
 				end
-				Put(r.box, P.WIDTH - 12 - 40, y + 2)
-				r.box.itemID = l.itemID
-				if not r.box:HasFocus() and r.box:GetText() ~= tostring(l.batch) then
-					r.box:SetText(tostring(l.batch))
-				end
-				r.box:Show()
 				y = P.Stack(r, 12, y) - 5 -- as tall as the wrapped text (#397)
 				shown = i
 			end
@@ -887,7 +864,6 @@ local function DrawPost(y)
 		for k = 1, 3 do
 			postRows[i][k]:Hide()
 		end
-		postRows[i].box:Hide()
 	end
 	panel.postNote:SetShown(shown > 0)
 	if shown > 0 then
@@ -1113,7 +1089,7 @@ local function Create()
 	panel.postNote = Style.Text(panel, "Small", "text3")
 	panel.postNote:SetWidth(P.WIDTH - 24)
 	panel.postNote:SetJustifyH("LEFT")
-	panel.postNote:SetText(L["The box is the batch to keep listed. Post with the auction house's own Sell tab; the lowest price is the last one seen."])
+	panel.postNote:SetText(L["Post with the auction house's own Sell tab, with the duration shown; the lowest price is the last one seen."])
 	panel.formStatus = Style.Text(panel, "Small", "text2")
 	panel.formStatus:SetWidth(P.WIDTH - 24)
 	panel.formStatus:SetJustifyH("LEFT")

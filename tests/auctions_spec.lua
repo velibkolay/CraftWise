@@ -855,56 +855,37 @@ end)
 
 ----------------------------------------------------------------------------------------- craft run post list (#390)
 
-it("BatchDefault: about half a day's sales, at least 1; without data half of the setting", function()
+it("PostNow: every unit of the run not listed yet, as many as the bags hold, never negative (#399)", function()
 	local ns = Load()
 	local A = ns.Auctions
-	eq(A.BatchDefault(6, 2), 3); eq(A.BatchDefault(5, 2), 3, "2.5 rounds up"); eq(A.BatchDefault(0.4, 2), 1)
-	eq(A.BatchDefault(nil, 2), 1); eq(A.BatchDefault(nil, 6), 3)
-	local batch, custom = A.BatchOf(1, 6, 2)
-	eq(batch, 3); eq(custom, false)
-	A.SetBatch(1, 5)
-	batch, custom = A.BatchOf(1, 6, 2)
-	eq(batch, 5); eq(custom, true)
-	A.SetBatch(1, 0)
-	eq(A.BatchOf(1, 6, 2), 3, "0 goes back to the default")
-	A.SetBatch(1, 5000)
-	eq(A.BatchOf(1, 6, 2), A.BATCH_MAX)
-end)
-
-it("PostNow: keeps the batch listed, as many as the bags hold, never negative", function()
-	local ns = Load()
-	local A = ns.Auctions
-	eq(A.PostNow(2, 0, 5), 2); eq(A.PostNow(2, 1, 5), 1); eq(A.PostNow(2, 2, 5), 0); eq(A.PostNow(2, 3, 5), 0)
+	eq(A.PostNow(5, 0, 9), 5); eq(A.PostNow(5, 2, 9), 3); eq(A.PostNow(5, 5, 9), 0); eq(A.PostNow(5, 7, 9), 0)
 	eq(A.PostNow(4, 0, 1), 1, "one in the bags")
 end)
 
-it("the post list: listed now and sold counts move the next batch; the price is the lowest seen", function()
+it("the post list: all of the run's units at once for the chosen hours; listed units count; the price is the lowest seen (#399)", function()
 	local ns, stub = Load()
 	local A = ns.Auctions
+	AUCTION_DURATION_ONE, AUCTION_DURATION_TWO, AUCTION_DURATION_THREE = "8 Hours", "24 Hours", "48 Hours" -- the client names the sell frame's choices
 	ns.charDB.professions[165] = { recipes = { [900] = { learned = true, output = { itemID = PANTS, quantity = 1 } } } }
 	ns.Basket.Add(900, 165, 6, { channel = "AH", profitEach = 100, secEach = 5 })
 	stub.bagCount[PANTS] = 6
-	-- 28 sold in the 14 days before: 2 a day, batch 1; typed batch 2
 	for i = 1, 14 do
 		table.insert(A.List(), { i = PANTS, q = 2, st = "sold", soldT = NOW - i * 86400 + 60 })
 	end
 	local lines = A.RunPostLines(NOW)
 	eq(#lines, 1); eq(lines[1].units, 6); eq(lines[1].bags, 6); eq(lines[1].listed, 0)
-	eq(lines[1].batch, 1, "half of 2 a day"); eq(lines[1].postNow, 1)
-	A.SetBatch(PANTS, 2)
-	lines = A.RunPostLines(NOW)
-	eq(lines[1].batch, 2); eq(lines[1].postNow, 2); eq(lines[1].custom, true)
-	-- two listed: nothing to post until they sell
+	eq(lines[1].postNow, 6, "all of it, no batches"); eq(lines[1].hours, 8); eq(lines[1].batch, nil)
+	assert(lines[1].demandText:find("your sales: 28 in 14 days", 1, true), lines[1].demandText)
+	-- two listed: the other four are to post
 	table.insert(A.List(), { i = PANTS, q = 2, st = "active", t = NOW })
 	lines = A.RunPostLines(NOW)
-	eq(lines[1].listed, 2); eq(lines[1].postNow, 0)
-	-- the tracker sees one sell: the next batch is one
-	for _, rec in ipairs(A.List()) do
-		if rec.st == "active" then rec.q, rec.st = 1, "active" end
-	end
-	table.insert(A.List(), { i = PANTS, q = 1, st = "sold", soldT = NOW - 60 })
-	lines = A.RunPostLines(NOW)
-	eq(lines[1].listed, 1); eq(lines[1].postNow, 1); eq(lines[1].sold, 3, "sold in the last day: the 2 of yesterday evening and the new 1")
+	eq(lines[1].listed, 2); eq(lines[1].postNow, 4)
+	-- fewer in the bags than the run needs
+	stub.bagCount[PANTS] = 3
+	eq(A.RunPostLines(NOW)[1].postNow, 3)
+	-- all listed: nothing to post
+	table.insert(A.List(), { i = PANTS, q = 4, st = "active", t = NOW })
+	eq(A.RunPostLines(NOW)[1].postNow, 0)
 	eq(lines[1].price, nil, "no listing seen: no price made up")
 end)
 
