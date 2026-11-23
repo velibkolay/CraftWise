@@ -30,12 +30,26 @@ MK.state = { query = "" } -- the filter box: one query for the three pages, this
 -- Small helpers (pure)
 ----------------------------------------------------------------------------------------------------
 
+-- Items the client hasn't loaded yet: asked for once, the window redraws when they arrive (#412).
+local nameRequested = {}
+
 function MK.ItemName(itemID)
 	local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID)
 	if not name and C_Item and C_Item.GetItemInfo then
 		name = C_Item.GetItemInfo(itemID)
 	end
-	return name or ("item " .. itemID)
+	if name then
+		return name
+	end
+	if itemID and not nameRequested[itemID] and ns.WithItemNames then
+		nameRequested[itemID] = true
+		ns.WithItemNames({ itemID }, function()
+			if M.Refresh then
+				M.Refresh()
+			end
+		end)
+	end
+	return L["an item (loading its name)"] -- never the raw item id
 end
 
 -- Coin digits without colours ("1g 50s"): captions in C.text3.
@@ -76,6 +90,19 @@ function MK.PriceBasisText()
 	local _, label = ns.ProfitHouse()
 	return ns.BASIS_TEXT[basis] .. " · " .. (label or "own faction AH")
 		.. (ns.HasAuctionator() and (", else " .. ns.AUCTIONATOR_LABEL) or "")
+end
+
+-- The footer's plain-words version of the price basis (#412): "Prices: typical price at the Horde AH
+-- (Auctionator when it has none) · reagents bought at the AH". The terse form stays in the tooltips.
+function MK.FooterPrices(view, rows)
+	local basis = ns.PriceSettings()
+	local _, label = ns.ProfitHouse()
+	local text = L["Prices"] .. ": " .. (basis == "current" and L["lowest price now"] or L["typical price"])
+		.. " " .. L["at the"] .. " " .. (label or L["your own faction AH"])
+		.. (ns.HasAuctionator() and (" (" .. L["Auctionator when it has none"] .. ")") or "")
+	local reagents = ns.CostBasis(view) == "paid" and L["reagents: what you paid, else the AH price"] or L["reagents: bought at the AH"]
+	local note = MK.BasisNote(view, rows):match("(%(.*%))$")
+	return text .. " · " .. reagents .. (note and (" " .. note) or "")
 end
 
 -- "reagents: AH" / "reagents: paid cost, else AH": a page's reagent cost basis (#47).
@@ -145,11 +172,18 @@ function MK.NoHero(label, reason)
 end
 
 -- "150%" / "-12%" (whole percent), a dash without one.
+-- Over 999 % it reads ">999%": a return of 14793 % on a cost of a few silver says nothing more (#412).
+MK.PERCENT_CAP = 999
+
 function MK.PercentText(pct)
 	if pct == nil then
 		return M.DASH
 	end
-	return ("%d%%"):format(math.floor(pct + 0.5))
+	local whole = math.floor(pct + 0.5)
+	if whole > MK.PERCENT_CAP then
+		return ">" .. MK.PERCENT_CAP .. "%"
+	end
+	return ("%d%%"):format(whole)
 end
 
 -- "by profit": how the list is sorted, for the list bar.

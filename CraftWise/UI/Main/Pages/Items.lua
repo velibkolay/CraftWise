@@ -153,7 +153,7 @@ function Items.Name(itemID)
 end
 
 local function DisplayName(itemID)
-	return Items.Name(itemID) or ("item " .. tostring(itemID))
+	return Items.Name(itemID) or M.Make.ItemName(itemID) -- never the raw id (#412)
 end
 
 local function SortByName(ids)

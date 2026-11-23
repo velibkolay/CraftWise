@@ -112,7 +112,7 @@ it("#280 columns: a page with fixed columns gives the name the room it was dragg
 	local C = M.CraftPage.COLUMNS
 	local at = M.ColumnLayout(C, 880, 22, nil, 880)
 	local more = M.ColumnLayout(C, 1020, 22, nil, 880)
-	eq(more[2].width, 300); eq(more[3].width, at[3].width + 140 - 90, "the rail gets what the name left")
+	eq(more[2].width, 300); eq(more[3].width, at[3].width + 140 - (300 - at[2].width), "the rail gets what the name left")
 	-- a narrow window never squeezes the flexible column below its minimum
 	eq(M.ColumnLayout({ { width = 500 }, {} }, 400, 22)[2].width, 40)
 end)

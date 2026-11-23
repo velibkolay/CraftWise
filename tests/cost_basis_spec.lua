@@ -230,5 +230,5 @@ it("Settings switch the basis per view and the Make page footer shows it", funct
 	local foot = ns.Main.Frame().foot
 	has(plain(foot.right.text), "reagents: paid cost, else AH")
 	Make.Open(ns, "craft", 165)
-	has(plain(foot.left.text), "reagents: AH")
+	has(plain(foot.left.text), "reagents: bought at the AH")
 end)
