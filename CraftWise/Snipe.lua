@@ -87,7 +87,8 @@ end
 
 local MULT = { g = 10000, s = 100, c = 1 }
 
--- "3g 40s 5c", "40s", "12c", "3.5g" or a bare "3" (gold) -> copper; nil, why when it is not a price above 0.
+-- "3g 40s 5c", "40s", "12c" or "3.5g" -> copper; nil, why when it is not a price above 0. The unit is required:
+-- a bare "3" is refused (#410).
 function Snipe.ParsePrice(text)
 	text = tostring(text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
 	if text == "" then
@@ -95,7 +96,8 @@ function Snipe.ParsePrice(text)
 	end
 	local copper
 	if text:match("^%d+%.?%d*$") then
-		copper = math.floor(tonumber(text) * MULT.g + 0.5)
+		-- A bare number is refused: "10" was meant as silver or copper and read as 10 gold (#410).
+		return nil, "Write the unit: 1s 55c, 155c or 2g"
 	else
 		local rest = text
 		copper = 0

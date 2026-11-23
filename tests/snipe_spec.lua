@@ -64,10 +64,13 @@ end
 
 ----------------------------------------------------------------------------------------------- the list
 
-it("ParsePrice: gold, silver and copper, a bare number is gold; nothing else is a price", function()
+it("ParsePrice: gold, silver and copper; a bare number is refused (#410); nothing else is a price", function()
 	local ns = Setup()
 	local P = ns.Snipe.ParsePrice
-	eq(P("3g 40s 5c"), 34005); eq(P("40s"), 4000); eq(P("12c"), 12); eq(P("3.5g"), 35000); eq(P("3"), 30000)
+	eq(P("3g 40s 5c"), 34005); eq(P("40s"), 4000); eq(P("12c"), 12); eq(P("3.5g"), 35000)
+	for _, bare in ipairs({ "3", "10", "3.5", " 155 " }) do
+		local v, w = P(bare); eq(v, nil, bare); eq(w, "Write the unit: 1s 55c, 155c or 2g")
+	end
 	eq(P(" 1G 2S "), 10200); eq(P("5c 1g"), 10005)
 	local v, why = P("abc"); eq(v, nil); assert(why)
 	eq(P(""), nil); eq(P("0"), nil); eq(P("0g 0s"), nil); eq(P("1g 2g"), nil); eq(P("5x"), nil); eq(P("3g junk"), nil)
@@ -394,6 +397,39 @@ it("Panel: a snipe line is marked and has an ×, Save writes the typed price, a 
 	panel.itemBox:SetText("nonsense"); panel.maxBox:SetText("5g")
 	bad = ns.AHPanel.Save()
 	eq(bad, false)
+	-- #410: a bare number saves nothing and says to write the unit
+	panel.itemBox:SetText("100"); panel.maxBox:SetText("10"); panel.upToBox:SetText("")
+	local bare, bareWhy = ns.AHPanel.Save()
+	eq(bare, false); eq(bareWhy, "Write the unit: 1s 55c, 155c or 2g"); eq(panel.formStatus:GetText(), bareWhy)
+	eq(ns.Snipe.Find(CLOTH).max, 34000)
+	-- the echo after a save
+	panel.itemBox:SetText("100"); panel.maxBox:SetText("1s 55c"); panel.upToBox:SetText("155")
+	eq(ns.AHPanel.Save(), true)
+	local echo = panel.formStatus:GetText()
+	assert(echo:find("^Saved: .+, max 1s 55c a unit, up to 155$"), echo)
+	panel.itemBox:SetText("100"); panel.maxBox:SetText("2s"); panel.upToBox:SetText("")
+	eq(ns.AHPanel.Save(), true); assert(panel.formStatus:GetText():find("max 2s a unit, no limit", 1, true))
+	-- 2x market: the first Save holds, the same text again saves; other text starts over; no market saves at once
+	local quote = { copper = 159 }
+	ns.AuctionQuote = function() return quote end
+	panel.itemBox:SetText("100"); panel.maxBox:SetText("1g"); panel.upToBox:SetText("")
+	local held, heldWhy = ns.AHPanel.Save()
+	eq(held, false); eq(heldWhy, "Max 1g is 62x the market 1s 59c. Press Save again to keep it.")
+	eq(panel.formStatus:GetText(), heldWhy); eq(ns.Snipe.Find(CLOTH).max, 200, "held: not saved")
+	panel.maxBox:SetText("2g")
+	eq((ns.AHPanel.Save()), false, "other text holds again")
+	panel.maxBox:SetText("1g")
+	eq((ns.AHPanel.Save()), false, "text changed in between: holds again")
+	eq(ns.AHPanel.Save(), true, "the same text again saves"); eq(ns.Snipe.Find(CLOTH).max, 10000)
+	panel.itemBox:SetText("100"); panel.maxBox:SetText("3s 18c"); panel.upToBox:SetText("")
+	eq(ns.AHPanel.Save(), true, "exactly 2x is fine")
+	quote = nil
+	panel.itemBox:SetText("100"); panel.maxBox:SetText("50g"); panel.upToBox:SetText("")
+	eq(ns.AHPanel.Save(), true, "no market price: saved as usual")
+	-- the hint shows in the empty max box only
+	eq(ns.AHPanel.HINT, "e.g. 1s 55c")
+	panel.maxBox:SetText(""); ns.AHPanel.HintUpdate(); eq(panel.maxBox.hint:IsShown(), true)
+	panel.maxBox:SetText("1s"); ns.AHPanel.HintUpdate(); eq(panel.maxBox.hint:IsShown(), false)
 	-- a line fills the form
 	ns.AHPanel.Prefill(lines[1])
 	eq(panel.itemBox:GetText(), "Test Sword"); eq(panel.maxBox:GetText(), ns.Snipe.PriceText(700)); eq(panel.upToBox:GetText(), "3")

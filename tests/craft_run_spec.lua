@@ -417,8 +417,11 @@ it("Panel: Build plan reads the box and the mode; a typed budget that does not r
 	local P = Panel(ns, stub)
 	local st = P.RunState()
 	eq(st.open, false, "closed by default: one line")
-	st.open, st.mode, st.budgetText, st.minutes = true, "typed", "50", ""
+	st.open, st.mode, st.budgetText, st.minutes = true, "typed", "50g", ""
 	eq(P.RunBudget(), 50 * 10000)
+	st.budgetText = "50" -- a bare number is refused here too (#410)
+	local bare, bareWhy = P.RunBudget()
+	eq(bare, nil); eq(bareWhy, "Budget: type it like 50g or 12g 50s")
 	st.budgetText = "12g 50s"
 	eq(P.RunBudget(), 125000)
 	st.budgetText = "lots"
