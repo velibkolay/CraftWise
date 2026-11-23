@@ -435,7 +435,11 @@ it("Panel: Build plan reads the box and the mode; a typed budget that does not r
 	st.minutes = ""
 	eq(P.RunSeconds(), nil)
 	local plan = P.RunBuild()
-	assert(plan and #plan.lines > 0); eq(P.runStatus, ("%d crafts planned"):format(#plan.lines))
+	assert(plan and #plan.lines > 0); 
+	local crafts = 0
+	for _, l in ipairs(plan.lines) do crafts = crafts + l.count end
+	eq(P.runStatus, ("%d recipes · %d crafts"):format(#plan.lines, crafts)) -- #402: recipes and crafts, not "N crafts planned" for N recipes
+	assert(crafts > #plan.lines, "the test plan crafts a recipe more than once")
 end)
 
 it("Panel: the plan's lines, totals, the stop reason and the buy lines read as text", function()
@@ -617,7 +621,7 @@ it("Panel rows (#397): Stack puts each string under the one above, as tall as it
 	eq(y, top(third) - third:GetStringHeight() - 1)
 end)
 
-it("Panel rows (#397): a long wrapped line makes the plan line, the Post entry and the section below taller", function()
+it("Panel rows (#402): a plan line and a Post entry are one line, however long their details; the details are in the tooltip", function()
 	local ns, stub = Load({ cap = 5 })
 	local P = Panel(ns, stub)
 	P.RunState().open = true
@@ -626,10 +630,8 @@ it("Panel rows (#397): a long wrapped line makes the plan line, the Post entry a
 	local source = P.RunLineSource
 	P.RunLineSource = function() return ("long text "):rep(80) end
 	P.Update()
-	assert(P.panel.height > base + 24, "the plan lines grew with their text: " .. base .. " -> " .. P.panel.height)
+	eq(P.panel.height, base, "the plan lines do not grow with their text")
 	P.RunLineSource = source
-	P.Update()
-	eq(P.panel.height, base, "and shrink back")
 	-- the Post list: lines of the run's AH items
 	local before = P.panel.height
 	local pl = P.PostSource
@@ -640,17 +642,28 @@ it("Panel rows (#397): a long wrapped line makes the plan line, the Post entry a
 	assert(one > before, "a Post entry adds height")
 	P.PostSource = function() return ("your sales: long text "):rep(20) end
 	P.Update()
-	assert(P.panel.height > one + 24, "a long batch line pushes the rest down")
+	eq(P.panel.height, one, "a long batch line does not push the rest down")
+	local tip = P.PostTipLines(P.postLines[1], "Belt")
+	assert(tip[3]:find("your sales: long text", 1, true), "it is in the tooltip")
 	P.PostSource = pl
 end)
 
 it("Post list (#399): the line says post all N now with the hours, no batch box; the setting is on the Settings page", function()
 	local ns, stub = Load({ cap = 5 })
 	local P = Panel(ns, stub)
-	eq(P.PostLineText({ postNow = 5, units = 5, bags = 5, listed = 0, hours = 8 }, "Bracers"), "Bracers: post all 5 now (8 h)")
-	eq(P.PostLineText({ postNow = 3, units = 5, bags = 3, listed = 0, hours = 24 }, "Bracers"), "Bracers: post 3 now (24 h)")
-	eq(P.PostLineText({ postNow = 0, units = 5, bags = 0, listed = 0, hours = 8 }, "Bracers"), "Bracers: none in the bags")
-	eq(P.PostLineText({ postNow = 0, units = 5, bags = 5, listed = 5, hours = 8 }, "Bracers"), "Bracers: listed 5 of 5")
+	-- the full sentences are in the tooltip (#402)
+	eq(P.PostStateText({ postNow = 5, units = 5, bags = 5, listed = 0, hours = 8 }, "Bracers"), "Bracers: post all 5 now (8 h)")
+	eq(P.PostStateText({ postNow = 3, units = 5, bags = 3, listed = 0, hours = 24 }, "Bracers"), "Bracers: post 3 now (24 h)")
+	eq(P.PostStateText({ postNow = 0, units = 5, bags = 0, listed = 0, hours = 8 }, "Bracers"), "Bracers: none in the bags")
+	eq(P.PostStateText({ postNow = 0, units = 5, bags = 5, listed = 5, hours = 8 }, "Bracers"), "Bracers: listed 5 of 5")
+	-- the line: the item, what to post and the lowest price; "craft first" when none is in the bags
+	eq(P.PostLineText({ postNow = 1, units = 1, bags = 1, listed = 0, hours = 8, price = 76 * 100 + 99 }, "Wild Leather Shoulders"), "Wild Leather Shoulders  post 1 · " .. ns.FormatMoney(7699, true))
+	eq(P.PostLineText({ postNow = 3, units = 5, bags = 3, listed = 0, hours = 24 }, "Bracers"), "Bracers  post 3")
+	eq(P.PostLineText({ postNow = 0, units = 5, bags = 0, listed = 0, hours = 8 }, "Deviate Scale Belt"), "Deviate Scale Belt  craft first")
+	eq(P.PostLineText({ postNow = 0, units = 5, bags = 5, listed = 5, hours = 8 }, "Bracers"), "Bracers  listed 5 of 5")
+	local tip = P.PostTipLines({ postNow = 0, units = 5, bags = 0, listed = 0, hours = 8, sold = 1, price = 128, demandText = "your sales: 1 in 14 days" }, "Belt")
+	eq(tip[1], "Belt: none in the bags"); assert(tip[2]:find("bags 0", 1, true) and tip[2]:find("sold 1 today", 1, true) and tip[2]:find("lowest", 1, true))
+	eq(tip[3], "your sales: 1 in 14 days")
 	eq(P.PostSource({ demandText = "your sales: 11 in 14 days, 0.3 in 8 h: 1" }), "your sales: 11 in 14 days, 0.3 in 8 h: 1")
 	eq(ns.Auctions.BatchOf, nil, "the batch is gone"); eq(ns.Auctions.SetBatch, nil)
 	local found
@@ -661,4 +674,38 @@ it("Post list (#399): the line says post all N now with the hours, no batch box;
 	end
 	assert(found, "Settings has a Listing duration row")
 	eq(found.get(), 8); eq(#found.options(), 1); eq(found.options()[1].value, 8)
+end)
+
+it("Buy panel (#402): the X closes it and the choice is saved; the AH button, the slash command and Toggle show it again", function()
+	local ns, stub = Load({ cap = 5 })
+	local P = Panel(ns, stub)
+	local panel = P.panel
+	eq(P.Closed(), false); eq(panel:IsShown(), true)
+	panel.close:GetScript("OnClick")(panel.close)
+	eq(P.Closed(), true); eq(panel:IsShown(), false); eq(ns.db.settings.ahPanel.closed, true, "saved")
+	eq(P.toggle:GetParent() == AuctionHouseFrame or P.toggle.parent == AuctionHouseFrame, true, "the button is on the AH frame")
+	-- the AH opens again: it stays closed
+	stub.Fire("AUCTION_HOUSE_SHOW")
+	eq(panel:IsShown(), false, "closed stays closed")
+	P.toggle:GetScript("OnClick")(P.toggle)
+	eq(P.Closed(), false); eq(panel:IsShown(), true)
+	SlashCmdList["CRAFTWISE"]("buy")
+	eq(P.Closed(), true); eq(panel:IsShown(), false)
+	SlashCmdList["CRAFTWISE"]("buy")
+	eq(P.Closed(), false); eq(panel:IsShown(), true)
+end)
+
+it("Buy panel (#402): sections open by default only when they have something to do, and remember what the player chose", function()
+	local ns, stub = Load({ cap = 5 })
+	ns.Auctions.RunPostLines = function() return { { itemID = BELT, units = 2, postNow = 2, bags = 3, listed = 0, hours = 8, price = 100, sold = 0, demandText = "" } } end
+	local P = Panel(ns, stub)
+	eq(P.SectionOpen("post"), true, "something to post: open")
+	eq(P.SectionOpen("flips"), false); eq(P.SectionOpen("snipes"), false); eq(P.SectionOpen("run"), false)
+	P.SetSection("post", false)
+	eq(P.SectionOpen("post"), false); eq(ns.db.settings.ahPanel.sections.post, false)
+	P.SetSection("snipes", true)
+	eq(P.SectionOpen("snipes"), true)
+	assert(P.panel.formTitle:IsShown() and P.panel.keys:IsShown(), "the snipe form and the key hint are in the Snipe list section")
+	P.SetSection("snipes", false)
+	assert(not P.panel.formTitle:IsShown() and not P.panel.keys:IsShown(), "folded")
 end)

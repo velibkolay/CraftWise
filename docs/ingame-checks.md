@@ -1436,3 +1436,14 @@ No TOC change, `/reload` is enough. Needs a basket with crafts from "Use plan" (
 - [ ] **Settings > Buying at the AH > Listing duration:** the buttons are exactly the durations Blizzard's Sell tab offers in its Duration dropdown (the client's own texts, e.g. 8 h, 24 h, 48 h; if the texts are not English only "8 h" shows). Choose one: it stays after `/reload`. Compare with the Sell tab's dropdown: same hours? **Open question:** if the dropdown's hours differ from the buttons, report them.
 - [ ] **Plan:** AH panel > Craft run > Build plan with 8 h. An AH craft with your own sales says "your sales: 11 in 14 days, 0.3 in 8 h: 1" and is planned that many times (at least 1); no sales: "no sales data: at most N" (the "Max per item without sales data" setting). An item with big observed drops but no sales of yours (Turtle Scale Bracers, 317 units in 7 days) is not planned 8 times any more: the text ends with "observed drops: ... (not used ...)". Switch to 24 h: the figures grow three times.
 - [ ] **Post (N):** each line reads "Item: post all 5 now (8 h)", "post 3 now" when fewer are in the bags or some are listed, "listed 5 of 5" once all are up. There is no number box. Post with Blizzard's own Sell tab, pick the same duration in its dropdown: nothing posts by itself.
+
+## Buy panel: closable, one line per item, details in tooltips (#402)
+
+- [ ] The X at the top right of the CraftWise · Buy panel closes it. Close and reopen the AH: it stays closed. A "CraftWise" button sits above the panel's spot (right of the AH frame, top) and shows it again; `/craftwise buy` toggles it too. Reload: the choice is kept.
+- [ ] Post: one line per item, `Wild Leather Shoulders  post 1 · 76s 99c`; an item with nothing in the bags reads `... craft first` in a dimmer colour. Hover a line: the tooltip has bags, listed, sold today, lowest, your sales and the duration, nothing cut off.
+- [ ] Flips: one line `Rough Bronze Cuirass ×132` with the profit at the right; at most 8 per group, then `+N more`. Hover: cost, vendor, profit, price steps and buys. The flips head's tooltip says how old the scan is.
+- [ ] Craft run: after Build plan the summary reads `36 recipes · 199 crafts`; each plan line is one line, its profit and time in the tooltip.
+- [ ] Sections (Craft run, Post, Flips, Snipe list) fold with their head button; a section you fold or open stays that way after /reload. Before you touch them, only the one with something to do is open. The snipe form and the key hint are inside the Snipe list section.
+- [ ] No text overlaps another with long item names or with 8 rows in a group; the panel height follows.
+- [ ] Craft list window (profession window): one line per craft, `Dark Leather Shoulders  0/2  needs 7 Light Leather`; hover for the kind, the profit each and the state. The rows are 20 high and none is cut.
+- [ ] Not done: Esc does not close the panel first (it is a child of the AH frame; Esc closes the AH and the panel with it).

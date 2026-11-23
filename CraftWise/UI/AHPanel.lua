@@ -17,9 +17,10 @@ local P = {}
 ns.AHPanel = P
 
 P.WIDTH = 340
-P.LINES = 12
+P.GROUP_LINES = 8 -- rows drawn per group; the rest is counted ("+31 more", #402)
 P.RESULTS = 6
-P.ROW = 34 -- a row is two lines: the item and its quantity, then cost, vendor and profit
+P.ROW = 18 -- a row is one line: the item and its quantity, the one figure on the right; the rest is in its tooltip (#402)
+P.FIGURE_W = 96 -- the figure on the right of a row
 
 local panel
 local lines = {} -- the line rows
@@ -29,6 +30,84 @@ local cached -- AHBuy.Lines(), kept until the basket, the bags or the prices cha
 
 local function Money(copper)
 	return ns.FormatMoney(copper, true)
+end
+
+----------------------------------------------------------------------------------------------------
+-- Closed or open, and the sections (#402): saved in settings.ahPanel = { closed, sections = { run, post, flips, snipes } }.
+-- A section never opened or closed by hand is open when it has something to do now (P.defaultOpen, set by Update).
+----------------------------------------------------------------------------------------------------
+P.SECTIONS = { "run", "post", "flips", "snipes" }
+P.defaultOpen = {}
+
+function P.Saved()
+	if not ns.db then
+		return { closed = false, sections = {} }
+	end
+	local s = ns.db.settings
+	s.ahPanel = s.ahPanel or {}
+	s.ahPanel.sections = s.ahPanel.sections or {}
+	return s.ahPanel
+end
+
+function P.Closed()
+	return P.Saved().closed and true or false
+end
+
+-- Hides or shows the panel (the X, the button on the auction house, `/craftwise buy`); the choice is kept.
+function P.SetClosed(closed)
+	P.Saved().closed = closed and true or false
+	if panel then
+		panel:SetShown(not closed)
+	end
+	if P.toggle then
+		P.toggle:SetLabel(closed and L["CraftWise >"] or L["CraftWise <"])
+	end
+	if not closed then
+		P.Update()
+	end
+end
+
+function P.Toggle()
+	P.SetClosed(not P.Closed())
+	return not P.Closed()
+end
+
+function P.SectionOpen(key)
+	if key == "run" then
+		return P.RunState().open and true or false
+	end
+	local saved = P.Saved().sections[key]
+	if saved ~= nil then
+		return saved
+	end
+	return P.defaultOpen[key] and true or false
+end
+
+function P.SetSection(key, open)
+	if key == "run" then
+		P.RunState().open = open and true or false
+	else
+		P.Saved().sections[key] = open and true or false
+	end
+	P.Update()
+end
+
+-- "- Flips (3)" / "+ Flips (3)".
+function P.HeadLabel(key, text)
+	return (P.SectionOpen(key) and "- " or "+ ") .. text
+end
+
+-- Shows a tooltip of ours on a row: the title and the lines; nothing when there are none.
+local function RowTip(r, fn)
+	r:SetScript("OnEnter", function(self)
+		local title, tipLines = fn(self)
+		if title then
+			Style.ShowTip(self, title, unpack(tipLines or {}))
+		end
+	end)
+	r:SetScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
 end
 
 -- The item's name, never its ID (#328): an item the client hasn't cached is asked for (one load request, the
@@ -179,6 +258,29 @@ function P.RowDetail(row)
 	return L["cost"] .. " " .. L["about"] .. " " .. Money(f.cost) .. " (" .. L["market price"] .. ")"
 end
 
+-- The one figure at the right of a row (#402): the profit of a flip ("+2s 65c"), the max price of a snipe, the market
+-- cost of a basket line. The rest of RowDetail and RowEach is in the tooltip.
+function P.RowRight(row)
+	local f = row.figures
+	if row.group == "flip" then
+		return f and Gain(f.profit, f.profitMark) or "?"
+	elseif row.group == "snipe" then
+		return L["max"] .. " " .. Money(row.line.maxUnit)
+	end
+	return f and (L["about"] .. " " .. Money(f.cost)) or ""
+end
+
+-- The tooltip of a row: its name, then the cost, the vendor price and the profit (flip), the max and the limit
+-- (snipe), the market cost (basket), and for a flip the price steps and the number of buys.
+function P.RowTipLines(row)
+	local lines = { P.RowDetail(row) }
+	local each = P.RowEach(row)
+	if each then
+		lines[#lines + 1] = each
+	end
+	return lines
+end
+
 -- The text of a result row: "12 × 3s 40c = 40s 80c" is built by ResultText below.
 
 -- What the line under the buttons says: AHBuy's message first, else the profit of the plan, else why there is no
@@ -281,7 +383,7 @@ end
 P.RUN_LINES = 6 -- plan lines drawn (the rest are counted)
 P.RUN_BUY = 5 -- buy lines drawn
 P.RUN_MODE_W = 170 -- width of the budget mode button
-P.RUN_ROW = 44 -- a plan line is three text lines: the craft, its figures, where the demand cap comes from
+P.RUN_ROW = 16 -- a plan line is one line; its figures and where the demand cap comes from are in the tooltip (#402)
 P.runPlan = nil -- the last plan built (kept until the next one)
 P.runStatus = nil -- what the section says under its buttons
 
@@ -417,12 +519,16 @@ function P.RunBuyText(l)
 	return ("%d × %s · %s"):format(l.quantity, ItemName(l.itemID), where)
 end
 
--- The line under the section's buttons after a build.
+-- The line under the section's buttons after a build: "36 recipes · 199 crafts" (a recipe is crafted many times).
 function P.RunSummary(plan)
 	if #plan.lines == 0 then
 		return L["Nothing earns under these limits"]
 	end
-	return (L["%d crafts planned"]):format(#plan.lines)
+	local crafts = 0
+	for _, l in ipairs(plan.lines) do
+		crafts = crafts + (l.count or 0)
+	end
+	return (L["%d recipes · %d crafts"]):format(#plan.lines, crafts)
 end
 
 function P.RunBuild()
@@ -475,17 +581,26 @@ ns.Listen("SWEEP_DONE", function()
 	end
 end)
 
+-- A plan line is one line (#402): "5 × Leather Gloves · AH"; its profit, time and where the demand cap comes from are
+-- in the tooltip.
 local function RunLineRow(i)
 	local r = runLines[i]
 	if r then
 		return r
 	end
-	r = {}
-	for k, color in ipairs({ "text", "text2", "text3" }) do
-		r[k] = Style.Text(panel, "Small", color)
-		r[k]:SetWidth(P.WIDTH - 24)
-		r[k]:SetJustifyH("LEFT")
-	end
+	r = CreateFrame("Button", nil, panel)
+	r:SetSize(P.WIDTH - 24, P.RUN_ROW)
+	r.text = Style.Text(r, "Small", "text")
+	r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -1)
+	r.text:SetWidth(P.WIDTH - 24)
+	r.text:SetJustifyH("LEFT")
+	r.text:SetWordWrap(false)
+	RowTip(r, function(self)
+		local l = self.plan
+		if l then
+			return P.RunLineName(l), { P.RunLineDetail(l), P.RunLineSource(l) }
+		end
+	end)
 	runLines[i] = r
 	return r
 end
@@ -521,7 +636,7 @@ local function DrawRun(y)
 	local st = P.RunState()
 	local run = panel.run
 	Put(run.head, 12, y)
-	run.head:SetLabel((st.open and "- " or "+ ") .. L["Craft run"])
+	run.head:SetLabel(P.HeadLabel("run", L["Craft run"]))
 	y = y - 28
 	local widgets = { run.mode, run.budget, run.minutes, run.minLabel, run.vendor, run.build, run.refresh, run.use, run.add,
 		run.totals, run.limit, run.buyHead, run.status, run.more, run.buyMore }
@@ -530,9 +645,7 @@ local function DrawRun(y)
 	end
 	if not st.open then
 		for _, r in ipairs(runLines) do
-			for _, fs in ipairs(r) do
-				fs:Hide()
-			end
+			r:Hide()
 		end
 		for _, fs in ipairs(runBuys) do
 			fs:Hide()
@@ -574,13 +687,11 @@ local function DrawRun(y)
 	if plan then
 		for i = 1, math.min(#plan.lines, P.RUN_LINES) do
 			local l, r = plan.lines[i], RunLineRow(i)
-			r[1]:SetText(P.RunLineName(l))
-			r[2]:SetText(P.RunLineDetail(l))
-			r[3]:SetText(P.RunLineSource(l))
-			for k = 1, 3 do
-				r[k]:Show()
-			end
-			y = P.Stack(r, 12, y) - 5 -- as tall as the wrapped text (#397)
+			r.plan = l
+			r.text:SetText(P.RunLineName(l))
+			Put(r, 12, y)
+			r:Show()
+			y = y - P.RUN_ROW - 2
 			shown = i
 		end
 		if #plan.lines > shown then
@@ -631,9 +742,7 @@ local function DrawRun(y)
 		end
 	end
 	for i = shown + 1, #runLines do
-		for _, fs in ipairs(runLines[i]) do
-			fs:Hide()
-		end
+		runLines[i]:Hide()
 	end
 	for i = (plan and math.min(#plan.buy, P.RUN_BUY) or 0) + 1, #runBuys do
 		runBuys[i]:Hide()
@@ -654,9 +763,7 @@ local function CreateRun(Box)
 	panel.run = run
 	run.head = Style.LineButton(panel, L["Craft run"], 110)
 	run.head:SetScript("OnClick", function()
-		local st = P.RunState()
-		st.open = not st.open
-		P.Update()
+		P.SetSection("run", not P.SectionOpen("run"))
 	end)
 	run.mode = Style.LineButton(panel, L["Budget: no limit"], P.RUN_MODE_W)
 	run.mode:SetScript("OnClick", function()
@@ -724,15 +831,14 @@ local function LineRow(i)
 	r:SetSize(P.WIDTH - 24, P.ROW)
 	r.text = Style.Text(r, "Small", "text")
 	r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 4, -3)
-	r.text:SetWidth(P.WIDTH - 60)
+	r.text:SetWidth(P.WIDTH - 24 - P.FIGURE_W - 28)
 	r.text:SetJustifyH("LEFT")
-	r.each = Style.Text(r, "Small", "text3")
+	r.text:SetWordWrap(false)
+	r.each = Style.Text(r, "Small", "text2")
 	r.each:SetPoint("TOPRIGHT", r, "TOPRIGHT", -4, -3)
+	r.each:SetWidth(P.FIGURE_W)
 	r.each:SetJustifyH("RIGHT")
-	r.detail = Style.Text(r, "Small", "text2")
-	r.detail:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -2) -- under the name, wherever it ends (#397)
-	r.detail:SetWidth(P.WIDTH - 30)
-	r.detail:SetJustifyH("LEFT")
+	r.each:SetWordWrap(false)
 	r.mark = r:CreateTexture(nil, "BACKGROUND")
 	r.mark:SetAllPoints(r)
 	Style.Fill(r.mark, Style.C.selected)
@@ -740,6 +846,11 @@ local function LineRow(i)
 		if self.line and ns.AHBuy.Pick(self.line) then
 			P.Prefill(self.line) -- the form below shows this line's item and max price
 			ns.AHBuy.Search() -- one click: pick and search this line, nothing more
+		end
+	end)
+	RowTip(r, function(self)
+		if self.row then
+			return P.RowName(self.row), P.RowTipLines(self.row)
 		end
 	end)
 	-- The × of a snipe line takes it off the list (nothing else; no search, no purchase).
@@ -759,10 +870,10 @@ local function LineRow(i)
 	return r
 end
 
--- A flips line is as tall as its name and its detail (each wrapped), never shorter than P.ROW.
+-- A row is one line, never shorter than P.ROW (the name does not wrap, so rows never overlap).
 function P.LineHeight(r)
 	local top = math.max(r.text:GetStringHeight() or 0, r.each:GetStringHeight() or 0)
-	return math.max(P.ROW, 3 + top + 2 + (r.detail:GetStringHeight() or 0) + 4)
+	return math.max(P.ROW, 3 + top + 4)
 end
 
 local function ResultText(i)
@@ -782,13 +893,12 @@ end
 -- posts, and nothing runs on a timer). The cap of the plan is what one such listing sells, so there are no batches.
 ----------------------------------------------------------------------------------------------------
 
-P.POST_LINES = 6
+P.POST_LINES = 10
 local postRows = {}
-P.postOpen = true
 
--- "Leather Gloves: post all 5 now (8 h)" ("post 2 now" when part of it is listed or not in the bags; nothing to post:
--- "none in the bags" or "listed 3 of 3").
-function P.PostLineText(l, name)
+-- The state of an item in full, for its tooltip: "Leather Gloves: post all 5 now (8 h)" ("post 2 now" when part of it
+-- is listed or not in the bags; nothing to post: "none in the bags" or "listed 3 of 3").
+function P.PostStateText(l, name)
 	if l.postNow > 0 then
 		if l.postNow >= l.units then
 			return (L["%s: post all %d now (%d h)"]):format(name, l.postNow, l.hours)
@@ -799,6 +909,19 @@ function P.PostLineText(l, name)
 		return (L["%s: none in the bags"]):format(name)
 	end
 	return (L["%s: listed %d of %d"]):format(name, l.listed, l.units)
+end
+
+-- The line of an item (#402): "Wild Leather Shoulders  post 1 · 76s 99c"; "Deviate Scale Belt  craft first" when none is
+-- in the bags; "... listed 3 of 3" when it is all up. Everything else is in the tooltip (P.PostTipLines).
+function P.PostLineText(l, name)
+	if l.postNow > 0 then
+		local t = (L["%s  post %d"]):format(name, l.postNow)
+		return l.price and (t .. " · " .. Money(l.price)) or t
+	end
+	if l.bags == 0 then
+		return (L["%s  craft first"]):format(name)
+	end
+	return (L["%s  listed %d of %d"]):format(name, l.listed, l.units)
 end
 
 -- "bags 5 · listed 1 · sold 3 today · lowest 3g 40s".
@@ -816,17 +939,35 @@ function P.PostSource(l)
 	return l.demandText or ""
 end
 
+-- The tooltip of an item: the full state, the numbers, where the amount comes from, and how to post.
+function P.PostTipLines(l, name)
+	local lines = { P.PostStateText(l, name), P.PostDetail(l) }
+	local source = P.PostSource(l)
+	if source ~= "" then
+		lines[#lines + 1] = source
+	end
+	lines[#lines + 1] = L["Post with the auction house's own Sell tab, with the duration shown; the lowest price is the last one seen."]
+	return lines
+end
+
 local function PostRow(i)
 	local r = postRows[i]
 	if r then
 		return r
 	end
-	r = {}
-	for k, color in ipairs({ "text", "text2", "text3" }) do
-		r[k] = Style.Text(panel, "Small", color)
-		r[k]:SetWidth(P.WIDTH - 24)
-		r[k]:SetJustifyH("LEFT")
-	end
+	r = CreateFrame("Button", nil, panel)
+	r:SetSize(P.WIDTH - 24, 16)
+	r.text = Style.Text(r, "Small", "text")
+	r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -1)
+	r.text:SetWidth(P.WIDTH - 24)
+	r.text:SetJustifyH("LEFT")
+	r.text:SetWordWrap(false)
+	RowTip(r, function(self)
+		local l = self.entry
+		if l then
+			return self.name, P.PostTipLines(l, self.name)
+		end
+	end)
 	postRows[i] = r
 	return r
 end
@@ -836,92 +977,61 @@ function P.PostLines()
 end
 
 -- Draws the section from y; returns the y below it.
-local function DrawPost(y)
-	local list = ns.Auctions.RunPostLines()
+local function DrawPost(y, list)
 	P.postLines = list
 	panel.postHead:SetShown(#list > 0)
+	panel.postMore:SetShown(false)
 	local shown = 0
 	if #list > 0 then
 		Put(panel.postHead, 12, y)
-		panel.postHead:SetLabel((P.postOpen and "- " or "+ ") .. (L["Post (%d)"]):format(#list))
+		panel.postHead:SetLabel(P.HeadLabel("post", (L["Post (%d)"]):format(#list)))
 		y = y - 28
-		if P.postOpen then
+		if P.SectionOpen("post") then
 			for i = 1, math.min(#list, P.POST_LINES) do
 				local l, r = list[i], PostRow(i)
-				local name = ItemName(l.itemID)
-				r[1]:SetText(P.PostLineText(l, name))
-				r[2]:SetText(P.PostDetail(l))
-				r[3]:SetText(P.PostSource(l))
-				for k = 1, 3 do
-					r[k]:Show()
-				end
-				y = P.Stack(r, 12, y) - 5 -- as tall as the wrapped text (#397)
+				r.entry, r.name = l, ItemName(l.itemID)
+				r.text:SetText(P.PostLineText(l, r.name))
+				local c = Style.Color(l.postNow > 0 and "text" or "text3") -- nothing to post now: muted
+				r.text:SetTextColor(c[1], c[2], c[3], 1)
+				Put(r, 12, y)
+				r:Show()
+				y = y - 18
 				shown = i
+			end
+			if #list > shown then
+				panel.postMore:SetText((L["+%d more"]):format(#list - shown))
+				Put(panel.postMore, 12, y)
+				panel.postMore:SetShown(true)
+				y = y - 16
 			end
 		end
 	end
 	for i = shown + 1, #postRows do
-		for k = 1, 3 do
-			postRows[i][k]:Hide()
-		end
-	end
-	panel.postNote:SetShown(shown > 0)
-	if shown > 0 then
-		Put(panel.postNote, 12, y)
-		y = y - 28
+		postRows[i]:Hide()
 	end
 	return y
 end
 
--- Draws everything from AHBuy's state.
-function P.Update()
-	if not (panel and panel:IsShown()) then
-		return
-	end
-	local AB, S = ns.AHBuy, ns.AHBuy.state
-	local y = DrawRun(-30)
-	y = DrawPost(y)
-	local list = P.Lines()
-	local model = P.Model(list)
-	panel.linesTitle:SetShown(#list > 0)
-	panel.empty:SetShown(#list == 0)
-	-- the summary: the totals of the flips and where they come from
-	local sum, age = P.SummaryText(model.totals, model.scanT)
-	panel.summary:SetShown(sum ~= nil)
-	panel.age:SetShown(sum ~= nil)
-	if sum then
-		panel.summary:SetText(sum)
-		panel.age:SetText(age)
-		panel.summary:ClearAllPoints()
-		panel.summary:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
-		panel.age:ClearAllPoints()
-		panel.age:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y - 15)
-		y = y - 36
-	end
-	-- the rows under their group headings, snipes, then flips, then the basket (the order AHBuy.Lines uses)
-	local order, h = {}, 0
-	for _, g in ipairs(P.GROUPS) do
-		for _, row in ipairs(model.groups[g]) do
-			order[#order + 1] = row
-		end
-	end
-	local lastGroup
-	local sizes = {}
-	for _, row in ipairs(order) do
+-- The rows of a model, one line each, under their small headings (flip sub-groups, the basket). At most P.GROUP_LINES per
+-- group; the number left out is returned. `st` counts the row and heading frames used so far (the pools are shared).
+local function DrawRows(y, rows, model, S, st)
+	local sizes, counts, last, hidden = {}, {}, nil, 0
+	for _, row in ipairs(rows) do
 		local key = row.group .. (row.sub or "")
 		sizes[key] = (sizes[key] or 0) + 1
 	end
-	for i = 1, math.max(#order, #lines) do
-		local row = order[i]
-		local shownRow = row and i <= P.LINES
-		if row and i <= P.LINES then
-			local key = row.group .. (row.sub or "")
-			if key ~= lastGroup then
-				lastGroup, h = key, h + 1
-				local fs = headings[h]
+	for _, row in ipairs(rows) do
+		local key = row.group .. (row.sub or "")
+		counts[key] = (counts[key] or 0) + 1
+		if counts[key] > P.GROUP_LINES then
+			hidden = hidden + 1
+		else
+			if key ~= last and row.group ~= "snipe" then
+				st.h = st.h + 1
+				local fs = headings[st.h]
 				if not fs then
 					fs = Style.Text(panel, "Small", "text3")
-					headings[h] = fs
+					headings[st.h] = fs
 				end
 				fs:SetText(row.sub and P.FlipHeading(row.sub, sizes[key]) or P.GroupHeading(row.group, #model.groups[row.group]))
 				fs:ClearAllPoints()
@@ -929,13 +1039,14 @@ function P.Update()
 				fs:Show()
 				y = y - 16
 			end
+			last = key
 			local l = row.line
-			local r = LineRow(i)
-			r.line = l
+			st.i = st.i + 1
+			local r = LineRow(st.i)
+			r.line, r.row = l, row
 			r:Show()
 			r.text:SetText(P.RowName(row))
-			r.detail:SetText(P.RowDetail(row))
-			r.each:SetText(P.RowEach(row) or "")
+			r.each:SetText(P.RowRight(row))
 			r.remove:SetShown(l.snipe and true or false)
 			r.mark:SetShown(S.target and S.target.itemID == l.itemID and S.target.kind == l.kind)
 			r:ClearAllPoints()
@@ -943,25 +1054,88 @@ function P.Update()
 			local h = P.LineHeight(r)
 			r:SetHeight(h)
 			y = y - h
-		elseif lines[i] then
-			lines[i].line = nil
-			lines[i]:Hide()
 		end
 	end
-	for i = h + 1, #headings do
-		headings[i]:Hide()
+	return y, hidden
+end
+
+-- A collapsible section's head button; `more` is its "+N more" line.
+local function Head(key, button, text, y)
+	Put(button, 12, y)
+	button:SetLabel(P.HeadLabel(key, text))
+	button:SetShown(true)
+	return y - 28
+end
+
+local function Foot(fs, hidden, y)
+	fs:SetShown(hidden > 0)
+	if hidden > 0 then
+		fs:SetText((L["+%d more: the search key walks them all"]):format(hidden))
+		Put(fs, 12, y)
+		y = y - 16
+	end
+	return y
+end
+
+local FORM_WIDGETS = { "formTitle", "itemBox", "maxBox", "upToBox", "saveButton", "formStatus", "keys" }
+
+-- Draws everything from AHBuy's state: the sections (Craft run, Post, Flips), the search and the Buy button, then the
+-- Snipe list (its lines, the form and the key hint).
+function P.Update()
+	if not (panel and panel:IsShown()) then
+		return
+	end
+	local AB, S = ns.AHBuy, ns.AHBuy.state
+	local list = P.Lines()
+	local model = P.Model(list)
+	local postList = ns.Auctions.RunPostLines()
+	local postNow = false
+	for _, l in ipairs(postList) do
+		if l.postNow > 0 then
+			postNow = true
+		end
+	end
+	local nFlips = #model.groups.flip + #model.groups.basket
+	P.defaultOpen.post = postNow
+	P.defaultOpen.flips = nFlips > 0 and not postNow
+	P.defaultOpen.snipes = #model.groups.snipe > 0 and not postNow and nFlips == 0
+	local y = DrawRun(-30)
+	y = DrawPost(y, postList)
+	local st = { i = 0, h = 0 }
+	panel.linesTitle:SetShown(#list > 0)
+	panel.empty:SetShown(#list == 0)
+	-- Flips (and the basket's AH lines): the totals, then the rows
+	panel.flipHead:SetShown(nFlips > 0)
+	panel.summary:SetShown(false)
+	panel.flipMore:SetShown(false)
+	P.flipTip = nil
+	if nFlips > 0 then
+		y = Head("flips", panel.flipHead, (L["Flips (%d)"]):format(nFlips), y)
+		local sum, age = P.SummaryText(model.totals, model.scanT)
+		P.flipTip = age
+		if P.SectionOpen("flips") then
+			if sum then
+				panel.summary:SetText(sum)
+				panel.summary:ClearAllPoints()
+				panel.summary:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
+				panel.summary:SetShown(true)
+				y = y - 18
+			end
+			local rows = {}
+			for _, g in ipairs({ "flip", "basket" }) do
+				for _, row in ipairs(model.groups[g]) do
+					rows[#rows + 1] = row
+				end
+			end
+			local hidden
+			y, hidden = DrawRows(y, rows, model, S, st)
+			y = Foot(panel.flipMore, hidden, y)
+		end
 	end
 	if #list == 0 then
 		panel.empty:ClearAllPoints()
 		panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
 		y = y - 20
-	end
-	panel.more:SetShown(#list > P.LINES)
-	if #list > P.LINES then
-		panel.more:SetText((L["+%d more: the search key walks them all"]):format(#list - P.LINES))
-		panel.more:ClearAllPoints()
-		panel.more:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
-		y = y - 16
 	end
 	y = y - 8
 	local plan, why = AB.Refresh()
@@ -998,23 +1172,42 @@ function P.Update()
 	panel.status:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
 	panel.status:SetText(status or "")
 	y = y - 28
-	-- The snipe list's form: item, max price per unit, "up to", Save.
-	panel.formTitle:ClearAllPoints()
-	panel.formTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
-	y = y - 16
-	local x = 12
-	for _, f in ipairs({ { panel.itemBox, 100 }, { panel.maxBox, 76 }, { panel.upToBox, 36 }, { panel.saveButton, 48 } }) do
-		f[1]:ClearAllPoints()
-		f[1]:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
-		x = x + f[2] + 5
+	-- Snipe list: its lines, then the form (item, max price per unit, "up to", Save) and the key hint; folded by default.
+	y = Head("snipes", panel.snipeHead, (L["Snipe list (%d)"]):format(#model.groups.snipe), y)
+	panel.snipeMore:SetShown(false)
+	local open = P.SectionOpen("snipes")
+	for _, k in ipairs(FORM_WIDGETS) do
+		panel[k]:SetShown(open)
 	end
-	y = y - 28
-	panel.formStatus:ClearAllPoints()
-	panel.formStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
-	y = y - 18
-	panel.keys:ClearAllPoints()
-	panel.keys:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
-	y = y - 30
+	if open then
+		local hidden
+		y, hidden = DrawRows(y, model.groups.snipe, model, S, st)
+		y = Foot(panel.snipeMore, hidden, y)
+		y = y - 4
+		panel.formTitle:ClearAllPoints()
+		panel.formTitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
+		y = y - 16
+		local x = 12
+		for _, f in ipairs({ { panel.itemBox, 100 }, { panel.maxBox, 76 }, { panel.upToBox, 36 }, { panel.saveButton, 48 } }) do
+			f[1]:ClearAllPoints()
+			f[1]:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
+			x = x + f[2] + 5
+		end
+		y = y - 28
+		panel.formStatus:ClearAllPoints()
+		panel.formStatus:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
+		y = y - 18
+		panel.keys:ClearAllPoints()
+		panel.keys:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
+		y = y - 30
+	end
+	for i = st.i + 1, #lines do
+		lines[i].line, lines[i].row = nil, nil
+		lines[i]:Hide()
+	end
+	for i = st.h + 1, #headings do
+		headings[i]:Hide()
+	end
 	panel:SetHeight(-y + 12)
 end
 
@@ -1031,10 +1224,18 @@ local function Create()
 	panel.title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -10)
 	panel.title:SetText("CraftWise · " .. L["Buy"])
 	panel.linesTitle = Style.Text(panel, "Small", "text3")
-	panel.linesTitle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, -10)
+	panel.linesTitle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -36, -10)
 	panel.linesTitle:SetText(L["Click a line to search it"])
+	-- The X closes the panel until it is opened again (the button under the auction house, `/craftwise buy`, #402).
+	panel.close = Style.ActionButton(panel, "x", 22, 18)
+	panel.close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
+	panel.close:SetScript("OnClick", function()
+		P.SetClosed(true)
+	end)
 	panel.summary = Style.Text(panel, "Small", "text")
-	panel.age = Style.Text(panel, "Small", "text3")
+	panel.summary:SetWidth(P.WIDTH - 24)
+	panel.summary:SetJustifyH("LEFT")
+	panel.summary:SetWordWrap(false)
 	panel.listed = Style.Text(panel, "Small", "text3")
 	panel.listed:SetText(L["Listed now (units × price = row total)"])
 	panel.empty = Style.Text(panel, "Small", "text3")
@@ -1083,13 +1284,27 @@ local function Create()
 	CreateRun(Box)
 	panel.postHead = Style.LineButton(panel, L["Post"], 150)
 	panel.postHead:SetScript("OnClick", function()
-		P.postOpen = not P.postOpen
-		P.Update()
+		P.SetSection("post", not P.SectionOpen("post"))
 	end)
-	panel.postNote = Style.Text(panel, "Small", "text3")
-	panel.postNote:SetWidth(P.WIDTH - 24)
-	panel.postNote:SetJustifyH("LEFT")
-	panel.postNote:SetText(L["Post with the auction house's own Sell tab, with the duration shown; the lowest price is the last one seen."])
+	panel.postMore = Style.Text(panel, "Small", "text3")
+	panel.flipHead = Style.LineButton(panel, L["Flips"], 150)
+	panel.flipHead:SetScript("OnClick", function()
+		P.SetSection("flips", not P.SectionOpen("flips"))
+	end)
+	panel.flipHead:HookScript("OnEnter", function(self) -- where the flip figures come from
+		if P.flipTip then
+			Style.ShowTip(self, L["Flips"], P.flipTip)
+		end
+	end)
+	panel.flipHead:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	panel.flipMore = Style.Text(panel, "Small", "text3")
+	panel.snipeHead = Style.LineButton(panel, L["Snipe list"], 150)
+	panel.snipeHead:SetScript("OnClick", function()
+		P.SetSection("snipes", not P.SectionOpen("snipes"))
+	end)
+	panel.snipeMore = Style.Text(panel, "Small", "text3")
 	panel.formStatus = Style.Text(panel, "Small", "text2")
 	panel.formStatus:SetWidth(P.WIDTH - 24)
 	panel.formStatus:SetJustifyH("LEFT")
@@ -1102,6 +1317,16 @@ local function Create()
 		P.Update()
 	end)
 	P.panel = panel
+	-- The button under the auction house frame shows and hides the panel (#402).
+	if not P.toggle then
+		P.toggle = Style.LineButton(AuctionHouseFrame, L["CraftWise <"], 110)
+		P.toggle.cwAHDock = true -- docked to the AH frame by design, like the panel (tests/own_scan_progress_spec.lua)
+		P.toggle:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 4, -4) -- above the panel, which starts 30 down; not the bottom, where the tabs are
+		P.toggle:SetScript("OnClick", function()
+			P.Toggle()
+		end)
+	end
+	P.SetClosed(P.Closed())
 	if P.form then -- filled from the item menu before the auction house was opened
 		panel.itemBox:SetText(P.form.item)
 		panel.maxBox:SetText(P.form.max)

@@ -439,7 +439,7 @@ end
 -- on a line opens the recipe there (C_TradeSkillUI.OpenRecipe); the player presses Create, nothing is crafted from here.
 -- It redraws on BASKET_CHANGED (a craft ticked, an entry added) and BAGS_CHANGED, at most 4 times a second. The x hides
 -- it until the basket changes next; it is not there while the basket has nothing to craft or tally.
-B.PANEL_WIDTH, B.PANEL_ROWS, B.PANEL_ROW = 290, 9, 34
+B.PANEL_WIDTH, B.PANEL_ROWS, B.PANEL_ROW = 290, 12, 20 -- a row is one line (#402)
 B.PANEL_THROTTLE = 0.25
 
 -- Pure over the craft list: what the panel says. { title, sub, rows = { { name, count, sub, tick, state, recipeID, tip } },
@@ -478,7 +478,18 @@ function B.PanelModel(list)
 		if ln.state ~= "ready" and ln.state ~= "made" and #ln.missing > 0 then
 			parts[#parts + 1] = (L["needs %s"]):format(B.MissingText(ln))
 		end
-		model.rows[i] = { name = ln.name, count = ln.state == "made" and (L["%d made"]):format(ln.made) or B.CountText(ln),
+		-- One line (#402): "Dark Leather Shoulders  0/2  needs 7 Light Leather" = the name, the crafts made of those planned,
+		-- the one thing to do. The kind, the profit each and the state are in the tooltip (`sub`).
+		local todo
+		if ln.state == "made" then
+			todo = L["done"]
+		elseif ln.state ~= "ready" and #ln.missing > 0 then
+			todo = (L["needs %s"]):format(B.MissingText(ln))
+		else
+			todo = B.StateText(ln)
+		end
+		local text = ("%s  %d/%d  %s"):format(ln.name or "", ln.made, ln.planned, todo)
+		model.rows[i] = { name = ln.name, text = text, count = ln.state == "made" and (L["%d made"]):format(ln.made) or B.CountText(ln),
 			sub = table.concat(parts, ", "), tick = ln.left == 0, state = ln.state, recipeID = ln.recipeID,
 			intermediate = ln.kind == "intermediate" }
 	end
@@ -503,16 +514,11 @@ local function PanelRow(i)
 	r.tick:SetSize(14, 14)
 	r.tick:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -2)
 	r.tick:SetTexture("Interface\Buttons\UI-CheckBox-Check")
-	r.name = Style.Text(r, "Body", "text")
-	r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 20, 0)
+	r.name = Style.Text(r, "Small", "text")
+	r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 20, -2)
 	r.name:SetWidth(B.PANEL_WIDTH - 24 - 20)
 	r.name:SetJustifyH("LEFT")
 	r.name:SetWordWrap(false)
-	r.sub = Style.Text(r, "Small", "text3")
-	r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -1)
-	r.sub:SetWidth(B.PANEL_WIDTH - 24 - 20)
-	r.sub:SetJustifyH("LEFT")
-	r.sub:SetWordWrap(false)
 	r:SetScript("OnClick", function(self)
 		if self.recipeID then
 			MK.OpenRecipe(self.recipeID)
@@ -520,7 +526,7 @@ local function PanelRow(i)
 	end)
 	r:SetScript("OnEnter", function(self)
 		self.hover:Show()
-		Style.ShowTip(self, self.name:GetText() or "", L["Click to open the recipe. You press Create yourself."])
+		Style.ShowTip(self, self.title or "", self.detail or "", L["Click to open the recipe. You press Create yourself."])
 	end)
 	r:SetScript("OnLeave", function(self)
 		self.hover:Hide()
@@ -547,11 +553,10 @@ function B.DrawPanel()
 		local row, r = model.rows[i], PanelRow(i)
 		r.recipeID = row.recipeID
 		r.tick:SetShown(row.tick)
-		local text = row.count .. "  " .. (row.name or "")
-		r.name:SetText(text)
+		r.title, r.detail = row.name, row.sub .. " · " .. row.count
+		r.name:SetText(row.text)
 		local c = Style.Color((row.tick and "text3") or "text")
 		r.name:SetTextColor(c[1], c[2], c[3], 1)
-		r.sub:SetText(row.sub)
 		r:Show()
 	end
 	for i = shown + 1, #panel.rows do

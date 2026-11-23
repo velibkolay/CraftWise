@@ -112,6 +112,25 @@ it("Panel model: a flip line with bags holding some is priced for the units stil
 	local detail = ns.AHPanel.RowDetail(cloth)
 	assert(detail:find("cost " .. ns.FormatMoney(470, true), 1, true) and detail:find("vendor " .. ns.FormatMoney(800, true), 1, true)
 		and detail:find("profit +" .. ns.FormatMoney(330, true), 1, true), detail)
+	-- #402: the row shows one figure, the profit; the cost, vendor price and buys are in the tooltip
+	eq(ns.AHPanel.RowRight(cloth), "+" .. ns.FormatMoney(330, true))
+	local tip = ns.AHPanel.RowTipLines(cloth)
+	eq(tip[1], detail)
+	eq(tip[2], ns.AHPanel.RowEach(cloth), "the price step and the buys are kept in the tooltip")
+end)
+
+it("Panel (#402): at most 8 rows of a group are drawn, the rest is counted", function()
+	local ns = Setup()
+	local items = {}
+	for i = 1, 11 do
+		Seed(ns, 5000 + i, { 40, 5 }, 5)
+		items[i] = { itemID = 5000 + i, units = 5, atLeast = false, profit = 300, price = 40, sell = 100, maxUnit = 99, t = NOW }
+	end
+	ns.db.flips = { t = NOW, items = items }
+	ns.Notify("PRICES_CHANGED")
+	local P = ns.AHPanel
+	assert(P.panel.flipMore:IsShown(), "a +N more line")
+	assert(P.panel.flipMore:GetText():find("+3 more", 1, true), P.panel.flipMore:GetText())
 end)
 
 it("Panel model: a flip that lists N or more shows >= on the name and every figure and the totals", function()

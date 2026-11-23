@@ -236,9 +236,15 @@ it("Panel: it sits on the profession window, lists the crafts, and a click opens
 	Bags(stub, { { THREAD, 1 } })
 	B.DrawPanel()
 	local rows = B.panel.rows
-	eq(rows[1].name:GetText(), "1 crafts  Cured Testhide"); eq(rows[2].name:GetText(), "1 crafts  Test Shirt")
-	assert(rows[2].sub:GetText():find("Vendor", 1, true), rows[2].sub:GetText())
-	assert(rows[2].sub:GetText():find("missing reagents", 1, true))
+	-- #402: one line per craft: the name, the crafts made of those planned, the one thing to do; the rest is in the tooltip
+	eq(rows[1].name:GetText(), "Cured Testhide  0/1  needs 1 Testhide, 1 Testsalt")
+	assert(rows[2].name:GetText():find("^Test Shirt  0/1  needs "), rows[2].name:GetText())
+	assert(not rows[2].name:GetText():find("\n", 1, true))
+	assert(rows[2].detail:find("Vendor", 1, true), rows[2].detail)
+	assert(rows[2].detail:find("missing reagents", 1, true))
+	eq(rows[2].title, "Test Shirt")
+	rows[2]:GetScript("OnEnter")(rows[2]) -- the tooltip draws without error
+	rows[2]:GetScript("OnLeave")(rows[2])
 	local opened = {}
 	C_TradeSkillUI.OpenRecipe = function(id) opened[#opened + 1] = id return true end
 	rows[2]:GetScript("OnClick")(rows[2])
