@@ -557,7 +557,35 @@ function P.CardContext(now)
 	return ctx
 end
 
-local CARD = { W = 440, H = 470, PAD = 24 }
+-- Layout (#418, pure): the y offset (from the card's top, downwards) and height of every block, from the model.
+-- Blocks stack with one gap between them, PAD above the first and below the last; the card height follows.
+-- Heights are the drawn heights: the drawing anchors each block's first element at its y and chains the rest.
+local CARD = { W = 440, PAD = 24, GAP = 18, ROW = 26, HEADER = 58, FIGURE = 74, STATS = 32, NOTE = 14, LIST_LABEL = 20,
+	EMPTY = 18, WEEK = 32, LEDGER = 14 }
+P.CARD = CARD
+
+function P.CardLayout(m)
+	local blocks, order, rules = {}, {}, {}
+	local y = CARD.PAD
+	local function Add(name, height)
+		if #order > 0 then
+			rules[#rules + 1] = y - math.floor(CARD.GAP / 2) -- a rule in the middle of the gap above this block
+		end
+		blocks[name] = { y = y, h = height }
+		order[#order + 1] = name
+		y = y + height + CARD.GAP
+	end
+	Add("header", CARD.HEADER)
+	Add("figure", CARD.FIGURE)
+	Add("stats", CARD.STATS + (m.stats.timedNote and CARD.NOTE or 0))
+	local rows = m.empty and 0 or #m.top
+	Add("list", m.empty and CARD.EMPTY or (CARD.LIST_LABEL + rows * CARD.ROW))
+	Add("week", CARD.WEEK)
+	if m.money then
+		Add("ledger", CARD.LEDGER)
+	end
+	return { width = CARD.W, height = y - CARD.GAP + CARD.PAD, blocks = blocks, order = order, rules = rules, rows = rows }
+end
 
 local function Coins(fs, v)
 	if v == nil then
@@ -571,7 +599,7 @@ local function BuildCard()
 	local C = Style.C
 	local f = CreateFrame("Frame", "CraftWiseShareCard", UIParent)
 	f.cwWindow = "main"
-	f:SetSize(CARD.W, CARD.H)
+	f:SetWidth(CARD.W)
 	f:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
 	f:SetFrameStrata("DIALOG")
 	f:SetClampedToScreen(true)
@@ -579,52 +607,39 @@ local function BuildCard()
 	Style.Sheet(f, C.sheet, C.flap, 22, true)
 	local pad = CARD.PAD
 	f.title = Style.Text(f, "Brand", "text")
-	f.title:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -pad)
 	f.close = Style.Chip(f, L["Close"])
-	f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -pad + 2)
 	f.close:SetScript("OnClick", function()
 		f:Hide()
 	end)
 	f.who = Style.Text(f, "Body", "text2")
 	f.who:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -6)
 	f.filters = Style.Text(f, "Caption", "text3")
-	f.filters:SetPoint("TOPLEFT", f.who, "BOTTOMLEFT", 0, -2)
-	local rule = Style.Rule(f, "H")
-	rule:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -92)
-	rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -92)
+	f.filters:SetPoint("TOPLEFT", f.who, "BOTTOMLEFT", 0, -3)
 	f.figureLabel = Style.Text(f, "Label", "text3")
-	f.figureLabel:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -106)
+	-- The big figure in the proportional bold face: the mono face makes the space between "75g" and "5s" a wide gap.
 	f.figure = Style.Text(f, "FigureXL", "text")
-	f.figure:SetPoint("TOPLEFT", f.figureLabel, "BOTTOMLEFT", 0, -4)
+	f.figure:SetFont(Style.FontFiles.nextExtraBold, 36, "")
+	f.figure:SetPoint("TOPLEFT", f.figureLabel, "BOTTOMLEFT", 0, -6)
 	f.figureNote = Style.Text(f, "Caption", "text3")
-	f.figureNote:SetPoint("TOPLEFT", f.figure, "BOTTOMLEFT", 0, -4)
+	f.figureNote:SetPoint("TOPLEFT", f.figure, "BOTTOMLEFT", 0, -6)
 	-- Three small figures side by side.
-	f.stats = {}
-	local colW = (CARD.W - 2 * pad) / 3
+	f.stats, f.statLabels = {}, {}
 	for i, label in ipairs({ L["Crafts today"], L["Active time"], L["Gold per active hour"] }) do
 		local cap = Style.Text(f, "Caption", "text3")
-		cap:SetPoint("TOPLEFT", f, "TOPLEFT", pad + (i - 1) * colW, -200)
 		cap:SetText(label)
 		local v = Style.Text(f, "FigureBold", "text")
-		v:SetPoint("TOPLEFT", cap, "BOTTOMLEFT", 0, -3)
-		f.stats[i] = v
+		v:SetPoint("TOPLEFT", cap, "BOTTOMLEFT", 0, -4)
+		f.stats[i], f.statLabels[i] = v, cap
 	end
 	f.timedNote = Style.Text(f, "Caption", "text3")
-	f.timedNote:SetPoint("TOPLEFT", f, "TOPLEFT", pad + colW, -240)
-	local rule2 = Style.Rule(f, "H")
-	rule2:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -258)
-	rule2:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -258)
+	f.rules = {}
 	f.listLabel = Style.Text(f, "Label", "text3")
-	f.listLabel:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -268)
 	f.listLabel:SetText(L["Top recipes today"])
 	f.emptyText = Style.Text(f, "Body", "text2")
-	f.emptyText:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -290)
 	f.rows = {}
 	for i = 1, P.CARD_TOP do
 		local row = CreateFrame("Frame", nil, f)
-		row:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -288 - (i - 1) * 26)
-		row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -288 - (i - 1) * 26)
-		row:SetHeight(24)
+		row:SetHeight(CARD.ROW - 2)
 		row.icon = row:CreateTexture(nil, "ARTWORK")
 		row.icon:SetSize(20, 20)
 		row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
@@ -635,26 +650,20 @@ local function BuildCard()
 		row.count:SetPoint("RIGHT", row.profit, "LEFT", -14, 0)
 		row.name = Style.Text(row, "Body", "text")
 		row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
-		row.name:SetPoint("RIGHT", row.count, "LEFT", -8, 0)
+		row.name:SetPoint("RIGHT", row.count, "LEFT", -10, 0) -- the name is cut before the count and the profit
 		row.name:SetJustifyH("LEFT")
 		row.name:SetWordWrap(false)
 		f.rows[i] = row
 	end
-	local rule3 = Style.Rule(f, "H")
-	rule3:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad, 78)
-	rule3:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -pad, 78)
 	f.weekLabel = Style.Text(f, "Caption", "text3")
-	f.weekLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad, 50)
 	f.weekLabel:SetText(L["Profit, last 7 days"])
 	f.week = Style.Text(f, "Figure", "text")
-	f.week:SetPoint("TOPLEFT", f.weekLabel, "BOTTOMLEFT", 0, -2)
+	f.week:SetPoint("TOPLEFT", f.weekLabel, "BOTTOMLEFT", 0, -4)
 	f.totalLabel = Style.Text(f, "Caption", "text3")
-	f.totalLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad + colW * 1.5, 50)
 	f.totalLabel:SetText(L["Profit, total"])
 	f.total = Style.Text(f, "Figure", "text")
-	f.total:SetPoint("TOPLEFT", f.totalLabel, "BOTTOMLEFT", 0, -2)
+	f.total:SetPoint("TOPLEFT", f.totalLabel, "BOTTOMLEFT", 0, -4)
 	f.money = Style.Text(f, "Caption", "text3")
-	f.money:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad, 14)
 	if UISpecialFrames then
 		table.insert(UISpecialFrames, "CraftWiseShareCard") -- Escape closes it
 	end
@@ -663,34 +672,77 @@ local function BuildCard()
 end
 
 function P.PaintCard(f, m)
+	local lay = P.CardLayout(m)
+	local pad, B = CARD.PAD, lay.blocks
+	local function At(region, x, y)
+		region:ClearAllPoints()
+		region:SetPoint("TOPLEFT", f, "TOPLEFT", pad + x, -y)
+	end
+	f:SetHeight(lay.height)
+	f.title:ClearAllPoints()
+	At(f.title, 0, B.header.y)
+	f.close:ClearAllPoints()
+	f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -B.header.y)
 	f.title:SetText(m.title)
 	f.who:SetText(m.who .. (m.who ~= "" and "  -  " or "") .. m.date)
 	f.filters:SetText(m.filters)
+	At(f.figureLabel, 0, B.figure.y)
 	f.figureLabel:SetText(m.figureLabel)
 	Coins(f.figure, m.figure.value)
 	local c = Style.Color(m.figure.value == nil and "text3" or m.figure.negative and "danger" or "text")
 	f.figure:SetTextColor(c[1], c[2], c[3], 1)
 	f.figureNote:SetText(m.figureNote)
+	local colW = (CARD.W - 2 * pad) / 3
+	for i = 1, 3 do
+		At(f.statLabels[i], (i - 1) * colW, B.stats.y)
+	end
 	f.stats[1]:SetText(m.stats.crafts)
 	f.stats[2]:SetText(m.stats.active)
 	f.stats[3]:SetText(m.stats.perHour)
+	At(f.timedNote, colW, B.stats.y + CARD.STATS)
 	f.timedNote:SetText(m.stats.timedNote or "")
+	f.timedNote:SetShown(m.stats.timedNote ~= nil)
+	-- Rules in the middle of the gaps between blocks.
+	for i, y in ipairs(lay.rules) do
+		if not f.rules[i] then
+			f.rules[i] = Style.Rule(f, "H")
+		end
+		local rule = f.rules[i]
+		rule:ClearAllPoints()
+		rule:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -y)
+		rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -y)
+		rule:Show()
+	end
+	for i = #lay.rules + 1, #f.rules do
+		f.rules[i]:Hide()
+	end
 	f.listLabel:SetShown(not m.empty)
 	f.emptyText:SetShown(m.empty)
+	At(f.listLabel, 0, B.list.y)
+	At(f.emptyText, 0, B.list.y)
 	f.emptyText:SetText(m.emptyText or "")
 	for i, row in ipairs(f.rows) do
 		local t = m.top[i]
 		row:SetShown(t ~= nil and not m.empty)
 		if t then
+			row:ClearAllPoints()
+			row:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -(B.list.y + CARD.LIST_LABEL + (i - 1) * CARD.ROW))
+			row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -(B.list.y + CARD.LIST_LABEL + (i - 1) * CARD.ROW))
 			row.icon:SetTexture(t.icon)
 			row.name:SetText(t.name)
 			row.count:SetText(t.countText)
 			Coins(row.profit, t.profit)
 		end
 	end
+	At(f.weekLabel, 0, B.week.y)
+	At(f.totalLabel, colW * 1.5, B.week.y)
 	Coins(f.week, m.week.value)
 	Coins(f.total, m.total.value)
-	f.money:SetText(m.money and (m.money.label .. ": " .. m.money.text) or "")
+	f.money:SetShown(m.money ~= nil)
+	if m.money then
+		At(f.money, 0, B.ledger.y)
+		f.money:SetText(m.money.label .. ": " .. m.money.text)
+	end
 end
 
 function P.ShowCard()

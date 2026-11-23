@@ -1134,3 +1134,38 @@ it("share card: opens from the slash command, shows today's numbers and closes w
 	f:Hide()
 	assert(not f:IsShown())
 end)
+
+-- Share card layout (#418): pure, from the content
+it("share card layout: no block overlaps another and all fit inside the padding, for 0, 1 and 5 rows", function()
+	local ns = setup()
+	local P = ns.Main.CraftedPage
+	local C = P.CARD
+	for _, rowsN in ipairs({ 0, 1, 5 }) do
+		for _, note in ipairs({ false, true }) do
+			for _, money in ipairs({ false, true }) do
+				local m = { empty = rowsN == 0, top = {}, stats = { timedNote = note and "1 of 2 crafts timed" or nil },
+					money = money and { text = "+1g" } or nil }
+				for i = 1, rowsN do m.top[i] = { name = "R" .. i } end
+				local lay = P.CardLayout(m)
+				local last = 0
+				for i, name in ipairs(lay.order) do
+					local b = lay.blocks[name]
+					assert(b.y >= last, name .. " overlaps the block above")
+					if i == 1 then eq(b.y, C.PAD) end
+					last = b.y + b.h + C.GAP
+				end
+				eq(lay.height, last - C.GAP + C.PAD, "the last block ends PAD above the bottom")
+				eq(lay.blocks.ledger ~= nil, money)
+				eq(#lay.rules, #lay.order - 1)
+				if rowsN == 5 then
+					local list = lay.blocks.list
+					assert(list.y + C.LIST_LABEL + 5 * C.ROW <= lay.blocks.week.y - C.GAP + 0, "row 5 ends before the week block")
+				end
+			end
+		end
+	end
+	local five = P.CardLayout({ empty = false, top = { {}, {}, {}, {}, {} }, stats = {}, money = { text = "x" } })
+	local out = {}
+	for _, name in ipairs(five.order) do out[#out + 1] = name .. " y=" .. five.blocks[name].y .. " h=" .. five.blocks[name].h end
+	print("       layout, 5 rows: " .. table.concat(out, "; ") .. "; height=" .. five.height)
+end)
