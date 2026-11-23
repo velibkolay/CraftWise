@@ -1473,3 +1473,13 @@ Needs a snipe list entry (max price and "up to N") or a flip line for a commodit
 - [ ] "Up to N": buy part of it, search again: the button counts only what is left of N ("Already bought N: that is your limit" at the end).
 - [ ] A total above Settings "Ask above" still opens the client's confirm dialog first; accepting it buys with the same one click flow.
 - [ ] Click once and watch: exactly one StartCommoditiesPurchase and one ConfirmCommoditiesPurchase (Settings > Debug trace), no second confirm from a later COMMODITY_PRICE_UPDATED.
+
+## Main window design pass (#412)
+
+- [ ] Drag the window wider and narrower (min width to full screen): the gold key block keeps its size and the first tab (Make) always sits on the dark bar, readable. Same in a docked layout when its width is dragged. No seam or colour step where the gold block, the dark middle and the cut corner meet.
+- [ ] Make > Craft: the cost -> sells column is not cut off ("45s 89c -> 68g 34s", no "..."); the plain "AH" tag is gone, vendor / disenchant / "AH gross" still show. Money columns (Per day, Profit, Now) all one size and right aligned, coin colours the same in each.
+- [ ] Hero subtitle: "Grey" now reads "no skill-up"; a missing reagent reads "missing 1 Rugged Hide" with its real name (the id never shows: if the name is not cached it says "an item (loading its name)" and fills in a moment later); hover the hero for the full list of missing reagents.
+- [ ] A recipe with a huge return shows ">999%", not 14793%.
+- [ ] The "Profit per craft" bars: most rows show a bar of readable length, only the biggest outliers run to the end of the rail.
+- [ ] Footer reads "Prices: typical price at the Horde AH (Auctionator when it has none) · reagents: bought at the AH".
+- [ ] AH panel: the snipe form caption reads "Add to the snipe list: item, max price each, buy up to (count)" and fits on one or two lines.

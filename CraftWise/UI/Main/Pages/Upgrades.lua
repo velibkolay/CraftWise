@@ -268,7 +268,7 @@ function Up.CostTip(row)
 	end
 	local tip = { L["Cost"], ("%s: %s"):format(L["Recipe"], r.recipeName or "?") }
 	for _, line in ipairs(r.reagents or {}) do
-		local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(line.itemID) or ("item " .. line.itemID)
+		local name = M.Make.ItemName(line.itemID) -- asks the client for a name it lacks (#412)
 		local have = C_Item and C_Item.GetItemCount and C_Item.GetItemCount(line.itemID) or 0
 		tip[#tip + 1] = ("%d × %s (%s %d)"):format(line.quantity or 1, name, L["have"], have)
 	end

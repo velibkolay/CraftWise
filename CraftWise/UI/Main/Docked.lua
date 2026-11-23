@@ -107,7 +107,7 @@ local function Apply(side)
 		frame.edge:SetPoint("BOTTOM" .. inner, frame, "BOTTOM" .. inner, 0, 0)
 		frame.edge:Show()
 		frame.sheet:SetCut(m.cut)
-		frame.head.art:SetTexture(Style.Media.headerNarrow)
+		Style.HeaderArtSet(frame.head.art, true, m.header)
 		-- Swapped in place (from the window or the other side): it slides in. A scale change only places it.
 		if frame:IsShown() and frame.cwDockSide ~= side then
 			D.SlideIn(frame, side, m)

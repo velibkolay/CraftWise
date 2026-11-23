@@ -343,7 +343,7 @@ it("Make › Craft: rows flag a thin market, tooltips show labels and the market
 	has(t, "Best to sell | Booty Bay")
 	eq(Make.Rows(ns, "craft")[1].view.sellsText, "1c vendor · thin", "the row is marked thin")
 	local foot = ns.Main.Frame().foot
-	assert(foot.left.text:find("Prices: current lowest · Horde AH", 1, true), foot.left.text)
+	assert(foot.left.text:find("Prices: lowest price now at the Horde AH", 1, true), foot.left.text)
 	-- Light Leather at Booty Bay too, so only the sale's cut is missing there.
 	Seed(2318, BOOTY, { tiers = { 30, 100 }, total = 100 })
 	ns.db.settings.priceHouse = "BootyBay"

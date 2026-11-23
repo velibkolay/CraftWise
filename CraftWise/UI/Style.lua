@@ -468,15 +468,54 @@ end
 -- Header planes, baked: drawn over the whole header (880 x 56 window, 380 x 64 docked).
 function Style.HeaderArt(frame, narrow)
 	local t = frame:CreateTexture(nil, "BACKGROUND", nil, SHEET_SUBLEVEL + 1)
-	t:SetTexture(narrow and Media.headerNarrow or Media.headerWide)
-	t:SetAllPoints(frame)
+	t.cwHead = frame
+	t.mid = frame:CreateTexture(nil, "BACKGROUND", nil, SHEET_SUBLEVEL + 1)
+	t.right = frame:CreateTexture(nil, "BACKGROUND", nil, SHEET_SUBLEVEL + 1)
 	local window = Style.WindowOf(frame)
-	if window then
-		t.cwWindow = window
-		t:SetAlpha(Style.WindowAlpha(window))
-		Style.windowPlanes[t] = true
+	for _, plane in ipairs({ t, t.mid, t.right }) do
+		if window then
+			plane.cwWindow = window
+			plane:SetAlpha(Style.WindowAlpha(window))
+			Style.windowPlanes[plane] = true
+		end
 	end
+	Style.HeaderArtSet(t, narrow, frame.GetHeight and frame:GetHeight())
 	return t
+end
+
+-- The header art is cut in three: the gold key block (left) and the cut corner (right) keep their size
+-- whatever the window's width, and only the flat dark middle stretches (#412: the whole texture used to
+-- stretch, so the gold shape grew over the first tab in a wide window). Texel columns per slice.
+local HEADER_SLICES = {
+	wide = { file = "headerWide", size = 1024, left = 256, right = 64 },
+	narrow = { file = "headerNarrow", size = 512, left = 192, right = 64 },
+}
+
+-- Points the three planes at the wide or the narrow art for a header `height` units tall (art is 64 tall).
+function Style.HeaderArtSet(art, narrow, height)
+	local sl = narrow and HEADER_SLICES.narrow or HEADER_SLICES.wide
+	local head = art.cwHead
+	local scale = (tonumber(height) or 64) / 64
+	local texture = Media[sl.file]
+	art:SetTexture(texture)
+	art.mid:SetTexture(texture)
+	art.right:SetTexture(texture)
+	art:SetTexCoord(0, sl.left / sl.size, 0, 1)
+	art.mid:SetTexCoord(sl.left / sl.size, 1 - sl.right / sl.size, 0, 1)
+	art.right:SetTexCoord(1 - sl.right / sl.size, 1, 0, 1)
+	if head then
+		art:ClearAllPoints()
+		art:SetPoint("TOPLEFT", head, "TOPLEFT", 0, 0)
+		art:SetPoint("BOTTOMLEFT", head, "BOTTOMLEFT", 0, 0)
+		art:SetWidth(sl.left * scale)
+		art.right:ClearAllPoints()
+		art.right:SetPoint("TOPRIGHT", head, "TOPRIGHT", 0, 0)
+		art.right:SetPoint("BOTTOMRIGHT", head, "BOTTOMRIGHT", 0, 0)
+		art.right:SetWidth(sl.right * scale)
+		art.mid:ClearAllPoints()
+		art.mid:SetPoint("TOPLEFT", art, "TOPRIGHT", 0, 0)
+		art.mid:SetPoint("BOTTOMRIGHT", art.right, "BOTTOMLEFT", 0, 0)
+	end
 end
 
 -- The W key (icon, minimap, compartment); 64 x 64 art, drawn at any size.

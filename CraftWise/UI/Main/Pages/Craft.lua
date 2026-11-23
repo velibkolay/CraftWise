@@ -17,17 +17,17 @@ M.CraftPage = CraftPage
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
-	MK.Column("name", L["Recipe"], 210, "LEFT", "Body", true),
+	MK.Column("name", L["Recipe"], 188, "LEFT", "Body", true),
 	-- The shell's rail column: profit per craft on the list's shared axis, zero at 18 %; the opened row's
 	-- bar in C.text, the others C.text2, losses in C.danger left of zero.
 	{ key = "rail", label = L["Profit per craft"], rail = function(r, ctx)
 		local d = r.view and r.view.rail
 		return { value = d and d.value, max = ctx.railMax, zeroAt = ZERO_AT }
 	end },
-	MK.Column("cost", L["Cost"] .. " " .. Style.Glyph("arrow", 10, "text3") .. " " .. L["sells"], 150, "RIGHT", "Figure"),
-	MK.Column("pct", L["Return"], 62, "RIGHT", "Figure", true),
+	MK.Column("cost", L["Cost"] .. " " .. Style.Glyph("arrow", 10, "text3") .. " " .. L["sells"], 172, "RIGHT", "Figure"),
+	MK.Column("pct", L["Return"], 56, "RIGHT", "Figure", true),
 	MK.Column("daily", L["Per day"], 92, "RIGHT", "Figure", true),
-	MK.Column("profit", L["Profit"], 96, "RIGHT", "FigureBold", true),
+	MK.Column("profit", L["Profit"], 96, "RIGHT", "Figure", true), -- one figure size for every money column (#412)
 	MK.Column("now", L["Now"], 76, "RIGHT", "Figure"), -- #376: the profit at the current lowest prices; hidden when the profit prices are
 }
 CraftPage.COLUMNS = COLUMNS
@@ -124,7 +124,9 @@ end
 
 -- "1g 50s → 2g 70s AH": cost, sale and its tag; a missing figure says why (pure). Also returns the
 -- two halves.
-function CraftPage.Caption(r, ctx)
+-- short = the list cell: the common "AH" tag is left out (the footer says prices are AH prices), so the
+-- price is not cut off; vendor, disenchant and "AH gross" stay (#412).
+function CraftPage.Caption(r, ctx, short)
 	local cost
 	if r.costComplete then
 		cost = MK.PlainMoney(r.cost)
@@ -138,6 +140,9 @@ function CraftPage.Caption(r, ctx)
 		sells = L["no item"]
 	elseif r.sellsFor then
 		local tag = MK.SaleTag(r.sellSource, r.cutUnverified, r.sellMarked)
+		if short and tag == "AH" then
+			tag = nil
+		end
 		sells = MK.PlainMoney(r.sellsFor) .. (tag and (" " .. tag) or "")
 		if r.disenchantView and r.deShort then
 			sells = sells .. " · " .. r.deShort
@@ -162,7 +167,7 @@ function CraftPage.View(r, ctx)
 	local view = MK.NewView(r, r.outputItemID)
 	view.rail = r.profit and { value = r.profit, zeroAt = ZERO_AT } or nil
 	view.sub, view.costText, view.sellsText = CraftPage.Caption(r, ctx)
-	view.cells.cost, view.colors.cost = view.sub, "text3"
+	view.cells.cost, view.colors.cost = (CraftPage.Caption(r, ctx, true)), "text3"
 	if r.profit then
 		view.result, view.resultColor = MK.Signed(r.profit)
 	else
@@ -246,15 +251,21 @@ function CraftPage.Hero(rows, ctx)
 		return MK.NoHero(label, why)
 	end
 	local parts = {}
-	parts[#parts + 1] = MK.ColorWord(h.color)
+	-- The recipe's skill colour in words: grey gives no skill-up (#412).
+	parts[#parts + 1] = h.color == "grey" and (Style.Hex("text3") .. L["no skill-up"] .. "|r") or MK.ColorWord(h.color)
 	local chance = MK.ChanceText(h.chance, h.chanceEstimate and "formula" or h.chanceKind)
 	if chance then
 		parts[#parts + 1] = (L["skill-up %s"]):format(chance)
 	end
 	local short = h.short and h.short[1]
+	local tip
 	if short then
-		parts[#parts + 1] = (L["short %d %s"]):format(short.missing, MK.ItemName(short.itemID))
+		parts[#parts + 1] = (L["missing %d %s"]):format(short.missing, MK.ItemName(short.itemID))
 			.. (#h.short > 1 and (" " .. (L["+%d more"]):format(#h.short - 1)) or "")
+		tip = { L["Missing reagents"] }
+		for _, s2 in ipairs(h.short) do
+			tip[#tip + 1] = (L["%d x %s"]):format(s2.missing, MK.ItemName(s2.itemID))
+		end
 	end
 	if h.pct then
 		parts[#parts + 1] = MK.PercentText(h.pct)
@@ -262,7 +273,7 @@ function CraftPage.Hero(rows, ctx)
 	local figure, color = MK.Signed(h.profit)
 	return {
 		label = label, name = h.name, nameColor = "text", sub = table.concat(parts, " · "),
-		figure = figure, figureColor = color, data = h,
+		figure = figure, figureColor = color, data = h, tip = tip,
 	}
 end
 
@@ -313,6 +324,23 @@ local function DrawHero(_, hero, ctx, slot)
 	frame.right:SetText(L["sells"] .. " " .. ns.FormatCoins(h.sale) .. (tag and (" · " .. tag) or ""))
 end
 
+-- The rail's scale: one outlier (a +67g row among rows of a few silver) must not shrink every other bar to
+-- a tick, so the scale is the 90th percentile of the absolute profits, never above the largest; bars beyond it
+-- run to the end of the rail (Style.RailGeometry clamps). Up to 5 rows the largest sets it (#412).
+function CraftPage.RailScale(values)
+	local abs = {}
+	for _, v in pairs(values) do
+		if type(v) == "number" then
+			abs[#abs + 1] = math.abs(v)
+		end
+	end
+	if #abs <= 5 then
+		return Style.SharedScale(abs)
+	end
+	table.sort(abs)
+	return abs[math.ceil(#abs * 0.9)]
+end
+
 function CraftPage.Model(ctx)
 	local s = ns.db.settings
 	local rows, hidden
@@ -328,7 +356,7 @@ function CraftPage.Model(ctx)
 		CraftPage.View(r, ctx)
 		values[i] = r.profit
 	end
-	ctx.railMax = Style.SharedScale(values)
+	ctx.railMax = CraftPage.RailScale(values)
 	local right, uncut = {}, 0
 	for _, r in ipairs(rows) do
 		if r.cutUnverified then
@@ -355,7 +383,7 @@ function CraftPage.Model(ctx)
 			or L["No recipes match. Clear the filter or turn on Unlearned."],
 		footer = (ctx.disenchantCheck and (L["Disenchant check: profit = expected disenchant value - reagents; measured samples from Disenchantry, else pooled, else the Classic table (guide)"] .. " · ") or "")
 			.. (s.vendorCheck and (L["Vendor check: sells to a vendor, profit = vendor price - reagents; loop = every reagent from a vendor"] .. " · ") or "")
-			.. L["Prices"] .. ": " .. MK.PriceBasisText() .. " · " .. MK.BasisNote("profit", rows),
+			.. MK.FooterPrices("profit", rows),
 		footerRight = table.concat(right, " · "),
 	}
 end

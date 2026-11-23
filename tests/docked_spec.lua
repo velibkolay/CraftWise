@@ -238,10 +238,14 @@ it("Docked: header 64 (W icon 34, title and AH status stacked at x 128), tabs on
 	-- back to the window: the window's header
 	M.SetLayout("window")
 	eq(f.head.height, 56); eq(f.head.key.width, 30)
-	eq(Point(f.head.tabs[1])[2], f.head); eq(Point(f.head.tabs[1])[4], 198)
+	eq(Point(f.head.tabs[1])[2], f.head); eq(Point(f.head.tabs[1])[4], 212)
 	eq(f.tabRule.shown, false)
 	eq(Point(f.sub)[5], -56); eq(f.sub.height, 46)
 	eq(f.head.art.texture, ns.Style.Media.headerWide)
+	-- #412: the gold key block keeps its size (256 texels at 56/64), only the dark middle stretches, and the
+	-- first tab starts after the gold
+	eq(f.head.art.width, 224); eq(f.head.art.mid.points[1][2], f.head.art); eq(f.head.art.right.width, 56)
+	assert(Point(f.head.tabs[1])[4] >= f.head.art.width - 12, "the first tab is not on the gold shape")
 end)
 
 ----------------------------------------------------------------------------------------------------
