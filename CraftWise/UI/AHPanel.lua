@@ -61,7 +61,7 @@ function P.SetClosed(closed)
 		panel:SetShown(not closed)
 	end
 	if P.toggle then
-		P.toggle:SetLabel(closed and L["CraftWise ▸"] or L["CraftWise ◂"])
+		P.toggle:SetLabel(closed and L["CraftWise >"] or L["CraftWise <"])
 	end
 	if not closed then
 		P.Update()
@@ -1214,7 +1214,7 @@ local function Create()
 	P.panel = panel
 	-- The button under the auction house frame shows and hides the panel (#402).
 	if not P.toggle then
-		P.toggle = Style.LineButton(AuctionHouseFrame, L["CraftWise ◂"], 110)
+		P.toggle = Style.LineButton(AuctionHouseFrame, L["CraftWise <"], 110)
 		P.toggle.cwAHDock = true -- docked to the AH frame by design, like the panel (tests/own_scan_progress_spec.lua)
 		P.toggle:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 4, -4) -- above the panel, which starts 30 down; not the bottom, where the tabs are
 		P.toggle:SetScript("OnClick", function()
