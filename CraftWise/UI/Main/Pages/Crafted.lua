@@ -442,6 +442,267 @@ function P.Model(ctx)
 	}
 end
 
+----------------------------------------------------------------------------------------------------
+-- Share card (#416): today's craft profit as a clean picture to screenshot. The model is pure (rows in,
+-- lines out); the drawing is below. ASCII only. Same figures as the hero: the sum of the rows' profit, so
+-- it follows the page's filters; active time and gold per hour only from measured crafts (a dash otherwise).
+----------------------------------------------------------------------------------------------------
+
+P.CARD_TOP = 5
+local DASH = "-" -- ASCII: the page's dash is not in every font
+
+local function SignedText(copper)
+	if copper == nil then
+		return DASH
+	end
+	return (copper < 0 and "-" or "+") .. (MK.PlainMoney(math.abs(copper)) or "0c")
+end
+
+-- ctx = { name, level, now, profession, char, query (filter names, nil = all), ledgerChange (copper or nil) }.
+-- Returns { title, who, date, filters, empty, emptyText, figure = { value, text, negative }, figureLabel,
+-- figureNote, stats = { crafts, active, perHour, timedNote }, top = { { icon, name, count, profit, text } },
+-- week = { value, text }, total = { value, text }, money = { value, text, label } or nil }.
+function P.CardModel(rows, ctx)
+	ctx = ctx or {}
+	local today, profitToday, anyToday = 0, 0, false
+	local profitWeek, anyWeek, profitAll, anyAll = 0, false, 0, false
+	local activeToday, timedToday, timedProfit = nil, 0, 0
+	local priced = {}
+	for _, r in ipairs(rows) do
+		today = today + (r.today or 0)
+		if r.profitToday then
+			profitToday, anyToday = profitToday + r.profitToday, true
+		end
+		if r.profitWeek then
+			profitWeek, anyWeek = profitWeek + r.profitWeek, true
+		end
+		if r.profitTotal then
+			profitAll, anyAll = profitAll + r.profitTotal, true
+		end
+		if r.activeToday then
+			activeToday = (activeToday or 0) + r.activeToday
+			timedToday, timedProfit = timedToday + (r.timedToday or 0), timedProfit + (r.timedProfitToday or 0)
+		end
+		if (r.today or 0) > 0 and r.profitToday then
+			priced[#priced + 1] = r
+		end
+	end
+	table.sort(priced, function(a, b)
+		if a.profitToday ~= b.profitToday then
+			return a.profitToday > b.profitToday
+		end
+		if (a.name or "") ~= (b.name or "") then
+			return (a.name or "") < (b.name or "")
+		end
+		return a.recipeID < b.recipeID
+	end)
+	local top = {}
+	for i = 1, math.min(P.CARD_TOP, #priced) do
+		local r = priced[i]
+		top[i] = { icon = r.icon, name = r.name, count = r.today, countText = "x" .. CL.Format(r.today),
+			profit = r.profitToday, text = SignedText(r.profitToday) }
+	end
+	local function Fig(any, v)
+		return { value = any and v or nil, text = any and SignedText(v) or DASH }
+	end
+	local filters = { ctx.char or L["all characters"], ctx.profession or L["all professions"] }
+	if ctx.query and ctx.query ~= "" then
+		filters[#filters + 1] = "\"" .. ctx.query .. "\""
+	end
+	local who = ctx.name or ""
+	if ctx.level then
+		who = who .. (who ~= "" and " " or "") .. (L["level %d"]):format(ctx.level)
+	end
+	local m = {
+		title = "CraftWise",
+		who = who,
+		date = ctx.now and date("%Y-%m-%d", ctx.now) or "",
+		filters = table.concat(filters, ", "),
+		empty = today == 0,
+		figure = Fig(anyToday, profitToday),
+		figureLabel = L["Estimated craft profit today"],
+		figureNote = L["Estimated at AH prices, not money received"],
+		top = top,
+		week = Fig(anyWeek, profitWeek),
+		total = Fig(anyAll, profitAll),
+	}
+	m.figure.negative = anyToday and profitToday < 0 or false
+	if today == 0 then
+		m.emptyText = #rows == 0 and L["Nothing crafted yet."] or L["Nothing crafted today."]
+	end
+	local hasActive = activeToday and activeToday >= 1
+	m.stats = {
+		crafts = CL.Format(today),
+		active = hasActive and CL.FormatDuration(activeToday) or DASH,
+		perHour = (hasActive and timedProfit ~= 0) and (SignedText(timedProfit * 3600 / activeToday) .. "/h") or DASH,
+	}
+	if hasActive and timedToday < today then
+		m.stats.timedNote = (L["%s of %s crafts timed"]):format(CL.Format(timedToday), CL.Format(today))
+	end
+	if ctx.ledgerChange ~= nil then
+		m.money = { value = ctx.ledgerChange, text = SignedText(ctx.ledgerChange), label = L["Gold change today (ledger, real money)"] }
+	end
+	return m
+end
+
+-- The context of the live card: this character, the page's filters, the ledger's day.
+function P.CardContext(now)
+	local ctx = { now = now or time(), query = MK.state.query }
+	ctx.name = UnitName and UnitName("player")
+	ctx.level = UnitLevel and UnitLevel("player")
+	ctx.profession = P.state.line and LineName(P.state.line) or nil
+	ctx.char = P.state.char and CL.CharLabel(P.state.char) or nil
+	local sum = ns.Ledger and ns.Ledger.Summary and ns.Ledger.Summary("today")
+	ctx.ledgerChange = sum and sum.change or nil
+	return ctx
+end
+
+local CARD = { W = 440, H = 470, PAD = 24 }
+
+local function Coins(fs, v)
+	if v == nil then
+		fs:SetText(DASH)
+		return
+	end
+	fs:SetText((v < 0 and "-" or "+") .. (ns.FormatCoins(math.abs(v)) or "0c"))
+end
+
+local function BuildCard()
+	local C = Style.C
+	local f = CreateFrame("Frame", "CraftWiseShareCard", UIParent)
+	f.cwWindow = "main"
+	f:SetSize(CARD.W, CARD.H)
+	f:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
+	f:SetFrameStrata("DIALOG")
+	f:SetClampedToScreen(true)
+	f:EnableMouse(true)
+	Style.Sheet(f, C.sheet, C.flap, 22, true)
+	local pad = CARD.PAD
+	f.title = Style.Text(f, "Brand", "text")
+	f.title:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -pad)
+	f.close = Style.Chip(f, L["Close"])
+	f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -pad + 2)
+	f.close:SetScript("OnClick", function()
+		f:Hide()
+	end)
+	f.who = Style.Text(f, "Body", "text2")
+	f.who:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -6)
+	f.filters = Style.Text(f, "Caption", "text3")
+	f.filters:SetPoint("TOPLEFT", f.who, "BOTTOMLEFT", 0, -2)
+	local rule = Style.Rule(f, "H")
+	rule:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -92)
+	rule:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -92)
+	f.figureLabel = Style.Text(f, "Label", "text3")
+	f.figureLabel:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -106)
+	f.figure = Style.Text(f, "FigureXL", "text")
+	f.figure:SetPoint("TOPLEFT", f.figureLabel, "BOTTOMLEFT", 0, -4)
+	f.figureNote = Style.Text(f, "Caption", "text3")
+	f.figureNote:SetPoint("TOPLEFT", f.figure, "BOTTOMLEFT", 0, -4)
+	-- Three small figures side by side.
+	f.stats = {}
+	local colW = (CARD.W - 2 * pad) / 3
+	for i, label in ipairs({ L["Crafts today"], L["Active time"], L["Gold per active hour"] }) do
+		local cap = Style.Text(f, "Caption", "text3")
+		cap:SetPoint("TOPLEFT", f, "TOPLEFT", pad + (i - 1) * colW, -200)
+		cap:SetText(label)
+		local v = Style.Text(f, "FigureBold", "text")
+		v:SetPoint("TOPLEFT", cap, "BOTTOMLEFT", 0, -3)
+		f.stats[i] = v
+	end
+	f.timedNote = Style.Text(f, "Caption", "text3")
+	f.timedNote:SetPoint("TOPLEFT", f, "TOPLEFT", pad + colW, -240)
+	local rule2 = Style.Rule(f, "H")
+	rule2:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -258)
+	rule2:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -258)
+	f.listLabel = Style.Text(f, "Label", "text3")
+	f.listLabel:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -268)
+	f.listLabel:SetText(L["Top recipes today"])
+	f.emptyText = Style.Text(f, "Body", "text2")
+	f.emptyText:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -290)
+	f.rows = {}
+	for i = 1, P.CARD_TOP do
+		local row = CreateFrame("Frame", nil, f)
+		row:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -288 - (i - 1) * 26)
+		row:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, -288 - (i - 1) * 26)
+		row:SetHeight(24)
+		row.icon = row:CreateTexture(nil, "ARTWORK")
+		row.icon:SetSize(20, 20)
+		row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+		row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		row.profit = Style.Text(row, "FigureBold", "text")
+		row.profit:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+		row.count = Style.Text(row, "Figure", "text2")
+		row.count:SetPoint("RIGHT", row.profit, "LEFT", -14, 0)
+		row.name = Style.Text(row, "Body", "text")
+		row.name:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
+		row.name:SetPoint("RIGHT", row.count, "LEFT", -8, 0)
+		row.name:SetJustifyH("LEFT")
+		row.name:SetWordWrap(false)
+		f.rows[i] = row
+	end
+	local rule3 = Style.Rule(f, "H")
+	rule3:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad, 78)
+	rule3:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -pad, 78)
+	f.weekLabel = Style.Text(f, "Caption", "text3")
+	f.weekLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad, 50)
+	f.weekLabel:SetText(L["Profit, last 7 days"])
+	f.week = Style.Text(f, "Figure", "text")
+	f.week:SetPoint("TOPLEFT", f.weekLabel, "BOTTOMLEFT", 0, -2)
+	f.totalLabel = Style.Text(f, "Caption", "text3")
+	f.totalLabel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad + colW * 1.5, 50)
+	f.totalLabel:SetText(L["Profit, total"])
+	f.total = Style.Text(f, "Figure", "text")
+	f.total:SetPoint("TOPLEFT", f.totalLabel, "BOTTOMLEFT", 0, -2)
+	f.money = Style.Text(f, "Caption", "text3")
+	f.money:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", pad, 14)
+	if UISpecialFrames then
+		table.insert(UISpecialFrames, "CraftWiseShareCard") -- Escape closes it
+	end
+	f:Hide()
+	return f
+end
+
+function P.PaintCard(f, m)
+	f.title:SetText(m.title)
+	f.who:SetText(m.who .. (m.who ~= "" and "  -  " or "") .. m.date)
+	f.filters:SetText(m.filters)
+	f.figureLabel:SetText(m.figureLabel)
+	Coins(f.figure, m.figure.value)
+	local c = Style.Color(m.figure.value == nil and "text3" or m.figure.negative and "danger" or "text")
+	f.figure:SetTextColor(c[1], c[2], c[3], 1)
+	f.figureNote:SetText(m.figureNote)
+	f.stats[1]:SetText(m.stats.crafts)
+	f.stats[2]:SetText(m.stats.active)
+	f.stats[3]:SetText(m.stats.perHour)
+	f.timedNote:SetText(m.stats.timedNote or "")
+	f.listLabel:SetShown(not m.empty)
+	f.emptyText:SetShown(m.empty)
+	f.emptyText:SetText(m.emptyText or "")
+	for i, row in ipairs(f.rows) do
+		local t = m.top[i]
+		row:SetShown(t ~= nil and not m.empty)
+		if t then
+			row.icon:SetTexture(t.icon)
+			row.name:SetText(t.name)
+			row.count:SetText(t.countText)
+			Coins(row.profit, t.profit)
+		end
+	end
+	Coins(f.week, m.week.value)
+	Coins(f.total, m.total.value)
+	f.money:SetText(m.money and (m.money.label .. ": " .. m.money.text) or "")
+end
+
+function P.ShowCard()
+	if not P.card then
+		P.card = BuildCard()
+	end
+	P.PaintCard(P.card, P.CardModel(P.Rows(time()), P.CardContext(time())))
+	P.card:Show()
+	P.card:Raise()
+end
+ns.OpenShareCard = P.ShowCard
+
 -- Row tooltip: the crafted item, then the log lines (per character, undated part).
 function P.RowTooltip(owner, r)
 	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
@@ -526,6 +787,18 @@ function P.ListTools(slot)
 	local chip = Style.Chip(slot, "")
 	slot.char = chip
 	chip:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+	local share = Style.Chip(slot, L["Share card"])
+	slot.share = share
+	share:SetPoint("RIGHT", chip, "LEFT", -8, 0)
+	share:SetScript("OnClick", function()
+		P.ShowCard()
+	end)
+	share:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Share card"], L["A clean picture of today's craft profit to screenshot. Also /craftwise card."])
+	end)
+	share:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
 	chip:SetScript("OnClick", function(self)
 		Toggle(self, function()
 			local entries = { { ALL, L["All characters"] } }

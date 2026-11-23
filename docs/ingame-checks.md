@@ -1493,3 +1493,10 @@ No TOC change, `/reload` is enough. Needs a Leatherworker who knows Cured Rugged
 - [ ] Footer reads "Prices: typical price at the Horde AH (Auctionator when it has none) · reagents: bought at the AH".
 - [ ] AH panel: the snipe form caption reads "Add to the snipe list: item, max price each, buy up to (count)" and fits on one or two lines.
 - [ ] Window layout (name column 188 wide): the muted "cd 71h, ready, needs Tanning Rack" behind the recipe name is clipped, not drawn over the next column, and the name itself stays readable. The hero subtitle with "missing 1 Rugged Hide +1 more" and the cooldown text still fits the card.
+
+## Make › Crafted: share card (#416)
+- No TOC change, `/reload` is enough. Craft a few recipes, open Make › Crafted and click "Share card" (list bar, left of the character chip), or type `/craftwise card`. A centered CraftWise sheet opens on top of the main window: "CraftWise", character name and level, the date, and the filters ("all characters, all professions").
+- The big figure is the same number as the Crafted hero's "Estimated profit today", under it "Estimated at AH prices, not money received". Crafts today, Active time and Gold per active hour sit under it; the last two show "-" until crafts were timed (never a guess). "N of M crafts timed" shows when only some were.
+- Top recipes today: up to 5 rows (icon, name, xcount, profit), best profit first. Below: profit of the last 7 days and in total, and a "Gold change today (ledger, real money)" line apart from the estimate.
+- Pick one character or profession in Crafted, open the card again: the filters line names them and the figures follow. With nothing crafted today (or another character): "Nothing crafted today." and the 7-day figures stay.
+- Esc and the Close chip close it. At the default UI scale nothing is clipped or overlapping, long recipe names are cut with room left for count and profit, text is all ASCII, and the whole card fits one screenshot.

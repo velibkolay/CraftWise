@@ -1065,3 +1065,72 @@ it("Crafted hero: total profit follows the character filter and drops the priced
 	assert(hero.tip == nil and not hero.sub:find("profit 7 days", 1, true), "no priced craft in the filtered rows: no total")
 	MK.state.query = ""
 end)
+
+-- Share card (#416): the pure model
+local function cardRow(id, name, today, profit, extra)
+	local r = { recipeID = id, name = name, icon = 100 + id, today = today, week = today, total = today, profitToday = profit,
+		profitWeek = profit, profitTotal = profit }
+	for k, v in pairs(extra or {}) do r[k] = v end
+	return r
+end
+
+it("share card: the figure is the hero's sum, the top 5 are by profit today, ASCII only", function()
+	local ns = setup()
+	local P = ns.Main.CraftedPage
+	local rows = {
+		cardRow(1, "A", 10, 500), cardRow(2, "B", 5, 9000), cardRow(3, "C", 1, -200), cardRow(4, "D", 2, 700),
+		cardRow(5, "E", 3, 100), cardRow(6, "F", 4, 50), cardRow(7, "Old", 0, nil, { week = 4, profitWeek = 400 }),
+	}
+	local m = P.CardModel(rows, { name = "Velikopter", level = 60, now = T(2026, 11, 15) })
+	eq(m.empty, false)
+	eq(m.figure.value, 10150)
+	eq(m.figure.negative, false)
+	eq(#m.top, 5)
+	eq(m.top[1].name, "B"); eq(m.top[2].name, "D"); eq(m.top[3].name, "A"); eq(m.top[5].name, "F")
+	eq(m.top[1].countText, "x5")
+	eq(m.stats.crafts, "25")
+	eq(m.stats.active, "-"); eq(m.stats.perHour, "-")
+	eq(m.who, "Velikopter level 60")
+	eq(m.date, "2026-11-15")
+	eq(m.filters, "all characters, all professions")
+	eq(m.week.value, 10550)
+	for _, text in ipairs({ m.who, m.filters, m.figure.text, m.week.text, m.total.text, m.stats.perHour }) do
+		assert(not text:find("[\128-\255]"), "ASCII only: " .. text)
+	end
+end)
+
+it("share card: active time and gold per hour only from measured crafts, with the timed note", function()
+	local ns = setup()
+	local rows = { cardRow(1, "A", 10, 1000, { activeToday = 1800, timedToday = 6, timedProfitToday = 600 }), cardRow(2, "B", 4, 400) }
+	local m = ns.Main.CraftedPage.CardModel(rows, {})
+	eq(m.stats.active, ns.CraftLog.FormatDuration(1800))
+	eq(m.stats.perHour, "+" .. ns.Main.Make.PlainMoney(1200) .. "/h")
+	eq(m.stats.timedNote, "6 of 14 crafts timed")
+end)
+
+it("share card: nothing crafted today says so and keeps the 7-day figures; filters and ledger are named", function()
+	local ns = setup()
+	local rows = { cardRow(1, "A", 0, nil, { week = 3, profitWeek = 300, profitTotal = 300 }) }
+	local m = ns.Main.CraftedPage.CardModel(rows, { char = "Alt Mage", profession = "Alchemy", query = "pot", ledgerChange = -150 })
+	eq(m.empty, true)
+	eq(m.emptyText, "Nothing crafted today.")
+	eq(m.figure.value, nil)
+	eq(m.week.value, 300)
+	eq(m.filters, "Alt Mage, Alchemy, \"pot\"")
+	eq(m.money.value, -150)
+	assert(m.money.text:sub(1, 1) == "-", "signed with an ASCII minus")
+	eq(ns.Main.CraftedPage.CardModel({}, {}).emptyText, "Nothing crafted yet.")
+	eq(ns.Main.CraftedPage.CardModel({}, {}).money, nil)
+end)
+
+it("share card: opens from the slash command, shows today's numbers and closes with Escape's frame", function()
+	local ns, stub = setup()
+	time = function() return T(2026, 11, 15) end
+	seedLog(ns)
+	SlashCmdList["CRAFTWISE"]("card")
+	local f = ns.Main.CraftedPage.card
+	assert(f and f:IsShown(), "card shown")
+	assert(f.title:GetText() == "CraftWise")
+	f:Hide()
+	assert(not f:IsShown())
+end)
