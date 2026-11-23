@@ -153,7 +153,9 @@ it("Search key: after a purchase it searches the same line again; during a start
 	ns.Snipe.Set(CLOTH, 100, 5); ns.Snipe.Set(SWORD, 700, nil)
 	Commodity(stub, { { 40, 5 } })
 	Press(ns.AHBuy.KeySearch); stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
-	Press(ns.AHBuy.KeyBuy); stub.Fire("COMMODITY_PRICE_UPDATED", 40, 200)
+	Press(ns.AHBuy.KeyBuy)
+	ns.AHBuy.state.armed = nil -- a quote no click armed (#408) waits for a press instead of confirming itself
+	stub.Fire("COMMODITY_PRICE_UPDATED", 40, 200)
 	eq(ns.AHBuy.state.phase, "confirm")
 	Press(ns.AHBuy.KeySearch) -- the next line while a quote is open
 	eq(ah.calls[#ah.calls], "cancel", "the open quote is given up, not left hanging"); eq(ah.searches[#ah.searches].key.itemID, SWORD)
@@ -201,7 +203,7 @@ it("Buy key: above his max nothing is bought; the quantity limit caps a commodit
 	eq(ok, false); assert(why:find("max price"), why); eq(#ah2.calls, 0)
 end)
 
-it("Buy key: a commodity takes two presses (start, then confirm); a price above his max or the shown total is cancelled", function()
+it("Buy key: a commodity with his max is one press (the quote confirms itself, #408); a price above his max or units x max is cancelled", function()
 	local ns, stub, ah = Setup()
 	ns.Snipe.Set(CLOTH, 90, 6)
 	Commodity(stub, { { 40, 5 }, { 90, 10 } })
@@ -212,8 +214,8 @@ it("Buy key: a commodity takes two presses (start, then confirm); a price above 
 	K("up")
 	eq(Press(K), false, "no quote yet: a press while the server has not answered confirms nothing"); eq(#ah.calls, 1)
 	stub.Fire("COMMODITY_PRICE_UPDATED", 40, 5 * 40 + 90)
-	eq(ns.AHBuy.state.phase, "confirm")
-	eq(Press(K), true); eq(table.concat(ah.calls, ","), "start:100:6,confirm:100:6")
+	eq(table.concat(ah.calls, ","), "start:100:6,confirm:100:6", "the one press started it and the quote confirmed it, once")
+	eq(Press(K), false, "busy: a press while the purchase is out buys nothing more"); eq(#ah.calls, 2)
 	stub.Fire("COMMODITY_PURCHASE_SUCCEEDED")
 	-- the price rises above his max between start and confirm: cancelled, never confirmed
 	local ns2, stub2, ah2 = Setup()

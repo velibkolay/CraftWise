@@ -5,9 +5,10 @@
 --   * C_AuctionHouse.PlaceBid, StartCommoditiesPurchase and ConfirmCommoditiesPurchase are each called once, in
 --     this file (AHBuy.Execute and AHBuy.Confirm), and these two are reached only from AHBuy.Click and
 --     AHBuy.Accept, which only the panel's Buy button (OnClick), the client's confirm dialog (OnAccept) and,
---     since part 2, the "AH: buy best" key (AHBuy.KeyBuy) call. All three are a click or a key press. Nothing
---     here runs on an event, a timer or a loop; no retry, no queue. A spec reads
---     the source and fails if the calls or their callers appear anywhere else.
+--     since part 2, the "AH: buy best" key (AHBuy.KeyBuy) call. All three are a click or a key press. There is no
+--     timer, no loop, no retry and no queue. One exception, #408: the quote of a commodity purchase that a click
+--     started on a line with a max price confirms itself (see below). A spec reads the source and fails if the
+--     calls or their callers appear anywhere else.
 --   * Right before each call the auction is read again: same item, unit price at most the line's max, total
 --     at most what the button showed, enough gold. If anything differs nothing is bought and the panel says
 --     why (the shown plan is replaced by the live one).
@@ -15,9 +16,19 @@
 --     asks once more with the client's confirm dialog (StaticPopup, as Blizzard's BUYOUT_AUCTION does).
 --   * One purchase per click: after a call the button stays disabled until its result arrives (success or an
 --     error). There is no timeout that frees it; closing the auction house does.
---   * A commodity needs two clicks: the first starts the purchase and the server answers with the price
---     (COMMODITY_PRICE_UPDATED), the second (a button of its own showing that price) confirms it. A price
---     above what the first click showed, or above the line's max, is never confirmed: it is cancelled and shown.
+--   * A commodity on a line WITH a max price is one click (#408): the click starts the purchase and arms
+--     S.armed for that purchase only. When the server's quote (COMMODITY_PRICE_UPDATED) arrives and a purchase
+--     is armed, the quote is confirmed right away (AHBuy.Confirm, from the event handler, once) if the unit price
+--     is at most the max AND the total is at most units x max; otherwise it is cancelled and the panel says why.
+--     The arm is used up by the first quote, and cleared by a new pick, a search, an error, a failed or finished
+--     purchase and by closing the auction house. A quote that no click armed is never confirmed. If the client
+--     refuses a confirm made outside a click (ADDON_ACTION_BLOCKED, or a Lua error), the panel falls back to the
+--     old second click ("Confirm: buy ...").
+--   * A commodity on a line WITHOUT a max price needs two clicks: the first starts the purchase and the server
+--     answers with the price (COMMODITY_PRICE_UPDATED), the second (a button of its own showing that price)
+--     confirms it. A price above what the first click showed is never confirmed: it is cancelled and shown.
+--   * The units of a commodity purchase are what is listed at or below the max, at most the line's need; for
+--     a line with a limit of its own ("up to N", the snipe list) what this run bought already is taken off N.
 --   * After a purchase the results are old, with one exception (#335, item auctions only): the client sends the
 --     item's results again after a purchase (ITEM_SEARCH_RESULTS_UPDATED); a list that arrives AFTER the purchase
 --     completed (or, when it came first, one that no longer holds the bought auction) marks the list fresh and
@@ -53,7 +64,7 @@
 --   Now, ending in COMMODITY_PURCHASE_SUCCEEDED / COMMODITY_PURCHASE_FAILED (BuyDialog.lua). Errors:
 --   AUCTION_HOUSE_SHOW_ERROR with AuctionHouseUtil.GetErrorText (Frame.lua line 437).
 -- Pure parts (Plan, Describe) take plain data so the specs can feed them.
-local _, ns = ...
+local addonName, ns = ...
 
 local AHBuy = {}
 ns.AHBuy = AHBuy
@@ -69,6 +80,7 @@ local S = {
 	isCommodity = nil, -- from the item key info or from the kind of result that arrived
 	shown = nil, -- the plan the button showed last
 	quote = nil, -- { unit, total } the server's price of a started commodity purchase
+	armed = nil, -- { itemID, units, maxUnit }: a click started this commodity purchase; its quote is confirmed once (#408)
 	message = nil, -- what the panel says
 	bought = {}, -- [auctionID] = true: item auctions bought since the AH opened; never planned again (#335)
 	errored = nil, -- { auctionID, units, total, err }: an item buy the server answered with an error; it can still complete (#340)
@@ -156,7 +168,7 @@ end
 
 -- The button: its text and whether it can be pressed, from the shown plan (nil, why without one), the phase,
 -- whether a purchase call is out, and the gold the player has.
-function AHBuy.Describe(plan, why, phase, busy, money)
+function AHBuy.Describe(plan, why, phase, busy, money, oneClickMax)
 	if busy then
 		return "Waiting for the auction house...", false
 	end
@@ -168,6 +180,9 @@ function AHBuy.Describe(plan, why, phase, busy, money)
 	end
 	if phase == "confirm" then
 		return ("Confirm: buy %d for %s"):format(plan.units, Money(plan.total)), true
+	end
+	if oneClickMax and not plan.auctionID then -- #408: one click buys up to this many at or below the max (ASCII: the font has no <=)
+		return ("Buy up to %d at <= %s"):format(plan.units, ns.Snipe and ns.Snipe.PriceText(oneClickMax) or tostring(oneClickMax)), true
 	end
 	local more = plan.more and plan.more > 0 and (" (%d more under max)"):format(plan.more) or ""
 	return ("Buy %d for %s%s"):format(plan.units, Money(plan.total), more), true
@@ -236,7 +251,14 @@ function AHBuy.Live()
 		end
 		rows = keep
 	end
-	local plan = AHBuy.Plan(rows, S.isCommodity, t.need, t.maxUnit)
+	local need = t.need
+	if t.fixed and S.run then -- an "up to N" of his own: what this run bought already comes off it (#408)
+		need = need - (S.run.units or 0)
+		if need < 1 then
+			return nil, ("Already bought %d: that is your limit"):format(S.run.units)
+		end
+	end
+	local plan = AHBuy.Plan(rows, S.isCommodity, need, t.maxUnit)
 	if not plan then
 		return nil, t.maxUnit and "Nothing is listed at or below the max price" or "Nothing is listed"
 	end
@@ -279,6 +301,7 @@ end
 
 -- Gives up a commodity quote that was started and not confirmed (a new pick or search replaces it).
 local function DropQuote()
+	S.armed = nil
 	if S.phase == "confirm" or S.phase == "quoting" then
 		C_AuctionHouse.CancelCommoditiesPurchase()
 	end
@@ -418,7 +441,9 @@ local function Recheck(shown)
 	if t.maxUnit and plan.unitMax > t.maxUnit then
 		return nil, "A unit costs more than your max price"
 	end
-	if plan.total > shown.total then
+	-- A line with a max price (#408): a total that moved is fine while every unit is at or below the max (the plan
+	-- only holds such units). Without a max the total must not rise above what the button showed.
+	if plan.total > shown.total and not (S.isCommodity and t.maxUnit) then
 		return nil, ("The price changed: %s now, the button showed %s"):format(Money(plan.total), Money(shown.total))
 	end
 	if not S.isCommodity and (plan.auctionID ~= shown.auctionID or plan.total ~= shown.total) then
@@ -461,6 +486,7 @@ function AHBuy.Execute(shown)
 	S.message, S.errored = nil, nil
 	if S.isCommodity then
 		S.shown, S.phase = plan, "quoting"
+		S.armed = S.target.maxUnit and { itemID = plan.itemID, units = plan.units, maxUnit = S.target.maxUnit } or nil -- #408
 		C_AuctionHouse.StartCommoditiesPurchase(plan.itemID, plan.units)
 	else
 		S.shown, S.phase, S.bidSeq = plan, "buying", S.listSeq
@@ -470,22 +496,34 @@ function AHBuy.Execute(shown)
 	return true
 end
 
--- The second click of a commodity purchase: confirms the price the server quoted, if it is still what the
+-- Is the server's quote one to confirm? nil when it is, else why not. A line with a max price (#408): the unit
+-- price at most the max and the total at most units x max. Without a max: the total at most what the button showed.
+local function QuoteWhy(t, q, shown)
+	if t.maxUnit then
+		if q.unit > t.maxUnit then
+			return ("The price is %s a unit, above your max %s: not bought"):format(Money(q.unit), Money(t.maxUnit))
+		end
+		if q.total > shown.units * t.maxUnit then
+			return ("The total %s is above %d x your max %s: not bought"):format(Money(q.total), shown.units, Money(t.maxUnit))
+		end
+	elseif q.total > shown.total then
+		return ("The price rose to %s (you saw %s): not bought"):format(Money(q.total), Money(shown.total))
+	end
+end
+
+-- The second click of a commodity purchase (or, #408, the quote of a purchase a click started on a line with a
+-- max price; `auto`): confirms the price the server quoted, if it is still what the
 -- button showed. Called only by Click.
-function AHBuy.Confirm()
+function AHBuy.Confirm(auto)
 	local t, q, shown = S.target, S.quote, S.shown
 	if S.busy or S.phase ~= "confirm" or not (t and q and shown) then
 		return Refuse("Search again")
 	end
-	if t.maxUnit and q.unit > t.maxUnit then
+	local why = QuoteWhy(t, q, shown)
+	if why then
 		C_AuctionHouse.CancelCommoditiesPurchase()
 		S.phase, S.quote = "stale", nil
-		return Refuse("The price rose above your max price: not bought")
-	end
-	if q.total > shown.total then
-		C_AuctionHouse.CancelCommoditiesPurchase()
-		S.phase, S.quote = "stale", nil
-		return Refuse(("The price rose to %s (you saw %s): not bought"):format(Money(q.total), Money(shown.total)))
+		return Refuse(why)
 	end
 	if C_AuctionHouse.GetQuoteDurationRemaining and C_AuctionHouse.GetQuoteDurationRemaining() <= 0 then
 		S.phase, S.quote = "stale", nil
@@ -494,10 +532,25 @@ function AHBuy.Confirm()
 	if GetMoney and GetMoney() < q.total then
 		return Refuse("Not enough gold")
 	end
-	S.busy, S.phase, S.message = true, "buying", nil
-	C_AuctionHouse.ConfirmCommoditiesPurchase(shown.itemID, shown.units)
+	S.busy, S.phase, S.message, S.autoConfirm = true, "buying", nil, auto or nil
+	local ok = pcall(function()
+		C_AuctionHouse.ConfirmCommoditiesPurchase(shown.itemID, shown.units)
+	end)
+	if not ok then
+		AHBuy.ConfirmRefused() -- the client did not take it: the old second click stays
+		return false
+	end
 	Changed()
 	return true
+end
+
+-- A confirm the client did not take (an error, or ADDON_ACTION_BLOCKED for a call without a fresh click): nothing
+-- was bought; the quote stays and the button asks for the second click, as before #408.
+function AHBuy.ConfirmRefused()
+	if S.phase == "buying" and S.quote and S.autoConfirm then
+		S.busy, S.phase, S.autoConfirm = false, "confirm", nil
+		Say("The client wants a click to confirm: click Confirm")
+	end
 end
 
 local EnsureDialog -- below
@@ -591,7 +644,7 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 	Changed()
 end)
 ns.On("AUCTION_HOUSE_CLOSED", function()
-	S.open, S.busy, S.phase, S.shown, S.quote, S.asking = false, false, "idle", nil, nil, nil
+	S.open, S.busy, S.phase, S.shown, S.quote, S.asking, S.armed, S.autoConfirm = false, false, "idle", nil, nil, nil, nil, nil
 	S.bought, S.run, S.afterBuy, S.errored = {}, nil, false, nil
 	held.search, held.buy = nil, nil
 	Changed()
@@ -613,39 +666,65 @@ ns.On("ITEM_SEARCH_RESULTS_ADDED", function(_, itemKey)
 end)
 ns.On("AUCTION_HOUSE_THROTTLED_SYSTEM_READY", Changed)
 
--- The server's price for a started commodity purchase. Never confirmed from here: a price within what the
--- button showed waits for the player's second click, a higher one is cancelled and shown.
-ns.On("COMMODITY_PRICE_UPDATED", function(_, unit, total)
+-- The server's price for a started commodity purchase. On a line with a max price a click armed it (#408): the
+-- quote is confirmed at once when it is within the max, else cancelled. Nothing armed (no max price, or a quote
+-- that no click asked for): never confirmed from here, a price within what the button showed waits for the
+-- player's second click and a higher one is cancelled and shown.
+local function OnQuote(_, unit, total)
 	local t, shown = S.target, S.shown
 	if S.phase ~= "quoting" or not (t and shown) then
 		return
 	end
 	S.busy = false
-	if (t.maxUnit and unit > t.maxUnit) or total > shown.total then
+	local armed = S.armed
+	S.armed = nil -- used up by the first quote
+	local q = { unit = unit, total = total }
+	local why = QuoteWhy(t, q, shown)
+	if why then
 		C_AuctionHouse.CancelCommoditiesPurchase()
 		S.phase, S.quote = "stale", nil
-		Say(("The price is %s now (you saw %s): not bought. Search again."):format(Money(total), Money(shown.total)))
+		Say(why .. ". Search again.")
 		return
 	end
-	S.phase, S.quote = "confirm", { unit = unit, total = total }
+	S.phase, S.quote = "confirm", q
 	S.message = nil
+	if armed and armed.itemID == t.itemID and armed.units == shown.units and armed.maxUnit == t.maxUnit then
+		AHBuy.Confirm(true)
+		return
+	end
 	Changed()
+end
+ns.On("COMMODITY_PRICE_UPDATED", OnQuote)
+ns.On("ADDON_ACTION_BLOCKED", function(_, blamed, fn)
+	if blamed == addonName and tostring(fn):find("ConfirmCommoditiesPurchase", 1, true) then
+		AHBuy.ConfirmRefused()
+	end
 end)
 ns.On("COMMODITY_PRICE_UNAVAILABLE", function()
 	if S.phase ~= "quoting" then
 		return
 	end
-	S.busy, S.phase, S.quote = false, "stale", nil
+	S.busy, S.phase, S.quote, S.armed = false, "stale", nil, nil
 	C_AuctionHouse.CancelCommoditiesPurchase()
 	Say("The auction house has no price for that any more. Search again.")
 end)
 
+-- A commodity purchase that went through counts toward the run (#408: an "up to N" limit).
+local function CountCommodity()
+	if S.phase == "buying" and S.isCommodity and S.shown and S.quote then
+		local run = S.run or { units = 0, total = 0 }
+		run.units, run.total = run.units + S.shown.units, run.total + S.quote.total
+		S.run = run
+	end
+end
+
 local function Done(text)
-	S.busy, S.phase, S.quote, S.shown, S.afterBuy = false, "stale", nil, nil, false
+	S.busy, S.phase, S.quote, S.shown, S.afterBuy, S.armed, S.autoConfirm = false, "stale", nil, nil, false, nil, nil
 	Say(text)
 end
 ns.On("COMMODITY_PURCHASE_SUCCEEDED", function()
 	if S.phase == "buying" then
+		CountCommodity()
 		Done("Bought. The list is old: search again.")
 	end
 end)
@@ -683,6 +762,7 @@ ns.On("AUCTION_HOUSE_PURCHASE_COMPLETED", function(_, auctionID)
 		return
 	end
 	if S.isCommodity or not (shown and shown.auctionID) then
+		CountCommodity()
 		Done("Bought. The list is old: search again.")
 		return
 	end

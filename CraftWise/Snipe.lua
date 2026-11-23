@@ -172,11 +172,12 @@ function Snipe.Merge(lines)
 				end
 				copy.maxUnit, copy.snipe = e.max, true
 				copy.need = e.upTo or l.need
+				copy.fixed = e.upTo ~= nil -- his own limit: what a run bought comes off it (#408)
 				first[#first + 1] = copy
 			end
 		end
 		if not any then
-			first[#first + 1] = { kind = "snipe", itemID = e.itemID, need = e.upTo or Snipe.UPTO, maxUnit = e.max, snipe = true }
+			first[#first + 1] = { kind = "snipe", itemID = e.itemID, need = e.upTo or Snipe.UPTO, maxUnit = e.max, snipe = true, fixed = true }
 		end
 	end
 	for i, l in ipairs(lines) do
