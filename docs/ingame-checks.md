@@ -1456,3 +1456,9 @@ No TOC change, `/reload` is enough. Needs a basket with crafts from "Use plan" (
 - [ ] List bar while there are suggestions: `Tick best within budget` (ticks what the old plan would take, with its counts), `Clear ticks`, `Use ticked` (replaces the basket), `Add ticked` (adds to it), `Close list`. Do all five chips fit in the bar at your window width? The Auctionator list and Clear basket chips come back after Close list.
 - [ ] After Use ticked the Craft list, the Auctionator "CraftWise basket" list and the Buy panel follow the basket. Refresh prices (from the AH panel) rebuilds the list and keeps your ticks and counts.
 - [ ] Clicking the row opens it, so ticking takes two clicks. Is that too slow for ~30 rows? (A tick box in the row itself needs a change in the list framework.)
+
+## Tick a suggestion with one click (#406)
+
+- [ ] Make › Basket with suggestions: the `[ ]` / `[x]` at the far left of a row is its tick box. One click on it ticks or unticks at once, the row stays closed, and the header total follows.
+- [ ] A click on any other cell of the row opens it (− / + and the reason), as before. Shift-click still links the item to chat; right/middle click still opens the item menu.
+- [ ] Docked layouts (narrow window): the row shows `[x] Name`; a click opens it, where Tick/Untick is.
