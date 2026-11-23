@@ -1046,6 +1046,10 @@ SlashCmdList.CRAFTWISE = function(input)
 		end
 		return
 	end
+	if msg == "card" and ns.OpenShareCard then
+		ns.OpenShareCard() -- the share card of today's craft profit (#416)
+		return
+	end
 	if msg == "train" and ns.OpenMainWindow then
 		ns.OpenMainWindow("train") -- Make › Train (#259)
 		return
