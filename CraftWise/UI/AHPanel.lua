@@ -315,6 +315,7 @@ function P.Prefill(what)
 		P.panel.maxBox:SetText(P.form.max)
 		P.panel.upToBox:SetText(P.form.upTo)
 		P.form = nil
+		P.HintUpdate()
 	end
 end
 
@@ -338,17 +339,46 @@ function P.Save()
 	if not itemID then
 		ok, why = false, "Paste an item link or an item ID, or type a name the game knows"
 	elseif max and not why then
+		-- A max far above the market holds the first Save; the same text saved again goes through (#410).
+		local key = itemID .. "|" .. (panel.maxBox:GetText() or ""):lower():gsub("%s+", "")
+		local quote = ns.AuctionQuote and ns.AuctionQuote(itemID)
+		local market = quote and quote.copper
+		if market and market > 0 and max > market * P.WARN_RATIO and P.warned ~= key then
+			P.warned = key
+			why = (L["Max %s is %dx the market %s. Press Save again to keep it."]):format(
+				ns.Snipe.PriceText(max), math.floor(max / market), ns.Snipe.PriceText(market))
+			panel.formStatus:SetText(why)
+			return false, why
+		end
 		ok, why = ns.Snipe.Set(itemID, max, upTo)
+		if ok then
+			local limit = upTo and (L["up to %d"]):format(upTo) or L["no limit"]
+			panel.formStatus:SetText((L["Saved: %s, max %s a unit, %s"]):format(ItemName(itemID), ns.Snipe.PriceText(max), limit))
+		end
 	else
 		ok = false
 	end
-	panel.formStatus:SetText(ok and L["Saved to the snipe list"] or why or "")
-	if ok then
+	P.warned = nil
+	if not ok then
+		panel.formStatus:SetText(why or "")
+	else
 		panel.itemBox:SetText("")
 		panel.maxBox:SetText("")
 		panel.upToBox:SetText("")
+		P.HintUpdate()
 	end
 	return ok, why
+end
+
+P.WARN_RATIO = 2 -- a max above this many times the market price asks for a second Save
+P.HINT = "e.g. 1s 55c" -- shown in the empty max box
+
+-- The grey hint in the empty max box.
+function P.HintUpdate()
+	local box = P.panel and P.panel.maxBox
+	if box and box.hint then
+		if (box:GetText() or "") == "" then box.hint:Show() else box.hint:Hide() end
+	end
 end
 
 -- Is the panel there to see (the auction house is open)? Drawn again so it is current.
@@ -1172,6 +1202,12 @@ local function Create()
 	panel.formTitle:SetText(L["Snipe list: item · max per unit · up to"])
 	panel.itemBox = Box(100)
 	panel.maxBox = Box(76)
+	panel.maxBox.hint = Style.Text(panel.maxBox, "Small", "text3")
+	panel.maxBox.hint:SetPoint("LEFT", panel.maxBox, "LEFT", 6, 0)
+	panel.maxBox.hint:SetText(P.HINT)
+	panel.maxBox:SetScript("OnTextChanged", function()
+		P.HintUpdate()
+	end)
 	panel.upToBox = Box(36, true)
 	panel.saveButton = Style.ActionButton(panel, L["Save"], 48, 24)
 	panel.saveButton:SetScript("OnClick", function()
@@ -1213,6 +1249,7 @@ local function Create()
 		P.Update()
 	end)
 	P.panel = panel
+	P.HintUpdate()
 	-- The button under the auction house frame shows and hides the panel (#402).
 	if not P.toggle then
 		P.toggle = Style.LineButton(AuctionHouseFrame, L["CraftWise <"], 110)
@@ -1228,6 +1265,7 @@ local function Create()
 		panel.maxBox:SetText(P.form.max)
 		panel.upToBox:SetText(P.form.upTo)
 		P.form = nil
+		P.HintUpdate()
 	end
 end
 
