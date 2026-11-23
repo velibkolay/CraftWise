@@ -158,9 +158,9 @@ it("Main: CraftWiseMainFrame, 880 x 600 at CENTER (0, 40), MEDIUM, toplevel, cla
 	eq(f.head.height, 56)
 	eq(f.head.key.width, 30); eq(f.head.key.points[1][4], 14, "W icon at x 14")
 	eq(f.head.brand.text, "CraftWise")
-	-- tabs from x 198 with a gap of 24 (the stub's strings are 80 wide)
+	-- tabs from x 212 with a gap of 24 (the stub's strings are 80 wide)
 	for i, tab in ipairs(f.head.tabs) do
-		eq(tab.points[1][4], 198 + (i - 1) * (80 + 24), "tab " .. i)
+		eq(tab.points[1][4], 212 + (i - 1) * (80 + 24), "tab " .. i)
 	end
 	eq(f.head.close.points[1][4], -30, "close 30 from the edge")
 	eq(f.head.dock.shown, true, "the dock button (#161)")

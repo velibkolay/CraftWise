@@ -122,7 +122,7 @@ it("Craft rows: icon, name in its skill colour, rail of profit (zero at 18 %), c
 	local belt, beltFrame = Row(ns, "craft", R_BELT)
 	local v = belt.view
 	eq(v.name, "Test Belt"); eq(v.nameColor, "skill.yellow"); eq(belt.itemID, BELT, "the output item")
-	eq(Plain(v.cells.cost), "40c  1s 90c AH", "cost → sells (the arrow is a texture)")
+	eq(Plain(v.cells.cost), "40c  1s 90c", "cost → sells (the arrow is a texture)")
 	eq(Plain(v.sellsText), "1s 90c AH")
 	eq(v.cells.profit, "+" .. ns.FormatCoins(150)); eq(v.colors.profit, "text")
 	eq(v.rail.value, 150); eq(v.rail.zeroAt, 0.18)
@@ -163,7 +163,7 @@ it("Craft hero: best profit among known priced recipes, colour word, skill-up ch
 	local f = M.Frame()
 	eq(f.hero.shown, true)
 	eq(f.hero.label.text, "Best craft right now"); eq(f.hero.name.text, "Test Belt")
-	eq(Plain(f.hero.sub.text), "Yellow · skill-up ~83% · short 1 Testhide +1 more · 375%")
+	eq(Plain(f.hero.sub.text), "Yellow · skill-up ~83% · missing 1 Testhide +1 more · 375%")
 	eq(f.hero.figure.text, "+" .. ns.FormatCoins(150))
 	local slot = M.SlotsOf("craft").hero
 	local width = 880 - 44 - 32 - 240 - 170 - 48
@@ -203,7 +203,7 @@ it("Craft chips: Unlearned adds recipes you don't know; Hide unpriced leaves row
 	eq(ns.db.settings.hideUnpriced, true)
 	eq(Make.Names(ns, "craft"), "Test Belt,Test Cloak,Test Cap,Test Gloves")
 	eq(f.foot.right.text, "2 hidden: no price")
-	assert(f.foot.left.text:find("Prices: typical · Horde AH · reagents: AH", 1, true), f.foot.left.text)
+	assert(f.foot.left.text:find("Prices: typical price at the Horde AH · reagents: bought at the AH", 1, true), f.foot.left.text)
 	-- sorting by name changes the note
 	local list = M.ListOf("craft")
 	list.headers[2].scripts.OnClick(list.headers[2])
@@ -1329,4 +1329,15 @@ it("Per day, cooldown (#413): a spell cooldown caps the crafts, a Salt Shaker sp
 	assert(#tip >= 4, "the cooldown lines are in the cell's tooltip")
 	d = C.Daily({ profit = 150, outputQuantity = 1, sellSource = "auction" }, { gone = 70, days = 7 })
 	eq(d.cooldown, nil); eq(d.lines, nil)
+end)
+
+it("#412: return over 999 % reads >999%, the rail scale ignores one outlier, no raw item id is shown", function()
+	local ns, _, M = Load()
+	eq(M.Make.PercentText(14793), ">999%"); eq(M.Make.PercentText(999), "999%"); eq(M.Make.PercentText(-12), "-12%")
+	local scale = M.CraftPage.RailScale({ 6788, 50, 60, 70, 80, 90, 100, 110, 120, 130 })
+	eq(scale, 130, "the 90th percentile, not the one +67g row")
+	eq(M.CraftPage.RailScale({ 5, 1000 }), 1000, "up to 5 rows the largest sets it")
+	eq(M.CraftPage.RailScale({}), 0)
+	local name = M.Make.ItemName(99999991)
+	assert(not name:find("99999991", 1, true), name)
 end)

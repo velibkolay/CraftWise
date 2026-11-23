@@ -1199,7 +1199,7 @@ local function Create()
 		return box
 	end
 	panel.formTitle = Style.Text(panel, "Small", "text3")
-	panel.formTitle:SetText(L["Snipe list: item · max per unit · up to"])
+	panel.formTitle:SetText(L["Add to the snipe list: item, max price each, buy up to (count)"])
 	panel.itemBox = Box(100)
 	panel.maxBox = Box(76)
 	panel.maxBox.hint = Style.Text(panel.maxBox, "Small", "text3")

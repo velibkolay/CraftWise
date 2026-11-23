@@ -1482,3 +1482,14 @@ No TOC change, `/reload` is enough. Needs a Leatherworker who knows Cured Rugged
 - [ ] Build plan with a sales history for Cured Rugged Hide: the suggestion row says "Buy 2 Refined Deeprock Salt and make 2 Cured Rugged Hide" (or "Use 1 Refined Deeprock Salt you have, buy 1 ..."). With a Refined Deeprock Salt in the bags and a ready shaker the own units are used first.
 - [ ] `C_Spell.GetSpellCooldown(<transmute spell>)`: a transmute on cooldown is not in the suggestions and the plan's skipped count says so; when ready it is planned once ("cooldown: one craft every 47h"). The transmutes share one cooldown category in the game; the data does not, so two ready transmutes could both be suggested: does the second one start a cooldown after the first?
 - [ ] "ready in 2d 5h" / "5h 10m" is right against the shaker's own tooltip ("Cooldown remaining").
+
+## Main window design pass (#412)
+
+- [ ] Drag the window wider and narrower (min width to full screen): the gold key block keeps its size and the first tab (Make) always sits on the dark bar, readable. Same in a docked layout when its width is dragged. No seam or colour step where the gold block, the dark middle and the cut corner meet.
+- [ ] Make > Craft: the cost -> sells column is not cut off ("45s 89c -> 68g 34s", no "..."); the plain "AH" tag is gone, vendor / disenchant / "AH gross" still show. Money columns (Per day, Profit, Now) all one size and right aligned, coin colours the same in each.
+- [ ] Hero subtitle: "Grey" now reads "no skill-up"; a missing reagent reads "missing 1 Rugged Hide" with its real name (the id never shows: if the name is not cached it says "an item (loading its name)" and fills in a moment later); hover the hero for the full list of missing reagents.
+- [ ] A recipe with a huge return shows ">999%", not 14793%.
+- [ ] The "Profit per craft" bars: most rows show a bar of readable length, only the biggest outliers run to the end of the rail.
+- [ ] Footer reads "Prices: typical price at the Horde AH (Auctionator when it has none) · reagents: bought at the AH".
+- [ ] AH panel: the snipe form caption reads "Add to the snipe list: item, max price each, buy up to (count)" and fits on one or two lines.
+- [ ] Window layout (name column 188 wide): the muted "cd 71h, ready, needs Tanning Rack" behind the recipe name is clipped, not drawn over the next column, and the name itself stays readable. The hero subtitle with "missing 1 Rugged Hide +1 more" and the cooldown text still fits the card.

@@ -17,7 +17,7 @@ local STATUS_POLL = 0.25 -- seconds between AH status checks while the window sh
 -- Window layout (spec table, "Window layout" column; board "Window layout").
 M.WINDOW_METRICS = {
 	width = 880, height = 600, baseWidth = 880, baseHeight = 600, point = { "CENTER", "CENTER", 0, 40 }, cut = 22,
-	header = 56, keyIcon = 30, keyX = 14, tabsX = 198, tabGap = 24, rightPad = 30, buttonGap = 6, statusGap = 8,
+	header = 56, keyIcon = 30, keyX = 14, tabsX = 212, tabGap = 24, rightPad = 30, buttonGap = 6, statusGap = 8,
 	subBar = 46, pad = 22, subGap = 18, noSubBarTop = 16,
 	heroHeight = 76, heroPadX = 16, heroPadY = 12, heroCut = 14, heroLeft = 240, heroRight = 170, heroGap = 24,
 	noticeGap = 10, listBar = 40, listGap = 12, listHeader = 24, rowHeight = 36, footer = 24,
@@ -1102,7 +1102,7 @@ local function ApplyWindow(frame, m)
 	frame.edge:Hide()
 	frame.cwDockSide = nil -- docking again slides in (Docked.lua)
 	frame.sheet:SetCut(m.cut)
-	frame.head.art:SetTexture(Style.Media.headerWide)
+	Style.HeaderArtSet(frame.head.art, false, m.header)
 end
 
 M.RegisterLayout("window", { label = L["Window"], docked = false, metrics = M.WINDOW_METRICS, Apply = ApplyWindow })
