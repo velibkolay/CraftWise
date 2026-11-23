@@ -1447,3 +1447,12 @@ No TOC change, `/reload` is enough. Needs a basket with crafts from "Use plan" (
 - [ ] No text overlaps another with long item names or with 8 rows in a group; the panel height follows.
 - [ ] Craft list window (profession window): one line per craft, `Dark Leather Shoulders  0/2  needs 7 Light Leather`; hover for the kind, the profit each and the state. The rows are 20 high and none is cut.
 - [ ] Not done: Esc does not close the panel first (it is a child of the AH frame; Esc closes the AH and the panel with it).
+
+## Craft run: a suggestion list to pick from (#403)
+
+- [ ] AH panel > Craft run (open it): budget, minutes, Vendor only, Build plan, Refresh prices and one summary line of the basket (`6 recipes · 14 crafts in the basket` or `Nothing in the basket`). No plan lines, no buy list, no Use plan.
+- [ ] Build plan opens the main window on Make › Basket with the suggestions on top, best first (profit per minute). Every row reads `[ ] Name  ×N  AH  3g/min  +12g`; nothing is ticked. The header above shows `Ticked: 0 recipes · 0 crafts` and the budget and minutes you set.
+- [ ] Open a suggestion (click the row): Tick / Untick, − / count box / +, and the reason for the count (demand cap, "sells to a vendor"). Ticking turns the row's `[ ]` into `[x]`; the header total follows (crafts, cost of what is still to buy of the budget, profit, minutes of the limit). Over the budget or the minutes the header turns red; you can still go over.
+- [ ] List bar while there are suggestions: `Tick best within budget` (ticks what the old plan would take, with its counts), `Clear ticks`, `Use ticked` (replaces the basket), `Add ticked` (adds to it), `Close list`. Do all five chips fit in the bar at your window width? The Auctionator list and Clear basket chips come back after Close list.
+- [ ] After Use ticked the Craft list, the Auctionator "CraftWise basket" list and the Buy panel follow the basket. Refresh prices (from the AH panel) rebuilds the list and keeps your ticks and counts.
+- [ ] Clicking the row opens it, so ticking takes two clicks. Is that too slow for ~30 rows? (A tick box in the row itself needs a change in the list framework.)

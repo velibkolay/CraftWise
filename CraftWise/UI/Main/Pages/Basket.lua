@@ -19,7 +19,7 @@ local Style, L = ns.Style, ns.L
 local B = {}
 M.BasketPage = B
 
-local ORDER = { intermediate = -1, craft = 0, made = 0.25, flip = 0.5, auction = 1, vendor = 2, unknown = 3, done = 4 }
+local ORDER = { suggest = -2, intermediate = -1, craft = 0, made = 0.25, flip = 0.5, auction = 1, vendor = 2, unknown = 3, done = 4 }
 
 local COLUMNS = {
 	{ key = "icon", icon = true, width = 22 },
@@ -112,9 +112,66 @@ function B.MissingText(ln)
 	return table.concat(names, ", ")
 end
 
+-- The craft run's suggestions (#403) as rows on top of the page: "[ ] Name  x5  AH  3g/min  +12g". Open a row to tick it
+-- and to change its count (- / +). Nothing is ticked at first.
+function B.SuggestRows()
+	local rows = {}
+	local sg = ns.Basket.suggest
+	if not sg then
+		return rows
+	end
+	for i, sr in ipairs(sg.rows) do
+		local name = (sr.ticked and "[x] " or "[ ] ") .. (sr.name or MK.ItemName(sr.outputItemID))
+		local r = NewRow("suggest", "suggest:" .. sr.recipeID, name, sr.outputItemID, Icon(sr.outputItemID))
+		r.suggestRow, r.recipeID, r.rank = sr, sr.recipeID, i
+		r.order = ORDER.suggest + i * 1e-6 -- best first, as the planner ranked them
+		if not sr.ticked then
+			r.view.nameColor, r.view.colors.name = "text2", "text2"
+		end
+		local f = ns.Basket.SuggestFigures(sr)
+		local each, total, color = M.DASH, M.DASH, "text3"
+		if f then
+			total, color = MK.Signed(math.floor(f.profit + 0.5))
+			each = f.perMinute and (ns.FormatCoins(math.floor(f.perMinute + 0.5)) .. "/" .. L["min"]) or M.DASH
+		end
+		Fill(r, "×" .. sr.count, sr.channel == "vendor" and L["vendor"] or L["AH"], each, total, color)
+		r.ownTip = B.SuggestTip(sr, f)
+		rows[#rows + 1] = r
+	end
+	return rows
+end
+
+-- The tooltip of a suggestion: its count and why, the cost and the time.
+function B.SuggestTip(sr, f)
+	local tip = { sr.name or "", (L["Suggested %d crafts: %s"]):format(sr.suggested, ns.Basket.SuggestReason(sr)) }
+	if f then
+		tip[#tip + 1] = (L["For %d crafts: cost %s, profit %s, %s"]):format(sr.count, ns.FormatCoins(math.floor(f.cost + 0.5)),
+			ns.FormatCoins(math.floor(f.profit + 0.5)), ns.CraftLog.FormatDuration(f.seconds))
+	else
+		tip[#tip + 1] = L["A reagent price is missing for this count."]
+	end
+	return tip
+end
+
+-- The line above the list while there are suggestions: what the ticked rows come to against the limits. Over the budget or
+-- the minutes it is "danger" red: a warning, nothing stops you. Returns the name, the sub line and the colour.
+function B.SuggestHeadline(t)
+	local cost = ns.FormatCoins(t.cash)
+	if t.budget then
+		cost = cost .. " " .. L["of"] .. " " .. ns.FormatCoins(t.budget)
+	end
+	local mins = ns.CraftLog.FormatDuration(t.seconds)
+	if t.minutes then
+		mins = mins .. " " .. L["of"] .. " " .. ns.CraftLog.FormatDuration(t.minutes * 60)
+	end
+	local name = (L["Ticked: %d recipes · %d crafts"]):format(t.recipes, t.crafts)
+	local sub = (L["cost %s · profit %s · %s"]):format(cost, ns.FormatCoins(math.floor(t.profit + 0.5)), mins)
+	return name, sub, (t.overBudget or t.overTime) and "danger" or "text"
+end
+
 -- The rows of a plan (Basket.Plan()).
 function B.Rows(plan)
-	local rows = {}
+	local rows = B.SuggestRows()
 	-- The craft list (#389): intermediates first, the crafts by profit per craft-second, what is made last.
 	local list = ns.Basket.CraftList(plan, ns.Holdings.Carried())
 	plan.list = list
@@ -173,6 +230,13 @@ end
 
 function B.Hero(plan)
 	local label = L["Basket"]
+	if ns.Basket.suggest then
+		local t = ns.Basket.SuggestTotals()
+		local name, sub, color = B.SuggestHeadline(t)
+		local figure, figureColor = MK.Signed(math.floor(t.profit + 0.5))
+		return { label = L["Suggestions"], name = name, nameColor = color, sub = sub,
+			figureLabel = L["Profit of the ticked crafts"], figure = figure, figureColor = figureColor }
+	end
 	local sum = plan.list and plan.list.summary
 	if sum and sum.done then
 		local figure, color = M.DASH, "text3"
@@ -290,7 +354,30 @@ function B.Open(content, r, ctx)
 		open:SetShown(MK.CanOpenRecipe(r))
 		return open
 	end
-	if r.kind == "intermediate" or r.kind == "made" then
+	if r.kind == "suggest" then
+		local sr = r.suggestRow
+		local tick = pool:Button(sr.ticked and L["Untick"] or L["Tick"], function()
+			Bk.SuggestTick(sr.recipeID, not sr.ticked)
+		end, { L["Tick"], L["Ticked crafts count in the total above; Use ticked puts them in the basket."] }, 24)
+		tick:SetSize(60, 24)
+		tick:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -4)
+		local minus = pool:Button("−", function()
+			Bk.SuggestSetCount(sr.recipeID, sr.count - 1)
+		end, { L["One craft less"] }, 24)
+		minus:SetSize(28, 24)
+		minus:SetPoint("LEFT", tick, "RIGHT", 12, 0)
+		local box = pool:CountBox(sr.count, function(v)
+			Bk.SuggestSetCount(sr.recipeID, v)
+		end)
+		box:SetPoint("LEFT", minus, "RIGHT", 6, 0)
+		local plus = pool:Button("+", function()
+			Bk.SuggestSetCount(sr.recipeID, sr.count + 1)
+		end, { L["One craft more"] }, 24)
+		plus:SetSize(28, 24)
+		plus:SetPoint("LEFT", box, "RIGHT", 6, 0)
+		local fs = pool:Text("Small", "text3", ns.Basket.SuggestReason(sr))
+		fs:SetPoint("LEFT", plus, "RIGHT", 12, 0)
+	elseif r.kind == "intermediate" or r.kind == "made" then
 		local open = OpenButton(nil, 0, -4)
 		local text = r.kind == "made" and (L["%d made."]):format(r.run.made)
 			or (r.run.state == "ready" and L["The bags hold what these crafts need."] or (L["Missing for the next craft: %s."]):format(B.MissingText(r.run)))
@@ -682,38 +769,80 @@ ns.On("ADDON_LOADED", function(_, name)
 	end
 end)
 
+-- Use ticked / Add ticked: the ticked crafts into the basket, and a line saying so.
+function B.UseTicked(replace)
+	local n = ns.Basket.SuggestUse(replace)
+	ns.Print(n > 0 and (L["%d crafts are in the basket: buy with the Buy panel or the AH: buy best key"]):format(n) or L["Tick some crafts first"])
+	return n
+end
+
+-- The list bar: the basket's chips, or the suggestions' while there is a list.
+function B.LayoutTools(slot)
+	local on = ns.Basket.suggest ~= nil
+	local shown = {}
+	for _, chip in ipairs(slot.suggestChips) do
+		chip:SetShown(on)
+		if on then
+			shown[#shown + 1] = chip
+		end
+	end
+	for i, chip in ipairs(slot.basketChips) do
+		local show = not on and (i == 2 or ns.Basket.HasAuctionator())
+		chip:SetShown(show)
+		if show then
+			shown[#shown + 1] = chip
+		end
+	end
+	MK.LayoutChips(slot, shown)
+end
+
 M.RegisterPage({
 	key = "basket", section = "make", label = L["Basket"], order = 4, title = L["Basket"],
 	prices = true,
-	events = { "BAGS_CHANGED", "BASKET_CHANGED", "PRICES_CHANGED" },
+	events = { "BAGS_CHANGED", "BASKET_CHANGED", "PRICES_CHANGED", "SUGGEST_CHANGED" },
 	columns = COLUMNS,
 	rowHeight = 34,
 	sort = { key = "order", desc = false },
 	Model = B.Model,
 	ListTools = function(slot)
-		local clear = Style.Chip(slot, L["Clear basket"])
-		clear:SetScript("OnClick", function()
+		local function Chip(label, tipText, onClick)
+			local chip = Style.Chip(slot, label)
+			chip:SetScript("OnClick", onClick)
+			chip:HookScript("OnEnter", function(self)
+				Style.ShowTip(self, label, tipText)
+			end)
+			chip:HookScript("OnLeave", function(self)
+				Style.HideTip(self)
+			end)
+			return chip
+		end
+		local clear = Chip(L["Clear basket"], L["Empties the basket: the crafts you added. Nothing else changes."], function()
 			ns.Basket.Clear()
 		end)
-		clear:HookScript("OnEnter", function(self)
-			Style.ShowTip(self, L["Clear basket"], L["Empties the basket: the crafts you added. Nothing else changes."])
+		local list = Chip(L["Auctionator list"], L["Creates the Auctionator shopping list \"CraftWise basket\" from the AH lines. You search and buy there yourself."], B.AuctionatorList)
+		-- The craft run's suggestions (#403): shown while there is a list.
+		local best = Chip(L["Tick best within budget"], L["Ticks what the budget and minutes of the Craft run would plan, with their counts."], function()
+			ns.Basket.SuggestTickBest()
 		end)
-		clear:HookScript("OnLeave", function(self)
-			Style.HideTip(self)
+		local none = Chip(L["Clear ticks"], L["Unticks every row."], function()
+			ns.Basket.SuggestClear()
 		end)
-		local list = Style.Chip(slot, L["Auctionator list"])
-		list:SetScript("OnClick", B.AuctionatorList)
-		list:HookScript("OnEnter", function(self)
-			Style.ShowTip(self, L["Auctionator list"], L["Creates the Auctionator shopping list \"CraftWise basket\" from the AH lines. You search and buy there yourself."])
+		local use = Chip(L["Use ticked"], L["Replaces the basket with the ticked crafts."], function()
+			B.UseTicked(true)
 		end)
-		list:HookScript("OnLeave", function(self)
-			Style.HideTip(self)
+		local add = Chip(L["Add ticked"], L["Adds the ticked crafts to the basket."], function()
+			B.UseTicked(false)
 		end)
-		slot.chips = { list, clear }
-		MK.LayoutChips(slot, slot.chips)
+		local close = Chip(L["Close list"], L["Hides the suggestions. The basket stays as it is."], function()
+			ns.Basket.SuggestClose()
+		end)
+		slot.suggestChips = { best, none, use, add, close }
+		slot.basketChips = { list, clear }
+		slot.chips = { list, clear, best, none, use, add, close }
+		B.LayoutTools(slot)
 	end,
 	UpdateListTools = function(slot)
-		slot.chips[1]:SetShown(ns.Basket.HasAuctionator())
+		B.LayoutTools(slot)
 	end,
 	Open = B.Open,
 	OpenHeight = B.OpenHeight,
