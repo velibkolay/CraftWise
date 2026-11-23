@@ -555,7 +555,7 @@ function P.CardModel(rows, ctx)
 		crafts = CL.Format(today),
 		active = hasActive and P.CompactDuration(activeToday) or DASH,
 		perHour = (hasActive and timedProfit ~= 0) and (SignedText(timedProfit * 3600 / activeToday) .. "/h") or DASH,
-		perHourValue = (hasActive and timedProfit ~= 0) and timedProfit or nil,
+		perHourValue = (hasActive and timedProfit ~= 0) and (timedProfit * 3600 / activeToday) or nil,
 	}
 	if hasActive and timedToday < today then
 		m.stats.timedNote = (L["%s of %s crafts timed"]):format(CL.Format(timedToday), CL.Format(today))
@@ -781,7 +781,7 @@ function P.PaintCard(f, m)
 	At(f.who, "who")
 	f.who:SetText(m.who)
 	At(f.scope, "scope")
-	f.scope:SetText(m.scope .. "  -  " .. m.date)
+	f.scope:SetText(m.date .. "  -  " .. m.scope) -- the date first: a long search is cut at the end
 	for i, y in ipairs(lay.rules) do
 		if not f.rules[i] then
 			f.rules[i] = Style.Rule(f, "H")
@@ -833,8 +833,13 @@ function P.PaintCard(f, m)
 		end
 		f.stats[1]:SetText(m.stats.crafts)
 		f.stats[2]:SetText(m.stats.active)
-		f.stats[3]:SetText(m.stats.perHour)
-		local pc = Style.Color(m.stats.perHourValue and m.stats.perHourValue < 0 and "danger" or m.stats.perHourValue and "text" or "text3")
+		local ph = m.stats.perHourValue
+		if ph and ph > 0 then
+			f.stats[3]:SetText("+" .. (ns.FormatCoins(ph) or "0c") .. "/h") -- coin colours like the bottom row
+		else
+			f.stats[3]:SetText(m.stats.perHour) -- a loss: ASCII "-" plain, in the danger colour; no figure: a dash
+		end
+		local pc = Style.Color(ph and ph < 0 and "danger" or ph and "text" or "text3")
 		f.stats[3]:SetTextColor(pc[1], pc[2], pc[3], 1)
 		f.timedNote:SetShown(m.stats.timedNote ~= nil)
 		if m.stats.timedNote then
@@ -852,6 +857,9 @@ function P.PaintCard(f, m)
 		local t = live and m.top[i]
 		row:SetShown(t and true or false)
 		if t then
+			-- Free widths before measuring: the reused card must not keep last time's column width (it would wrap).
+			row.profit:SetWidth(0)
+			row.count:SetWidth(0)
 			row.name:SetText(t.name)
 			row.count:SetText(t.countText)
 			Money(row.profit, t.profit)

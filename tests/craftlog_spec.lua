@@ -1105,7 +1105,7 @@ it("share card: active time and gold per hour only from measured crafts, with th
 	local m = ns.Main.CraftedPage.CardModel(rows, {})
 	eq(m.stats.active, "30m")
 	eq(ns.Main.CraftedPage.CompactDuration(4020), "1h 07m"); eq(ns.Main.CraftedPage.CompactDuration(38), "38s")
-	eq(m.stats.perHourValue, 600)
+	eq(m.stats.perHourValue, 1200)
 	eq(m.stats.perHour, "+" .. ns.Main.Make.PlainMoney(1200) .. "/h")
 	eq(m.stats.timedNote, "6 of 14 crafts timed")
 end)
