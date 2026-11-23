@@ -1462,3 +1462,14 @@ No TOC change, `/reload` is enough. Needs a basket with crafts from "Use plan" (
 - [ ] Make › Basket with suggestions: the `[ ]` / `[x]` at the far left of a row is its tick box. One click on it ticks or unticks at once, the row stays closed, and the header total follows.
 - [ ] A click on any other cell of the row opens it (− / + and the reason), as before. Shift-click still links the item to chat; right/middle click still opens the item menu.
 - [ ] Docked layouts (narrow window): the row shows `[x] Name`; a click opens it, where Tick/Untick is.
+
+## AH buy: one click buys a commodity at or below the max (#408)
+Needs a snipe list entry (max price and "up to N") or a flip line for a commodity such as Thick Leather. Try it first with something cheap.
+- [ ] With the line searched, the Buy button reads "Buy up to N at <= 6s" (ASCII, no box glyph), N = the units listed at or below the max, at most "up to". A line with no max price keeps "Buy N for ..." and its second click.
+- [ ] ONE click starts the purchase and the quote confirms itself: the chat/ledger shows one bought entry and the gold taken equals the quoted total. Nothing else is needed.
+- [ ] Does `C_AuctionHouse.ConfirmCommoditiesPurchase` work from the COMMODITY_PRICE_UPDATED handler, with no fresh hardware event? It is not in the restricted list. If the client blocks it (ADDON_ACTION_BLOCKED naming CraftWise, or a Lua error), the panel must fall back by itself: the button turns into "Confirm: buy N for ..." with the line "The client wants a click to confirm", and the second click buys. Note here which of the two happened.
+- [ ] A quote above the max (let someone buy the cheap units between your search and your click, so the price rises): nothing is bought, the panel says the price is above your max or the total above N x max, and the purchase is cancelled. The button is free again after searching.
+- [ ] The total can differ from what the button showed: a price that moved up but stays at or below the max still buys.
+- [ ] "Up to N": buy part of it, search again: the button counts only what is left of N ("Already bought N: that is your limit" at the end).
+- [ ] A total above Settings "Ask above" still opens the client's confirm dialog first; accepting it buys with the same one click flow.
+- [ ] Click once and watch: exactly one StartCommoditiesPurchase and one ConfirmCommoditiesPurchase (Settings > Debug trace), no second confirm from a later COMMODITY_PRICE_UPDATED.

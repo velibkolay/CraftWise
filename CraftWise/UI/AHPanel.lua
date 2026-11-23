@@ -1057,7 +1057,8 @@ function P.Update()
 	panel.search:SetEnabled(S.target ~= nil and not S.busy)
 	panel.buy:ClearAllPoints()
 	panel.buy:SetPoint("LEFT", panel.search, "RIGHT", 8, 0)
-	local text, enabled = AB.Describe(plan, why, S.phase, S.busy, GetMoney and GetMoney() or nil)
+	local text, enabled = AB.Describe(plan, why, S.phase, S.busy, GetMoney and GetMoney() or nil,
+		S.isCommodity and S.target and S.target.maxUnit or nil)
 	panel.buy:SetLabel(text) -- the folded button's label: SetText alone would leave "Buy" on the face
 	panel.buy:SetText(text)
 	panel.buy:SetEnabled(enabled)

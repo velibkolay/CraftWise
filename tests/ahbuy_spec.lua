@@ -58,6 +58,7 @@ local function PickAndSearch(ns, stub, line, kind)
 end
 
 local FLIP = { kind = "flip", itemID = CLOTH, need = 12, maxUnit = 99, sell = 100 }
+local BASKET = { kind = "basket", itemID = CLOTH, need = 12 } -- no max price: two clicks
 
 ----------------------------------------------------------------------------------------------- plan
 
@@ -424,11 +425,11 @@ it("Buy: the auction is read again right before the call: a higher price, a vani
 	eq(AB.Click(), true); eq(#ah.calls, 1)
 end)
 
-it("Buy a commodity: the first click starts, the quote must not be higher than the button showed, the second click confirms", function()
+it("Buy a commodity without a max price: the first click starts, the quote must not be higher than the button showed, the second click confirms", function()
 	local ns, stub, ah = Setup()
 	local AB = ns.AHBuy
 	Commodity(stub, { { 40, 5 }, { 90, 10 } })
-	PickAndSearch(ns, stub, FLIP, "commodity")
+	PickAndSearch(ns, stub, BASKET, "commodity")
 	local plan = AB.Refresh()
 	eq(plan.units, 12); eq(plan.total, 40 * 5 + 90 * 7)
 	eq(AB.Click(), true)
@@ -448,11 +449,11 @@ it("Buy a commodity: the first click starts, the quote must not be higher than t
 	eq(AB.state.busy, false); eq(AB.state.phase, "stale")
 end)
 
-it("Buy a commodity: a quote above what the button showed, or above the max price, is cancelled and shown, not confirmed", function()
+it("Buy a commodity without a max price: a quote above what the button showed is cancelled and shown, not confirmed", function()
 	local ns, stub, ah = Setup()
 	local AB = ns.AHBuy
 	Commodity(stub, { { 40, 5 }, { 90, 10 } })
-	PickAndSearch(ns, stub, FLIP, "commodity")
+	PickAndSearch(ns, stub, BASKET, "commodity")
 	local plan = AB.Refresh()
 	AB.Click()
 	stub.Fire("COMMODITY_PRICE_UPDATED", 85, plan.total + 5)
@@ -465,12 +466,6 @@ it("Buy a commodity: a quote above what the button showed, or above the max pric
 	AB.Click()
 	stub.Fire("COMMODITY_PRICE_UNAVAILABLE")
 	eq(ah.calls[#ah.calls], "cancel"); eq(AB.state.busy, false)
-	-- a unit above the line's max price
-	AB.Search(); stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
-	plan = AB.Refresh()
-	AB.Click()
-	stub.Fire("COMMODITY_PRICE_UPDATED", 100, plan.total - 1)
-	eq(ah.calls[#ah.calls], "cancel")
 	for _, c in ipairs(ah.calls) do
 		assert(not c:find("^confirm"), "nothing was confirmed")
 	end
@@ -480,7 +475,7 @@ it("Buy a commodity: the confirm click checks the price again, gold and the offe
 	local ns, stub, ah = Setup()
 	local AB = ns.AHBuy
 	Commodity(stub, { { 40, 12 } })
-	PickAndSearch(ns, stub, FLIP, "commodity")
+	PickAndSearch(ns, stub, BASKET, "commodity")
 	local plan = AB.Refresh()
 	AB.Click()
 	stub.Fire("COMMODITY_PRICE_UPDATED", 40, plan.total)
@@ -491,6 +486,147 @@ it("Buy a commodity: the confirm click checks the price again, gold and the offe
 	ah.quote = 0
 	ok, why = AB.Click()
 	eq(ok, false); assert(why:find("ran out"), why); eq(#ah.calls, 1)
+end)
+
+----------------------------------------------------------------------------------------------- one click (#408)
+
+local function CountOf(ah, prefix)
+	local n = 0
+	for _, c in ipairs(ah.calls) do
+		if c:find("^" .. prefix) then n = n + 1 end
+	end
+	return n
+end
+
+it("One click: units are what is listed at or below the max, the button says so in ASCII", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 5 }, { 90, 10 }, { 150, 50 } })
+	PickAndSearch(ns, stub, { kind = "snipe", itemID = CLOTH, need = 200, maxUnit = 99, snipe = true, fixed = true }, "commodity")
+	local plan = AB.Refresh()
+	eq(plan.units, 15, "the 150c units are above the max: not counted"); eq(plan.total, 40 * 5 + 90 * 10)
+	local text, enabled = AB.Describe(plan, nil, AB.state.phase, AB.state.busy, GetMoney(), 99)
+	eq(text, "Buy up to 15 at <= 99c"); eq(enabled, true)
+	assert(not text:find("[\128-\255]"), "ASCII only")
+	-- capped by the limit
+	AB.Pick({ kind = "snipe", itemID = CLOTH, need = 8, maxUnit = 99, snipe = true, fixed = true }); AB.Search()
+	stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
+	eq(AB.Refresh().units, 8)
+	-- nothing at or below the max: no start
+	AB.Pick({ kind = "snipe", itemID = CLOTH, need = 8, maxUnit = 30, snipe = true, fixed = true }); AB.Search()
+	stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
+	local p, why = AB.Refresh()
+	eq(p, nil); eq(why, "Nothing is listed at or below the max price")
+	eq(AB.Click(), false); eq(CountOf(ah, "start"), 0)
+end)
+
+it("One click: a click starts and the quote within the max confirms itself, once", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 5 }, { 90, 10 } })
+	PickAndSearch(ns, stub, FLIP, "commodity")
+	local plan = AB.Refresh()
+	eq(AB.Click(), true)
+	eq(table.concat(ah.calls, ","), "start:100:12")
+	assert(AB.state.armed, "the click armed this purchase")
+	-- the price moved up a little but every unit is at or below the max: still bought
+	stub.Fire("COMMODITY_PRICE_UPDATED", 95, plan.total + 20)
+	eq(table.concat(ah.calls, ","), "start:100:12,confirm:100:12")
+	eq(AB.state.armed, nil, "used up"); eq(AB.state.phase, "buying")
+	stub.Fire("COMMODITY_PRICE_UPDATED", 95, plan.total + 20) -- a second quote: nothing more
+	eq(CountOf(ah, "confirm"), 1)
+	stub.Fire("COMMODITY_PURCHASE_SUCCEEDED")
+	eq(AB.state.phase, "stale"); eq(AB.state.run.units, 12, "the run counts the commodity purchase")
+	eq(CountOf(ah, "confirm"), 1)
+end)
+
+it("One click: a quote above the max, or a total above units x max, is cancelled and the panel says why", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 5 }, { 90, 10 } })
+	PickAndSearch(ns, stub, FLIP, "commodity")
+	local plan = AB.Refresh()
+	AB.Click()
+	stub.Fire("COMMODITY_PRICE_UPDATED", 100, plan.total)
+	eq(table.concat(ah.calls, ","), "start:100:12,cancel")
+	assert(AB.state.message:find("above your max", 1, true), AB.state.message)
+	eq(AB.state.phase, "stale"); eq(AB.state.armed, nil)
+	AB.Search(); stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
+	AB.Refresh(); AB.Click()
+	stub.Fire("COMMODITY_PRICE_UPDATED", 99, 12 * 99 + 1) -- unit fine, total above 12 x 99
+	eq(ah.calls[#ah.calls], "cancel"); assert(AB.state.message:find("above 12 x", 1, true), AB.state.message)
+	eq(CountOf(ah, "confirm"), 0)
+end)
+
+it("One click: a quote nothing armed is never confirmed; a line without a max price keeps its second click", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 12 } })
+	PickAndSearch(ns, stub, FLIP, "commodity")
+	AB.Refresh()
+	-- a quote arrives with no purchase started by a click
+	stub.Fire("COMMODITY_PRICE_UPDATED", 40, 480)
+	eq(#ah.calls, 0)
+	-- a started purchase whose arm is gone is not confirmed either
+	AB.Click()
+	AB.state.armed = nil
+	stub.Fire("COMMODITY_PRICE_UPDATED", 40, 480)
+	eq(CountOf(ah, "confirm"), 0); eq(AB.state.phase, "confirm", "waits for the second click")
+	-- no max price: never armed
+	local ns2, stub2, ah2 = Setup()
+	Commodity(stub2, { { 40, 12 } })
+	PickAndSearch(ns2, stub2, BASKET, "commodity")
+	ns2.AHBuy.Refresh(); ns2.AHBuy.Click()
+	eq(ns2.AHBuy.state.armed, nil)
+	stub2.Fire("COMMODITY_PRICE_UPDATED", 40, 480)
+	eq(CountOf(ah2, "confirm"), 0)
+end)
+
+it("One click: the arm is cleared by an error and by closing the auction house", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 12 } })
+	PickAndSearch(ns, stub, FLIP, "commodity")
+	AB.Refresh(); AB.Click()
+	stub.Fire("AUCTION_HOUSE_SHOW_ERROR", 1)
+	eq(AB.state.armed, nil)
+	AB.Search(); stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
+	AB.Refresh(); AB.Click()
+	stub.Fire("AUCTION_HOUSE_CLOSED")
+	eq(AB.state.armed, nil)
+	stub.Fire("COMMODITY_PRICE_UPDATED", 40, 480)
+	eq(CountOf(ah, "confirm"), 0)
+end)
+
+it("One click: if the client refuses the confirm outside a click, the second click still confirms", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 12 } })
+	PickAndSearch(ns, stub, FLIP, "commodity")
+	AB.Refresh(); AB.Click()
+	local C = C_AuctionHouse
+	local real = C.ConfirmCommoditiesPurchase
+	C.ConfirmCommoditiesPurchase = function() error("blocked") end
+	stub.Fire("COMMODITY_PRICE_UPDATED", 40, 480)
+	C.ConfirmCommoditiesPurchase = real
+	eq(AB.state.phase, "confirm"); eq(AB.state.busy, false)
+	assert(AB.state.message:find("click Confirm", 1, true), AB.state.message)
+	eq(AB.Click(), true); eq(CountOf(ah, "confirm"), 1)
+end)
+
+it("One click: a limit of his own (up to N) shrinks by what this run bought", function()
+	local ns, stub, ah = Setup()
+	local AB = ns.AHBuy
+	Commodity(stub, { { 40, 100 } })
+	local line = { kind = "snipe", itemID = CLOTH, need = 30, maxUnit = 99, snipe = true, fixed = true }
+	PickAndSearch(ns, stub, line, "commodity")
+	local plan = AB.Refresh()
+	eq(plan.units, 30)
+	AB.Click(); stub.Fire("COMMODITY_PRICE_UPDATED", 40, 1200); stub.Fire("COMMODITY_PURCHASE_SUCCEEDED")
+	AB.Search(); stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
+	local p, why = AB.Refresh()
+	eq(p, nil); assert(why:find("Already bought 30", 1, true), why)
+	eq(AB.Click(), false); eq(CountOf(ah, "start"), 1)
 end)
 
 ----------------------------------------------------------------------------------------------- confirm limit
@@ -582,7 +718,8 @@ it("Source: Execute and Confirm are reached only from Click and Accept; those on
 			end
 		end
 	end
-	-- inside AHBuy.lua: Execute is called by Click and Accept, Confirm by Click, nothing else
+	-- inside AHBuy.lua: Execute is called by Click and Accept, Confirm by Click and by the quote handler (#408, only
+	-- for a purchase a click armed: see the one-click specs), nothing else
 	local calls = {}
 	local current
 	for _, line in ipairs(Source("CraftWise/AHBuy.lua")) do
@@ -594,7 +731,7 @@ it("Source: Execute and Confirm are reached only from Click and Accept; those on
 		end
 	end
 	table.sort(calls)
-	eq(table.concat(calls, ","), "Confirm<-Click,Execute<-Accept,Execute<-Click")
+	eq(table.concat(calls, ","), "Confirm<-Click,Confirm<-OnQuote,Execute<-Accept,Execute<-Click")
 end)
 
 it("Source: nothing in the buying runs on a timer, an update or a ticker, and the panel registers no OnUpdate", function()
@@ -642,7 +779,7 @@ it("Panel: a click on a line picks and searches it once; Buy shows the exact tot
 	button.scripts.OnClick(button)
 	eq(#ah.searches, 1)
 	stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", CLOTH)
-	eq(panel.buy.text, "Buy 12 for " .. ns.FormatMoney(40 * 5 + 90 * 7, true))
+	eq(panel.buy.text, "Buy up to 12 at <= 99c")
 	eq(#ah.calls, 0, "nothing is bought by drawing")
 	panel.buy.scripts.OnClick(panel.buy)
 	eq(table.concat(ah.calls, ","), "start:100:12")
