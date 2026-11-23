@@ -97,7 +97,7 @@ function Hero.BestCraft(rows, opts)
 		profit = best.profit, cost = best.cost, sale = best.sellsFor, pct = best.pct,
 		sellSource = best.sellSource, sellMarked = best.sellMarked, sellLabel = best.sellLabel, thin = best.thin, oldestAge = best.oldestAge,
 		chance = chance, chanceKind = kind, chanceEstimate = estimate or false,
-		short = short, candidates = priced,
+		short = short, candidates = priced, cooldown = best.cooldown, focus = best.focus,
 	}
 end
 

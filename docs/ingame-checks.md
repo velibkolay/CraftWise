@@ -1474,6 +1474,15 @@ Needs a snipe list entry (max price and "up to N") or a flip line for a commodit
 - [ ] A total above Settings "Ask above" still opens the client's confirm dialog first; accepting it buys with the same one click flow.
 - [ ] Click once and watch: exactly one StartCommoditiesPurchase and one ConfirmCommoditiesPurchase (Settings > Debug trace), no second confirm from a later COMMODITY_PRICE_UPDATED.
 
+## Cooldown-limited crafts (#413)
+No TOC change, `/reload` is enough. Needs a Leatherworker who knows Cured Rugged Hide (and ideally a Salt Shaker in the bags) and an alchemist who knows a transmute.
+- [ ] `C_Container.GetItemCooldown(15846)` with a Salt Shaker in the bags: after using it, the Make > Craft row of **Cured Rugged Hide** reads "cd 71h, ready in 2d 23h" (or similar) and counts down; with a ready shaker it reads "ready". Without a Salt Shaker there is no ready text, only "cd 71h".
+- [ ] "needs Tanning Rack" shows on the Cured Rugged Hide row, in the hero card when it is the best craft, in its tooltip ("Needs  Tanning Rack") and in the Make > Basket craft list line. Recipes that need an Anvil, Forge or Loom say it in the tooltip only. Is the Tanning Rack the right object (does the game refuse the craft away from one)?
+- [ ] The Per day column tooltip of Cured Rugged Hide: "Own cooldown 71h: 0.34 crafts a day, costed at the AH value of the Refined Deeprock Salt." and the AH part. The figure itself is the profit per craft times the demand, the same as before.
+- [ ] Build plan with a sales history for Cured Rugged Hide: the suggestion row says "Buy 2 Refined Deeprock Salt and make 2 Cured Rugged Hide" (or "Use 1 Refined Deeprock Salt you have, buy 1 ..."). With a Refined Deeprock Salt in the bags and a ready shaker the own units are used first.
+- [ ] `C_Spell.GetSpellCooldown(<transmute spell>)`: a transmute on cooldown is not in the suggestions and the plan's skipped count says so; when ready it is planned once ("cooldown: one craft every 47h"). The transmutes share one cooldown category in the game; the data does not, so two ready transmutes could both be suggested: does the second one start a cooldown after the first?
+- [ ] "ready in 2d 5h" / "5h 10m" is right against the shaker's own tooltip ("Cooldown remaining").
+
 ## Main window design pass (#412)
 
 - [ ] Drag the window wider and narrower (min width to full screen): the gold key block keeps its size and the first tab (Make) always sits on the dark bar, readable. Same in a docked layout when its width is dragged. No seam or colour step where the gold block, the dark middle and the cut corner meet.
@@ -1483,3 +1492,4 @@ Needs a snipe list entry (max price and "up to N") or a flip line for a commodit
 - [ ] The "Profit per craft" bars: most rows show a bar of readable length, only the biggest outliers run to the end of the rail.
 - [ ] Footer reads "Prices: typical price at the Horde AH (Auctionator when it has none) · reagents: bought at the AH".
 - [ ] AH panel: the snipe form caption reads "Add to the snipe list: item, max price each, buy up to (count)" and fits on one or two lines.
+- [ ] Window layout (name column 188 wide): the muted "cd 71h, ready, needs Tanning Rack" behind the recipe name is clipped, not drawn over the next column, and the name itself stays readable. The hero subtitle with "missing 1 Rugged Hide +1 more" and the cooldown text still fits the card.

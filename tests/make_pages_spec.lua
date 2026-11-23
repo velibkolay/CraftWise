@@ -1312,6 +1312,25 @@ it("Now (#376): follows PRICES_CHANGED, so a search changes it at once", functio
 	eq(Row(ns, "level", R_BELT).view.cells.netEarn, "+" .. ns.FormatCoins(150), "typical unchanged by one look")
 end)
 
+it("Per day, cooldown (#413): a spell cooldown caps the crafts, a Salt Shaker splits them into own and AH crafts", function()
+	local _, _, M = Load()
+	local C = M.CraftPage
+	local transmute = { kind = "spell", ms = 169200000, spell = 17187 }
+	local d = C.Daily({ profit = 1000, outputQuantity = 1, sellSource = "auction", cooldown = transmute }, { gone = 70, days = 7 })
+	eq(d.cooldown.limit, "cooldown"); assert(math.abs(d.crafts - 24 / 47) < 1e-9); assert(math.abs(d.daily - 1000 * 24 / 47) < 1e-6)
+	assert(#d.lines >= 1, "the tooltip says why")
+	d = C.Daily({ profit = 1000, outputQuantity = 1, sellSource = "vendor", cooldown = transmute }, nil)
+	eq(d.noLimit, nil, "a vendor takes everything: the cooldown is the limit"); assert(math.abs(d.daily - 1000 * 24 / 47) < 1e-6)
+	local salt = { kind = "item", ms = 255600000, item = 15409, perCraft = 1, tool = 15846, quantity = 1 }
+	d = C.Daily({ profit = 100, outputQuantity = 2, sellSource = "auction", cooldown = salt, cdState = { toolHeld = true } }, { gone = 70, days = 7 })
+	eq(d.crafts, 5, "the demand: 10 units a day, 2 a craft"); eq(d.daily, 500, "profit per craft unchanged: the own salt is costed at AH value")
+	assert(math.abs(d.cooldown.own - 24 / 71) < 1e-9); assert(math.abs(d.cooldown.ah - (5 - 24 / 71)) < 1e-9)
+	local _, _, tip = C.DailyCell(d)
+	assert(#tip >= 4, "the cooldown lines are in the cell's tooltip")
+	d = C.Daily({ profit = 150, outputQuantity = 1, sellSource = "auction" }, { gone = 70, days = 7 })
+	eq(d.cooldown, nil); eq(d.lines, nil)
+end)
+
 it("#412: return over 999 % reads >999%, the rail scale ignores one outlier, no raw item id is shown", function()
 	local ns, _, M = Load()
 	eq(M.Make.PercentText(14793), ">999%"); eq(M.Make.PercentText(999), "999%"); eq(M.Make.PercentText(-12), "-12%")

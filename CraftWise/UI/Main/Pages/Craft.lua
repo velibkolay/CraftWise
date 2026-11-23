@@ -88,6 +88,10 @@ function CraftPage.Daily(r, info)
 	elseif r.profit == nil then
 		return { reason = "profit" }
 	elseif r.sellSource == "vendor" then
+		local cd = r.cooldown and r.cooldown.kind == "spell" and CraftPage.CooldownDay(r, nil)
+		if cd then
+			return { daily = r.profit * cd.crafts, crafts = cd.crafts, cooldown = cd, lines = CraftPage.CooldownLines(r, cd) } -- the cooldown is the limit (#413)
+		end
 		return { noLimit = true }
 	elseif r.sellSource ~= "auction" then
 		return { reason = "other" }
@@ -98,7 +102,28 @@ function CraftPage.Daily(r, info)
 	end
 	local perDay = info.gone / info.days
 	local crafts = perDay / math.max(r.outputQuantity or 1, 1)
-	return { daily = r.profit * crafts, crafts = crafts, perDay = perDay, gone = info.gone, days = info.days }
+	local cd = r.cooldown and CraftPage.CooldownDay(r, crafts)
+	if cd then
+		crafts = cd.crafts -- a cooldown caps it (a transmute) or splits it into own and AH units (#413)
+	end
+	return { daily = r.profit * crafts, crafts = crafts, perDay = perDay, gone = info.gone, days = info.days, cooldown = cd,
+		lines = cd and CraftPage.CooldownLines(r, cd) or nil }
+end
+
+function CraftPage.CooldownLines(r, cd)
+	local item = r.cooldown.kind == "item" and ns.Basket.ItemName(r.cooldown.item) or nil
+	return ns.Cooldown.DayLines(cd, r.cooldown, item)
+end
+
+-- The cooldown part of a daily figure (#413, Profit.CooldownDay over the row's cooldown and what the client says now).
+function CraftPage.CooldownDay(r, demand)
+	local c = r.cooldown
+	local cd = ns.Profit.CooldownDay({ kind = c.kind, ms = c.ms, perCraft = c.perCraft, quantity = c.quantity,
+		toolHeld = r.cdState and r.cdState.toolHeld }, demand)
+	if cd then
+		cd.kind, cd.demand = c.kind, demand
+	end
+	return cd
 end
 
 local DAILY_REASONS = {
@@ -112,8 +137,12 @@ local DAILY_REASONS = {
 function CraftPage.DailyCell(d)
 	if d.daily then
 		local text, color = MK.Signed(d.daily)
-		return text, color, { L["Per day"], (L["Profit per craft times the crafts a day the market takes: %s units disappeared in %d days at prices up to the typical (sold or expired). Approx."]):format(
-			ns.CraftLog.Format(d.gone), d.days) }
+		local tip = { L["Per day"], d.gone and (L["Profit per craft times the crafts a day the market takes: %s units disappeared in %d days at prices up to the typical (sold or expired). Approx."]):format(
+			ns.CraftLog.Format(d.gone), d.days) or L["Profit per craft times the crafts the cooldown allows a day."] }
+		for _, line in ipairs(d.lines or {}) do
+			tip[#tip + 1] = line
+		end
+		return text, color, tip
 	elseif d.noLimit then
 		return L["no limit"], "text3", { L["Per day"], L["Sold to a vendor: no market limit. See Make › Crafted for profit per hour."] }
 	elseif d.reason == "short" then
@@ -185,6 +214,11 @@ function CraftPage.View(r, ctx)
 	end
 	view.cells.pct, view.colors.pct = MK.PercentText(r.pct), r.pct and r.pct < 0 and "danger" or "text2"
 	view.tips.pct = { L["Return"], L["Profit divided by the cost to craft."] }
+	r.cdState = r.cooldown and ns.Cooldown.State(r.cooldown) or nil
+	view.cooldownText = ns.Cooldown.RowText(r)
+	if view.cooldownText then
+		view.sub = view.sub .. ", " .. view.cooldownText -- docked: the caption (#413)
+	end
 	r.daily = CraftPage.Daily(r, CraftPage.MarketInfo(r.outputItemID))
 	r.dailyProfit = r.daily.daily
 	view.cells.daily, view.colors.daily, view.tips.daily = CraftPage.DailyCell(r.daily)
@@ -194,6 +228,10 @@ function CraftPage.View(r, ctx)
 		-- All professions (#211): the profession next to the name, muted (the docked layout's tag chip).
 		view.cells.name = view.name .. "  " .. Style.Hex("text3") .. r.professionName .. "|r"
 		view.tag = r.professionName
+	end
+	if view.cooldownText then
+		-- Window layout: "cd 71h, ready, needs Tanning Rack" muted behind the name.
+		view.cells.name = view.cells.name .. "  " .. Style.Hex("text3") .. view.cooldownText .. "|r"
 	end
 	return r
 end
@@ -269,6 +307,11 @@ function CraftPage.Hero(rows, ctx)
 	end
 	if h.pct then
 		parts[#parts + 1] = MK.PercentText(h.pct)
+	end
+	-- "cd 71h, ready, needs Tanning Rack" (#413)
+	local cdText = ns.Cooldown.RowText({ cooldown = h.cooldown, focus = h.focus, cdState = h.cooldown and ns.Cooldown.State(h.cooldown) })
+	if cdText then
+		parts[#parts + 1] = cdText
 	end
 	local figure, color = MK.Signed(h.profit)
 	return {

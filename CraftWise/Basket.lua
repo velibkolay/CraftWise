@@ -523,7 +523,8 @@ function Basket.CraftList(plan, bags, opts)
 		lines[#lines + 1] = { kind = "craft", recipeID = id, professionID = e.professionID, name = c.row.name,
 			outputItemID = c.row.outputItemID, icon = c.row.icon, left = c.count, planned = c.count + done, made = done,
 			channel = e.channel, label = e.channel and Basket.CHANNEL_LABELS[e.channel], profitEach = e.profitEach,
-			secEach = e.secEach, pps = c.pps, can = can, missing = missing, state = StateOf(can, c.count), craft = c }
+			secEach = e.secEach, pps = c.pps, can = can, missing = missing, state = StateOf(can, c.count), craft = c,
+			focus = c.row.focus }
 	end
 	-- What is made and has no craft left: ticked and last.
 	local finished = {}
@@ -693,7 +694,7 @@ end
 -- time, its demand cap and quote(n). skipped counts what was left out and why ({ noTime, noSale, noPrice }).
 function Basket.RunCandidates(opts)
 	opts = opts or {}
-	local cands, skipped = {}, { noTime = 0, noSale = 0, noPrice = 0 }
+	local cands, skipped = {}, { noTime = 0, noSale = 0, noPrice = 0, cooldown = 0 }
 	if not (ns.db and ns.charDB) then
 		return cands, skipped
 	end
@@ -711,7 +712,11 @@ function Basket.RunCandidates(opts)
 			if row.status == "known" and out and qty and qty > 0 and #(row.reagents or {}) > 0 then
 				local seconds, timeLabel = Basket.CraftSeconds(row.recipeID)
 				local channel, each = Basket.SaleOf(ns.SaleOptions(out, qty), opts.vendorOnly)
-				if not seconds then
+				local cd = row.cooldown
+				local state = cd and ns.Cooldown.State(cd)
+				if cd and cd.kind == "spell" and not (state and state.ready) then
+					skipped.cooldown = skipped.cooldown + 1 -- on cooldown (or unknown): nothing can be crafted now (#413)
+				elseif not seconds then
 					skipped.noTime = skipped.noTime + 1
 				elseif not channel then
 					skipped.noSale = skipped.noSale + 1
@@ -721,6 +726,14 @@ function Basket.RunCandidates(opts)
 					if channel == "AH" then
 						local cap, _, _, text = Basket.DemandCap(SoldOf(out, now), DropsOf(out, now), qty, Basket.MaxWithoutData(), Basket.ListingHours())
 						c.cap, c.capText = cap, text
+					end
+					if cd then
+						c.cooldown = { info = cd, state = state, ready = ns.Cooldown.ReadyText(state and state.remaining) }
+						if cd.kind == "spell" then
+							-- One craft per cooldown, whatever the demand: nothing can be bought instead.
+							c.cap = math.min(c.cap or 1, 1)
+							c.capText = (ns.L["cooldown: one craft every %s"]):format(ns.Cooldown.Hours(cd.ms))
+						end
 					end
 					c.quote = function(n)
 						local need = {}
@@ -878,7 +891,7 @@ end
 local function SuggestRow(l)
 	return { recipeID = l.recipeID, professionID = l.professionID, name = l.name, outputItemID = l.outputItemID,
 		channel = l.channel, suggested = l.count, count = l.count, ticked = false, cap = l.cap, capText = l.capText,
-		capped = l.capped, timeLabel = l.timeLabel }
+		capped = l.capped, timeLabel = l.timeLabel, cooldown = l.cooldown, outputName = l.name }
 end
 
 -- Starts (or restarts after a price refresh) the list from a plan. The ticks and counts of recipes still in it are kept.
@@ -1033,12 +1046,34 @@ function Basket.SuggestUse(replace)
 	return Basket.UsePlan({ lines = lines }, replace)
 end
 
+-- What to do about the cooldown part of an item-kind row (#413), at its count: "Buy 2 Refined Deeprock Salt and make 2
+-- Cured Rugged Hide". The units the own cooldown and the bags have come first ("Use 1 Refined Deeprock Salt you have, buy 1
+-- ..."). nil for a row that has no cooldown reagent. A spell-kind row has nothing to buy: its text is the cap's.
+function Basket.SuggestAction(row, n)
+	local cd = row.cooldown
+	if not (cd and cd.info.kind == "item") then
+		return nil
+	end
+	n = n or row.count
+	local split = ns.Cooldown.Split(cd.info, n, cd.state and cd.state.ownUnits)
+	local item = Basket.ItemName(cd.info.item)
+	local make = ("%d %s"):format(n, row.name or row.outputName or "")
+	if split.buy <= 0 then
+		return (ns.L["Use the %d %s you have and make %s"]):format(split.units, item, make)
+	elseif split.own > 0 then
+		return (ns.L["Use %d %s you have, buy %d and make %s"]):format(split.own, item, split.buy, make)
+	end
+	return (ns.L["Buy %d %s and make %s"]):format(split.buy, item, make)
+end
+
 -- Why a row has the count it has: the demand cap's text, or "sells to a vendor" when there is none.
 function Basket.SuggestReason(row)
-	if row.channel == "vendor" then
-		return ns.L["sells to a vendor: no demand limit"]
+	local action = Basket.SuggestAction(row)
+	local lead = action and (action .. "; ") or ""
+	if row.channel == "vendor" and not row.capText then
+		return lead .. ns.L["sells to a vendor: no demand limit"]
 	end
-	return (row.capText or "") .. (row.capped and (" · " .. ns.L["limit reached"]) or "")
+	return lead .. (row.capText or "") .. (row.capped and (" · " .. ns.L["limit reached"]) or "")
 end
 
 ----------------------------------------------------------------------------------------------------
