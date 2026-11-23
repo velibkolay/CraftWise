@@ -1090,11 +1090,11 @@ it("share card: the figure is the hero's sum, the top 5 are by profit today, ASC
 	eq(m.top[1].countText, "x5")
 	eq(m.stats.crafts, "25")
 	eq(m.stats.active, "-"); eq(m.stats.perHour, "-")
-	eq(m.who, "Velikopter level 60")
+	eq(m.who, "Velikopter level 60 (all characters)")
 	eq(m.date, "2026-11-15")
-	eq(m.filters, "all characters, all professions")
+	eq(m.scope, "all professions")
 	eq(m.week.value, 10550)
-	for _, text in ipairs({ m.who, m.filters, m.figure.text, m.week.text, m.total.text, m.stats.perHour }) do
+	for _, text in ipairs({ m.who, m.scope, m.figure.text, m.week.text, m.total.text, m.stats.perHour }) do
 		assert(not text:find("[\128-\255]"), "ASCII only: " .. text)
 	end
 end)
@@ -1103,7 +1103,9 @@ it("share card: active time and gold per hour only from measured crafts, with th
 	local ns = setup()
 	local rows = { cardRow(1, "A", 10, 1000, { activeToday = 1800, timedToday = 6, timedProfitToday = 600 }), cardRow(2, "B", 4, 400) }
 	local m = ns.Main.CraftedPage.CardModel(rows, {})
-	eq(m.stats.active, ns.CraftLog.FormatDuration(1800))
+	eq(m.stats.active, "30m")
+	eq(ns.Main.CraftedPage.CompactDuration(4020), "1h 07m"); eq(ns.Main.CraftedPage.CompactDuration(38), "38s")
+	eq(m.stats.perHourValue, 1200)
 	eq(m.stats.perHour, "+" .. ns.Main.Make.PlainMoney(1200) .. "/h")
 	eq(m.stats.timedNote, "6 of 14 crafts timed")
 end)
@@ -1116,7 +1118,7 @@ it("share card: nothing crafted today says so and keeps the 7-day figures; filte
 	eq(m.emptyText, "Nothing crafted today.")
 	eq(m.figure.value, nil)
 	eq(m.week.value, 300)
-	eq(m.filters, "Alt Mage, Alchemy, \"pot\"")
+	eq(m.who, "Alt Mage"); eq(m.scope, "Alchemy, \"pot\"")
 	eq(m.money.value, -150)
 	assert(m.money.text:sub(1, 1) == "-", "signed with an ASCII minus")
 	eq(ns.Main.CraftedPage.CardModel({}, {}).emptyText, "Nothing crafted yet.")
@@ -1133,4 +1135,49 @@ it("share card: opens from the slash command, shows today's numbers and closes w
 	assert(f.title:GetText() == "CraftWise")
 	f:Hide()
 	assert(not f:IsShown())
+end)
+
+-- Share card layout (#418): pure, from the content; the design review's numbers
+it("share card layout: matches the target numbers and no element overlaps another, for 0, 1 and 5 rows", function()
+	local ns = setup()
+	local P = ns.Main.CraftedPage
+	local C = P.CARD
+	for _, rowsN in ipairs({ 0, 1, 5 }) do
+		for _, note in ipairs({ false, true }) do
+			for _, money in ipairs({ false, true }) do
+				local m = { empty = rowsN == 0, top = {}, stats = { timedNote = note and "1 of 2 crafts timed" or nil },
+					money = money and { text = "+1g" } or nil }
+				for i = 1, rowsN do m.top[i] = { name = "R" .. i } end
+				local lay = P.CardLayout(m)
+				local items = {}
+				for _, name in ipairs(lay.order) do
+					local e = lay.elements[name]
+					items[#items + 1] = { name = name, y = e.y, bottom = e.y + e.h }
+				end
+				table.sort(items, function(a, b) return a.y < b.y end)
+				eq(items[1].y, C.PAD)
+				for i = 2, #items do
+					assert(items[i - 1].bottom <= items[i].y, items[i - 1].name .. " overlaps " .. items[i].name)
+				end
+				eq(lay.height, items[#items].bottom + C.PAD, "the last value ends PAD above the bottom")
+				for _, y in ipairs(lay.rules) do -- 16 clear above and below every rule (the first one only below)
+					local above, below = 0, 1e9
+					for _, it2 in ipairs(items) do
+						if it2.bottom <= y then above = math.max(above, it2.bottom) end
+						if it2.y > y then below = math.min(below, it2.y) end
+					end
+					eq(y - above, 16, "above the rule at " .. y); eq(below - y, 16, "below the rule at " .. y)
+				end
+				if rowsN > 0 then
+					eq(lay.height, 371 + (note and 16 or 0) + 26 * rowsN)
+				end
+			end
+		end
+	end
+	eq(P.CardLayout({ empty = false, top = { {}, {}, {}, {}, {} }, stats = {} }).height, 501)
+	eq(P.CardLayout({ empty = false, top = { {} }, stats = {} }).height, 397)
+	local five = P.CardLayout({ empty = false, top = { {}, {}, {}, {}, {} }, stats = {} })
+	local out = {}
+	for _, name in ipairs(five.order) do out[#out + 1] = name .. " y=" .. five.elements[name].y .. " h=" .. five.elements[name].h end
+	print("       layout, 5 rows: " .. table.concat(out, "; ") .. "; rules=" .. table.concat(five.rules, ",") .. "; height=" .. five.height)
 end)
