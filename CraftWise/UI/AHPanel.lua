@@ -5,8 +5,9 @@
 --   * the Search button searches the picked line again;
 --   * the Buy button's OnClick calls AHBuy.Click: the one place a purchase can start from this panel.
 -- Nothing here buys, searches or lists on an event or a timer.
--- Craft run (#388): the section at the top plans crafts under a budget and a time (Basket.BuildRun), "Use plan" puts them
--- into the basket and "Refresh prices" searches the plan's items one by one (AHBuy.SweepStart). Each starts from a click.
+-- Craft run (#388, #403): the section at the top takes a budget and a time; "Build plan" makes a list of suggested crafts to
+-- pick from in the main window (Make › Basket, Basket.SuggestStart) and "Refresh prices" searches the plan's items one by
+-- one (AHBuy.SweepStart). Each starts from a click.
 -- Part 2 (#315): the snipe list lives here too. Lines of the list are marked "snipe" and have a × to remove them;
 -- a click on any line also fills the form below (item, max price per unit, "up to"), where Veli types his
 -- max price (3g 40s 5c) and saves it. The two keys (AHBuy.lua) walk and buy these same lines.
@@ -380,14 +381,9 @@ end
 -- The section at the top of the panel. Building the plan, using it and refreshing prices each start from a click here;
 -- the buying is the Buy panel's and the key's (AHBuy.lua), the searching of the refresh is AHBuy.SweepStart.
 
-P.RUN_LINES = 6 -- plan lines drawn (the rest are counted)
-P.RUN_BUY = 5 -- buy lines drawn
 P.RUN_MODE_W = 170 -- width of the budget mode button
-P.RUN_ROW = 16 -- a plan line is one line; its figures and where the demand cap comes from are in the tooltip (#402)
 P.runPlan = nil -- the last plan built (kept until the next one)
 P.runStatus = nil -- what the section says under its buttons
-
-local runLines, runBuys = {}, {}
 
 function P.RunState()
 	if not ns.db then
@@ -519,19 +515,29 @@ function P.RunBuyText(l)
 	return ("%d × %s · %s"):format(l.quantity, ItemName(l.itemID), where)
 end
 
--- The line under the section's buttons after a build: "36 recipes · 199 crafts" (a recipe is crafted many times).
+-- The line under the section's buttons after a build.
 function P.RunSummary(plan)
 	if #plan.lines == 0 then
 		return L["Nothing earns under these limits"]
 	end
-	local crafts = 0
-	for _, l in ipairs(plan.lines) do
-		crafts = crafts + (l.count or 0)
-	end
-	return (L["%d recipes · %d crafts"]):format(#plan.lines, crafts)
+	return (L["%d suggestions: pick them in Make › Basket"]):format(#plan.lines)
 end
 
-function P.RunBuild()
+-- What the basket holds, as the section's one summary line: "6 recipes · 14 crafts in the basket".
+function P.BasketSummary()
+	local recipes, crafts = 0, 0
+	for _, e in ipairs(ns.Basket.Entries()) do
+		recipes, crafts = recipes + 1, crafts + (e.count or 0)
+	end
+	if recipes == 0 then
+		return L["Nothing in the basket"]
+	end
+	return (L["%d recipes · %d crafts in the basket"]):format(recipes, crafts)
+end
+
+-- Build plan (#403): a suggestion list to pick from, in the main window (Make › Basket). Nothing is ticked; "Tick best
+-- within budget" there ticks what the limits here would have planned. `open` shows the window (a click, not a refresh).
+function P.RunBuild(open)
 	local st = P.RunState()
 	local budget, why = P.RunBudget()
 	local seconds, why2 = P.RunSeconds()
@@ -540,24 +546,20 @@ function P.RunBuild()
 		P.Update()
 		return nil
 	end
-	local plan = ns.Basket.BuildRun({ budget = budget, seconds = seconds, vendorOnly = st.vendorOnly })
-	P.runPlan = plan
-	P.runStatus = P.RunSummary(plan)
-	P.Update()
-	return plan
-end
-
-function P.RunUse(replace)
-	local plan = P.runPlan
-	if not (plan and #plan.lines > 0) then
-		P.runStatus = L["Build a plan first"]
-		P.Update()
-		return 0
+	local limits = { budget = budget, seconds = seconds, vendorOnly = st.vendorOnly }
+	local all = ns.Basket.BuildRun({ vendorOnly = st.vendorOnly })
+	local best = all
+	if budget or seconds then
+		best = ns.Basket.BuildRun(limits)
 	end
-	local n = ns.Basket.UsePlan(plan, replace)
-	P.runStatus = (L["%d crafts are in the basket: buy with the Buy panel or the AH: buy best key"]):format(n)
+	P.runPlan = best -- the plan the limits give: its items are the ones "Refresh prices" searches
+	ns.Basket.SuggestStart(all, best, limits)
+	P.runStatus = P.RunSummary(all)
+	if open and #all.lines > 0 and ns.OpenMainWindow then
+		ns.OpenMainWindow("basket")
+	end
 	P.Update()
-	return n
+	return all
 end
 
 function P.RunRefresh()
@@ -576,45 +578,10 @@ end
 
 -- A finished or stopped refresh rebuilds the plan from the new prices (a plan was there, same limits).
 ns.Listen("SWEEP_DONE", function()
-	if P.runPlan and ns.db then
+	if P.runPlan and ns.db and ns.Basket.suggest then -- the list is open: it follows the new prices, ticks and counts kept
 		P.RunBuild()
 	end
 end)
-
--- A plan line is one line (#402): "5 × Leather Gloves · AH"; its profit, time and where the demand cap comes from are
--- in the tooltip.
-local function RunLineRow(i)
-	local r = runLines[i]
-	if r then
-		return r
-	end
-	r = CreateFrame("Button", nil, panel)
-	r:SetSize(P.WIDTH - 24, P.RUN_ROW)
-	r.text = Style.Text(r, "Small", "text")
-	r.text:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -1)
-	r.text:SetWidth(P.WIDTH - 24)
-	r.text:SetJustifyH("LEFT")
-	r.text:SetWordWrap(false)
-	RowTip(r, function(self)
-		local l = self.plan
-		if l then
-			return P.RunLineName(l), { P.RunLineDetail(l), P.RunLineSource(l) }
-		end
-	end)
-	runLines[i] = r
-	return r
-end
-
-local function RunBuyRow(i)
-	local fs = runBuys[i]
-	if not fs then
-		fs = Style.Text(panel, "Small", "text2")
-		fs:SetWidth(P.WIDTH - 24)
-		fs:SetJustifyH("LEFT")
-		runBuys[i] = fs
-	end
-	return fs
-end
 
 local function Put(frame, x, y)
 	frame:ClearAllPoints()
@@ -631,25 +598,19 @@ function P.Stack(strings, x, y)
 	return y
 end
 
--- Draws the section from y; returns the y below it.
+-- Draws the section from y; returns the y below it: the controls (budget, minutes, vendor only, Build plan, Refresh
+-- prices) and one summary line of what the basket holds (#403). The suggestions themselves are in Make › Basket.
 local function DrawRun(y)
 	local st = P.RunState()
 	local run = panel.run
 	Put(run.head, 12, y)
 	run.head:SetLabel(P.HeadLabel("run", L["Craft run"]))
 	y = y - 28
-	local widgets = { run.mode, run.budget, run.minutes, run.minLabel, run.vendor, run.build, run.refresh, run.use, run.add,
-		run.totals, run.limit, run.buyHead, run.status, run.more, run.buyMore }
+	local widgets = { run.mode, run.budget, run.minutes, run.minLabel, run.vendor, run.build, run.refresh, run.summary, run.status }
 	for _, w in ipairs(widgets) do
 		w:SetShown(false)
 	end
 	if not st.open then
-		for _, r in ipairs(runLines) do
-			r:Hide()
-		end
-		for _, fs in ipairs(runBuys) do
-			fs:Hide()
-		end
 		return y
 	end
 	local sweeping = ns.AHBuy.SweepRunning()
@@ -682,71 +643,10 @@ local function DrawRun(y)
 	run.refresh:SetShown(true)
 	run.refresh:SetEnabled(sweeping or (P.runPlan ~= nil and #P.runPlan.search > 0))
 	y = y - 30
-	local plan = P.runPlan
-	local shown = 0
-	if plan then
-		for i = 1, math.min(#plan.lines, P.RUN_LINES) do
-			local l, r = plan.lines[i], RunLineRow(i)
-			r.plan = l
-			r.text:SetText(P.RunLineName(l))
-			Put(r, 12, y)
-			r:Show()
-			y = y - P.RUN_ROW - 2
-			shown = i
-		end
-		if #plan.lines > shown then
-			run.more:SetText((L["+%d more crafts in the plan: Use plan puts all of them in"]):format(#plan.lines - shown))
-			Put(run.more, 12, y)
-			run.more:SetShown(true)
-			y = y - 16
-		end
-		if #plan.lines > 0 then
-			run.totals:SetText(P.RunTotals(plan))
-			Put(run.totals, 12, y)
-			run.totals:SetShown(true)
-			y = y - 16
-		end
-		local limit = P.RunLimitText(plan)
-		if limit then
-			run.limit:SetText(limit)
-			Put(run.limit, 12, y)
-			run.limit:SetShown(true)
-			y = y - 16
-		end
-		if #plan.buy > 0 then
-			run.buyHead:SetText(L["To buy"] .. " (" .. #plan.buy .. ")")
-			Put(run.buyHead, 12, y)
-			run.buyHead:SetShown(true)
-			y = y - 16
-			for i = 1, math.min(#plan.buy, P.RUN_BUY) do
-				local fs = RunBuyRow(i)
-				fs:SetText(P.RunBuyText(plan.buy[i]))
-				Put(fs, 12, y)
-				fs:Show()
-				y = y - 14
-			end
-			if #plan.buy > P.RUN_BUY then
-				run.buyMore:SetText((L["+%d more lines"]):format(#plan.buy - P.RUN_BUY))
-				Put(run.buyMore, 12, y)
-				run.buyMore:SetShown(true)
-				y = y - 14
-			end
-		end
-		local have = #plan.lines > 0
-		Put(run.use, 12, y - 4)
-		run.use:SetShown(have)
-		Put(run.add, 12 + 110, y - 4)
-		run.add:SetShown(have)
-		if have then
-			y = y - 32
-		end
-	end
-	for i = shown + 1, #runLines do
-		runLines[i]:Hide()
-	end
-	for i = (plan and math.min(#plan.buy, P.RUN_BUY) or 0) + 1, #runBuys do
-		runBuys[i]:Hide()
-	end
+	run.summary:SetText(P.BasketSummary())
+	Put(run.summary, 12, y)
+	run.summary:SetShown(true)
+	y = y - 16
 	local text = (sweeping and ns.Market.SweepText()) or P.runStatus
 	if text then
 		run.status:SetText(text)
@@ -796,29 +696,24 @@ local function CreateRun(Box)
 	end)
 	run.build = Style.ActionButton(panel, L["Build plan"], 80, 24)
 	run.build:SetScript("OnClick", function()
-		P.RunBuild()
+		P.RunBuild(true)
+	end)
+	run.build:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Build plan"], L["Opens a list of suggested crafts in the main window (Make › Basket). Nothing is ticked: you pick."])
+	end)
+	run.build:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
 	end)
 	run.refresh = Style.LineButton(panel, L["Refresh prices"], 110)
 	run.refresh:SetScript("OnClick", function()
 		P.RunRefresh()
 	end)
-	run.use = Style.ActionButton(panel, L["Use plan"], 104, 24)
-	run.use:SetScript("OnClick", function()
-		P.RunUse(true)
-	end)
-	run.add = Style.LineButton(panel, L["Add to basket"], 110)
-	run.add:SetScript("OnClick", function()
-		P.RunUse(false)
-	end)
-	run.totals = Style.Text(panel, "Small", "text")
-	run.limit = Style.Text(panel, "Small", "text3")
-	run.buyHead = Style.Text(panel, "Small", "text3")
-	run.more = Style.Text(panel, "Small", "text3")
-	run.buyMore = Style.Text(panel, "Small", "text3")
+	run.summary = Style.Text(panel, "Small", "text")
 	run.status = Style.Text(panel, "Small", "text2")
-	for _, fs in ipairs({ run.totals, run.limit, run.more, run.status }) do
+	for _, fs in ipairs({ run.summary, run.status }) do
 		fs:SetWidth(P.WIDTH - 24)
 		fs:SetJustifyH("LEFT")
+		fs:SetWordWrap(false)
 	end
 end
 

@@ -821,6 +821,10 @@ function Basket.BuildRun(opts)
 		end
 	end
 	plan.opts = { budget = opts.budget, seconds = opts.seconds, vendorOnly = opts.vendorOnly and true or false }
+	plan.cands, plan.reagentsOf = {}, reagentsOf -- kept for the suggestion list (#403): a count changes, the figures follow
+	for _, c in ipairs(cands) do
+		plan.cands[c.recipeID] = c
+	end
 	plan.skipped, plan.t = skipped, time()
 	FillPlanBuy(plan, reagentsOf)
 	return plan
@@ -853,6 +857,188 @@ function Basket.UsePlan(plan, replace)
 	end
 	Changed()
 	return n
+end
+
+----------------------------------------------------------------------------------------------------
+-- Craft run suggestions (#403): "Build plan" gives a list to pick from, not a finished plan
+----------------------------------------------------------------------------------------------------
+-- Basket.suggest = { plan (built without a budget or a time: every recipe worth crafting, best first), best (the plan
+-- the limits give: what "Tick best within budget" ticks, the old automatic plan), limits, rows }. Not saved: a list lives
+-- until the next build or until it is closed. A row: { recipeID, professionID, name, outputItemID, channel, suggested,
+-- count, ticked, cap, capText, capped }. Nothing is ticked at first. Nothing here buys or crafts.
+Basket.suggest = nil
+
+local function SuggestChanged()
+	ns.Notify("SUGGEST_CHANGED")
+	if ns.Main and ns.Main.Refresh then
+		ns.Main.Refresh()
+	end
+end
+
+local function SuggestRow(l)
+	return { recipeID = l.recipeID, professionID = l.professionID, name = l.name, outputItemID = l.outputItemID,
+		channel = l.channel, suggested = l.count, count = l.count, ticked = false, cap = l.cap, capText = l.capText,
+		capped = l.capped, timeLabel = l.timeLabel }
+end
+
+-- Starts (or restarts after a price refresh) the list from a plan. The ticks and counts of recipes still in it are kept.
+function Basket.SuggestStart(plan, best, limits)
+	local old = {}
+	for _, r in ipairs(Basket.suggest and Basket.suggest.rows or {}) do
+		old[r.recipeID] = r
+	end
+	local rows = {}
+	for _, l in ipairs(plan.lines) do
+		local r = SuggestRow(l)
+		local was = old[l.recipeID]
+		if was then
+			r.ticked, r.count = was.ticked, was.count
+		end
+		rows[#rows + 1] = r
+	end
+	Basket.suggest = { plan = plan, best = best or plan, limits = limits or {}, rows = rows }
+	SuggestChanged()
+	return rows
+end
+
+function Basket.SuggestClose()
+	Basket.suggest = nil
+	SuggestChanged()
+end
+
+local function SuggestRowOf(recipeID)
+	for _, r in ipairs(Basket.suggest and Basket.suggest.rows or {}) do
+		if r.recipeID == recipeID then
+			return r
+		end
+	end
+end
+
+function Basket.SuggestTick(recipeID, on)
+	local r = SuggestRowOf(recipeID)
+	if r then
+		r.ticked = on and true or false
+		SuggestChanged()
+	end
+end
+
+function Basket.SuggestSetCount(recipeID, n)
+	local r = SuggestRowOf(recipeID)
+	if r then
+		r.count = Clamp(n)
+		SuggestChanged()
+	end
+end
+
+function Basket.SuggestClear()
+	for _, r in ipairs(Basket.suggest and Basket.suggest.rows or {}) do
+		r.ticked = false
+	end
+	SuggestChanged()
+end
+
+-- Ticks what the old automatic plan would take under the limits and sets its counts; everything else is unticked.
+-- Returns the number ticked.
+function Basket.SuggestTickBest()
+	local sg = Basket.suggest
+	if not sg then
+		return 0
+	end
+	local by = {}
+	for _, l in ipairs(sg.best.lines) do
+		by[l.recipeID] = l
+	end
+	local n = 0
+	for _, r in ipairs(sg.rows) do
+		local l = by[r.recipeID]
+		r.ticked = l ~= nil
+		if l then
+			r.count = l.count
+			n = n + 1
+		end
+	end
+	SuggestChanged()
+	return n
+end
+
+-- The figures of a row at its count (or at n): { cost, cash, seconds, profit, perMinute } or nil when a price is missing.
+function Basket.SuggestFigures(row, n)
+	local sg = Basket.suggest
+	local c = sg and sg.plan.cands[row.recipeID]
+	n = n or row.count
+	row.figs = row.figs or {} -- per count: a quote walks the price tiers, and the page draws often
+	if row.figs[n] ~= nil then
+		return row.figs[n] or nil
+	end
+	local q = c and c.quote(n)
+	local f
+	if q and q.cost and q.cash then
+		local seconds = n * (c.seconds or 0) + (q.seconds or 0)
+		local profit = n * c.each - q.cost
+		f = { cost = q.cost, cash = q.cash, seconds = seconds, profit = profit,
+			perMinute = seconds > 0 and profit / seconds * 60 or nil }
+	end
+	row.figs[n] = f or false
+	return f
+end
+
+-- The running total of the ticked rows: { recipes, crafts, cash (still to be bought, the bags and shared reagents
+-- counted once), profit, seconds, budget, minutes, overBudget, overTime, unknown (ticked rows without a price) }.
+-- A warning only: nothing stops the player going over.
+function Basket.SuggestTotals()
+	local sg = Basket.suggest
+	local t = { recipes = 0, crafts = 0, cash = 0, profit = 0, seconds = 0, unknown = 0, overBudget = false, overTime = false }
+	if not sg then
+		return t
+	end
+	t.budget, t.minutes = sg.limits.budget, sg.limits.seconds and sg.limits.seconds / 60 or nil
+	local items, sumCash = {}, 0
+	for _, r in ipairs(sg.rows) do
+		if r.ticked then
+			t.recipes, t.crafts = t.recipes + 1, t.crafts + r.count
+			local f = Basket.SuggestFigures(r)
+			if f then
+				t.profit, t.seconds, sumCash = t.profit + f.profit, t.seconds + f.seconds, sumCash + f.cash
+			else
+				t.unknown = t.unknown + 1
+			end
+			items[#items + 1] = { reagents = sg.plan.reagentsOf[r.recipeID], count = r.count }
+		end
+	end
+	local need = Basket.Combine(items)
+	local b = #need > 0 and ns.ReagentBalance(need, 1) or nil
+	t.cash = b and b.complete and b.total or sumCash
+	t.overBudget = t.budget ~= nil and t.cash > t.budget
+	t.overTime = sg.limits.seconds ~= nil and t.seconds > sg.limits.seconds
+	return t
+end
+
+-- Puts the ticked rows into the basket (replace = true: instead of what is there). Returns the number of crafts put in.
+function Basket.SuggestUse(replace)
+	local sg = Basket.suggest
+	if not sg then
+		return 0
+	end
+	local lines = {}
+	for _, r in ipairs(sg.rows) do
+		if r.ticked then
+			local f = Basket.SuggestFigures(r)
+			lines[#lines + 1] = { recipeID = r.recipeID, professionID = r.professionID, count = r.count, channel = r.channel,
+				profitEach = f and f.profit / r.count or nil, secEach = f and f.seconds / r.count or nil }
+		end
+	end
+	if #lines == 0 then
+		return 0
+	end
+	return Basket.UsePlan({ lines = lines }, replace)
+end
+
+-- Why a row has the count it has: the demand cap's text, or "sells to a vendor" when there is none.
+function Basket.SuggestReason(row)
+	if row.channel == "vendor" then
+		return ns.L["sells to a vendor: no demand limit"]
+	end
+	return (row.capText or "") .. (row.capped and (" · " .. ns.L["limit reached"]) or "")
 end
 
 ----------------------------------------------------------------------------------------------------

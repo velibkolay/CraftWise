@@ -438,8 +438,9 @@ it("Panel: Build plan reads the box and the mode; a typed budget that does not r
 	assert(plan and #plan.lines > 0); 
 	local crafts = 0
 	for _, l in ipairs(plan.lines) do crafts = crafts + l.count end
-	eq(P.runStatus, ("%d recipes · %d crafts"):format(#plan.lines, crafts)) -- #402: recipes and crafts, not "N crafts planned" for N recipes
+	eq(P.runStatus, ("%d suggestions: pick them in Make › Basket"):format(#plan.lines)) -- #403: a list to pick from
 	assert(crafts > #plan.lines, "the test plan crafts a recipe more than once")
+	eq(P.BasketSummary(), "Nothing in the basket")
 end)
 
 it("Panel: the plan's lines, totals, the stop reason and the buy lines read as text", function()
@@ -462,11 +463,84 @@ it("Panel: the plan's lines, totals, the stop reason and the buy lines read as t
 	local line = P.RunBuyText({ itemID = HIDE, quantity = 10, quote = { source = "auction", cost = 200 } })
 	assert(line:find("10 × Testhide · AH ", 1, true), line)
 	assert(P.RunBuyText({ itemID = THREAD, quantity = 5, quote = { source = "vendor", cost = 100 } }):find("vendor", 1, true))
-	-- drawing it does not fail and a click on Use plan fills the basket
+	-- drawing it does not fail; the section ends in one summary line of the basket
 	P.Update()
-	eq(P.RunUse(true) > 0, true)
+	ns.Basket.SuggestTick(R_BELT, true)
+	eq(ns.Basket.SuggestUse(true), belt.count)
 	assert(ns.Basket.Find(R_BELT))
-	assert(P.runStatus:find("crafts are in the basket", 1, true), P.runStatus)
+	eq(P.BasketSummary(), ("1 recipes · %d crafts in the basket"):format(belt.count))
+	P.Update()
+	eq(P.panel.run.summary.text, P.BasketSummary())
+end)
+
+it("Suggestions (#403): Build plan gives a list, nothing ticked; ticks, counts, totals, tick best, use and add", function()
+	local ns, stub = Load({ cap = 5 })
+	local P = Panel(ns, stub)
+	local st = P.RunState()
+	st.open, st.minutes = true, "1"
+	local opened
+	ns.OpenMainWindow = function(page) opened = page end
+	local all = P.RunBuild(true)
+	eq(opened, "basket", "Build plan opens the list in the main window")
+	local sg = ns.Basket.suggest
+	assert(sg and #sg.rows == #all.lines and #sg.rows > 1)
+	for i, r in ipairs(sg.rows) do
+		eq(r.ticked, false, "nothing ticked at first")
+		eq(r.recipeID, all.lines[i].recipeID, "best first, as the planner ranked them")
+		eq(r.count, all.lines[i].count)
+	end
+	local t = ns.Basket.SuggestTotals()
+	eq(t.recipes, 0); eq(t.crafts, 0); eq(t.profit, 0)
+	-- "Tick best within budget" = what the old automatic plan takes under the same limits, counts included
+	local old = ns.Basket.BuildRun({ seconds = 60, vendorOnly = false })
+	eq(ns.Basket.SuggestTickBest(), #old.lines)
+	local byRecipe = {}
+	for _, l in ipairs(old.lines) do byRecipe[l.recipeID] = l end
+	for _, r in ipairs(sg.rows) do
+		eq(r.ticked, byRecipe[r.recipeID] ~= nil)
+		if r.ticked then eq(r.count, byRecipe[r.recipeID].count) end
+	end
+	t = ns.Basket.SuggestTotals()
+	eq(t.recipes, #old.lines); eq(t.overTime, false); eq(t.overBudget, false)
+	eq(math.floor(t.seconds + 0.5), math.floor(old.seconds + 0.5), "the ticked time is the plan's time")
+	-- over the limit is a warning, not a stop
+	sg.limits.seconds = 1
+	assert(ns.Basket.SuggestTotals().overTime, "over the minutes")
+	local name, sub, color = ns.Main.BasketPage.SuggestHeadline(ns.Basket.SuggestTotals())
+	eq(color, "danger"); assert(name:find("Ticked: " .. #old.lines .. " recipes", 1, true), name)
+	-- the rows on the Basket page: ticked ones say so, the list is on top
+	local model = ns.Main.BasketPage.Model({})
+	eq(model.rows[1].kind, "suggest")
+	assert(model.rows[1].name:find("^%[[x ]%] "), model.rows[1].name)
+	eq(model.hero.label, "Suggestions")
+	-- clear, then pick by hand; the count is at least 1 and moves the figures
+	ns.Basket.SuggestClear()
+	eq(ns.Basket.SuggestTotals().recipes, 0)
+	local first, second = sg.rows[1], sg.rows[2]
+	ns.Basket.SuggestTick(first.recipeID, true)
+	ns.Basket.SuggestSetCount(first.recipeID, 0)
+	eq(first.count, 1, "at least 1")
+	local f1 = ns.Basket.SuggestFigures(first)
+	ns.Basket.SuggestSetCount(first.recipeID, 3)
+	local f3 = ns.Basket.SuggestFigures(first)
+	assert(f3.seconds > f1.seconds, "more crafts take longer")
+	eq(ns.Basket.SuggestTotals().crafts, 3)
+	-- Use ticked replaces the basket, Add ticked adds
+	ns.Basket.Add(R_SHIRT, PROF, 7, { channel = "vendor" })
+	eq(ns.Basket.SuggestUse(true), 3)
+	assert(ns.Basket.Find(first.recipeID)); eq(ns.Basket.Find(first.recipeID).count, 3); eq(ns.Basket.Find(R_SHIRT), nil, "replaced")
+	ns.Basket.SuggestTick(second.recipeID, true)
+	ns.Basket.SuggestUse(false)
+	eq(ns.Basket.Find(first.recipeID).count, 6, "added to the 3 already there")
+	assert(ns.Basket.Find(second.recipeID))
+	-- a rebuild (price refresh) keeps the ticks and counts of recipes still listed
+	P.RunBuild()
+	eq(sg ~= ns.Basket.suggest, true, "a new list")
+	local again = ns.Basket.suggest.rows[1]
+	eq(again.recipeID, first.recipeID); eq(again.ticked, true); eq(again.count, 3)
+	ns.Basket.SuggestClose()
+	eq(ns.Basket.suggest, nil)
+	assert(not P.panel.run.summary.text:find("suggest"), "the summary is about the basket")
 end)
 
 ---------------------------------------------------------------------------------------- Refresh prices
