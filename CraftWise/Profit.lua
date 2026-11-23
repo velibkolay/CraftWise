@@ -240,6 +240,33 @@ function Profit.VendorCheck(result, recipe, vendor)
 	return result
 end
 
+-- Crafts a day of a cooldown-limited recipe (#413), pure. c = { kind = "spell" | "item", ms (the cooldown), perCraft (item
+-- kind: units of the cooldown-made reagent one craft uses), quantity (item kind: units one use makes), toolHeld (item
+-- kind: the character has the item that makes it) }; demand = crafts a day the market takes, nil when the sale has no
+-- limit (a vendor).
+--   spell  one craft per cooldown is all there is: crafts = min(demand, 1 per cooldown). A hard cap.
+--   item   the own cooldown makes quantity units per cooldown (when the tool is held), the AH sells the rest of what the
+--          demand needs: crafts = demand, split in own (cheap, limited) and ah (bought). No demand, no figure: the
+--          AH could sell any number. Self-made units are costed at their AH value, so profit per craft is unchanged.
+-- Returns { crafts, own, ah (crafts a day, own + ah = crafts), cap (spell kind: the cooldown's crafts a day), limit =
+-- "cooldown" | "demand" | nil } or nil when there is no figure.
+function Profit.CooldownDay(c, demand)
+	local days = c.ms / 86400000
+	if c.kind == "spell" then
+		local cap = 1 / days
+		if demand and demand < cap then
+			return { crafts = demand, own = demand, ah = 0, cap = cap, limit = "demand" }
+		end
+		return { crafts = cap, own = cap, ah = 0, cap = cap, limit = "cooldown" }
+	end
+	if not demand then
+		return nil
+	end
+	local own = c.toolHeld and (c.quantity / days) / math.max(c.perCraft, 1) or 0
+	own = math.min(own, demand)
+	return { crafts = demand, own = own, ah = demand - own, limit = "demand" }
+end
+
 -- Return on the gold put in (#197): profit / cost x 100. nil unless both are known and the cost is above
 -- zero (a free craft has no ratio), so such rows can go last.
 function Profit.Percent(profit, cost)
@@ -392,7 +419,7 @@ function Profit.RunPlan(cands, opts)
 				out[#out + 1] = { recipeID = c.recipeID, professionID = c.professionID, name = c.name, outputItemID = c.outputItemID,
 					count = s.n, channel = c.channel, profit = profit, profitEach = profit / s.n, seconds = seconds,
 					secEach = seconds / s.n, cost = s.cost, cash = s.cash, cap = c.cap, capText = c.capText, timeLabel = c.timeLabel,
-					capped = c.cap ~= nil and s.n >= c.cap, sales = s.n * c.each, pps = seconds > 0 and profit / seconds or 0 }
+					capped = c.cap ~= nil and s.n >= c.cap, cooldown = c.cooldown, sales = s.n * c.each, pps = seconds > 0 and profit / seconds or 0 }
 			end
 		end
 		table.sort(out, function(a, b)

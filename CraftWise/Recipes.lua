@@ -766,6 +766,172 @@ function ns.SkillUpColor(recipe, tooLow)
 	return tooLow and "red" or nil
 end
 
+----------------------------------------------------------------------------------------------------
+-- Cooldown-limited crafts (#413). Two kinds, both from the bundled DB2 data (ns.RecipeCooldowns, ns.CooldownItems):
+--   spell  the recipe's own spell has a cooldown (a transmute): at most one craft per cooldown, nothing can be bought
+--          instead.
+--   item   a reagent is made by an item with a cooldown (Salt Shaker -> Refined Deeprock Salt for Cured Rugged Hide):
+--          the own cooldown makes a few of it cheaply, the AH sells the rest. Not a hard cap: self-made units are
+--          costed at their AH value like every self-gathered mat, so the profit of a craft does not change.
+-- Of(recipeID, reagents) is the static part; State(info) reads the client (item and spell cooldown, bags).
+----------------------------------------------------------------------------------------------------
+local CD = {}
+ns.Cooldown = CD
+CD.DAY_MS = 86400000
+CD.HOUR_MS = 3600000
+
+-- { kind = "spell", ms, spell } | { kind = "item", ms, item (what it makes), perCraft (units of it one craft uses),
+-- tool (the item you use), spell, quantity (units one use makes) } | nil.
+function CD.Of(recipeID, reagents)
+	local own = ns.RecipeCooldowns and ns.RecipeCooldowns[recipeID]
+	if own then
+		return { kind = "spell", ms = own, spell = recipeID }
+	end
+	local items = ns.CooldownItems
+	if items then
+		for _, r in ipairs(reagents or {}) do
+			local made = items[r.itemID]
+			if made then
+				return { kind = "item", ms = made.ms, item = r.itemID, perCraft = r.quantity, tool = made.tool, spell = made.spell,
+					quantity = made.quantity }
+			end
+		end
+	end
+	return nil
+end
+
+-- "71h": the cooldown in whole hours.
+function CD.Hours(ms)
+	return ("%dh"):format(math.floor(ms / CD.HOUR_MS + 0.5))
+end
+
+-- "cd 71h".
+function CD.Label(info)
+	return info and ("cd " .. CD.Hours(info.ms)) or nil
+end
+
+-- Pure: seconds left of a cooldown that started at `start` and lasts `duration` (the client's GetTime seconds), 0 when
+-- it is ready; nil when the client gave no numbers.
+function CD.Remaining(start, duration, now)
+	if type(start) ~= "number" or type(duration) ~= "number" or type(now) ~= "number" then
+		return nil
+	end
+	if start <= 0 or duration <= 0 then
+		return 0
+	end
+	return math.max(0, start + duration - now)
+end
+
+-- "ready" or "ready in 2d 5h" (days and hours), "ready in 5h 10m" under a day, "ready in 12m" under an hour.
+function CD.ReadyText(remaining)
+	if not remaining or remaining <= 0 then
+		return "ready"
+	end
+	local minutes = math.ceil(remaining / 60)
+	local days, hours = math.floor(minutes / 1440), math.floor(minutes % 1440 / 60)
+	if days > 0 then
+		return ("ready in %dd %dh"):format(days, hours)
+	elseif hours > 0 then
+		return ("ready in %dh %dm"):format(hours, minutes % 60)
+	end
+	return ("ready in %dm"):format(minutes)
+end
+
+local function Number(v)
+	if issecretvalue and issecretvalue(v) then
+		return nil
+	end
+	return type(v) == "number" and v or nil
+end
+
+-- What the client says now: { remaining (seconds, nil = unknown), ready (true only when known to be), toolHeld (a Salt
+-- Shaker in the bags), have (units of the made item in the bags), ownUnits (have, plus what the tool makes when it is
+-- ready) }. Spell cooldowns come from C_Spell.GetSpellCooldown, item cooldowns from C_Container.GetItemCooldown.
+function CD.State(info, now)
+	now = now or GetTime()
+	local st = { have = 0, ownUnits = 0 }
+	if info.kind == "spell" then
+		local cd = C_Spell and C_Spell.GetSpellCooldown and SafeCall(C_Spell.GetSpellCooldown, info.spell)
+		st.remaining = cd and CD.Remaining(Number(cd.startTime), Number(cd.duration), now) or nil
+		st.ready = st.remaining == 0
+		return st
+	end
+	local count = C_Item and C_Item.GetItemCount
+	st.toolHeld = (count and Number(count(info.tool)) or 0) > 0
+	st.have = count and Number(count(info.item)) or 0
+	if st.toolHeld then
+		local start, duration = SafeCall(C_Container and C_Container.GetItemCooldown, info.tool)
+		st.remaining = CD.Remaining(Number(start), Number(duration), now)
+		st.ready = st.remaining == 0
+	end
+	st.ownUnits = st.have + (st.ready and info.quantity or 0)
+	return st
+end
+
+-- The object a recipe is cast near ("Tanning Rack"), nil when it needs none.
+function CD.Focus(recipeID)
+	return ns.RecipeFocus and ns.RecipeFocus[recipeID] or nil
+end
+
+-- Pure: whether a list row names the object its recipe needs: a cooldown row always, others for a Tanning Rack only
+-- (every Anvil and Forge recipe saying so would be noise; the tooltip has them all).
+function CD.ShowFocus(focus, info)
+	return focus ~= nil and (info ~= nil or focus:find("Tanning Rack", 1, true) ~= nil)
+end
+
+-- Pure: the short text of a row: "cd 71h, ready, needs Tanning Rack" (parts that do not apply are left out). A row
+-- with a cooldown shows its cooldown, whether it is ready (from row.cdState, which the page reads with State) and the
+-- object it needs; a row without one shows the object only when it is a Tanning Rack, the others (Anvil, Forge ...) stay
+-- in the tooltip. nil when there is nothing to say.
+function CD.RowText(row)
+	local parts, info = {}, row.cooldown
+	if info then
+		parts[#parts + 1] = CD.Label(info)
+		local st = row.cdState
+		if st and (info.kind == "spell" or st.toolHeld) then
+			parts[#parts + 1] = CD.ReadyText(st.remaining)
+		end
+	end
+	if CD.ShowFocus(row.focus, info) then
+		parts[#parts + 1] = (ns.L["needs %s"]):format(row.focus)
+	end
+	return #parts > 0 and table.concat(parts, ", ") or nil
+end
+
+local function Figure(n)
+	return ((("%.2f"):format(n):gsub("0+$", ""):gsub("%.$", "")))
+end
+
+-- Pure: the per day lines of a cooldown row for its tooltip (#413). d = row.daily.cooldown (Profit.CooldownDay plus
+-- kind and demand), info = row.cooldown, item = name of the cooldown-made reagent. An empty list without a figure.
+function CD.DayLines(d, info, item)
+	local L, lines = ns.L, {}
+	if not (d and info) then
+		return lines
+	end
+	local hours = CD.Hours(info.ms)
+	if info.kind == "spell" then
+		lines[#lines + 1] = (L["Cooldown %s: one craft every %s = %s crafts a day at most, nothing can be bought instead."]):format(
+			hours, hours, Figure(d.cap))
+		if d.limit == "demand" and d.demand then
+			lines[#lines + 1] = (L["The market takes %s crafts a day, fewer than the cooldown allows."]):format(Figure(d.demand))
+		end
+		return lines
+	end
+	lines[#lines + 1] = (L["Own cooldown %s: %s crafts a day, costed at the AH value of the %s."]):format(hours, Figure(d.own), item)
+	lines[#lines + 1] = (L["Bought at the AH: %s crafts a day more, as many as the market takes (%s a day in all)."]):format(
+		Figure(d.ah), Figure(d.crafts))
+	return lines
+end
+
+-- Pure: how a count of crafts splits for an item-kind cooldown craft: own units first (own = units ready now), the
+-- rest bought. Returns { units (of the made item all crafts need), own, buy }.
+function CD.Split(info, crafts, own)
+	local units = crafts * info.perCraft
+	local use = math.min(units, math.max(0, own or 0))
+	return { units = units, own = use, buy = units - use }
+end
+
 local function MakeRow(prof, recipeID, recipe, prices)
 	local status, required, tooLow = ns.RecipeStatus(prof, recipeID, recipe)
 	local learnCost, learnSource, learnLabel
@@ -793,6 +959,8 @@ local function MakeRow(prof, recipeID, recipe, prices)
 	result.outputItemID = recipe.output and recipe.output.itemID
 	result.outputQuantity = recipe.output and recipe.output.quantity
 	result.bundledOnly = recipe.bundledOnly
+	result.cooldown = CD.Of(recipeID, recipe.reagents) -- cooldown-limited (#413)
+	result.focus = CD.Focus(recipeID)
 	result.recordedInGame = recipe.recordedInGame -- recipe data from a trainer window (#83)
 	-- Skill-up thresholds come from the bundled data only; a recipe it lacks has none (never guessed).
 	result.thresholdsUnknown = not (ns.RecipeThresholds and ns.RecipeThresholds(recipeID)) or nil

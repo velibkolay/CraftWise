@@ -284,8 +284,13 @@ function MK.AddDaily(r)
 	GameTooltip:AddLine(" ")
 	if d.daily then
 		Heading(L["Per day"], MK.Signed(d.daily) .. Muted(" (" .. L["approx."] .. ")"))
-		Note(("  %s units disappeared in %d days of history at prices up to the typical = %s a day = %s crafts a day"):format(
-			ns.CraftLog.Format(d.gone), d.days, ns.CraftLog.FormatSeconds(d.perDay), ns.CraftLog.FormatSeconds(d.crafts)), true)
+		if d.gone then
+			Note(("  %s units disappeared in %d days of history at prices up to the typical = %s a day = %s crafts a day"):format(
+				ns.CraftLog.Format(d.gone), d.days, ns.CraftLog.FormatSeconds(d.perDay), ns.CraftLog.FormatSeconds(d.crafts)), true)
+		end
+		for _, line in ipairs(d.lines or {}) do
+			Note("  " .. line, true) -- the cooldown part (#413)
+		end
 		if r.status ~= "known" and r.learnCost and d.daily > 0 then
 			Note(("  Learning costs %s: about %d days to pay back at this rate."):format(Money(r.learnCost), math.ceil(r.learnCost / d.daily)), true)
 		end
@@ -480,6 +485,28 @@ end
 -- Craft and Learn: the crafted item's own tooltip first (item level, stats, requirements, other addons'
 -- lines), then the CraftWise section. Recipes without an item output get the CraftWise section only.
 -- view: the reagent cost basis ("profit" | "learn").
+-- Cooldown and the object a recipe needs (#413): "Cooldown cd 71h, ready in 2d 5h" and "Needs Tanning Rack".
+function MK.AddCooldown(r)
+	local cd = r.cooldown
+	if cd then
+		local st = r.cdState or ns.Cooldown.State(cd)
+		local text = ns.Cooldown.Label(cd)
+		if cd.kind == "spell" or st.toolHeld then
+			text = text .. ", " .. ns.Cooldown.ReadyText(st.remaining)
+		elseif cd.kind == "item" then
+			text = text .. ", " .. (ns.L["no %s"]):format(ItemName(cd.tool))
+		end
+		GameTooltip:AddDoubleLine("Cooldown", text, 0.8, 0.8, 0.8, 1, 1, 1)
+		if cd.kind == "item" then
+			Note(("  %s makes %s every %s; the rest is bought at the AH."):format(ItemName(cd.tool), ItemName(cd.item),
+				ns.Cooldown.Hours(cd.ms)), true)
+		end
+	end
+	if r.focus then
+		GameTooltip:AddDoubleLine("Needs", r.focus, 0.8, 0.8, 0.8, 1, 1, 1)
+	end
+end
+
 function MK.ShowRecipeTooltip(owner, r, view)
 	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 	if r.outputItemID and GameTooltip.SetItemByID then
@@ -505,6 +532,7 @@ function MK.ShowRecipeTooltip(owner, r, view)
 		GameTooltip:AddDoubleLine("Your crafts", ("%d skill-ups in %d crafts"):format(ups, n), 0.8, 0.8, 0.8, 1, 1, 1)
 	end
 	MK.AddCraftLog(r)
+	MK.AddCooldown(r)
 
 	if r.status ~= "known" then
 		if r.learnCost then

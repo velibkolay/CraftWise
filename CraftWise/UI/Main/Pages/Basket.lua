@@ -89,6 +89,9 @@ end
 function B.FillRun(r, ln)
 	local label = ln.label and L[ln.label] or (ln.kind == "intermediate" and L["intermediate"] or L["craft"])
 	local where = label .. ", " .. B.StateText(ln)
+	if ns.Cooldown.ShowFocus(ln.focus, ln.craft and ln.craft.row.cooldown) then
+		where = where .. ", " .. (L["needs %s"]):format(ln.focus) -- the Tanning Rack (#413)
+	end
 	local c = ln.craft
 	local each, total, color = M.DASH, M.DASH, "text3"
 	if ln.profitEach then
@@ -575,6 +578,9 @@ function B.PanelModel(list)
 			parts[#parts + 1] = (L["%s each"]):format(ns.FormatCoins(math.floor(ln.profitEach + 0.5)))
 		end
 		parts[#parts + 1] = B.StateText(ln)
+		if ns.Cooldown.ShowFocus(ln.focus, ln.craft and ln.craft.row.cooldown) then
+			parts[#parts + 1] = (L["needs %s"]):format(ln.focus)
+		end
 		if ln.state ~= "ready" and ln.state ~= "made" and #ln.missing > 0 then
 			parts[#parts + 1] = (L["needs %s"]):format(B.MissingText(ln))
 		end

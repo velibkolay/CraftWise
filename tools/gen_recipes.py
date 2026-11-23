@@ -153,7 +153,7 @@ def output_of(spell, rows):
     return item, max(1, base)
 
 
-def generate(ids, ability_rows, skill_rows, reagent_rows, effect_rows, item_rows, name_rows):
+def generate(ids, ability_rows, skill_rows, reagent_rows, effect_rows, item_rows, name_rows, cooldown_tables=None):
     member = memberships(ids, ability_rows, skill_rows)
     lines = {spell: next(iter(sids)) for spell, sids in member.items() if len(sids) == 1}
     reagents = reagents_by_spell(ids, reagent_rows)
@@ -213,7 +213,96 @@ def generate(ids, ability_rows, skill_rows, reagent_rows, effect_rows, item_rows
         "ambiguous_names": sum(v is False for n in names.values() for v in n.values()),
         "missing_names": len(ids) - len(spell_names),
     }
-    return recipes, sell, names, profession_lines, stats
+    cooldowns = cooldown_data(recipes, *cooldown_tables) if cooldown_tables else ({}, {}, {})
+    stats["recipe_cooldowns"], stats["cooldown_items"], stats["focus_objects"] = (len(table) for table in cooldowns)
+    return recipes, sell, names, profession_lines, stats, cooldowns
+
+
+# A cooldown below this is a cast delay, not a craft limit (the longest such recipe cooldown is 10 minutes).
+MIN_COOLDOWN_MS = 3600000
+ITEM_USE = 0  # ItemEffect.TriggerType: on use
+
+
+def spell_cooldowns(rows):
+    """Spell -> cooldown in ms (the longer of the spell's own and its category's), for those of at least an hour."""
+    result = {}
+    for row in rows:
+        if int(row["DifficultyID"]) != 0:
+            continue
+        ms = max(int(row["CategoryRecoveryTime"]), int(row["RecoveryTime"]))
+        if ms >= MIN_COOLDOWN_MS:
+            result[int(row["SpellID"])] = max(result.get(int(row["SpellID"]), 0), ms)
+    return result
+
+
+def cooldown_data(
+    recipes, cooldown_rows, effect_rows, item_effect_rows, item_link_rows, reagent_rows, requirement_rows, focus_rows
+):
+    """The three cooldown tables of #413, all from DB2.
+
+    recipe_cooldowns  recipe spell -> ms, for recipes whose own spell has a cooldown of at least an hour (a transmute).
+    items             item a cooldown spell makes -> { tool (the item you use), spell, ms, quantity, reagents }, for items
+                      that are a reagent of a recipe: an item-use spell (ItemEffect on use) with a cooldown of at least an
+                      hour that is not itself a recipe and creates exactly one item (Salt Shaker -> Refined Deeprock Salt).
+    focus             recipe spell -> name of the object it needs (SpellCastingRequirements.RequiresSpellFocus), e.g.
+                      "Tanning Rack".
+    """
+    cooldowns = spell_cooldowns(cooldown_rows)
+    recipe_cooldowns = {spell: ms for spell, ms in cooldowns.items() if spell in recipes}
+
+    creates = defaultdict(list)
+    for row in effect_rows:
+        if int(row["DifficultyID"]) == 0 and int(row["Effect"]) == CREATE_ITEM:
+            creates[int(row["SpellID"])].append(row)
+    reagent_of = {item for _, reagents, _ in recipes.values() for item, _ in reagents}
+    spell_reagents = {}
+    for row in reagent_rows:
+        spell = int(row["SpellID"])
+        if spell not in creates:
+            continue
+        found = Counter()
+        for slot in range(8):
+            item, quantity = int(row[f"Reagent_{slot}"]), int(row[f"ReagentCount_{slot}"])
+            if item > 0 and quantity > 0:
+                found[item] += quantity
+        spell_reagents[spell] = tuple(sorted(found.items()))
+    tools = defaultdict(set)
+    for row in item_link_rows:
+        tools[int(row["ItemEffectID"])].add(int(row["ItemID"]))
+    items = {}
+    for row in item_effect_rows:
+        spell = int(row["SpellID"])
+        if int(row["TriggerType"]) != ITEM_USE or spell in recipes or len(creates.get(spell, ())) != 1:
+            continue
+        ms = max(int(row["CoolDownMSec"]), int(row["CategoryCoolDownMSec"]), cooldowns.get(spell, 0))
+        made = creates[spell][0]
+        item = int(made["EffectItemType"])
+        if ms < MIN_COOLDOWN_MS or item not in reagent_of or item <= 0:
+            continue
+        holders = tools.get(int(row["ID"]), set())
+        if len(holders) != 1 or not spell_reagents.get(spell):
+            raise ValueError(
+                f"Cooldown spell {spell}: needs review (items {sorted(holders)}, reagents {spell_reagents.get(spell)})"
+            )
+        quantity = max(1, float(made["EffectBasePointsF"]))
+        entry = {
+            "tool": next(iter(holders)),
+            "spell": spell,
+            "ms": ms,
+            "quantity": quantity,
+            "reagents": spell_reagents[spell],
+        }
+        put_unique(items, item, entry, "cooldown item")
+
+    focus_names = {int(row["ID"]): row["Name_lang"] for row in focus_rows}
+    focus = {}
+    for row in requirement_rows:
+        spell, object_id = int(row["SpellID"]), int(row["RequiresSpellFocus"])
+        if spell in recipes and object_id:
+            if not focus_names.get(object_id):
+                raise ValueError(f"Recipe {spell}: unnamed focus object {object_id}")
+            put_unique(focus, spell, focus_names[object_id], "focus object")
+    return recipe_cooldowns, items, focus
 
 
 def lua_string(value):
@@ -222,13 +311,14 @@ def lua_string(value):
     return '"' + "".join(escapes.get(c, f"\\{ord(c):03d}" if ord(c) < 32 else c) for c in value) + '"'
 
 
-def render(recipes, sell, names, profession_lines, stats):
+def render(recipes, sell, names, profession_lines, stats, cooldowns=({}, {}, {})):
     lines = [
         "-- Generated by tools/gen_recipes.py — do not edit.",
         "-- luacheck: ignore 631",  # Deliberately compact generated rows.
         f"-- Source: wago.tools DB2, {PRODUCT} {BUILD}, {SOURCE_DATE}.",
         f"-- DB2: https://wago.tools/db2/SpellReagents/csv?build={BUILD}",
         "-- SkillLineAbility, SkillLine, SpellEffect, ItemSparse, SpellName: same source and build.",
+        "-- SpellCooldowns, ItemEffect, ItemXItemEffect, SpellCastingRequirements, SpellFocusObject: same source and build.",
         "-- Threshold recipe spell IDs only; skillLine is the parent profession ID.",
         "-- Output quantity is mean yield; false is verified non-item output. Missing recipes are unknown.",
         "-- Trainer names use the source locale (enUS); false means ambiguous within the profession.",
@@ -264,6 +354,35 @@ def render(recipes, sell, names, profession_lines, stats):
     for name, skill in sorted(profession_lines.items()):
         lines.append(f"\t[{lua_string(name)}] = {skill},")
     lines.append("}")
+    recipe_cooldowns, cooldown_items, focus = cooldowns
+    lines.extend(
+        [
+            "",
+            "-- Cooldowns (#413). Recipe spell to its own cooldown in ms (an hour or more), threshold recipes only.",
+            "ns.RecipeCooldowns = {",
+        ]
+    )
+    for spell, ms in sorted(recipe_cooldowns.items()):
+        lines.append(f"\t[{spell}] = {ms},")
+    lines.extend(
+        [
+            "}",
+            "",
+            "-- A reagent that a cooldown spell makes to the item you use, the spell, its cooldown in ms, the units one use",
+            "-- makes and what the spell consumes (Salt Shaker: 1 Deeprock Salt into 1 Refined Deeprock Salt).",
+            "ns.CooldownItems = {",
+        ]
+    )
+    for item, e in sorted(cooldown_items.items()):
+        reagent_text = ", ".join(f"{{ itemID = {i}, quantity = {q} }}" for i, q in e["reagents"])
+        lines.append(
+            f"\t[{item}] = {{ tool = {e['tool']}, spell = {e['spell']}, ms = {e['ms']}, "
+            f"quantity = {e['quantity']:g}, reagents = {{ {reagent_text} }} }},"
+        )
+    lines.extend(["}", "", "-- Recipe spell to the object it is cast near (a Tanning Rack), source locale.", "ns.RecipeFocus = {"])
+    for spell, name in sorted(focus.items()):
+        lines.append(f"\t[{spell}] = {lua_string(name)},")
+    lines.append("}")
     return "\n".join(lines) + "\n"
 
 
@@ -275,7 +394,7 @@ def main():
     args = parser.parse_args()
     options = {"refresh": args.refresh, "offline": args.offline}
     ids = threshold_ids()
-    recipes, sell, names, profession_lines, stats = generate(
+    recipes, sell, names, profession_lines, stats, cooldowns = generate(
         ids,
         db2("SkillLineAbility", ("Spell", "SkillLine"), **options),
         db2("SkillLine", ("ID", "DisplayName_lang", "CategoryID", "CanLink", "ParentSkillLineID"), **options),
@@ -300,8 +419,21 @@ def main():
         ),
         db2("ItemSparse", ("ID", "SellPrice"), **options),
         db2("SpellName", ("ID", "Name_lang"), **options),
+        (
+            db2("SpellCooldowns", ("SpellID", "DifficultyID", "CategoryRecoveryTime", "RecoveryTime"), **options),
+            db2("SpellEffect", ("SpellID", "DifficultyID", "Effect", "EffectItemType", "EffectBasePointsF"), **options),
+            db2("ItemEffect", ("TriggerType", "CoolDownMSec", "CategoryCoolDownMSec", "SpellID"), **options),
+            db2("ItemXItemEffect", ("ItemEffectID", "ItemID"), **options),
+            db2(
+                "SpellReagents",
+                ("SpellID", *(f"Reagent_{i}" for i in range(8)), *(f"ReagentCount_{i}" for i in range(8))),
+                **options,
+            ),
+            db2("SpellCastingRequirements", ("SpellID", "RequiresSpellFocus"), **options),
+            db2("SpellFocusObject", ("ID", "Name_lang"), **options),
+        ),
     )
-    content = render(recipes, sell, names, profession_lines, stats)
+    content = render(recipes, sell, names, profession_lines, stats, cooldowns)
     write_lua(OUTPUT, content)
     for key, value in stats.items():
         print(f"{key}: {value}")
