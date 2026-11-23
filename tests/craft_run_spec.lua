@@ -511,7 +511,8 @@ it("Suggestions (#403): Build plan gives a list, nothing ticked; ticks, counts, 
 	-- the rows on the Basket page: ticked ones say so, the list is on top
 	local model = ns.Main.BasketPage.Model({})
 	eq(model.rows[1].kind, "suggest")
-	assert(model.rows[1].name:find("^%[[x ]%] "), model.rows[1].name)
+	assert(model.rows[1].tick == "[x]" or model.rows[1].tick == "[ ]", model.rows[1].tick)
+	assert(model.rows[1].view.name:find("^%[[x ]%] "), "docked layouts show the mark in the name")
 	eq(model.hero.label, "Suggestions")
 	-- clear, then pick by hand; the count is at least 1 and moves the figures
 	ns.Basket.SuggestClear()
@@ -782,4 +783,44 @@ it("Buy panel (#402): sections open by default only when they have something to 
 	assert(P.panel.formTitle:IsShown() and P.panel.keys:IsShown(), "the snipe form and the key hint are in the Snipe list section")
 	P.SetSection("snipes", false)
 	assert(not P.panel.formTitle:IsShown() and not P.panel.keys:IsShown(), "folded")
+end)
+
+it("Suggestions (#406): a click on the tick box ticks at once; a click anywhere else opens the row", function()
+	local ns, stub = Load({ cap = 5 })
+	local P = Panel(ns, stub)
+	P.RunBuild()
+	local sg = ns.Basket.suggest
+	ns.Main.Open("basket")
+	local list = ns.Main.ListOf("basket")
+	local function Frame(recipeID)
+		for _, fr in ipairs(list.box.frames) do
+			local row = fr.elementData and fr.elementData.row
+			if row and row.recipeID == recipeID and row.kind == "suggest" then return fr end
+		end
+	end
+	local first = sg.rows[1]
+	local fr = Frame(first.recipeID)
+	assert(fr, "the suggestion row is drawn")
+	eq(fr.cells[1]:GetText(), "[ ]", "the tick column")
+	local hit = fr.hits[1]
+	assert(hit and hit:IsShown(), "the tick cell has its own click area")
+	hit:GetScript("OnClick")(hit, "LeftButton")
+	eq(first.ticked, true, "one click ticks")
+	eq(list.openKey, nil, "and does not open the row")
+	fr = Frame(first.recipeID)
+	eq(fr.cells[1]:GetText(), "[x]")
+	fr.hits[1]:GetScript("OnClick")(fr.hits[1], "LeftButton")
+	eq(first.ticked, false, "a second click unticks")
+	-- another cell: the row opens, nothing is ticked
+	fr = Frame(first.recipeID)
+	local other = fr.hits[3] or fr
+	other:GetScript("OnClick")(other, "LeftButton")
+	eq(first.ticked, false); eq(list.openKey ~= nil, true, "the row is open for - / + and the reason")
+	-- a shift-click on the tick cell is the row's (link to chat), not a tick
+	ns.Main.ListOf("basket").openKey = nil
+	stub.shift = true
+	fr = Frame(first.recipeID)
+	fr.hits[1]:GetScript("OnClick")(fr.hits[1], "LeftButton")
+	stub.shift = false
+	eq(first.ticked, false)
 end)

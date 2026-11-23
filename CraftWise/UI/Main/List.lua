@@ -123,13 +123,25 @@ local function BuildRow(list, b)
 	end)
 end
 
--- A column's own tip (e.g. why a price is unknown): a hit area over the cell; clicks go to the row.
+-- A column's own tip (e.g. why a price is unknown) or its own click (col.onClick(data, ctx), #406: a tick box): a hit area
+-- over the cell. A plain left click goes to col.onClick first; when that returns true the click is used up, else (and for
+-- every other click) it goes to the row.
 local function Hit(list, b, i)
 	local hit = b.hits[i]
 	if not hit then
 		hit = CreateFrame("Button", nil, b)
 		hit:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
-		hit:SetScript("OnClick", function(_, mouse)
+		hit:SetScript("OnClick", function(self, mouse)
+			local col, data = self.col, b.element and b.element.row
+			if mouse == "LeftButton" and col and col.onClick and data and not IsShiftKeyDown() then
+				local ok, handled = M.Call(col.onClick, data, list.ctx)
+				if not ok and list.onError then
+					list.onError(handled)
+				end
+				if ok and handled then
+					return
+				end
+			end
 			list:Click(b, mouse)
 		end)
 		hit:SetScript("OnEnter", function(self)
@@ -232,7 +244,7 @@ function List:InitRow(b, element)
 				b.icons[i]:Hide()
 			end
 		end
-		if col.tip then
+		if col.tip or col.onClick then
 			local hit = Hit(self, b, i)
 			hit.col = col
 			hit:ClearAllPoints()

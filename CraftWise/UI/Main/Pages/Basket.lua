@@ -22,6 +22,17 @@ M.BasketPage = B
 local ORDER = { suggest = -2, intermediate = -1, craft = 0, made = 0.25, flip = 0.5, auction = 1, vendor = 2, unknown = 3, done = 4 }
 
 local COLUMNS = {
+	-- The tick box of a suggestion (#406): a click on it ticks or unticks at once; every other cell opens the row.
+	{ key = "tick", label = "", width = 30, align = "LEFT", font = "Body",
+		text = function(r)
+			return r.tick or ""
+		end,
+		onClick = function(r)
+			if r.suggestRow then
+				ns.Basket.SuggestTick(r.suggestRow.recipeID, not r.suggestRow.ticked)
+				return true
+			end
+		end },
 	{ key = "icon", icon = true, width = 22 },
 	MK.Column("name", L["Item"], 250, "LEFT", "Body", false),
 	MK.Column("qty", L["Quantity"], 90, "RIGHT", "Figure"),
@@ -121,8 +132,10 @@ function B.SuggestRows()
 		return rows
 	end
 	for i, sr in ipairs(sg.rows) do
-		local name = (sr.ticked and "[x] " or "[ ] ") .. (sr.name or MK.ItemName(sr.outputItemID))
+		local name = sr.name or MK.ItemName(sr.outputItemID)
 		local r = NewRow("suggest", "suggest:" .. sr.recipeID, name, sr.outputItemID, Icon(sr.outputItemID))
+		r.tick = sr.ticked and "[x]" or "[ ]"
+		r.view.name = r.tick .. " " .. name -- the docked layouts have no columns: the mark is in the name
 		r.suggestRow, r.recipeID, r.rank = sr, sr.recipeID, i
 		r.order = ORDER.suggest + i * 1e-6 -- best first, as the planner ranked them
 		if not sr.ticked then
