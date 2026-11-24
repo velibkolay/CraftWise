@@ -222,7 +222,11 @@ func statusBase(s app.Status) string {
 	case s.OK && s.Text == "nothing new" && !s.Success.IsZero():
 		return "Checked " + when(s.Attempt) + ": nothing new (last upload " + when(s.Success) + ")"
 	case s.OK:
-		return "Checked " + when(s.Attempt) + ": " + s.Text
+		line := "Checked " + when(s.Attempt) + ": " + s.Text
+		if s.Account != "" && s.Text != "nothing new" {
+			line += " (account " + s.Account + ")" // #420: which account the upload came from
+		}
+		return line
 	}
 	return "Upload " + when(s.Attempt) + " failed: " + s.Text
 }
@@ -262,17 +266,19 @@ func openThing(a *app.App, what string) error {
 
 func printStatus(a *app.App) {
 	fmt.Println("settings:", a.ConfigPath())
-	fmt.Println("state:   ", a.StatePath())
+	fmt.Println("state:   ", filepath.Join(a.Dir, "state-<account>.json"))
 	fmt.Println("log:     ", a.LogPath())
 	cfg, err := a.Config()
 	if err != nil {
 		fmt.Println("settings error:", err)
 		return
 	}
-	if _, file, err := app.Locate(cfg); err != nil {
+	if _, accts, err := app.LocateAccounts(cfg); err != nil {
 		fmt.Println("SavedVariables:", err)
 	} else {
-		fmt.Println("SavedVariables:", filepath.Clean(file))
+		for _, ac := range accts {
+			fmt.Println("SavedVariables:", filepath.Clean(ac.File))
+		}
 	}
 	if autostart.Supported() {
 		if st, err := autostart.New().State(); err != nil {

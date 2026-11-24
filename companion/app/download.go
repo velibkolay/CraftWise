@@ -41,7 +41,7 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 	if cfg.Token == "" {
 		return res, fmt.Errorf("no upload token: create one on %s/me and put it in %s", cfg.Site, a.ConfigPath())
 	}
-	wow, file, err := Locate(cfg)
+	wow, accts, err := LocateAccounts(cfg)
 	if err != nil {
 		return res, fmt.Errorf("%w (the game writes CraftWise's file at the first /reload or logout)", err)
 	}
@@ -68,25 +68,37 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 		return res, err
 	}
 
-	st, err := upload.LoadState(a.StatePath(), cfg.Site, file)
-	if err != nil {
-		a.Log.Printf("%v; the state starts empty", err)
-		st = upload.NewState(cfg.Site, file)
+	// Every account's state learns what came down, so none of them sends it back (#420); the
+	// accounts' own characters are the union of their documents.
+	var states []*accountState
+	for _, ac := range accts {
+		path := a.StatePathFor(ac.Name)
+		st, err := upload.LoadState(path, cfg.Site, ac.File)
+		if err != nil {
+			a.Log.Printf("%v; the state starts empty", err)
+			st = upload.NewState(cfg.Site, ac.File)
+		}
+		states = append(states, &accountState{path, st})
 	}
 	now := time.Now()
 	if a.clock != nil {
 		now = a.clock()
 	}
-	st.MarkDownloaded(dl, now.Unix())
-	if err := st.Save(a.StatePath()); err != nil {
-		return res, err
+	own := map[string]bool{}
+	for _, as := range states {
+		as.st.MarkDownloaded(dl, now.Unix())
+		if err := as.st.Save(as.path); err != nil {
+			return res, err
+		}
+		for k := range ownChars(as.st) {
+			own[k] = true
+		}
 	}
 	cache.Merge(dl)
 	cache.Since = until
 
 	// The other machine's characters (#242): they need the private scope, so a token without it, or a
 	// site that doesn't have the endpoint yet, leaves them out and never stops the market download.
-	own := ownChars(st)
 	charsText := ""
 	if cfg.Private {
 		got, charsUntil, cerr := syncdata.DownloadChars(ctx, client, cache.CharsSince, cfg.MachineName(), a.clock)
@@ -111,9 +123,11 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 			a.Log.Printf("downloading the watch list failed: %v", werr)
 			charsText += ", watch list failed: " + werr.Error()
 		default:
-			st.MarkWatchDownloaded(changes)
-			if err := st.Save(a.StatePath()); err != nil {
-				return res, err
+			for _, as := range states {
+				as.st.MarkWatchDownloaded(changes)
+				if err := as.st.Save(as.path); err != nil {
+					return res, err
+				}
 			}
 			cache.MergeWatch(changes)
 			cache.WatchSince = watchUntil
@@ -151,6 +165,11 @@ func (a *App) Download(ctx context.Context) (DownloadResult, error) {
 	a.Log.Print(text)
 	a.setStatus(func(s *Status) { s.Download = text })
 	return res, nil
+}
+
+type accountState struct {
+	path string
+	st   *upload.State
 }
 
 // ownChars are the character keys this machine uploads itself (the private documents in the upload

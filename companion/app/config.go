@@ -31,8 +31,8 @@ type Config struct {
 	Token string `json:"token"`
 	// WoWPath: the _forever_ folder; empty = find it in the default install places.
 	WoWPath string `json:"wowPath"`
-	// Account: the folder name under WTF/Account; empty = the account whose CraftWise.lua was
-	// written last.
+	// Account: the folder name under WTF/Account; empty = every account that has a CraftWise.lua
+	// (#420), each watched and uploaded on its own.
 	Account string `json:"account"`
 	// Private: also upload the private data (snapshots, auctions, fishing, ledger).
 	Private bool `json:"private"`
@@ -202,6 +202,70 @@ func SavedVariables(wow, account string) (path, acct string, err error) {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].mod > list[j].mod })
 	return list[0].path, list[0].acct, nil
+}
+
+// Account is one WoW account folder with a CraftWise.lua.
+type Account struct {
+	Name string // the folder name under WTF/Account, e.g. "445303671#2"
+	File string // its SavedVariables/CraftWise.lua
+}
+
+// Label is the short name for logs and the status line: the part after the last "#" ("#2"), else
+// the folder name.
+func (a Account) Label() string {
+	if i := strings.LastIndex(a.Name, "#"); i >= 0 {
+		return a.Name[i:]
+	}
+	return a.Name
+}
+
+// AccountOf is the account folder name of a SavedVariables file path.
+func AccountOf(file string) string {
+	return filepath.Base(filepath.Dir(filepath.Dir(file)))
+}
+
+// Accounts lists the accounts to watch and upload (#420): the configured one, or with account empty
+// every WTF/Account/*/SavedVariables/CraftWise.lua, sorted by name. A configured account whose file
+// does not exist yet is an error; no file at all with account empty too.
+func Accounts(wow, account string) ([]Account, error) {
+	if account != "" {
+		p, acct, err := SavedVariables(wow, account)
+		if err != nil {
+			return nil, err
+		}
+		return []Account{{Name: acct, File: p}}, nil
+	}
+	matches, _ := filepath.Glob(filepath.Join(wow, "WTF", "Account", "*", "SavedVariables", "CraftWise.lua"))
+	var list []Account
+	for _, m := range matches {
+		if _, err := os.Stat(m); err == nil {
+			list = append(list, Account{Name: AccountOf(m), File: m})
+		}
+	}
+	if len(list) == 0 {
+		return nil, fmt.Errorf("no CraftWise.lua under %s (log in with CraftWise enabled, then /reload)", filepath.Join(wow, "WTF", "Account"))
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list, nil
+}
+
+// LocateAccounts finds the account files from the settings.
+func LocateAccounts(cfg Config) (wow string, accts []Account, err error) {
+	wow, err = FindWoW(cfg)
+	if err != nil {
+		return "", nil, err
+	}
+	accts, err = Accounts(wow, cfg.Account)
+	return wow, accts, err
+}
+
+// Labels joins the accounts' short names: "#1, #2".
+func Labels(accts []Account) string {
+	var l []string
+	for _, a := range accts {
+		l = append(l, a.Label())
+	}
+	return strings.Join(l, ", ")
 }
 
 // Inside reports whether p is dir or inside it.
