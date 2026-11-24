@@ -97,7 +97,7 @@ func newTestApp(t *testing.T, cfg Config) *App {
 var fixtureNow = time.Unix(1794010000, 0)
 
 func TestRunOnceUploadsDeltaAndNeverWritesToWoW(t *testing.T) {
-	wow, _ := fakeWoW(t, "OLD", "ACCOUNT1")
+	wow, _ := fakeWoW(t, "ACCOUNT1")
 	before := snapshotTree(t, wow)
 	rec := &recorder{}
 	ts := rec.server(t, 200)
@@ -116,7 +116,7 @@ func TestRunOnceUploadsDeltaAndNeverWritesToWoW(t *testing.T) {
 	}
 	s := a.Status()
 	if !s.OK || !strings.HasPrefix(s.Text, "sent ") || !strings.Contains(s.File, "ACCOUNT1") {
-		t.Errorf("status %+v (want the newest account's file)", s)
+		t.Errorf("status %+v (want the account's file)", s)
 	}
 
 	res, err = a.RunOnce(context.Background(), RunOptions{Now: fixtureNow})
@@ -129,7 +129,7 @@ func TestRunOnceUploadsDeltaAndNeverWritesToWoW(t *testing.T) {
 	if after := snapshotTree(t, wow); after != before {
 		t.Errorf("the WoW folder changed:\nbefore\n%s\nafter\n%s", before, after)
 	}
-	if _, err := os.Stat(a.StatePath()); err != nil {
+	if _, err := os.Stat(a.StatePathFor("ACCOUNT1")); err != nil {
 		t.Errorf("no state file: %v", err)
 	}
 }
@@ -148,7 +148,7 @@ func TestRunOnceFailureStatusAndNoState(t *testing.T) {
 	if s := a.Status(); s.OK || !strings.Contains(s.Text, "bad_shape") {
 		t.Errorf("status %+v", s)
 	}
-	if _, err := os.Stat(a.StatePath()); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(a.StatePathFor("A")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("state written though nothing was accepted")
 	}
 }

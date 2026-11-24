@@ -39,7 +39,7 @@ func TestDownloadWritesTheOtherMachinesCharacters(t *testing.T) {
 	// the state knows this machine's own characters from what it uploaded: "R-Own Char" is one of them
 	st := upload.NewState(ts.URL, files[0])
 	st.Docs = map[string]uint64{"snapshots\x1fR-Own Char": 1}
-	if err := st.Save(a.StatePath()); err != nil {
+	if err := st.Save(a.StatePathFor("A")); err != nil {
 		t.Fatal(err)
 	}
 	ms.chars = otherChars

@@ -32,6 +32,8 @@ type App struct {
 	status  Status
 	trigger chan struct{}
 	clock   func() time.Time // replaced in tests; nil = time.Now
+	// findEvery is how often Loop looks for new account folders; zero = a minute (tests shorten it).
+	findEvery time.Duration
 	// newClient is replaced in tests.
 	newClient func(cfg Config) *upload.Client
 }
@@ -44,15 +46,15 @@ type Status struct {
 	Text     string // one line: what was sent, or the error
 	RetryAt  time.Time
 	File     string // the SavedVariables file
+	Account  string // the accounts the last attempt sent for (or failed on), e.g. "#2" (#420)
 	Download string // the last download: what came, or the error (#239)
 	// Notice is what the last build left out or cut so the server would take the rest (#372), as one
 	// line; empty when nothing. Kept apart from Text: the upload itself worked.
 	Notice string
 }
 
-// ConfigPath, StatePath and LogPath are the files in Dir.
+// ConfigPath and LogPath are the files in Dir; the upload state is per account (StatePathFor).
 func (a *App) ConfigPath() string { return filepath.Join(a.Dir, "config.json") }
-func (a *App) StatePath() string  { return filepath.Join(a.Dir, "state.json") }
 func (a *App) LogPath() string    { return filepath.Join(a.Dir, "companion.log") }
 
 // New opens the app in dir: creates it, opens the log (also written to extra, e.g. stderr).
@@ -76,14 +78,8 @@ func New(dir, version string, extra io.Writer) (*App, error) {
 		c.Machine = cfg.MachineName()
 		return c
 	}
-	if data, err := os.ReadFile(a.StatePath()); err == nil {
-		var raw struct {
-			LastSuccess int64 `json:"lastSuccess"`
-		}
-		if json.Unmarshal(data, &raw) == nil && raw.LastSuccess > 0 {
-			a.status.Success = time.Unix(raw.LastSuccess, 0)
-		}
-	}
+	a.migrateState()
+	a.status.Success = a.lastSuccess()
 	return a, nil
 }
 
@@ -131,6 +127,7 @@ type RunOptions struct {
 	DryRun  bool   // build the requests, send nothing, change no state
 	DumpDir string // dry run: write the request bodies here
 	Full    bool   // ignore what was uploaded before
+	Account string // only this account folder (the one whose file changed); empty = every account
 	Now     time.Time
 }
 
@@ -174,36 +171,6 @@ func Locate(cfg Config) (wow, file string, err error) {
 	return wow, file, err
 }
 
-// RunOnce reads the file, builds the delta and sends it (or dumps it on a dry run).
-func (a *App) RunOnce(ctx context.Context, opt RunOptions) (upload.Result, error) {
-	if opt.Now.IsZero() {
-		opt.Now = time.Now()
-	}
-	res, file, err := a.runOnce(ctx, opt)
-	if opt.DryRun {
-		return res, err
-	}
-	a.setStatus(func(s *Status) {
-		s.Attempt = opt.Now
-		s.File = file
-		s.RetryAt = res.RetryAt
-		switch {
-		case err != nil:
-			s.OK, s.Text = false, err.Error()
-		case !res.OK():
-			s.OK, s.Text = false, res.Errors[0].Error()
-		case res.Sent == 0:
-			s.OK, s.Text = true, "nothing new"
-		default:
-			s.OK, s.Text = true, "sent "+countsText(res.Counts)
-		}
-		if res.Sent > 0 {
-			s.Success = time.Now()
-		}
-	})
-	return res, err
-}
-
 // NoticeText is the one line for the status line and the tray about what a plan left out or cut
 // (#372); empty when it left out nothing.
 func NoticeText(plan *upload.Plan) string {
@@ -230,30 +197,13 @@ func countsText(c map[string]int) string {
 	return b.Summary()
 }
 
-func (a *App) runOnce(ctx context.Context, opt RunOptions) (upload.Result, string, error) {
-	a.work.Lock()
-	defer a.work.Unlock()
+func (a *App) runAccount(ctx context.Context, cfg Config, opt RunOptions, ac Account) (upload.Result, error) {
 	var none upload.Result
-	cfg, err := a.Config()
-	if err != nil {
-		return none, "", err
-	}
-	if err := CheckSite(cfg.Site); err != nil {
-		return none, "", err
-	}
-	if !opt.DryRun && cfg.Token == "" {
-		return none, "", fmt.Errorf("no upload token: create one on %s/me and put it in %s", cfg.Site, a.ConfigPath())
-	}
-	wow, file, err := Locate(cfg)
-	if err != nil {
-		return none, "", err
-	}
-	if Inside(a.Dir, wow) || (opt.DumpDir != "" && Inside(opt.DumpDir, wow)) {
-		return none, file, fmt.Errorf("refusing to write inside the World of Warcraft folder %s", wow)
-	}
+	file := ac.File
+	statePath := a.StatePathFor(ac.Name)
 	f, err := ReadSavedVariables(file)
 	if err != nil {
-		return none, file, err
+		return none, err
 	}
 	if len(f.Problems) > 0 {
 		a.Log.Printf("%s: %d values not read (first: %s)", file, len(f.Problems), f.Problems[0])
@@ -261,7 +211,7 @@ func (a *App) runOnce(ctx context.Context, opt RunOptions) (upload.Result, strin
 
 	st := upload.NewState(cfg.Site, file)
 	if !opt.Full {
-		if st, err = upload.LoadState(a.StatePath(), cfg.Site, file); err != nil {
+		if st, err = upload.LoadState(statePath, cfg.Site, file); err != nil {
 			a.Log.Printf("%v; sending everything again", err)
 			st = upload.NewState(cfg.Site, file)
 		}
@@ -280,13 +230,13 @@ func (a *App) runOnce(ctx context.Context, opt RunOptions) (upload.Result, strin
 	}
 
 	if opt.DryRun {
-		return none, file, a.dryRun(plan, opt.DumpDir)
+		return none, a.dryRun(plan, opt.DumpDir)
 	}
 	if plan.Empty() {
-		return none, file, nil
+		return none, nil
 	}
 	client := a.newClient(cfg)
-	save := func(s *upload.State) error { return s.Save(a.StatePath()) }
+	save := func(s *upload.State) error { return s.Save(statePath) }
 	total := upload.Result{Counts: map[string]int{}}
 	for try := 0; ; try++ {
 		a.Log.Printf("uploading %s: %d public and %d private requests", file, len(plan.Public), len(plan.Private))
@@ -302,7 +252,7 @@ func (a *App) runOnce(ctx context.Context, opt RunOptions) (upload.Result, strin
 		// already holds what was accepted).
 		if !upload.TooLarge(res) || try == 2 {
 			total.Failed, total.Errors, total.RetryAt = res.Failed, res.Errors, res.RetryAt
-			return total, file, nil
+			return total, nil
 		}
 		bo.MaxBytes = upload.DefaultMaxBytes >> (try + 1)
 		bo.MaxRows = upload.DefaultMaxRows >> (try + 1)
@@ -352,13 +302,24 @@ func (a *App) Trigger() {
 	}
 }
 
-// Loop uploads at start, when the file changed and settled, on Trigger, and when a refused upload
-// said to come back later, until ctx ends.
+// accountWatch is one watched account file.
+type accountWatch struct {
+	acct   Account
+	w      *watch.Watcher
+	cancel context.CancelFunc
+}
+
+// Loop uploads at start, when an account's file changed and settled (that account only), on Trigger
+// (every account), when a new account appears, and when a refused upload said to come back later,
+// until ctx ends. With the account setting empty every account's CraftWise.lua is watched (#420).
 func (a *App) Loop(ctx context.Context) {
-	var w *watch.Watcher
-	var wctx context.Context
-	var stop context.CancelFunc = func() {}
-	defer func() { stop() }()
+	watchers := map[string]*accountWatch{} // by file
+	changed := make(chan string, 16)       // account folder names whose file changed
+	defer func() {
+		for _, aw := range watchers {
+			aw.cancel()
+		}
+	}()
 	var retry *time.Timer
 	retryC := func() <-chan time.Time {
 		if retry == nil {
@@ -367,50 +328,103 @@ func (a *App) Loop(ctx context.Context) {
 		return retry.C
 	}
 
-	// ensureWatcher (re)starts the watcher when the file to watch changed (settings edited).
-	ensureWatcher := func(cfg Config) {
-		_, file, err := Locate(cfg)
-		if err != nil || (w != nil && w.Path == file) {
-			return
-		}
-		stop()
-		wctx, stop = context.WithCancel(ctx)
-		w = watch.New(file, time.Duration(cfg.PollSeconds)*time.Second, time.Duration(cfg.SettleSeconds)*time.Second)
-		go w.Run(wctx)
-		a.Log.Printf("watching %s", file)
-	}
-	watchC := func() <-chan struct{} {
-		if w == nil {
+	// ensureWatchers starts a watcher for each account file and stops those no longer wanted
+	// (settings edited). It returns the accounts newly watched.
+	ensureWatchers := func(cfg Config) (added []Account) {
+		_, accts, err := LocateAccounts(cfg)
+		if err != nil {
 			return nil
 		}
-		return w.C
+		want := map[string]bool{}
+		for _, ac := range accts {
+			want[ac.File] = true
+		}
+		dropped := false
+		for file, aw := range watchers {
+			if !want[file] {
+				aw.cancel()
+				delete(watchers, file)
+				dropped = true
+			}
+		}
+		for _, ac := range accts {
+			if watchers[ac.File] != nil {
+				continue
+			}
+			wctx, cancel := context.WithCancel(ctx)
+			w := watch.New(ac.File, time.Duration(cfg.PollSeconds)*time.Second, time.Duration(cfg.SettleSeconds)*time.Second)
+			watchers[ac.File] = &accountWatch{ac, w, cancel}
+			go w.Run(wctx)
+			go func(name string) {
+				for {
+					select {
+					case <-wctx.Done():
+						return
+					case <-w.C:
+						select {
+						case changed <- name:
+						case <-wctx.Done():
+							return
+						}
+					}
+				}
+			}(ac.Name)
+			added = append(added, ac)
+			a.Log.Printf("watching %s", ac.File)
+		}
+		if len(added) > 0 || dropped {
+			a.Log.Printf("watching %d accounts: %s", len(accts), Labels(accts))
+		}
+		return added
+	}
+	watcherOf := func(file string) *watch.Watcher {
+		if aw := watchers[file]; aw != nil {
+			return aw.w
+		}
+		return nil
 	}
 
-	incomplete := 0 // reads in a row that found the file still being written
-	run := func(why string) {
+	incomplete := map[string]int{} // reads in a row that found an account's file still being written
+	// run uploads account (empty = all of them).
+	run := func(why, account string) {
 		cfg, err := a.Config()
 		if err == nil {
-			ensureWatcher(cfg)
+			if added := ensureWatchers(cfg); len(added) > 0 {
+				account = "" // an account that wasn't watched yet: upload everything
+			}
 		}
 		a.Log.Printf("upload (%s)", why)
-		res, err := a.RunOnce(ctx, RunOptions{})
-		if errors.Is(err, ErrIncomplete) && w != nil && incomplete < 10 {
-			incomplete++
-			a.Log.Printf("%v; reading again shortly", err)
-			w.Retry()
-			return
-		}
-		incomplete = 0
+		runs, err := a.RunAccounts(ctx, RunOptions{Account: account})
 		if err != nil {
 			a.Log.Printf("upload: %v", err)
+		}
+		var at time.Time
+		ok := false
+		for _, r := range runs {
+			if errors.Is(r.Err, ErrIncomplete) && incomplete[r.Account.Name] < 10 {
+				if w := watcherOf(r.Account.File); w != nil {
+					incomplete[r.Account.Name]++
+					a.Log.Printf("%s: %v; reading again shortly", r.Account.Label(), r.Err)
+					w.Retry()
+					continue
+				}
+			}
+			incomplete[r.Account.Name] = 0
+			if r.Err != nil {
+				a.Log.Printf("upload %s: %v", r.Account.Label(), r.Err)
+			} else if r.Result.OK() {
+				ok = true
+			}
+			if r.Result.RetryAt.After(at) {
+				at = r.Result.RetryAt
+			}
 		}
 		if retry != nil {
 			retry.Stop()
 			retry = nil
 		}
-		at := res.RetryAt
 		// The merged market comes down after each successful upload and at start (#239).
-		if why == "start" || (err == nil && res.OK()) {
+		if why == "start" || ok {
 			if dres, derr := a.Download(ctx); derr != nil {
 				a.Log.Printf("download: %v", derr)
 				if dres.RetryAt.After(at) {
@@ -423,28 +437,29 @@ func (a *App) Loop(ctx context.Context) {
 		}
 	}
 
-	run("start")
-	// Settings may be fixed later (token, path): look for the file every minute until found.
-	find := time.NewTicker(time.Minute)
+	run("start", "")
+	// Settings may be fixed later (token, path) and a new account folder may show up: look every minute.
+	every := a.findEvery
+	if every <= 0 {
+		every = time.Minute
+	}
+	find := time.NewTicker(every)
 	defer find.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-a.trigger:
-			run("upload now")
-		case <-watchC():
-			run("file changed")
+			run("upload now", "")
+		case name := <-changed:
+			run("file changed: "+name, name)
 		case <-retryC():
 			retry = nil
-			run("retry")
+			run("retry", "")
 		case <-find.C:
-			if w == nil {
-				if cfg, err := a.Config(); err == nil {
-					ensureWatcher(cfg)
-					if w != nil {
-						run("file found")
-					}
+			if cfg, err := a.Config(); err == nil {
+				if added := ensureWatchers(cfg); len(added) > 0 {
+					run("file found", "")
 				}
 			}
 		}

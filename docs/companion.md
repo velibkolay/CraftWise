@@ -2,7 +2,8 @@
 
 A small app that uploads CraftWise's saved data to wow.velikopter.com. It watches
 `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/CraftWise.lua` (the game writes it
-on `/reload` and logout) and, after each change, sends what is new since the last upload:
+on `/reload` and logout) and, after each change, sends what is new since the last upload. With the
+`account` setting empty it does this for **every** account folder on the PC (#420, below):
 
 - **Public** (`POST /api/upload`): auction houses, scans, item names and info with the vendor sell
   price, the client's class and subclass names (#120; only new or changed ones), prices (only new raw
@@ -156,7 +157,7 @@ for variants; table order is not defined.
 
 **No echo.** The addon merges downloaded entries into `CraftWiseMarketDB`, so the next upload would find
 them in SavedVariables and send the other machine's data back as new. Before the file is written, the
-companion marks everything it downloaded in `state.json`: the newest scan time per house, the hashes of
+companion marks everything it downloaded in every account's state file (`state-<account>.json`): the newest scan time per house, the hashes of
 names and item info, class names, the newest `last` time per item and house, the days' hashes and the
 times of the downloaded raw points (`got`, kept 3 days, the addon keeps raw points 48 h). A recording made
 on this machine has its own time, so it is still sent, even when it is older than a downloaded one. A day
@@ -268,16 +269,16 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
   | `site` | `https://wow.velikopter.com` | |
   | `token` | | upload token from /me |
   | `wowPath` | (found) | the `_forever_` folder; empty = `C:\Program Files (x86)\World of Warcraft\_forever_` and the same on drives C to G, `/Applications/World of Warcraft/_forever_` |
-  | `account` | (newest) | folder under `WTF/Account`; empty = the account whose `CraftWise.lua` was written last |
+  | `account` | (every account) | folder under `WTF/Account`; empty = watch and upload every account that has a `CraftWise.lua` (#420); set = that account only |
   | `private` | `true` | also upload the private data |
   | `pollSeconds` | `5` | how often the file is checked |
   | `settleSeconds` | `3` | how long it must stay unchanged before it is read |
   | `sync` | `true` | download the merged market and write the `CraftWise_Sync` add-on (the upload token, `public` scope) |
   | `machine` | (host name) | this machine's name, sent with every request and written into the sync file; the site stores it with the characters this machine uploads (#242) |
 
-  Changes apply at the next upload; a different `wowPath` or `account` switches the watched file.
-- `state.json`: what was uploaded (per site and file). Delete it, or use `-once -full`, to send
-  everything again; re-sending is harmless (the server ignores what it has).
+  Changes apply at the next upload; a different `wowPath` or `account` switches the watched files.
+- `state-<account>.json`: what was uploaded, one file per account (per site and file; `#` stays in the name). Delete one, or use `-once -full`, to send
+  that account's data again; re-sending is harmless (the server ignores what it has). Builds before #420 kept one `state.json`: at the first start it is moved to the account its `file` path lies in (`state-<that account>.json`, nothing is lost, the other accounts start empty); a `state.json` that names no account is left alone.
 - `market-cache.json`: the market downloaded so far and the time to ask `since` next. Delete it to download everything again.
 - `companion.log`: what happened; kept at about 1 MB (the previous one is `companion.log.1`).
 
@@ -323,3 +324,21 @@ In `%AppData%\CraftWise Companion` (Windows) or `~/Library/Application Support/C
 - Character keys keep their realm (`<realm>-<name> <surname>`): the addon stores the realm each character had before
   the update (`CraftWiseDB.charRealms`) and a character with none gets one typed in on Settings › Realm. The
   companion's and the site's rule to refuse a key without a realm is unchanged.
+
+## Several WoW accounts on one PC (#420)
+
+With `account` empty the companion watches every `WTF/Account/*/SavedVariables/CraftWise.lua`, one
+watcher per file, and an account folder that shows up later is found within a minute (or at the next
+upload) and uploaded. The log says `watching 2 accounts: #1, #2` (the part after the last `#` of the
+folder name, e.g. `445303671#2`).
+
+- A change in one account's file uploads that account's delta only (log: `upload (file changed: <folder>)`).
+  "Upload now" and the start go through every account; an account with nothing new sends nothing.
+- The upload state is kept per account (`state-<account>.json`), so two accounts never mix their deltas
+  or watermarks. A failure in one account (file still being written, refusal) does not hold back the other.
+- The status line and the tray name the account the last upload came from: "Checked 14:02: sent 120 prices (account #2)".
+- After an upload the market download and the `CraftWise_Sync` write are unchanged: the AddOns folder is
+  shared, so every account loads the same sync file. A download marks what came down in every account's
+  state (no echo), and a character any account uploaded counts as this machine's own.
+- With `account` set only that account is watched and uploaded, as before.
+- `-once -dry-run -dump DIR` with several accounts writes each account's request bodies to `DIR/<account>/`.
