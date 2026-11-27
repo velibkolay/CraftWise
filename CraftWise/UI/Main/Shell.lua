@@ -826,8 +826,9 @@ function M.ScanSummary(now)
 	for _, h in ipairs(houses) do
 		local scan = h.lastFullScan and (L["full scan %s ago"]):format(M.AgeText(now - h.lastFullScan)) or L["no full scan"]
 		if h.lastSynced then
-			scan = scan .. " · " .. (h.lastSyncedMachine and (L["synced from %s"]):format(h.lastSyncedMachine) or L["synced"])
-				.. " " .. M.AgeText(now - h.lastSynced) .. " " .. L["ago"]
+			-- An age of that scan, not of the sync: the entry may be old (a live Link batch, or a file merged long ago).
+			scan = scan .. " · " .. (h.lastSyncedMachine and (L["scan from %s %s ago"]):format(h.lastSyncedMachine, M.AgeText(now - h.lastSynced))
+				or (L["scan from another machine %s ago"]):format(M.AgeText(now - h.lastSynced)))
 		end
 		lines[#lines + 1] = ("%s%s: %s · %s, %s %s"):format(h.label or "?", h.key == profit and (" (" .. L["profit"] .. ")") or "",
 			scan, Items(h.items), M.Thousands(h.withHistory), L["with history"])
@@ -835,11 +836,40 @@ function M.ScanSummary(now)
 	if #lines == 0 then
 		lines[1] = L["No auction house visited yet: open one and CraftWise records what you browse and scan."]
 	end
+	local merged = M.SyncMergedText(now)
+	if merged then
+		lines[#lines + 1] = merged
+	end
 	local a = sum.auctionator
 	if a and (a.items or 0) > 0 then
 		lines[#lines + 1] = ("%s: %s %s"):format(a.label or "Auctionator", Items(a.items), L["read"])
 	end
+	local warn = M.SyncNotice()
+	if warn then
+		table.insert(lines, 1, warn) -- first, in normal ink (the danger colour fails contrast on the light sheet), then a blank line
+		table.insert(lines, 2, "")
+	end
 	return title, lines
+end
+
+-- CraftWise_Sync is in the AddOns list but not loaded for this character (#423): the companion's file is never
+-- read. nil when it is loaded, not installed or unknown. One line for the tooltip, the login chat and /craftwise debug.
+function M.SyncNotice()
+	local market = ns.Market
+	if market and market.SyncAddonState and market.SyncAddonState() == "disabled" then
+		return L["CraftWise_Sync is not loaded for this character, so the companion's prices are not read. Enable it in the AddOns list, then /reload."]
+	end
+	return nil
+end
+
+-- "companion file merged 12 days ago"; nil when no file was ever merged.
+function M.SyncMergedText(now)
+	local market = ns.Market
+	local at = market and market.SyncMergedAt and market.SyncMergedAt()
+	if not at then
+		return nil
+	end
+	return (L["Companion file merged %s ago"]):format(M.AgeText((now or time()) - at))
 end
 
 -- "Horde AH" -> "Horde auction house", "Booty Bay" -> "Booty Bay auction house".

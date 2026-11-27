@@ -1143,6 +1143,15 @@ SlashCmdList.CRAFTWISE = function(input)
 			ns.Print("no professions cached yet - open a profession window once")
 		end
 		ns.Print("Auctionator: " .. (ns.HasAuctionator() and "found" or "not found"))
+		if ns.Market and ns.Market.SyncAddonState then
+			ns.Print("CraftWise_Sync: " .. ns.Market.SyncAddonState())
+			local notice = ns.Main and ns.Main.SyncNotice and ns.Main.SyncNotice()
+			if notice then
+				ns.Print(notice)
+			end
+			local merged = ns.Main and ns.Main.SyncMergedText and ns.Main.SyncMergedText()
+			ns.Print(merged or "companion file: never merged")
+		end
 		if #ns.unknownEvents > 0 then
 			ns.Print("unknown events: " .. table.concat(ns.unknownEvents, ", "))
 		end
