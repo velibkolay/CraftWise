@@ -482,7 +482,56 @@ it("#241: merged prices are the prices: Current, Typical's days and the status l
 	eq(own.synced, nil)
 	assert(not shell.StatusText(own):find("synced", 1, true))
 	local _, lines = shell.ScanSummary(NOW)
-	assert(table.concat(lines, "\n"):find("synced from MacBook", 1, true), table.concat(lines, "\n"))
+	assert(table.concat(lines, "\n"):find("scan from MacBook 1 min ago", 1, true), table.concat(lines, "\n"))
+	assert(not table.concat(lines, "\n"):find("synced from", 1, true), "an old scan entry is not the current sync")
+end)
+
+-- #423: is the companion's add-on loaded for this character, and when was its file last merged.
+local function AddOns(exists, loaded)
+	C_AddOns = { DoesAddOnExist = function(n) return n == "CraftWise_Sync" and exists end,
+		IsAddOnLoaded = function(n) return n == "CraftWise_Sync" and loaded end }
+end
+
+it("#423: CraftWise_Sync installed but not loaded for this character: one warning line, never enabled", function()
+	local M, stub, ns = Market()
+	local enabled = false
+	AddOns(true, false)
+	C_AddOns.EnableAddOn = function() enabled = true end
+	eq(M.SyncAddonState(), "disabled")
+	assert(ns.Main.SyncNotice():find("switched off", 1, true), ns.Main.SyncNotice())
+	local chat = Printed(function() stub.Fire("PLAYER_LOGIN") end)
+	assert(chat:find("CraftWise_Sync is switched off", 1, true), tostring(chat))
+	local _, lines = ns.Main.ScanSummary(NOW)
+	assert(table.concat(lines, "\n"):find("/reload", 1, true), table.concat(lines, "\n"))
+	local debug = Printed(function() SlashCmdList.CRAFTWISE("debug") end)
+	assert(debug:find("CraftWise_Sync: disabled", 1, true), tostring(debug))
+	eq(enabled, false)
+end)
+
+it("#423: not installed or enabled: no warning anywhere", function()
+	local M, stub, ns = Market()
+	AddOns(false, false)
+	eq(M.SyncAddonState(), "missing"); eq(ns.Main.SyncNotice(), nil)
+	local chat = Printed(function() stub.Fire("PLAYER_LOGIN") end)
+	assert(not tostring(chat):find("switched off", 1, true), tostring(chat))
+	AddOns(true, true)
+	eq(M.SyncAddonState(), "loaded"); eq(ns.Main.SyncNotice(), nil)
+	chat = Printed(function() stub.Fire("PLAYER_LOGIN") end)
+	assert(not tostring(chat):find("switched off", 1, true), tostring(chat))
+	C_AddOns = nil
+	eq(M.SyncAddonState(), "unknown"); eq(ns.Main.SyncNotice(), nil)
+end)
+
+it("#423: the tooltip says when the companion file was last merged", function()
+	local M, stub, ns = Market()
+	AddOns(true, true)
+	eq(ns.Main.SyncMergedText(NOW), nil, "never merged: no line")
+	CraftWiseSync = File({})
+	eq(M.StartSync(), "done")
+	eq(M.SyncMergedAt(), NOW)
+	eq(ns.Main.SyncMergedText(NOW + 12 * DAY), "companion file merged 12 days ago")
+	local _, lines = ns.Main.ScanSummary(NOW + 2 * 3600)
+	assert(table.concat(lines, "\n"):find("companion file merged 2 h ago", 1, true), table.concat(lines, "\n"))
 end)
 
 it("#241: after a merge a scan of this machine still records on top of it, and Prune keeps the merged entries", function()

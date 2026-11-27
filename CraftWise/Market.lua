@@ -3681,6 +3681,32 @@ function M.SyncStatus()
 	return syncStatus
 end
 
+-- Is the companion's data add-on usable for this character (#423)? "loaded", "disabled" (it is in the AddOns
+-- list but not loaded for this character: the file is never read), "missing" (not installed) or "unknown"
+-- (the client gave no answer). Never enables anything: that is the player's choice in the AddOns list.
+M.SYNC_ADDON = "CraftWise_Sync"
+function M.SyncAddonState()
+	local A = C_AddOns
+	if not (A and A.DoesAddOnExist and A.IsAddOnLoaded) then
+		return "unknown"
+	end
+	local okExists, exists = pcall(A.DoesAddOnExist, M.SYNC_ADDON)
+	if not okExists then
+		return "unknown"
+	end
+	if not exists then
+		return "missing"
+	end
+	local okLoaded, loaded = pcall(A.IsAddOnLoaded, M.SYNC_ADDON)
+	return okLoaded and loaded and "loaded" or "disabled"
+end
+
+-- When the companion's file was last merged into this saved data (db.sync.at, else its `written`); nil if never.
+function M.SyncMergedAt()
+	local sync = db and db.sync
+	return sync and (sync.at or sync.written) or nil
+end
+
 -- When the other machine's last scan at a house happened and under which name, nil without one.
 -- Never an own scan: LastRecorded is the own one.
 function M.LastSynced(houseKey)
@@ -4042,6 +4068,9 @@ ns.On("PLAYER_LOGIN", function()
 	M.RefreshScope()
 	-- The loading screen is up: merge the other machine's file now, not in world (#241).
 	pcall(ns.Timed("Market: sync merge (login)", M.StartSync))
+	if M.SyncAddonState() == "disabled" and ns.Main and ns.Main.SyncNotice then
+		ns.Print(ns.Main.SyncNotice()) -- one line, only when the add-on is installed but off (#423)
+	end
 	ScanBags()
 	M.Prune()
 	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, M.ExportAuctionatorScope)
