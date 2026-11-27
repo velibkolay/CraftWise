@@ -836,17 +836,18 @@ function M.ScanSummary(now)
 	if #lines == 0 then
 		lines[1] = L["No auction house visited yet: open one and CraftWise records what you browse and scan."]
 	end
+	local merged = M.SyncMergedText(now)
+	if merged then
+		lines[#lines + 1] = merged
+	end
 	local a = sum.auctionator
 	if a and (a.items or 0) > 0 then
 		lines[#lines + 1] = ("%s: %s %s"):format(a.label or "Auctionator", Items(a.items), L["read"])
 	end
 	local warn = M.SyncNotice()
 	if warn then
-		lines[#lines + 1] = warn
-	end
-	local merged = M.SyncMergedText(now)
-	if merged then
-		lines[#lines + 1] = merged
+		table.insert(lines, 1, warn) -- first, in normal ink (the danger colour fails contrast on the light sheet), then a blank line
+		table.insert(lines, 2, "")
 	end
 	return title, lines
 end
@@ -856,7 +857,7 @@ end
 function M.SyncNotice()
 	local market = ns.Market
 	if market and market.SyncAddonState and market.SyncAddonState() == "disabled" then
-		return L["CraftWise_Sync is switched off for this character: the companion's prices are not read. Enable it in the AddOns list, then /reload."]
+		return L["CraftWise_Sync is not loaded for this character, so the companion's prices are not read. Enable it in the AddOns list, then /reload."]
 	end
 	return nil
 end
@@ -868,7 +869,7 @@ function M.SyncMergedText(now)
 	if not at then
 		return nil
 	end
-	return (L["companion file merged %s ago"]):format(M.AgeText((now or time()) - at))
+	return (L["Companion file merged %s ago"]):format(M.AgeText((now or time()) - at))
 end
 
 -- "Horde AH" -> "Horde auction house", "Booty Bay" -> "Booty Bay auction house".

@@ -3701,6 +3701,30 @@ function M.SyncAddonState()
 	return okLoaded and loaded and "loaded" or "disabled"
 end
 
+-- At login: one chat line when CraftWise_Sync is installed but not loaded (#423), once per character until the
+-- state changes (the last state warned about is kept in the character's saved data), not on every /reload.
+function M.WarnSyncOff()
+	local state = M.SyncAddonState()
+	local char = ns.charDB
+	if state ~= "disabled" then
+		if char and state ~= "unknown" then
+			char.syncWarned = nil -- loaded or removed: warn again if it goes off later
+		end
+		return false
+	end
+	if char and char.syncWarned == state then
+		return false
+	end
+	if char then
+		char.syncWarned = state
+	end
+	local notice = ns.Main and ns.Main.SyncNotice and ns.Main.SyncNotice()
+	if notice then
+		ns.Print(notice)
+	end
+	return notice ~= nil
+end
+
 -- When the companion's file was last merged into this saved data (db.sync.at, else its `written`); nil if never.
 function M.SyncMergedAt()
 	local sync = db and db.sync
@@ -4068,9 +4092,7 @@ ns.On("PLAYER_LOGIN", function()
 	M.RefreshScope()
 	-- The loading screen is up: merge the other machine's file now, not in world (#241).
 	pcall(ns.Timed("Market: sync merge (login)", M.StartSync))
-	if M.SyncAddonState() == "disabled" and ns.Main and ns.Main.SyncNotice then
-		ns.Print(ns.Main.SyncNotice()) -- one line, only when the add-on is installed but off (#423)
-	end
+	M.WarnSyncOff()
 	ScanBags()
 	M.Prune()
 	C_Timer.NewTimer(AUCTIONATOR_LOGIN_DELAY, M.ExportAuctionatorScope)
