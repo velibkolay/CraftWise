@@ -473,7 +473,7 @@ function ns.AddTooltipLines(tooltip, itemID)
 	end
 	if s.lines.market then
 		for _, line in ipairs(ns.TSMLines(itemID)) do
-			lines[#lines + 1] = { line[1], line[3] and ns.FormatMoney(line[3]) or (MUTED .. line[2] .. "|r") }
+			lines[#lines + 1] = { line[1], line[3] and (MUTED .. ns.FormatMoney(line[3]) .. "|r") or (MUTED .. line[2] .. "|r") }
 		end
 	end
 	if #lines == 0 then
