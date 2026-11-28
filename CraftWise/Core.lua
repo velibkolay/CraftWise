@@ -191,7 +191,7 @@ local DB_DEFAULTS = {
 		craftRunHours = 8, -- listing duration the Craft run plans for (#399); the sell frame's choices, 8 h confirmed in game
 		ahPanel = { closed = false, sections = {} }, -- the Buy panel beside the AH (#402): closed by its X, and which sections the player opened or closed by hand
 		craftListPos = {}, -- the craft list panel moved by its title (#397): { point, relPoint, x, y }; empty = beside the profession window
-		alpha = { main = 0.96, farm = 0.86, toast = 0.70 }, -- background alpha per window (#162), Settings > Look
+		alpha = { main = 0.96, farm = 0.86 }, -- background alpha per window (#162), Settings > Look
 		menuClick = "middle", -- item menu in the bags: "middle" | "altright" | "off"
 		slotMarks = true, -- marks on bag slots (BagIcons.lua, #160); Settings › Bags and loot (#157)
 		-- Profit prices (#26 phase 2): basis "typical" | "current" (lowest), house "faction" (own) |
