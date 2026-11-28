@@ -39,9 +39,9 @@ end
 
 -- Optional TSM data (#434), read only through TSM's public in-game API (TSM_API, TSM 4.15.9 App/API.lua:
 -- ToItemString, GetCustomPriceValue); no TSM code or data is copied or stored. Every call is guarded: no TSM, an
--- error or a nil value means nothing. GetCustomPriceValue returns copper for the price sources and the already
--- scaled number for DBRegionSoldPerDay (units a day) and DBRegionSaleRate (0..1); TSM stores both x1000 and
--- divides when it registers them. TSM gives no data age, so a TSM price shows none and is never a scan.
+-- error or a nil value means nothing. GetCustomPriceValue rounds every result to a whole number (CustomString
+-- Evaluate), so the two fractional sources, DBRegionSoldPerDay (units a day) and DBRegionSaleRate (0..1), are asked
+-- as "<source> * 1000" and divided by 1000 here, as TSM's own tooltip does. TSM gives no data age, so a TSM price shows none and is never a scan.
 local TSM = {}
 ns.TSM = TSM
 
@@ -60,7 +60,7 @@ function TSM.Enabled()
 end
 
 -- One TSM source for an item as a number, or nil.
-function TSM.Value(itemID, source)
+function TSM.Value(itemID, source, scale)
 	if not (itemID and TSM.Enabled()) then
 		return nil
 	end
@@ -69,9 +69,9 @@ function TSM.Value(itemID, source)
 	if not (ok and type(itemString) == "string") then
 		return nil
 	end
-	local okValue, value = pcall(api.GetCustomPriceValue, source, itemString)
+	local okValue, value = pcall(api.GetCustomPriceValue, scale and (source .. " * " .. scale) or source, itemString)
 	if okValue and type(value) == "number" and value > 0 then
-		return value
+		return scale and value / scale or value
 	end
 	return nil
 end
@@ -89,7 +89,7 @@ end
 
 -- Region demand: { perDay (units a day), rate (0..1 share of listings that sell), avg (copper) } or nil.
 function TSM.Demand(itemID)
-	local perDay, rate, avg = TSM.Value(itemID, "DBRegionSoldPerDay"), TSM.Value(itemID, "DBRegionSaleRate"),
+	local perDay, rate, avg = TSM.Value(itemID, "DBRegionSoldPerDay", 1000), TSM.Value(itemID, "DBRegionSaleRate", 1000),
 		TSM.Value(itemID, "DBRegionSaleAvg")
 	if not (perDay or rate or avg) then
 		return nil

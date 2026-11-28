@@ -12,7 +12,11 @@ local function InstallTSM(values, opts)
 		GetCustomPriceValue = function(src, itemString)
 			calls[#calls + 1] = src
 			if opts.errValue then error("boom") end
-			return values[itemString] and values[itemString][src]
+			-- Like TSM: the evaluated string is rounded to a whole number.
+			local name, mult = src:match("^(%w+) %* (%d+)$")
+			local raw = values[itemString] and values[itemString][name or src]
+			if not raw then return nil end
+			return math.floor(raw * (tonumber(mult) or 1) + 0.5)
 		end,
 	}
 end
@@ -75,11 +79,11 @@ end)
 it("demand: already scaled numbers, labelled TSM region", function()
 	local ns = LoadAddon()
 	InstallTSM({ ["i:1"] = { DBRegionSoldPerDay = 20.6, DBRegionSaleRate = 0.54, DBRegionSaleAvg = 500 },
-		["i:2"] = { DBRegionSoldPerDay = 0.6 } })
+		["i:2"] = { DBRegionSoldPerDay = 0.6, DBRegionSaleRate = 0.16 } })
 	local d = ns.TSM.Demand(1)
 	eq(d.perDay, 20.6); eq(d.rate, 0.54); eq(d.avg, 500)
 	eq(ns.TSM.DemandText(d), "21 sold a day, 54% sale rate")
-	eq(ns.TSM.DemandText(ns.TSM.Demand(2)), "0.6 sold a day")
+	eq(ns.TSM.DemandText(ns.TSM.Demand(2)), "0.6 sold a day, 16% sale rate")
 	local lines = ns.TSMLines(1)
 	eq(lines[1][1], "TSM region"); eq(lines[2][1], "  TSM sells ~")
 	Done()
