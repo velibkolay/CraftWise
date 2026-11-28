@@ -505,17 +505,28 @@ Not part of the addon: build `companion/` (see `docs/companion.md`), create an u
 
 ## Loot toast (#114)
 Needs a full game restart (new file `LootToast.lua` in the TOC). On by default; Settings, "Loot toast".
-- [ ] Autoloot a mob: one line per item (icon, name in its quality colour, `xN` for stacks) appears at the anchor, stays about 4 s, then fades over 1 s. Same with a hand-opened loot window (Shift + right-click), clicking the items.
+- [ ] Autoloot a mob: one line per item (icon, `+name` in its quality colour, `+N name` for stacks) appears at the anchor, floats up and stays about 4 s, then fades over 1 s. Same with a hand-opened loot window (Shift + right-click), clicking the items.
 - [ ] A mob with several items and coin: one line per item plus one coin line with the exact amount. Each line fades on its own timer (loot a second mob 2 s later: the first lines go first).
 - [ ] Area loot of several corpses (or two kills of the same mob quickly): the same item adds to its line (`x` count goes up) instead of a second line; coins add to one coin line.
-- [ ] Value text: an item with an AH price (Auctionator or a CraftWise scan) shows `<money> AH`, a vendor-only item `<money> vendor`, both for the whole stack and matching the item tooltip's "Sells for" times the count. An item without any price shows no value. `/craftwise loottoast value off` hides it.
+- [ ] Value text: an item with an AH price (Auctionator or a CraftWise scan) shows `<money> AH` (muted grey, after the name on the same line), a vendor-only item `<money> vendor`, both for the whole stack and matching the item tooltip's "Sells for" times the count. An item without any price shows no value. `/craftwise loottoast value off` hides it.
 - [ ] Coin: selling to a vendor, taking money from mail and a quest reward do **not** show a coin line. In a group, "Your share of the loot is ..." shows the coin line with your share. If looted coin never shows, `CHAT_MSG_MONEY` and `PLAYER_MONEY` are more than 2 s apart (or the first never fires) on Forever: report it.
 - [ ] Another player's loot in a group never shows; quest reward items (pushed, "You receive item:") don't either.
 - [ ] Inside a dungeon in combat: if `CHAT_MSG_LOOT` text is a secret value there, lines are skipped without a Lua error. Report whether loot during combat in an instance shows.
-- [ ] `/craftwise loottoast unlock`: the white handle and outline appear (#159); drag the handle, `/craftwise loottoast lock` hides them. `/craftwise loottoast test` shows two bag items and a coin line there, each labelled "test". `/reload` (and a relog) keeps the position. `/craftwise loottoast reset` puts it back.
+- [ ] `/craftwise loottoast unlock`: the whole 260 x 200 area shows as a dim white box with an outline and the label (#426); drag the box, `/craftwise loottoast lock` hides them. `/craftwise loottoast test` shows two bag items and a coin line there, each labelled "test". `/reload` (and a relog) keeps the position. `/craftwise loottoast reset` puts it back.
 - [ ] `/craftwise loottoast duration 8`: lines stay 8 s. `duration 0` and `duration 50` are refused with a usage line. `/craftwise loottoast off`: nothing shows on loot; `on` again.
 - [ ] Non-English client (if available): lines still appear (the client's own `LOOT_ITEM_SELF` / `LOOT_ITEM_SELF_MULTIPLE` strings are used).
 - [ ] Fast auto-loot (#41) on and off, and with another loot addon: the toast shows the same either way (it reads what arrived, not who looted).
+
+Floating look (#426, adapted from OneForAll's loot feed; `/reload` is enough, no new file). Turn OneForAll's own loot feed off (its Quality of Life tab) so you do not see both.
+- [ ] Lines have no strip or background: an 18 px icon, the name in 14 px outlined text, readable over the world and over a bright spell effect.
+- [ ] A new line fades in over a fraction of a second at the bottom of the area, floats up, fades out over the last second and is gone after duration + fade (5 s by default; `/craftwise loottoast duration 8` makes it 9 s). Nothing is left on screen and no Lua error.
+- [ ] Loot three different items quickly: the lines stay about 22 px apart, the newer ones push the older ones up. Eight at once (a big area loot) fit without overlapping.
+- [ ] Mine the same ore twice: it is one line, `+2 Copper Ore`, that drops back to the bottom with a fresh timer (it does not blink).
+- [ ] The coin line is `+<coins>` in gold, no icon, at the left; the value of an item is the muted text after the name, on the same line.
+- [ ] A very long item name (e.g. "Thunderfury, Blessed Blade of the Windseeker") is cut with "..." before the value is; the value stays whole.
+- [ ] Clickable lines (vendor loop alert, restock, auction sold) still open their page when clicked, also while they float.
+- [ ] `/craftwise loottoast test`: three lines, each with a muted "test".
+- [ ] The area is clamped to the screen when moved; the default place (right of the character, a little above the middle) does not cover the unit frames or action bars at your UI scale.
 
 ## Money and XP in the logout snapshot (#123)
 `/reload` is enough (no new file, no TOC change). Read the snapshot in `CraftWise.lua` (copy it with the game closed, or read it after logging out) under `CraftWiseDB.snapshots["<realm>-<name> <surname>"]`.
@@ -722,7 +733,7 @@ Needs a **full game restart**: four new files in the TOC (`UI/Main/Pages/Items.l
 
 ## Background alpha per window (#162)
 No new file in the TOC, so `/reload` is enough. Compare with the Colours paragraph of #150.
-- [ ] Settings › Look: three sliders, Background · Main window / Farm tracker / Loot toast, 20–100 %, defaults 96 / 86 / 70 %. Drag the main one: the window's sheet, its cards (hero card, list cards, Crates, Auctions) and the header planes get see-through while you drag; text, icons, rails and the nokta stay fully opaque. Compare the shadow: it fades with the sheet.
+- [ ] Settings › Look: two sliders, Background · Main window / Farm tracker, 20–100 %, defaults 96 / 86 %. Drag the main one: the window's sheet, its cards (hero card, list cards, Crates, Auctions) and the header planes get see-through while you drag; text, icons, rails and the nokta stay fully opaque. Compare the shadow: it fades with the sheet.
 - [ ] The header's baked planes carry the gold key block too (one texture): check that it fading with the planes looks right at 20 % (open question in the PR).
 - [ ] Farm tracker slider: the tracker's sheet and its fishing card follow while dragging, also in mini mode. With "Fade to 40 %" on, away from the mouse it ends at about alpha x 0.4 (the two multiply); hovering brings it back to the slider's value, not to 100 %.
 - [ ] Loot toast slider (Look and Settings › Loot toast, same value): with no toast on screen the three test lines appear and follow the slider; with real loot on screen those strips follow. The newest line's turkuaz flap stays solid.

@@ -11,9 +11,14 @@
 --     its timer, so an area loot of five corpses is one line per item, not five.
 --   * Settings in CraftWiseDB.lootToast (Core.lua defaults): enabled, duration (seconds fully shown),
 --     fade (seconds of fade-out), value (show the value text), locked, pos (anchor position).
---   * Look (#159, Origami): each line a folded strip, the newest with the turkuaz flap; lines step down in
---     alpha (1, 0.75, 0.5); background alpha from db.settings.alpha.toast (default 0.70).
+--   * Look (#426): floating like OneForAll's loot feed, no strips or backgrounds. Each line is an 18 icon
+--     (cropped), 6 apart a 14 OUTLINE name (quality colour: "+name", "+N name"; coin "+coins" in gold, no icon)
+--     and, 8 after it, the value in C.text2 ("12s 40c AH"). Lines float up the 260 x 200 area at (height - 18) / life
+--     (life = duration + fade), fade in over 0.2 s, fade out over the fade, and push each other up to keep
+--     22 apart. A long name is cut before the value is.
 --     `/craftwise loottoast on|off|lock|unlock|test|duration <s>|value on|off|reset`.
+--
+-- The floating look is adapted from OneForAll 6.2.17, "Loot feed" (Smoergi, GPL-3.0-or-later).
 local _, ns = ...
 
 local T = {}
@@ -21,8 +26,7 @@ ns.LootToast = T
 
 T.MAX_LINES = 8 -- older lines are dropped when a new one would be the ninth
 T.MIN_DURATION, T.MAX_DURATION = 1, 30
-T.ROW_HEIGHT = 28
-T.WIDTH = 260 -- width of the Move handle and outline; the strips are as wide as their text
+T.WIDTH, T.HEIGHT = 260, 200 -- the area the lines float up in (and the Move box)
 T.COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 T.UNKNOWN_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 T.DEFAULT_POS = { point = "CENTER", relPoint = "CENTER", x = 300, y = 120 }
@@ -92,14 +96,26 @@ function T.Value(itemID, count)
 	return math.floor(v.copper * (count or 1) + 0.5), v.source
 end
 
--- Adds a line (or adds to the same item's line while it is still fully shown) and returns it.
+-- Fade-in at the start of a line's life (a merged line keeps its own start, so it does not blink).
+T.FADE_IN = 0.2
+function T.LineAlpha(line, now)
+	local born = line.born or line.t
+	local a = T.Alpha(line, now)
+	if now - born < T.FADE_IN then
+		a = a * math.max(0, now - born) / T.FADE_IN
+	end
+	return a
+end
+
+-- Adds a line (or adds to the same item's line while it is still fully shown) and returns it. A new line
+-- starts at the bottom (y = 0); a merged one goes back there with its timer restarted.
 function T.Add(entry, now)
 	for i, line in ipairs(lines) do
 		if line.key == entry.key and not line.test == not entry.test and now - line.t <= T.Duration() then
 			line.count = (line.count or 0) + (entry.count or 0)
 			line.copper = (line.copper or 0) + (entry.copper or 0)
 			line.link = entry.link or line.link
-			line.t = now
+			line.t, line.y, line.floatT = now, 0, now
 			table.remove(lines, i)
 			table.insert(lines, 1, line)
 			return line
@@ -109,7 +125,7 @@ function T.Add(entry, now)
 	for k, v in pairs(entry) do
 		line[k] = v
 	end
-	line.t = now
+	line.t, line.born, line.y, line.floatT = now, now, 0, now
 	table.insert(lines, 1, line)
 	while #lines > T.MAX_LINES do
 		table.remove(lines)
@@ -117,10 +133,30 @@ function T.Add(entry, now)
 	return line
 end
 
--- Drops the lines that have faded out; true while any line is left.
+-- Floating: speed = (height - top margin) / life, so an undisturbed line reaches the top just as its life
+-- ends. Lines keep GAP apart, the newer ones push the older ones up (a pushed line may reach the top early).
+T.GAP = 22
+T.TOP_MARGIN = 18 -- a line that reaches height - this is gone
+function T.Life(line)
+	return (line and line.duration or T.Duration()) + T.Fade()
+end
+
+function T.Float(now)
+	for i, line in ipairs(lines) do
+		local dt = math.max(0, now - (line.floatT or now))
+		line.floatT = now
+		local y = (line.y or 0) + (T.HEIGHT - T.TOP_MARGIN) / T.Life(line) * dt
+		if i > 1 then
+			y = math.max(y, lines[i - 1].y + T.GAP)
+		end
+		line.y = y
+	end
+end
+
+-- Drops the lines that have faded out or floated to the top; true while any line is left.
 function T.Expire(now)
 	for i = #lines, 1, -1 do
-		if T.Alpha(lines[i], now) <= 0 then
+		if T.Alpha(lines[i], now) <= 0 or (lines[i].y or 0) > T.HEIGHT - T.TOP_MARGIN then
 			table.remove(lines, i)
 		end
 	end
@@ -191,39 +227,18 @@ function T.LineParts(line)
 	return parts
 end
 
--- Alpha by position: the newest line 1, the next 0.75, every older one 0.5 (spec "Loot toast").
-T.STEPS = { 1, 0.75, 0.5 }
-function T.StepAlpha(index)
-	return T.STEPS[math.min(math.max(index or 1, 1), #T.STEPS)]
-end
-
--- A line's alpha: its step times its own timer (shown for "Lines stay", then the fade-out).
-function T.LineAlpha(index, line, now)
-	return T.StepAlpha(index) * T.Alpha(line, now)
-end
-
--- Background transparency of the strips (Settings > Look and > Loot toast, db.settings.alpha.toast, #162).
--- Only the strips' fill and shadow use it; icon, text and the turkuaz flap of the newest line follow the
--- line's own alpha.
-T.DEFAULT_ALPHA = 0.70
-function T.BackgroundAlpha()
-	return ns.Style.WindowAlpha("toast")
-end
-
 ----------------------------------------------------------------------------------------------------
--- Frame: each line a folded strip (cut 8, hard shadow), 28 tall, 6 apart, newest on top. Padding 6 left
--- and 20 right (room for the dog-ear), parts 8 apart; the strip is as wide as what it shows.
+-- Frame: the anchor is the 260 x 200 area; each line floats up from its bottom edge.
 ----------------------------------------------------------------------------------------------------
 
-T.CUT = 8
-T.GAP = 6
-T.PAD_LEFT, T.PAD_RIGHT = 6, 20
 T.ICON = 18
-T.SPACE = 8
-T.HANDLE = 16 -- the Move handle above the lines
-T.MOVE_LINES = 3 -- the Move outline covers this many lines
+T.ICON_GAP = 6
+T.SPACE = 8 -- between the name and the value
+T.PAD = 4
+T.FONT_SIZE = 14
+T.MOVE_BG_ALPHA = 0.25
 
-local anchor -- movable frame the rows hang from; while unlocked it is the drag handle
+local anchor -- movable frame the rows float in; while unlocked it is the Move box
 local rows = {}
 
 local function SavePosition()
@@ -244,9 +259,14 @@ local function PlaceAnchor()
 	anchor:SetPoint(pos.point, UIParent, pos.relPoint, pos.x, pos.y)
 end
 
--- Top of line i below the anchor.
-function T.RowOffset(i)
-	return -(i - 1) * (T.ROW_HEIGHT + T.GAP)
+local function Outlined(fs, color)
+	local font = fs:GetFont() or ns.Style.FontFiles.next
+	if font then
+		fs:SetFont(font, T.FONT_SIZE, "OUTLINE")
+	end
+	fs:SetJustifyH("LEFT")
+	fs:SetWordWrap(false)
+	fs:SetTextColor(color[1], color[2], color[3], 1)
 end
 
 local function Row(i)
@@ -254,86 +274,104 @@ local function Row(i)
 	if row then
 		return row
 	end
-	local Style = ns.Style
-	local C = Style.C
+	local C = ns.Style.C
 	row = CreateFrame("Frame", nil, anchor)
-	row:SetHeight(T.ROW_HEIGHT)
-	row:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, T.RowOffset(i))
-	row.sheet = Style.Sheet(row, C.sheet, C.flap, T.CUT, true)
+	row:SetSize(T.WIDTH - 2 * T.PAD, 20)
 	row.icon = row:CreateTexture(nil, "ARTWORK")
 	row.icon:SetSize(T.ICON, T.ICON)
 	row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	row.icon:SetPoint("LEFT", row, "LEFT", T.PAD_LEFT, 0)
-	row.name = Style.Text(row, "Body", "text")
-	row.count = Style.Text(row, "Figure", "text2")
-	row.money = Style.Text(row, "Figure", "text")
-	row.source = Style.Text(row, "Caption", "text3")
-	row.test = Style.Text(row, "Caption", "text3")
-	row.test:SetText("test")
+	row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+	row.name = ns.Style.Text(row, "Body", "text")
+	row.value = ns.Style.Text(row, "Body", "text2")
+	Outlined(row.name, C.text)
+	Outlined(row.value, C.text2)
 	row:SetScript("OnMouseUp", function(self)
 		local click = self.line and self.line.onClick
 		if click then
 			click(self.line)
 		end
 	end)
-	row.parts = { row.name, row.count, row.money, row.source, row.test }
-	for _, fs in ipairs(row.parts) do
-		fs:SetJustifyH("LEFT")
-		fs:SetWordWrap(false)
-	end
 	rows[i] = row
 	return row
 end
 
--- Fills a row with a line's parts; places them left to right and sizes the strip to them.
-local function Fill(row, parts)
-	row.name:SetText(parts.name)
-	row.name:SetTextColor(parts.color[1], parts.color[2], parts.color[3], 1)
-	row.count:SetText(parts.count or "")
-	row.money:SetText(parts.money or "")
-	row.source:SetText(parts.source or "")
-	local shown = { row.name, parts.count and row.count, parts.money and row.money, parts.source and row.source,
-		parts.test and row.test }
-	local x = T.PAD_LEFT + T.ICON + T.SPACE
-	local first = true
-	for i, fs in ipairs(row.parts) do
-		if shown[i] then
-			if not first then
-				x = x + T.SPACE
-			end
-			first = false
-			fs:ClearAllPoints()
-			fs:SetPoint("LEFT", row, "LEFT", x, 0)
-			fs:Show()
-			x = x + math.ceil(fs:GetStringWidth() or 0)
-		else
-			fs:Hide()
-		end
-	end
-	row:SetWidth(x + T.PAD_RIGHT)
+local function Plain(text)
+	return (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
 end
 
--- Draws the lines at `now`; drops the faded ones first.
+-- The head of a line: "+name", "+N name"; the coin line "+coins" in gold. Its colour comes with it.
+function T.Head(line, parts)
+	if line.key == "money" then
+		return "+" .. Plain(parts.money), ns.Style.C.coinGold
+	end
+	local n = tonumber(line.count) or 1
+	return "+" .. (n > 1 and (n .. " ") or "") .. parts.name, parts.color
+end
+
+-- The muted tail: detail (lines of other features), value and source word, "test". Coin digits lose their
+-- colours here, so the whole value is one muted text.
+function T.Tail(line, parts)
+	local out = {}
+	if line.text and parts.count then
+		out[#out + 1] = parts.count
+	end
+	if parts.money and line.key ~= "money" then
+		out[#out + 1] = Plain(parts.money)
+		if parts.source then
+			out[#out + 1] = parts.source
+		end
+	end
+	if parts.test then
+		out[#out + 1] = "test"
+	end
+	return table.concat(out, " ")
+end
+
+-- Fills a row; the name is cut (the client's "...") before the value is: its width is what is left of the
+-- area after the icon and the value.
+local function Fill(row, line)
+	local parts = T.LineParts(line)
+	local head, color = T.Head(line, parts)
+	local tail = T.Tail(line, parts)
+	local hasIcon = line.key ~= "money"
+	row.icon:SetShown(hasIcon)
+	if hasIcon then
+		row.icon:SetTexture(line.icon or T.UNKNOWN_ICON)
+	end
+	row.name:ClearAllPoints()
+	if hasIcon then
+		row.name:SetPoint("LEFT", row.icon, "RIGHT", T.ICON_GAP, 0)
+	else
+		row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
+	end
+	row.name:SetWidth(0)
+	row.name:SetText(head)
+	row.name:SetTextColor(color[1], color[2], color[3], 1)
+	row.value:SetText(tail)
+	local valueWidth = tail ~= "" and math.ceil(row.value:GetStringWidth() or 0) + T.SPACE or 0
+	local room = (T.WIDTH - 2 * T.PAD) - (hasIcon and (T.ICON + T.ICON_GAP) or 0) - valueWidth
+	local want = math.ceil(row.name:GetStringWidth() or 0)
+	row.name:SetWidth(math.max(1, math.min(want, room)))
+	row.value:ClearAllPoints()
+	row.value:SetPoint("LEFT", row.name, "RIGHT", T.SPACE, 0)
+	row.value:SetShown(tail ~= "")
+end
+
+-- Draws the lines at `now`: moves them, drops the finished ones.
 function T.Render(now)
 	if not anchor then
 		return
 	end
-	local C = ns.Style.C
+	T.Float(now)
 	local active = T.Expire(now)
-	local bg = T.BackgroundAlpha()
 	for i, line in ipairs(lines) do
 		local row = Row(i)
-		row.icon:SetTexture(line.icon or T.UNKNOWN_ICON)
 		row.line = line
 		row:EnableMouse(line.onClick ~= nil) -- clickable lines (#186) open their page
-		Fill(row, T.LineParts(line))
-		row.sheet:SetFlap(i == 1 and C.nokta or C.flap)
-		row.sheet:SetAlpha(bg)
-		-- The flap of the newest line is "here": it keeps full strength whatever the background alpha.
-		if i == 1 then
-			row.sheet.pieces.c:SetVertexColor(C.nokta[1], C.nokta[2], C.nokta[3], 1)
-		end
-		row:SetAlpha(T.LineAlpha(i, line, now))
+		Fill(row, line)
+		row:ClearAllPoints()
+		row:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", T.PAD, line.y or 0)
+		row:SetAlpha(T.LineAlpha(line, now))
 		row:Show()
 	end
 	for i = #lines + 1, #rows do
@@ -348,7 +386,7 @@ local function OnUpdate()
 	T.Render(GetTime())
 end
 
--- Move (unlocked): a 1 unit C.text outline over the first three lines' place and a handle above it to drag.
+-- Move (unlocked): the whole area shows as a dim white box with a 1 unit C.text outline and its label; drag it.
 local function ApplyLock()
 	local s = Settings()
 	local locked = not s or s.locked ~= false
@@ -365,7 +403,7 @@ local function Build()
 	local Style = ns.Style
 	local C = Style.C
 	anchor = CreateFrame("Frame", "CraftWiseLootToastAnchor", UIParent)
-	anchor:SetSize(T.WIDTH, T.HANDLE)
+	anchor:SetSize(T.WIDTH, T.HEIGHT)
 	anchor:SetFrameStrata("HIGH")
 	anchor:SetClampedToScreen(true)
 	anchor:SetMovable(true)
@@ -377,13 +415,12 @@ local function Build()
 	end)
 	anchor.handle = anchor:CreateTexture(nil, "BACKGROUND")
 	anchor.handle:SetAllPoints(anchor)
-	Style.Fill(anchor.handle, C.text)
-	anchor.label = Style.Text(anchor, "Label", Style.INK)
-	anchor.label:SetPoint("LEFT", anchor, "LEFT", T.PAD_LEFT, 0)
+	Style.Fill(anchor.handle, C.text, T.MOVE_BG_ALPHA)
+	anchor.label = Style.Text(anchor, "Label", "text")
+	anchor.label:SetPoint("CENTER", anchor, "CENTER", 0, 0)
 	anchor.label:SetText("Loot toast · drag to move")
 	anchor.outline = CreateFrame("Frame", nil, anchor)
-	anchor.outline:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, 0)
-	anchor.outline:SetSize(T.WIDTH, T.MOVE_LINES * T.ROW_HEIGHT + (T.MOVE_LINES - 1) * T.GAP)
+	anchor.outline:SetAllPoints(anchor)
 	anchor.outline.border = Style.Border(anchor.outline, C.text)
 	PlaceAnchor()
 	ApplyLock()
@@ -517,7 +554,7 @@ function T.Slash(arg)
 		s.locked = arg == "lock"
 		Build()
 		ApplyLock()
-		ns.Print(arg == "unlock" and "Loot toast unlocked: drag the white handle, then Lock in the Settings (or /craftwise loottoast lock)."
+		ns.Print(arg == "unlock" and "Loot toast unlocked: drag the white box, then Lock in the Settings (or /craftwise loottoast lock)."
 			or "Loot toast locked.")
 	elseif arg == "test" then
 		T.Test()

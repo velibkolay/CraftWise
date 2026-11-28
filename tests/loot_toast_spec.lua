@@ -1,6 +1,10 @@
 -- Loot toast (issue #114): parsing the client's loot lines, coin pairing, stacking, expiry, value, settings.
 local ORE, CLOTH, HIDE = 2770, 2589, 2318
 
+local function near(a, b, msg)
+	assert(math.abs(a - b) < 1e-6, (msg or "") .. " expected " .. tostring(b) .. ", got " .. tostring(a))
+end
+
 local function link(id, name, color)
 	return ("|cff%s|Hitem:%d::::::::20:::::|h[%s]|h|r"):format(color or "ffffff", id, name)
 end
@@ -266,75 +270,176 @@ it("test shows three lines labelled test: two bag items with their values and a 
 	eq(T.LineParts(T.Lines()[1]).test, nil)
 end)
 
-it("strips: 28 tall, cut 8 with a hard shadow, 6 apart, newest on top with the turkuaz flap", function()
+local function rowsOf(stub)
+	local out = {}
+	for _, f in ipairs(stub.frames) do
+		if f.name and f.value and f.icon then
+			out[#out + 1] = f
+		end
+	end
+	return out
+end
+
+it("floating lines: icon 18, '+name' 14 OUTLINE in the quality colour, '+N name', no strips", function()
 	local ns, stub = setup()
 	local T, C = ns.LootToast, ns.Style.C
+	stub.items[ORE].quality = 2
 	loot(stub, ORE, "Copper Ore", 1)
 	stub.now = 100.5
-	loot(stub, CLOTH, "Linen Cloth", 2)
-	stub.now = 101
-	loot(stub, HIDE, "Light Leather", 1)
-	local rows = {}
-	for _, f in ipairs(stub.frames) do if f.sheet and f.name and f.count then rows[#rows + 1] = f end end
-	eq(#rows, 3)
-	for i, row in ipairs(rows) do
-		eq(row.height, 28)
-		eq(row.sheet.cut, 8)
-		assert(row.sheet.shadow, "hard shadow")
-		eq(row.lastPoint[5], -(i - 1) * 34, "line " .. i .. " sits 28 + 6 below the one above")
-		eq(row.lastPoint[2], anchor())
+	loot(stub, CLOTH, "Linen Cloth", 3)
+	local rows = rowsOf(stub)
+	eq(#rows, 2)
+	for _, row in ipairs(rows) do
+		assert(not row.sheet, "no Origami strip")
+		eq(row.icon.width, 18)
+		eq(row.name.font[2], 14); eq(row.name.font[3], "OUTLINE")
+		eq(row.value.font[3], "OUTLINE")
 	end
-	eq(rows[1].name.text, "Light Leather", "newest on top")
-	eq(rows[1].sheet.flap, C.nokta, "the newest line's flap is turkuaz")
-	eq(rows[2].sheet.flap, C.flap); eq(rows[3].sheet.flap, C.flap)
-	eq(rows[1].sheet.pieces.c.vertexColor[4], 1, "the turkuaz flap ignores the background alpha")
-	eq(rows[1].icon.width, 18)
-	eq(rows[2].count.text, "×2"); eq(rows[2].count.shown, true)
-	eq(rows[1].test.shown, false, "no test label on real loot")
+	eq(rows[1].name.text, "+3 Linen Cloth", "the newest line is the first row")
+	eq(rows[2].name.text, "+Copper Ore", "one item: no number")
+	eq(rows[2].name.textColor[1], C.qUncommon[1])
+	eq(T.Head(T.Lines()[1], T.LineParts(T.Lines()[1])), "+3 Linen Cloth")
+	eq(rows[2].name.lastPoint[2], rows[2].icon, "the name sits right of the icon")
+	eq(rows[2].name.lastPoint[4], 6)
 end)
 
-it("lines step down in alpha (1, 0.75, 0.5) on top of their own timer", function()
-	local ns, stub = setup()
-	local T = ns.LootToast
-	eq(T.StepAlpha(1), 1); eq(T.StepAlpha(2), 0.75); eq(T.StepAlpha(3), 0.5); eq(T.StepAlpha(6), 0.5)
-	for i = 1, 4 do
-		stub.now = 100 + i * 0.1
-		loot(stub, 9000 + i, "Thing " .. i, 1)
-	end
-	T.Render(100.4)
-	local alphas = {}
-	for _, f in ipairs(stub.frames) do if f.sheet and f.name then alphas[#alphas + 1] = f.alpha end end
-	eq(alphas[1], 1); eq(alphas[2], 0.75); eq(alphas[3], 0.5); eq(alphas[4], 0.5)
-	-- 4.6 s later the oldest line (looted at 100.1) is half way through its 1 s fade: 0.5 x 0.6
-	assert(math.abs(T.LineAlpha(4, T.Lines()[4], 104.5) - 0.5 * 0.6) < 1e-9)
-end)
-
-it("background alpha: 0.70 by default, db.settings.alpha.toast when set, only on the strips' fill", function()
-	local ns, stub = setup()
-	local T = ns.LootToast
-	eq(T.BackgroundAlpha(), 0.70)
-	ns.db.settings.alpha = { toast = 0.4 }
-	eq(T.BackgroundAlpha(), 0.4)
+it("the value follows the name on the same line, muted: plain '12s 40c AH' text, no coin colours", function()
+	local ns, stub = setup({ auctionator = true })
+	local C = ns.Style.C
+	stub.ah[ORE] = 100
+	loot(stub, ORE, "Copper Ore", 3)
+	local row = rowsOf(stub)[1]
+	eq(row.value.text, ns.FormatCoins(285):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") .. " AH")
+	assert(not row.value.text:find("|c", 1, true))
+	eq(row.value.textColor[1], C.text2[1])
+	eq(row.value.lastPoint[2], row.name, "anchored to the name")
+	eq(row.value.lastPoint[4], 8)
+	loot(stub, HIDE, "Light Leather", 4)
+	eq(rowsOf(stub)[1].value.shown, false, "no value, no value text")
+	SlashCmdList.CRAFTWISE("loottoast value off")
 	loot(stub, ORE, "Copper Ore", 1)
-	local row
-	for _, f in ipairs(stub.frames) do if f.sheet and f.name then row = f end end
-	eq(row.sheet.alpha, 0.4)
-	eq(row.sheet.pieces.a.vertexColor[4], 0.4, "the fill")
-	eq(row.alpha, 1, "the line itself (icon, text) stays at its step alpha")
-	ns.db.settings.alpha = { toast = 3 }
-	eq(T.BackgroundAlpha(), 1, "clamped")
-	ns.db.settings.alpha = { toast = "x" }
-	eq(T.BackgroundAlpha(), 0.70)
+	eq(rowsOf(stub)[1].value.shown, false, "value off")
 end)
 
-it("Move: a white handle and a 1 unit outline over three lines' place", function()
+it("a long name is cut before the value is: the name's width is what the area leaves after icon and value", function()
+	local ns, stub = setup({ auctionator = true })
+	stub.ah[ORE] = 100
+	loot(stub, ORE, "Copper Ore", 3)
+	local row = rowsOf(stub)[1]
+	-- the stub measures every text 80 wide: 252 - 24 (icon + gap) - (80 + 8) = 140 room, the 80 wide name fits
+	eq(row.name.width, 80)
+	eq(row.value.shown, true)
+	local name = row.name
+	name.GetStringWidth = function() return 400 end
+	loot(stub, ORE, "Copper Ore", 1)
+	eq(name.width, 140, "cut to what is left, the value keeps its 80")
+	eq(row.value.lastPoint[2], name)
+end)
+
+it("coin: '+coins' in gold, no icon, at the left; test lines say test", function()
+	local ns, stub = setup()
+	local T, C = ns.LootToast, ns.Style.C
+	T.ShowMoney(12345)
+	local row = rowsOf(stub)[1]
+	eq(row.name.text, "+" .. ns.FormatCoins(12345):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+	eq(row.name.textColor[1], C.coinGold[1])
+	eq(row.icon.shown, false)
+	eq(row.name.lastPoint[2], row, "starts at the left of the row")
+	eq(row.value.shown, false)
+	T.Clear()
+	T.Add({ key = "money", copper = 5, count = 0, test = true }, GetTime())
+	T.Render(GetTime())
+	eq(rowsOf(stub)[1].value.text, "test")
+end)
+
+it("lines of other features: detail and profit after the name, clickable", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	local clicked
+	T.ShowCustom({ key = "alert", text = "Silk Cloth", detail = "8 or more", copper = 500, icon = 1, onClick = function() clicked = true end })
+	local row = rowsOf(stub)[1]
+	eq(row.name.text, "+Silk Cloth")
+	assert(row.value.text:find("8 or more", 1, true) and row.value.text:find("per craft", 1, true), row.value.text)
+	row.scripts.OnMouseUp(row)
+	eq(clicked, true)
+end)
+
+it("lines float up at (200 - 18) / life, fade in over 0.2 s, fade out over the fade", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	eq(T.Life(), 5)
+	loot(stub, ORE, "Copper Ore", 1)
+	local line = T.Lines()[1]
+	eq(line.y, 0)
+	local row = rowsOf(stub)[1]
+	eq(row.lastPoint[1], "BOTTOMLEFT"); eq(row.lastPoint[2], anchor()); eq(row.lastPoint[5], 0)
+	eq(row.alpha, 0, "starts invisible")
+	T.Render(100.1)
+	near(row.alpha, 0.5); near(line.y, 182 / 5 * 0.1)
+	T.Render(102)
+	eq(row.alpha, 1); near(line.y, 182 / 5 * 2)
+	near(row.lastPoint[5], 182 / 5 * 2)
+	T.Render(104.5)
+	near(row.alpha, 0.5, "half way through the 1 s fade")
+	T.Render(105)
+	eq(#T.Lines(), 0, "gone at duration + fade")
+	eq(anchor():GetScript("OnUpdate"), nil, "and nothing runs")
+	SlashCmdList.CRAFTWISE("loottoast duration 9")
+	eq(T.Life(), 10)
+end)
+
+it("a new line starts at the bottom and pushes the older ones up to keep 22 apart", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	loot(stub, ORE, "Copper Ore", 1)
+	stub.now = 100.1
+	loot(stub, CLOTH, "Linen Cloth", 1)
+	local l = T.Lines()
+	eq(l[1].y, 0); near(l[2].y, 22)
+	stub.now = 100.2
+	loot(stub, HIDE, "Light Leather", 1)
+	eq(l[1].y, 0); near(l[2].y, 22); near(l[3].y, 44)
+	T.Render(101)
+	near(l[1].y, 0.8 * 36.4); near(l[2].y, l[1].y + 22); near(l[3].y, l[2].y + 22)
+end)
+
+it("merging the same item restarts its life, brings it back to the bottom and does not fade it in again", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	loot(stub, ORE, "Copper Ore", 2)
+	stub.now = 102
+	T.Render(102)
+	local line = T.Lines()[1]
+	assert(line.y > 50)
+	loot(stub, ORE, "Copper Ore", 1)
+	eq(#T.Lines(), 1); eq(line.count, 3); eq(line.t, 102); eq(line.y, 0)
+	eq(T.LineAlpha(line, 102), 1, "no new fade-in")
+	eq(rowsOf(stub)[1].name.text, "+3 Copper Ore")
+end)
+
+it("a line pushed to the top is removed there; at most 8 lines fit", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	for i = 1, T.MAX_LINES do
+		stub.now = 100 + i * 0.01
+		T.ShowCustom({ key = "k" .. i, text = "Line " .. i, icon = 1 })
+	end
+	T.Render(100.1)
+	eq(#T.Lines(), 8)
+	local l = T.Lines()
+	assert(l[8].y <= T.HEIGHT - T.TOP_MARGIN, "8 x 22 apart still fits")
+	l[8].y = 190
+	T.Render(100.2)
+	eq(#T.Lines(), 7, "past the top margin: gone")
+end)
+
+it("Move: the whole 260 x 200 area shows as a dim white box with a 1 unit outline and a label", function()
 	local ns = setup()
 	local T, C = ns.LootToast, ns.Style.C
 	SlashCmdList.CRAFTWISE("loottoast unlock")
 	local a = anchor()
-	eq(a.width, T.WIDTH); eq(a.height, 16)
-	eq(a.handle.vertexColor[1], C.text[1])
-	eq(a.outline.height, 3 * 28 + 2 * 6)
+	eq(a.width, 260); eq(a.height, 200)
+	eq(a.handle.vertexColor[1], C.text[1]); eq(a.handle.vertexColor[4], T.MOVE_BG_ALPHA)
 	eq(a.outline.border.top.vertexColor[1], C.text[1])
 	assert(a.label.text:find("drag", 1, true))
 end)
