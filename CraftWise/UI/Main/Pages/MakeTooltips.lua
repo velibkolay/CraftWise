@@ -258,6 +258,11 @@ function MK.AddReturn(r)
 	Note("  profit / cost to craft = " .. Money(r.profit) .. " / " .. Money(r.cost), true)
 	local Mk = ns.Market
 	local house = ns.ProfitHouse and ns.ProfitHouse()
+	if r.outputItemID and ns.TSMLines then
+		for _, line in ipairs(ns.TSMLines(r.outputItemID)) do
+			Note("  " .. line[1] .. ": " .. line[2], true) -- region sales next to our own counts (#434)
+		end
+	end
 	if not (r.outputItemID and Mk and Mk.IsLastOnlyAt and house) then
 		return
 	end

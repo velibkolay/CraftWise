@@ -37,6 +37,78 @@ function ns.GetAuctionPrice(itemID)
 	return copper, age
 end
 
+-- Optional TSM data (#434), read only through TSM's public in-game API (TSM_API, TSM 4.15.9 App/API.lua:
+-- ToItemString, GetCustomPriceValue); no TSM code or data is copied or stored. Every call is guarded: no TSM, an
+-- error or a nil value means nothing. GetCustomPriceValue returns copper for the price sources and the already
+-- scaled number for DBRegionSoldPerDay (units a day) and DBRegionSaleRate (0..1); TSM stores both x1000 and
+-- divides when it registers them. TSM gives no data age, so a TSM price shows none and is never a scan.
+local TSM = {}
+ns.TSM = TSM
+
+TSM.FALLBACK = { "DBRecent", "DBMarket", "DBMinBuyout" } -- the order a price is taken in
+TSM.LABELS = { DBRecent = "recent value", DBMarket = "market value", DBMinBuyout = "lowest buyout" }
+ns.TSM_LABEL = "TSM"
+
+function TSM.Loaded()
+	local api = rawget(_G, "TSM_API")
+	return type(api) == "table" and type(api.GetCustomPriceValue) == "function" and type(api.ToItemString) == "function"
+end
+
+-- Loaded and not switched off in Settings (default on).
+function TSM.Enabled()
+	return TSM.Loaded() and not (ns.db and ns.db.settings and ns.db.settings.useTSM == false)
+end
+
+-- One TSM source for an item as a number, or nil.
+function TSM.Value(itemID, source)
+	if not (itemID and TSM.Enabled()) then
+		return nil
+	end
+	local api = rawget(_G, "TSM_API")
+	local ok, itemString = pcall(api.ToItemString, "i:" .. itemID)
+	if not (ok and type(itemString) == "string") then
+		return nil
+	end
+	local okValue, value = pcall(api.GetCustomPriceValue, source, itemString)
+	if okValue and type(value) == "number" and value > 0 then
+		return value
+	end
+	return nil
+end
+
+-- The first TSM price in TSM.FALLBACK order: copper, source name; nil when none.
+function TSM.Price(itemID)
+	for _, source in ipairs(TSM.FALLBACK) do
+		local copper = TSM.Value(itemID, source)
+		if copper then
+			return copper, source
+		end
+	end
+	return nil
+end
+
+-- Region demand: { perDay (units a day), rate (0..1 share of listings that sell), avg (copper) } or nil.
+function TSM.Demand(itemID)
+	local perDay, rate, avg = TSM.Value(itemID, "DBRegionSoldPerDay"), TSM.Value(itemID, "DBRegionSaleRate"),
+		TSM.Value(itemID, "DBRegionSaleAvg")
+	if not (perDay or rate or avg) then
+		return nil
+	end
+	return { perDay = perDay, rate = rate and math.min(rate, 1) or nil, avg = avg }
+end
+
+-- "TSM region: 20.6 sold a day, 54% sale rate" (the average is added by callers that have room).
+function TSM.DemandText(d)
+	local parts = {}
+	if d.perDay then
+		parts[#parts + 1] = ("%s sold a day"):format(d.perDay >= 10 and ("%d"):format(math.floor(d.perDay + 0.5)) or ("%.1f"):format(d.perDay))
+	end
+	if d.rate then
+		parts[#parts + 1] = ("%d%% sale rate"):format(math.floor(d.rate * 100 + 0.5))
+	end
+	return table.concat(parts, ", ")
+end
+
 -- Profit price settings: basis "typical" | "current", house choice (Market.CHOICES).
 function ns.PriceSettings()
 	local s = ns.db and ns.db.settings or {}
@@ -62,8 +134,9 @@ end
 --   1. Market price at the profit house by the chosen basis (typical with too little history falls
 --      back to the current lowest there, labelled);
 --   2. Auctionator's price, labelled "Auctionator (house unknown)";
---   3. nil ("no price data").
--- Returns { copper, source = "market"|"auctionator", basis, fallback, house, houseLabel, houseKind,
+--   3. TSM's DBRecent, DBMarket, DBMinBuyout in that order (#434), labelled "TSM ...", no age;
+--   4. nil ("no price data").
+-- Returns { copper, source = "market"|"auctionator"|"tsm", basis, fallback, house, houseLabel, houseKind,
 -- label, age (days), thin, thinWhy }.
 local nowMode = false
 
@@ -94,6 +167,11 @@ function ns.AuctionQuote(itemID)
 			ns.Market.ExportAuctionator(itemID, ah, age)
 		end
 		return { copper = ah, source = "auctionator", age = age, label = ns.AUCTIONATOR_LABEL }
+	end
+	-- Last: TSM's price when Auctionator and our own scans have none (#434). No age, no history, no export.
+	local tsm, tsmSource = TSM.Price(itemID)
+	if tsm then
+		return { copper = tsm, source = "tsm", tsmSource = tsmSource, label = ns.TSM_LABEL .. " " .. TSM.LABELS[tsmSource] }
 	end
 	return nil
 end
