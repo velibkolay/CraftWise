@@ -474,6 +474,7 @@ local function Groups()
 			get = function() return ns.Auctions.Watch.Enabled() end,
 			set = function(v) ns.Auctions.Watch.SetEnabled(v) end },
 		{ key = "interval", kind = "slider", label = L["Check every"], min = ns.Auctions.Watch.MIN_INTERVAL, max = ns.Auctions.Watch.MAX_INTERVAL, step = 5,
+			sub = L["A short time means as soon as the auction house allows: a round never starts while the last one runs."],
 			get = function() return ns.Auctions.Watch.Interval() end,
 			set = function(v) ns.Auctions.Watch.SetInterval(v) end,
 			format = function(v) return ("%d s"):format(v) end },

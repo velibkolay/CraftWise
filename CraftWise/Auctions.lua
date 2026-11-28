@@ -1315,7 +1315,7 @@ end
 local W = {}
 A.Watch = W
 
-W.MIN_INTERVAL, W.MAX_INTERVAL, W.DEFAULT_INTERVAL = 30, 120, 45
+W.MIN_INTERVAL, W.MAX_INTERVAL, W.DEFAULT_INTERVAL = 10, 120, 45
 W.FIRST_CHECK = 5 -- seconds after the window opens (or the toggle goes on) before the first round
 W.POST_GRACE = 10 -- seconds after the player starts a post in which no round starts
 

@@ -327,7 +327,7 @@ it("page: the listed rows at or above the competitor's price say so, with his pr
 		end
 	end
 	eq(marked, 2); eq(plain, 1)
-	eq(P.NextInterval(45), 60); eq(P.NextInterval(120), 30)
+	eq(P.NextInterval(45), 60); eq(P.NextInterval(120), 10)
 	ah.restore()
 end)
 
@@ -440,5 +440,23 @@ it("cards: at most five are drawn, the rest is a +N more line, and the test card
 	A.SetCardsLocked(false); eq(A.CardsLocked(), false)
 	A.SetCardsLocked(true); eq(A.CardsLocked(), true)
 	A.ResetPosition(); eq(ns.db.settings.undercutPos, nil)
+	ah.restore()
+end)
+
+it("interval: 10 s is the shortest, the chip walks 10 15 20 30 45 60 90 120, and a round never overlaps the last", function()
+	local ns, stub, ah = Load()
+	local W = ns.Auctions.Watch
+	eq(W.MIN_INTERVAL, 10)
+	W.SetInterval(3); eq(W.Interval(), 10); W.SetInterval(500); eq(W.Interval(), 120)
+	local P = ns.Main.Page("auctions").P
+	local seen, v = {}, 10
+	for _ = 1, 8 do seen[#seen + 1] = v; v = P.NextInterval(v) end
+	eq(table.concat(seen, " "), "10 15 20 30 45 60 90 120"); eq(v, 10)
+	Post(stub, RACK, 5, 1999)
+	W.SetEnabled(true); W.SetInterval(10)
+	stub.now = stub.now + 200
+	stub.Tick(); eq(#ah.searches, 1)
+	stub.now = stub.now + 200 -- long past the interval, but the round has not been answered yet
+	stub.Tick(); stub.Tick(); eq(#ah.searches, 1, "no second round while one runs")
 	ah.restore()
 end)
