@@ -23,6 +23,6 @@ it("#306: the bindings are still there, the first one carries CRAFTWISE", functi
 	for name in xml:gmatch('<Binding%s+name%s*=%s*"([^"]*)"') do
 		names[#names + 1] = name
 	end
-	eq(table.concat(names, ","), "CRAFTWISE_PARTY,CRAFTWISE_MAIN,CRAFTWISE_FARM,CRAFTWISE_AH_SEARCH,CRAFTWISE_AH_BUY")
+	eq(table.concat(names, ","), "CRAFTWISE_PARTY,CRAFTWISE_MAIN,CRAFTWISE_FARM,CRAFTWISE_AH_SEARCH,CRAFTWISE_AH_BUY,CRAFTWISE_AH_CHECK")
 	assert(xml:match('<Binding%s+name="CRAFTWISE_PARTY"%s+header="CRAFTWISE"'), "first binding lost the header")
 end)

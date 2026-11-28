@@ -139,9 +139,20 @@ function P.Rows(list, now)
 			else
 				buyoutNote = L["no buyout"]
 			end
+			-- Undercut (#427): somebody else lists at or below my price; the status says at what price.
+			local cut = rec.st == "active" and ns.Auctions and ns.Auctions.Watch and ns.Auctions.Watch.Undercut(rec.i) or nil
+			if cut and not (rec.unit and rec.unit >= cut.price) then
+				cut = nil
+			end
+			local statusText, statusColor = st.text, st.color
+			if cut then
+				statusText = (L["Undercut %s"]):format(ns.AuctionAlert.Plain(cut.price))
+				statusColor = "danger"
+			end
 			rows[#rows + 1] = {
+				undercut = cut and cut.price or nil, undercutMine = cut and cut.mine or nil,
 				key = rec.id and ("id" .. rec.id) or ("rec" .. index), itemID = rec.i, name = name, quality = quality,
-				qty = rec.q, state = st == P.STATUS.stale and "stale" or rec.st, status = st.key, statusText = st.text, statusColor = st.color, live = st.live, order = st.order,
+				qty = rec.q, state = st == P.STATUS.stale and "stale" or rec.st, status = st.key, statusText = statusText, statusColor = statusColor, live = st.live, order = st.order,
 				when = P.WhenText(rec, now), at = rec.exp or rec.soldT or rec.expT or rec.cancelT or rec.goneT or rec.t or 0,
 				buyout = buyout, buyoutNote = buyoutNote, youGet = youGet, youGetWhy = why, depositKnown = depositKnown,
 				deposit = rec.dep, uncertain = rec.uncertain and rec.candidates or nil, why = rec.why,
@@ -293,7 +304,9 @@ P.columns = {
 	{ key = "qty", label = L["Qty"], width = 40, align = "RIGHT", font = "Figure", color = function() return "text2" end },
 	{ key = "statusText", label = L["Status"], width = 130, font = "Small", color = function(r) return r.statusColor end,
 		tip = function(r)
-			if r.uncertain then
+			if r.undercut then
+				return { L["Undercut"], (L["Somebody lists at %s; yours is %s. Re-post to get the priority back."]):format(ns.AuctionAlert.PlainPair(r.undercut, r.undercutMine)) }
+			elseif r.uncertain then
 				return { L["Uncertain"], (L["Matched by name among %d auctions of this item."]):format(r.uncertain) }
 			elseif r.status == "uncertain" and r.why then
 				return { L["Uncertain"], r.why }
@@ -446,15 +459,79 @@ function P.UpdateListTools(slot)
 	slot.all:SetOn(P.filter == nil)
 end
 
+-- The undercut watch (#427): a chip for the switch, a chip for how often (click cycles), and its status line.
+P.WATCH_INTERVALS = { 30, 45, 60, 90, 120 }
+
+function P.NextInterval(current)
+	for _, v in ipairs(P.WATCH_INTERVALS) do
+		if v > current then
+			return v
+		end
+	end
+	return P.WATCH_INTERVALS[1]
+end
+
 function P.Tools(slot)
+	local W = ns.Auctions.Watch
 	slot.owned = Style.Text(slot, "Caption", "text3")
 	slot.owned:SetJustifyH("RIGHT")
 	slot.owned:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+	slot.watch = Style.Chip(slot, L["Watch undercuts"])
+	slot.watch:SetPoint("LEFT", slot, "LEFT", 0, 0)
+	slot.watch:SetScript("OnClick", function()
+		W.SetEnabled(not W.Enabled())
+		P.UpdateTools(slot)
+	end)
+	slot.watch:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Watch undercuts"], L["While the auction house is open, search your listed items every few seconds and tell you when somebody lists at or below your price: a line, a sound, the taskbar icon and chat. Nothing is bought, listed or cancelled."])
+	end)
+	slot.watch:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	slot.every = Style.Chip(slot, "")
+	slot.every:SetPoint("LEFT", slot.watch, "RIGHT", 6, 0)
+	slot.every:SetScript("OnClick", function()
+		W.SetInterval(P.NextInterval(W.Interval()))
+		P.UpdateTools(slot)
+	end)
+	slot.every:HookScript("OnEnter", function(self)
+		Style.ShowTip(self, L["Check every"], L["Click to change how often the watch searches. Never faster than the auction house allows."])
+	end)
+	slot.every:HookScript("OnLeave", function(self)
+		Style.HideTip(self)
+	end)
+	slot.note = Style.Text(slot, "Caption", "text2")
+	-- While watching, the status takes the owned caption's place on the right (the bar is too narrow for both, docked
+	-- most of all); the chips stay on the left and the text is cut, never wrapped, if it still does not fit.
+	slot.note:SetJustifyH("RIGHT")
+	slot.note:SetWordWrap(false)
+	slot.note:SetPoint("RIGHT", slot, "RIGHT", 0, 0)
+	slot.note:SetPoint("LEFT", slot.every, "RIGHT", 10, 0)
+	-- The countdown moves on its own while the page shows (a page refresh is not needed for it).
+	slot.tick = C_Timer and C_Timer.NewTicker and C_Timer.NewTicker(1, function()
+		if slot:IsVisible() then
+			P.UpdateWatch(slot)
+		end
+	end)
+end
+
+function P.UpdateWatch(slot)
+	local W = ns.Auctions.Watch
+	slot.watch:SetOn(W.Enabled())
+	slot.every:SetLabel(("%d s"):format(W.Interval()))
+	slot.every:SetShown(W.Enabled())
+	local text, state = W.Status()
+	slot.owned:SetShown(text == nil)
+	slot.note:SetShown(text ~= nil)
+	slot.note:SetText(text or "")
+	local c = C[state == "silent" and "danger" or "text2"]
+	slot.note:SetTextColor(c[1], c[2], c[3], 1)
 end
 
 function P.UpdateTools(slot)
 	local summary = ns.Auctions and ns.Auctions.Summary()
 	slot.owned:SetText(P.OwnedText(summary and summary.ownedListAt, time()))
+	P.UpdateWatch(slot)
 end
 
 -- /craftwise auctions opens this page.

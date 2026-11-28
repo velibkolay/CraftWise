@@ -1406,9 +1406,25 @@ end
 local function SweepFinish(text)
 	SweepCancelTimer()
 	local done, total, missed = sweep.done, #sweep.items, sweep.missed
-	sweep.running, sweep.waiting = false, nil
+	local opts = sweep.opts
+	sweep.running, sweep.waiting, sweep.opts = false, nil, nil
 	text = text or ("Refreshed %d of %d items%s"):format(done, total, missed > 0 and (", %d got no answer"):format(missed) or "")
-	ns.Notify("SWEEP_DONE", done, total, missed, text)
+	ns.Notify("SWEEP_DONE", done, total, missed, text, opts and opts.quiet or nil)
+	if opts and opts.onDone then
+		opts.onDone(done, total, missed, text)
+	end
+end
+
+-- A run the undercut watch started (#427): it says nothing on the Buy panel (quiet) and gives way to anything the player starts.
+function M.SweepQuiet()
+	return sweep.running and sweep.opts and sweep.opts.quiet or false
+end
+
+function M.SweepStopQuiet()
+	if M.SweepQuiet() then
+		return M.SweepStop("Refresh stopped")
+	end
+	return false
 end
 
 function M.SweepStop(text)
@@ -1473,11 +1489,18 @@ function SweepSend()
 			SweepAdvance()
 		end
 	end)
-	ns.Notify("SWEEP_STEP")
+	if not (sweep.opts and sweep.opts.quiet) then
+		ns.Notify("SWEEP_STEP")
+	end
 end
 
 -- Starts the run on a click: items = item IDs, searched in that order (duplicates once). Returns true, or false and why.
-function M.SweepStart(items)
+-- opts (#427, the undercut watch rides on this queue): quiet = no panel text, onAnswer(itemID, isCommodity) when an answer
+-- arrives, onDone(done, total, missed, text) when the run ends. A quiet run is stopped by a run the player starts.
+function M.SweepStart(items, opts)
+	if sweep.running and M.SweepQuiet() and not (opts and opts.quiet) then
+		M.SweepStop("Refresh stopped")
+	end
 	if sweep.running then
 		return false, "A refresh is already running"
 	end
@@ -1495,25 +1518,32 @@ function M.SweepStart(items)
 		return false, "Nothing to refresh: build a plan first"
 	end
 	sweep.running, sweep.items, sweep.i, sweep.done, sweep.missed, sweep.waits, sweep.waiting = true, list, 0, 0, 0, 0, nil
+	sweep.opts = opts
 	SweepSend()
 	return true
 end
 
 -- The answer to the search in flight: the recorder reads it after its own settle time, the next search follows after ours.
-local function SweepAnswered(itemID)
+local function SweepAnswered(itemID, isCommodity)
 	if not (sweep.running and sweep.waiting and (itemID == nil or itemID == sweep.waiting)) then
 		return
 	end
 	SweepCancelTimer()
+	local asked, opts = sweep.waiting, sweep.opts
 	sweep.waiting, sweep.done = nil, sweep.done + 1
 	sweep.timer = C_Timer.NewTimer(M.SWEEP_SETTLE, SweepAdvance)
-	ns.Notify("SWEEP_STEP")
+	if not (opts and opts.quiet) then
+		ns.Notify("SWEEP_STEP")
+	end
+	if opts and opts.onAnswer then
+		opts.onAnswer(asked, isCommodity)
+	end
 end
 ns.On("COMMODITY_SEARCH_RESULTS_UPDATED", function(_, itemID)
-	SweepAnswered(itemID)
+	SweepAnswered(itemID, true)
 end)
 ns.On("ITEM_SEARCH_RESULTS_UPDATED", function(_, itemKey)
-	SweepAnswered(itemKey and itemKey.itemID)
+	SweepAnswered(itemKey and itemKey.itemID, false)
 end)
 ns.On("AUCTION_HOUSE_SHOW_ERROR", function()
 	if sweep.running and sweep.waiting then

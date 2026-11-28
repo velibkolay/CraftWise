@@ -91,4 +91,77 @@ function Alert.OnSale(kind, rec)
 	return line
 end
 
+-- Undercut (#427): somebody else lists at or below my unit price (Auctions.lua, A.Watch). One line, a sound of its own
+-- (setting undercutSound, on the Master channel so it plays while the game runs in the background; the client's
+-- "Sound in background" option has to be on), the taskbar icon blinking (FlashClientIcon) and a chat line.
+-- Clicking the line opens Sell › Auctions. Nothing is bought, listed or cancelled.
+Alert.UNDERCUT_SOUNDS = { "ALARM_CLOCK_WARNING_3", "RAID_WARNING" } -- the first one the client has
+
+local function PlayUndercut()
+	if not (SOUNDKIT and PlaySound) then
+		return
+	end
+	for _, name in ipairs(Alert.UNDERCUT_SOUNDS) do
+		if SOUNDKIT[name] then
+			PlaySound(SOUNDKIT[name], "Master")
+			return
+		end
+	end
+end
+
+-- Copper as plain text with at most two units ("12g 34s"), the page's rule; no colours, no icons. A zero unit is skipped
+-- and the next one taken ("12g 5c"): for an undercut the copper is worth keeping.
+function Alert.Plain(copper)
+	copper = math.floor((copper or 0) + 0.5)
+	local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
+	local parts = {}
+	if g > 0 then parts[#parts + 1] = g .. "g" end
+	if s > 0 and #parts < 2 then parts[#parts + 1] = s .. "s" end
+	if c > 0 and #parts < 2 then parts[#parts + 1] = c .. "c" end
+	return #parts > 0 and table.concat(parts, " ") or "0c"
+end
+
+-- Two prices as text. When they differ but read the same in two units (a 1 copper undercut), both are written in full.
+function Alert.PlainPair(a, b)
+	local x, y = Alert.Plain(a), Alert.Plain(b)
+	if x == y and a ~= b then
+		x, y = ns.FormatMoney(a, true), ns.FormatMoney(b, true)
+	end
+	return x, y
+end
+
+-- info = { itemID, price, mine } (copper per unit). Returns the line.
+function Alert.OnUndercut(info)
+	if not (info and info.itemID and ns.db) then
+		return nil
+	end
+	local L = ns.L
+	local theirs, mine = Alert.PlainPair(info.price, info.mine)
+	local name = ns.Auctions.NameOf({ i = info.itemID }) or ("item " .. tostring(info.itemID))
+	local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(info.itemID) or nil
+	local line
+	if ns.LootToast and ns.LootToast.ShowCustom then
+		line = ns.LootToast.ShowCustom({
+			key = "undercut:" .. info.itemID, icon = icon, itemID = info.itemID,
+			text = (L["Undercut: %s"]):format(name),
+			-- No copper: the line's money figure reads as a profit ("+12g 30s"); both prices go in the detail.
+			detail = (L["%s, yours %s"]):format(theirs, mine),
+			duration = Alert.DURATION,
+			onClick = function()
+				if ns.OpenAuctionsPage then
+					ns.OpenAuctionsPage()
+				end
+			end,
+		})
+	end
+	if ns.Auctions.Watch.SoundEnabled() then
+		PlayUndercut()
+	end
+	if FlashClientIcon then
+		FlashClientIcon()
+	end
+	ns.Print((L["Undercut: %s %s (yours %s)"]):format(name, theirs, mine))
+	return line
+end
+
 ns.Listen("AUCTION_SALE", Alert.OnSale)
