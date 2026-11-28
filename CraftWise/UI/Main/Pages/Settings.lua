@@ -1,7 +1,7 @@
 -- Settings page (#157; spec in #150 "Look up, Music, Settings", board "Settings"): the gear in the header.
 -- A left list of groups, rows of label left and control right. It holds every option of the old settings
 -- panel and the AH rule panel (both removed in #157 part 2), plus the new Look group and the Snapshot
--- group (was Records › Snapshot). The Background sliders (Look, Loot toast) write db.settings.alpha (#162).
+-- group (was Records › Snapshot). The Background sliders (Look) write db.settings.alpha (#162).
 -- Slash commands that change a setting open its group (ns.OpenSettings, Core.lua).
 --
 -- The groups are data (Set.Groups: rows of { kind, label, get, set, ... }); the drawing below turns each
@@ -252,21 +252,13 @@ local function Pct(v)
 	return ("%d %%"):format(math.floor((v or 0) * 100 + 0.5))
 end
 
--- Look › Background per window and Loot toast › Background (#162): db.settings.alpha[window] from
+-- Look › Background per window (#162): db.settings.alpha[window] from
 -- ALPHA_MIN to 1 in steps of 5 %, applied while dragging (Style.ApplyWindowAlpha).
 Set.ALPHA_MIN, Set.ALPHA_STEP = 0.2, 0.05
 
 function Set.SetAlpha(window, v)
 	v = math.max(Set.ALPHA_MIN, math.min(1, tonumber(v) or Style.WINDOW_ALPHA[window]))
 	Style.SetWindowAlpha(window, v)
-	if window == "toast" then
-		-- The strips are drawn by the toast: redraw the ones on screen, or show the test lines when none are.
-		local T = ns.LootToast
-		if #T.Lines() == 0 and T.Enabled() then
-			T.Test()
-		end
-		T.Render(GetTime and GetTime() or 0)
-	end
 end
 
 local function AlphaRow(key, label, window)
@@ -308,7 +300,6 @@ local function Groups()
 			end },
 		AlphaRow("bgMain", L["Background · Main window"], "main"),
 		AlphaRow("bgFarm", L["Background · Farm tracker"], "farm"),
-		AlphaRow("bgToast", L["Background · Loot toast"], "toast"),
 		{ key = "fade", kind = "check", label = L["Farm tracker away from the mouse"], text = L["Fade to 40 % until hovered"],
 			get = function() return FF.FadeEnabled() end, set = function(v) FF.SetFade(v) end },
 		{ key = "windows", kind = "checks", label = L["Windows"], items = {
@@ -438,7 +429,6 @@ local function Groups()
 			get = function() return T.Duration() end,
 			set = function(v) ns.db.lootToast.duration = math.floor(v + 0.5) end,
 			format = function(v) return ("%d s"):format(v) end },
-		AlphaRow("background", L["Background"], "toast"),
 		{ key = "position", kind = "buttons", label = L["Position"], buttons = {
 			{ key = "move", text = function() return ns.db.lootToast.locked == false and L["Lock"] or L["Move"] end,
 				on = function() return ns.db.lootToast.locked == false end,

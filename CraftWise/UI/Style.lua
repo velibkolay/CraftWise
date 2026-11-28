@@ -307,12 +307,12 @@ function Style.Tween(owner, key, duration, ease, fn)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Background alpha per window (#162; Settings > Look and > Loot toast). db.settings.alpha[window] is
+-- Background alpha per window (#162; Settings > Look). db.settings.alpha[window] is
 -- applied to the window's sheet, card and plane textures only: text, icons, rails and the nokta stay at
 -- alpha 1. A window's frame carries frame.cwWindow = "main" | "farm"; every Style.Sheet and header plane
--- created under it follows. The loot toast sets its strips itself (LootToast.Render) from the same value.
+-- created under it follows.
 
-Style.WINDOW_ALPHA = { main = 0.96, farm = 0.86, toast = 0.70 } -- defaults (spec: Colours)
+Style.WINDOW_ALPHA = { main = 0.96, farm = 0.86 } -- defaults (spec: Colours)
 Style.windowSheets = setmetatable({}, { __mode = "k" })
 Style.windowPlanes = setmetatable({}, { __mode = "k" })
 
@@ -413,7 +413,7 @@ function Style.Sheet(frame, fill, flap, cut, shadow)
 	end
 	s.fill, s.flap = Style.Color(fill or C.sheet), Style.Color(flap or C.flap)
 	-- Inside a window that has a background alpha (frame.cwWindow, set on the window's frame) the sheet
-	-- follows it from the start; elsewhere it stays at 1 (the toast sets its own per line).
+	-- follows it from the start; elsewhere it stays at 1.
 	local window = Style.WindowOf(frame)
 	if window then
 		s.window, s.alpha = window, Style.WindowAlpha(window)
