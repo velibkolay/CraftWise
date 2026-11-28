@@ -482,7 +482,17 @@ local function Groups()
 			sub = L["Played on the Master channel. To hear it while the game runs in the background, turn on the client's Sound in Background option (Options › Sound)."],
 			get = function() return ns.Auctions.Watch.SoundEnabled() end,
 			set = function(v) S().undercutSound = v and true or false end },
-		AlphaRow("alerts", L["Background · Undercut cards"], "alerts"),
+		(function()
+			local row = AlphaRow("alerts", L["Background · Undercut cards"], "alerts")
+			local set = row.set
+			row.set = function(v) -- with no card on screen a sample shows what the slider does
+				set(v)
+				if #ns.AuctionAlert.cards == 0 then
+					ns.AuctionAlert.TestCard()
+				end
+			end
+			return row
+		end)(),
 		{ key = "position", kind = "buttons", label = L["Undercut cards"], buttons = {
 			{ key = "move", text = function() return ns.AuctionAlert.CardsLocked() and L["Move"] or L["Lock"] end,
 				on = function() return not ns.AuctionAlert.CardsLocked() end,

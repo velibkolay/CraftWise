@@ -140,7 +140,7 @@ end
 
 Alert.CARDS_MAX = 5
 Alert.CARD_W, Alert.CARD_H, Alert.CARD_GAP = 240, 44, 4
-Alert.DEFAULT_POS = { point = "TOP", relPoint = "TOP", x = 500, y = -30 } -- right of the AH window, left of the minimap
+Alert.DEFAULT_POS = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -250, y = -30 } -- left of the minimap, clear of the AH window
 
 Alert.cards = {} -- newest first: { itemID, name, icon, price, mine, theirs, yours }
 
@@ -159,7 +159,7 @@ function Alert.CardPut(info)
 		c = { itemID = info.itemID }
 		table.insert(Alert.cards, 1, c)
 	end
-	c.name, c.icon, c.price, c.mine = info.name, info.icon, info.price, info.mine
+	c.name, c.icon, c.price, c.mine, c.quality = info.name, info.icon, info.price, info.mine, info.quality
 	c.theirs, c.yours = Alert.PlainPair(info.price, info.mine)
 	Alert.CardsDraw()
 	return c
@@ -270,7 +270,7 @@ local function BuildCard(i)
 	card:SetSize(Alert.CARD_W, Alert.CARD_H)
 	card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	card.cwWindow = "alerts" -- the sheet follows db.settings.alpha.alerts (Settings › Undercut watch › Background)
-	card.sheet = Style.Sheet(card, C.sheet, C.flap, 8, true)
+	card.sheet = Style.Sheet(card, C.sheet, C.danger, 8, true) -- the fold in the danger colour: it reads as an undercut
 	card.icon = card:CreateTexture(nil, "ARTWORK")
 	card.icon:SetSize(28, 28)
 	card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -286,8 +286,8 @@ local function BuildCard(i)
 	card.detail:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 44, 7)
 	card.detail:SetPoint("RIGHT", card, "RIGHT", -8, 0)
 	card.close = CreateFrame("Button", nil, card)
-	card.close:SetSize(18, 18)
-	card.close:SetPoint("TOPRIGHT", card, "TOPRIGHT", -4, -4)
+	card.close:SetSize(24, 24) -- a hit box bigger than the glyph
+	card.close:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, -2)
 	card.close.x = Style.Text(card.close, "Body", "text3")
 	card.close.x:SetPoint("CENTER", card.close, "CENTER", 0, 0)
 	card.close.x:SetText("×")
@@ -333,8 +333,11 @@ function Alert.CardsDraw()
 		local c = Alert.cards[i]
 		local f = frames[i] or BuildCard(i)
 		f.itemID, f.itemName, f.theirs, f.yours = c.itemID, c.name, c.theirs, c.yours
-		f.name:SetText((L["Undercut: %s"]):format(c.name or "?"))
-		f.detail:SetText((L["%s, yours %s"]):format(c.theirs, c.yours))
+		-- The name alone, in its quality colour ("Undercut:" is in the tooltip and the chat line); the competitor's price in danger red.
+		f.name:SetText(c.name or "?")
+		local q = c.quality and ns.Style.QualityColor and ns.Style.QualityColor(c.quality) or ns.Style.C.text
+		f.name:SetTextColor(q[1], q[2], q[3], 1)
+		f.detail:SetText(ns.Style.Hex("danger") .. c.theirs .. "|r" .. (L[", yours %s"]):format(c.yours))
 		if c.icon then
 			f.icon:SetTexture(c.icon)
 		end
@@ -349,9 +352,11 @@ function Alert.CardsDraw()
 	end
 	if not more then
 		more = CreateFrame("Button", nil, anchor)
-		more:SetSize(Alert.CARD_W, 16)
+		more:SetSize(Alert.CARD_W, 18)
+		more.cwWindow = "alerts"
+		more.sheet = ns.Style.Sheet(more, ns.Style.C.sheet, ns.Style.C.flap, 6, false)
 		more.text = ns.Style.Text(more, "Caption", "text2")
-		more.text:SetPoint("LEFT", more, "LEFT", 4, 0)
+		more.text:SetPoint("CENTER", more, "CENTER", 0, 0)
 		more:SetScript("OnClick", OpenPage)
 	end
 	local extra = #Alert.cards - n
@@ -406,7 +411,8 @@ function Alert.OnUndercut(info)
 	local theirs, mine = Alert.PlainPair(info.price, info.mine)
 	local name = ns.Auctions.NameOf({ i = info.itemID }) or ("item " .. tostring(info.itemID))
 	local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(info.itemID) or nil
-	local card = Alert.CardPut({ itemID = info.itemID, name = name, icon = icon, price = info.price, mine = info.mine })
+	local quality = ns.LootToast and ns.LootToast.Quality and ns.LootToast.Quality(info.itemID) or nil
+	local card = Alert.CardPut({ itemID = info.itemID, name = name, icon = icon, quality = quality, price = info.price, mine = info.mine })
 	if ns.Auctions.Watch.SoundEnabled() then
 		PlayUndercut()
 	end

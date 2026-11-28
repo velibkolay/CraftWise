@@ -380,7 +380,9 @@ it("cards: the frame shows the text, the close X and a right-click drop it, a le
 	Undercut(ns, RACK, 1998, 1999)
 	Undercut(ns, SWORD, 8000, 9000)
 	local top, second = A.CardFrame(1), A.CardFrame(2)
-	eq(top.itemID, SWORD); eq(top.name.text, "Undercut: Test Sword"); eq(top.detail.text, "80s, yours 90s")
+	eq(top.itemID, SWORD); eq(top.name.text, "Test Sword", "the name alone")
+	eq((top.detail.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")), "80s, yours 90s"); assert(top.detail.text:find("|cff", 1, true), "the competitor price is coloured")
+	eq(top.close.width >= 22, true, "a hit box bigger than the glyph")
 	eq(top:IsShown(), true); eq(A.CardFrame(3) == nil or not A.CardFrame(3):IsShown(), true)
 	top.scripts.OnClick(top, "LeftButton"); eq(opened, 1); eq(#A.cards, 2, "a left-click only opens the page")
 	top.close.scripts.OnClick(top.close); eq(#A.cards, 1, "the X closes it")
@@ -459,4 +461,10 @@ it("interval: 10 s is the shortest, the chip walks 10 15 20 30 45 60 90 120, and
 	stub.now = stub.now + 200 -- long past the interval, but the round has not been answered yet
 	stub.Tick(); stub.Tick(); eq(#ah.searches, 1, "no second round while one runs")
 	ah.restore()
+end)
+
+it("cards: the default place is the top right, left of the minimap", function()
+	local ns = Load()
+	local d = ns.AuctionAlert.DEFAULT_POS
+	eq(d.point, "TOPRIGHT"); eq(d.relPoint, "TOPRIGHT"); eq(d.x, -250); eq(d.y, -30)
 end)
