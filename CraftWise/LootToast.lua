@@ -101,6 +101,14 @@ T.FADE_IN = 0.2
 function T.LineAlpha(line, now)
 	local born = line.born or line.t
 	local a = T.Alpha(line, now)
+	-- Also fade by height: over the last FADE_SPACE below the top, as an undisturbed line does in time, so a
+	-- line pushed into the top by a faster newer line fades out instead of popping.
+	local fade = T.Fade()
+	if fade > 0 then
+		local top = T.HEIGHT - T.TOP_MARGIN
+		local space = top * fade / T.Life(line)
+		a = math.min(a, math.max(0, (top - (line.y or 0)) / space))
+	end
 	if now - born < T.FADE_IN then
 		a = a * math.max(0, now - born) / T.FADE_IN
 	end
@@ -339,7 +347,7 @@ end
 -- Fills a row; a loot name is cut (the client's "...") before the value is: its width is what is left of the
 -- area after the icon and the value. A line of another feature is as wide as its text (up to
 -- T.CUSTOM_MAX), and every row is as wide as what it shows, so the whole line is clickable.
-T.CUSTOM_MAX = 480
+T.CUSTOM_MAX, T.CUSTOM_MIN = 480, 120
 local function Fill(row, line)
 	local parts = T.LineParts(line)
 	local head, color = T.Head(line, parts)
@@ -361,7 +369,16 @@ local function Fill(row, line)
 	row.value:SetText(tail)
 	local valueWidth = tail ~= "" and math.ceil(row.value:GetStringWidth() or 0) + T.SPACE or 0
 	local lead = hasIcon and (T.ICON + T.ICON_GAP) or 0
-	local room = (line.text and T.CUSTOM_MAX or (T.WIDTH - 2 * T.PAD)) - lead - valueWidth
+	local limit = T.WIDTH - 2 * T.PAD
+	if line.text then
+		limit = T.CUSTOM_MAX
+		-- not past the right edge of the screen when the box is moved there
+		local edge, left = UIParent and UIParent.GetRight and UIParent:GetRight(), anchor and anchor.GetLeft and anchor:GetLeft()
+		if edge and left then
+			limit = math.max(T.CUSTOM_MIN, math.min(limit, edge - left - T.PAD))
+		end
+	end
+	local room = limit - lead - valueWidth
 	local want = math.ceil(row.name:GetStringWidth() or 0)
 	local nameWidth = math.max(1, math.min(want, room))
 	row.name:SetWidth(nameWidth)

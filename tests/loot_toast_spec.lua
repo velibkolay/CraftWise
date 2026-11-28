@@ -450,6 +450,50 @@ it("merging updates the line in place: same place and height, timer restarted, s
 	eq(#l, 0)
 end)
 
+it("a merged line pushed into the top by a faster newer line fades out instead of popping", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	loot(stub, ORE, "Copper Ore", 1)
+	stub.now = 101
+	loot(stub, CLOTH, "Linen Cloth", 1)
+	stub.now = 102
+	loot(stub, ORE, "Copper Ore", 1)
+	local ore = T.Lines()[2]
+	-- walk through the rest of the life: the alpha never jumps by more than a frame's worth of fade
+	local last = 1
+	for i = 1, 400 do
+		local now = 102 + i * 0.01
+		T.Render(now)
+		if ore.y and #T.Lines() == 2 then
+			local a = T.LineAlpha(ore, now)
+			assert(last - a < 0.1, "popped at " .. now .. ": " .. last .. " -> " .. a)
+			last = a
+		end
+	end
+	T.Render(106)
+	assert(#T.Lines() == 0 or T.Lines()[2] ~= ore or T.LineAlpha(ore, 106) < 0.25)
+	-- a line at the top is invisible, whatever its timer says
+	local l = { t = 100, born = 100, y = 182 }
+	eq(T.LineAlpha(l, 101), 0)
+	l.y = 182 - 182 * 1 / 5 / 2 -- half way through the fade space
+	near(T.LineAlpha(l, 101), 0.5)
+end)
+
+it("a line of another feature is cut to the space left of the screen's right edge", function()
+	local ns, stub = setup()
+	local T = ns.LootToast
+	T.ShowCustom({ key = "r", text = "Raptor Hide Harness may be back at Tunkk", icon = 1 })
+	local name = rowsOf(stub)[1].name
+	name.GetStringWidth = function() return 700 end
+	UIParent.GetRight = function() return 1000 end
+	anchor().GetLeft = function() return 800 end
+	T.Render(GetTime())
+	eq(name.width, 1000 - 800 - 4 - 24, "what is left of the screen")
+	anchor().GetLeft = function() return 990 end
+	T.Render(GetTime())
+	eq(name.width, 120 - 24, "never narrower than the floor")
+end)
+
 it("a line pushed to the top is removed there; at most 8 lines fit", function()
 	local ns, stub = setup()
 	local T = ns.LootToast
