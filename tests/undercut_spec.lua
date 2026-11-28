@@ -127,8 +127,8 @@ it("round: a tie alerts once with the line, the sound on Master, the taskbar fla
 	RackRows(stub, { { 1999, 3 } })
 	local function answer(id) stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", id) end
 	Round(stub, ah, answer)
-	eq(#ah.shown, 1); eq(ah.shown[1].text, "Undercut: Tanning Rack"); eq(ah.shown[1].copper, 1999)
-	eq(ah.shown[1].detail, "yours " .. ns.FormatCoins(1999)); eq(ah.shown[1].itemID, RACK)
+	eq(#ah.shown, 1); eq(ah.shown[1].text, "Undercut: Tanning Rack"); eq(ah.shown[1].copper, nil, "no figure that reads as a profit")
+	eq(ah.shown[1].detail, "19s 99c, yours 19s 99c"); eq(ah.shown[1].itemID, RACK)
 	eq(#ah.sounds, 1); eq(ah.sounds[1].id, 4321); eq(ah.sounds[1].channel, "Master")
 	eq(ah.flashes, 1)
 	assert(ah.chat[#ah.chat]:find("Undercut: Tanning Rack", 1, true), tostring(ah.chat[#ah.chat]))
@@ -139,7 +139,7 @@ it("round: a tie alerts once with the line, the sound on Master, the taskbar fla
 	-- cheaper still alerts again
 	RackRows(stub, { { 1990, 3 } })
 	Round(stub, ah, answer)
-	eq(#ah.shown, 2); eq(ah.shown[2].copper, 1990)
+	eq(#ah.shown, 2); eq(ah.shown[2].detail, "19s 90c, yours 19s 99c")
 	-- the competitor is gone: the mark goes, and a new one later alerts
 	RackRows(stub, { { 2500, 3 } })
 	Round(stub, ah, answer)
@@ -275,15 +275,15 @@ it("status: the page note counts down, says when it is paused and when the clien
 	W.SetEnabled(true)
 	stub.now = stub.now + W.POST_GRACE + 1 -- the post above is over
 	local text, state = W.Status()
-	eq(state, "waiting"); assert(text:find("watching · next check in %d+ s"), text)
+	eq(state, "waiting"); assert(text:find("^next check in %d+ s$"), text)
 	ns.AHBuy.state.phase = "confirm"
-	text, state = W.Status(); eq(state, "paused"); assert(text:find("paused while you buy", 1, true), text)
+	text, state = W.Status(); eq(state, "paused"); eq(text, "paused: you buy")
 	ns.AHBuy.state.phase = "idle"
 	-- a round nobody answers: the timeout ends it with no answer
 	stub.now = stub.now + 200
 	stub.Tick()
 	stub.RunTimers() -- the item's timeout
-	text, state = W.Status(); eq(state, "silent"); assert(text:find("check my auctions now", 1, true), text)
+	text, state = W.Status(); eq(state, "silent"); eq(text, "no answer: use the check key")
 	stub.Fire("AUCTION_HOUSE_CLOSED")
 	text, state = W.Status(); eq(state, "closed")
 	ah.restore()
@@ -313,7 +313,7 @@ it("page: the listed rows at or above the competitor's price say so, with his pr
 	for _, r in ipairs(rows) do
 		if r.itemID == RACK then
 			eq(r.undercut, 1500); eq(r.statusColor, "danger")
-			assert(r.statusText:find("Undercut 1g", 1, true) == nil and r.statusText:find("Undercut 15s", 1, true), r.statusText)
+			eq(r.statusText, "Undercut 15s")
 			marked = marked + 1
 		else
 			eq(r.undercut, nil); eq(r.statusText, "Listed"); plain = plain + 1
@@ -332,4 +332,10 @@ it("source: the watch buys, lists, cancels and confirms nothing", function()
 	for _, name in ipairs({ "PlaceBid", "StartCommoditiesPurchase", "ConfirmCommoditiesPurchase", "CancelAuction", "PostItem", "PostCommodity" }) do
 		assert(not part:find(name, 1, true), "the watch names " .. name)
 	end
+end)
+
+it("plain money: at most two units, no markup", function()
+	local P = (LoadAddon()).AuctionAlert.Plain
+	eq(P(123456), "12g 34s"); eq(P(1230000), "123g"); eq(P(1999), "19s 99c"); eq(P(5), "5c"); eq(P(0), "0c")
+	eq(P(120005), "12g 5c", "a zero unit is skipped")
 end)

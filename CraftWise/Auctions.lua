@@ -1567,19 +1567,19 @@ function W.Status()
 		return nil
 	end
 	if not (ns.Market and ns.Market.CurrentHouse()) then
-		return "open the auction house to watch", "closed"
+		return "open the AH to watch", "closed"
 	end
 	if run.running then
-		return "watching · checking now", "running"
+		return "checking now", "running"
 	end
 	local why = W.Paused(false)
 	if why and why ~= "closed" then
-		return "watching · paused while " .. (why == "buying" and "you buy" or why == "posting" and "you post" or "a refresh runs"), "paused"
+		return "paused: " .. (why == "buying" and "you buy" or why == "posting" and "you post" or "refresh"), "paused"
 	end
 	if run.lastAt and run.done == 0 and run.missed > 0 then
-		return "watching · no answer: use the key \"check my auctions now\"", "silent"
+		return "no answer: use the check key", "silent"
 	end
-	return ("watching · next check in %d s"):format(math.max(0, math.ceil((run.nextAt or GetTime()) - GetTime()))), "waiting"
+	return ("next check in %d s"):format(math.max(0, math.ceil((run.nextAt or GetTime()) - GetTime()))), "waiting"
 end
 
 ns.On("AUCTION_HOUSE_SHOW", W.Sync)

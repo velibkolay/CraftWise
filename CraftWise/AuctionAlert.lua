@@ -109,6 +109,17 @@ local function PlayUndercut()
 	end
 end
 
+-- Copper as plain text with at most two units ("12g 34s"), the page's rule; no colours, no icons.
+function Alert.Plain(copper)
+	copper = math.floor((copper or 0) + 0.5)
+	local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
+	local parts = {}
+	if g > 0 then parts[#parts + 1] = g .. "g" end
+	if s > 0 and #parts < 2 then parts[#parts + 1] = s .. "s" end
+	if c > 0 and #parts < 2 then parts[#parts + 1] = c .. "c" end
+	return #parts > 0 and table.concat(parts, " ") or "0c"
+end
+
 -- info = { itemID, price, mine } (copper per unit). Returns the line.
 function Alert.OnUndercut(info)
 	if not (info and info.itemID and ns.db) then
@@ -122,8 +133,9 @@ function Alert.OnUndercut(info)
 		line = ns.LootToast.ShowCustom({
 			key = "undercut:" .. info.itemID, icon = icon, itemID = info.itemID,
 			text = (L["Undercut: %s"]):format(name),
-			detail = (L["yours %s"]):format(ns.FormatCoins(info.mine) or "?"),
-			copper = info.price, duration = Alert.DURATION,
+			-- No copper: the line's money figure reads as a profit ("+12g 30s"); both prices go in the detail.
+			detail = (L["%s, yours %s"]):format(Alert.Plain(info.price), Alert.Plain(info.mine)),
+			duration = Alert.DURATION,
 			onClick = function()
 				if ns.OpenAuctionsPage then
 					ns.OpenAuctionsPage()
@@ -137,7 +149,7 @@ function Alert.OnUndercut(info)
 	if FlashClientIcon then
 		FlashClientIcon()
 	end
-	ns.Print((L["Undercut: %s %s (yours %s)"]):format(name, ns.FormatMoney(info.price), ns.FormatMoney(info.mine)))
+	ns.Print((L["Undercut: %s %s (yours %s)"]):format(name, Alert.Plain(info.price), Alert.Plain(info.mine)))
 	return line
 end
 
