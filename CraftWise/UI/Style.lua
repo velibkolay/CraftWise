@@ -312,7 +312,7 @@ end
 -- alpha 1. A window's frame carries frame.cwWindow = "main" | "farm"; every Style.Sheet and header plane
 -- created under it follows.
 
-Style.WINDOW_ALPHA = { main = 0.96, farm = 0.86 } -- defaults (spec: Colours)
+Style.WINDOW_ALPHA = { main = 0.96, farm = 0.86, alerts = 0.92 } -- defaults (spec: Colours)
 Style.windowSheets = setmetatable({}, { __mode = "k" })
 Style.windowPlanes = setmetatable({}, { __mode = "k" })
 

@@ -460,7 +460,7 @@ function P.UpdateListTools(slot)
 end
 
 -- The undercut watch (#427): a chip for the switch, a chip for how often (click cycles), and its status line.
-P.WATCH_INTERVALS = { 30, 45, 60, 90, 120 }
+P.WATCH_INTERVALS = { 10, 15, 20, 30, 45, 60, 90, 120 }
 
 function P.NextInterval(current)
 	for _, v in ipairs(P.WATCH_INTERVALS) do
@@ -495,7 +495,7 @@ function P.Tools(slot)
 		P.UpdateTools(slot)
 	end)
 	slot.every:HookScript("OnEnter", function(self)
-		Style.ShowTip(self, L["Check every"], L["Click to change how often the watch searches. Never faster than the auction house allows."])
+		Style.ShowTip(self, L["Check every"], L["Click to change how often the watch searches. A short time means as soon as the auction house allows: a round never starts while the last one runs."])
 	end)
 	slot.every:HookScript("OnLeave", function(self)
 		Style.HideTip(self)

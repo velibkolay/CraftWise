@@ -26,8 +26,15 @@ local function Load()
 	C.CancelAuction = function() ah.calls[#ah.calls + 1] = "cancel" end
 	-- the alert's outside world
 	ah.shown, ah.sounds, ah.flashes, ah.chat = {}, {}, 0, {}
-	local real = ns.LootToast.ShowCustom
-	ns.LootToast.ShowCustom = function(entry) ah.shown[#ah.shown + 1] = entry; return real(entry) end
+	local realPut = ns.AuctionAlert.CardPut
+	ns.AuctionAlert.CardPut = function(info)
+		local c = realPut(info)
+		ah.shown[#ah.shown + 1] = { text = "Undercut: " .. info.name, detail = c.theirs .. ", yours " .. c.yours, itemID = info.itemID }
+		return c
+	end
+	local float = 0
+	ns.LootToast.ShowCustom = function() float = float + 1 end -- undercuts no longer float (#432)
+	ah.floating = function() return float end
 	SOUNDKIT = { ALARM_CLOCK_WARNING_3 = 4321 }
 	PlaySound = function(id, channel) ah.sounds[#ah.sounds + 1] = { id = id, channel = channel } end
 	FlashClientIcon = function() ah.flashes = ah.flashes + 1 end
@@ -320,7 +327,7 @@ it("page: the listed rows at or above the competitor's price say so, with his pr
 		end
 	end
 	eq(marked, 2); eq(plain, 1)
-	eq(P.NextInterval(45), 60); eq(P.NextInterval(120), 30)
+	eq(P.NextInterval(45), 60); eq(P.NextInterval(120), 10)
 	ah.restore()
 end)
 
@@ -345,4 +352,119 @@ it("PlainPair: a 1 copper undercut is written in full so the two figures differ"
 	local a, b = P(123450, 123451)
 	assert(a ~= b and a:find("50c", 1, true), a .. " / " .. b)
 	a, b = P(123000, 123400); eq(a, "12g 30s"); eq(b, "12g 34s")
+end)
+
+------------------------------------------------------------------------------------------ cards (#432)
+
+local function Undercut(ns, itemID, price, mine)
+	ns.AuctionAlert.OnUndercut({ itemID = itemID, price = price, mine = mine })
+end
+
+it("cards: one card per item, updated in place, newest first; the alert side stays", function()
+	local ns, stub, ah = Load()
+	local A = ns.AuctionAlert
+	Undercut(ns, RACK, 1998, 1999); Undercut(ns, SWORD, 8000, 9000)
+	eq(#A.cards, 2); eq(A.cards[1].itemID, SWORD, "newest on top")
+	Undercut(ns, RACK, 1990, 1999)
+	eq(#A.cards, 2, "the same item is not a second card"); eq(A.cards[2].itemID, RACK, "it keeps its place"); eq(A.cards[2].price, 1990)
+	eq(ah.floating(), 0, "nothing goes through the floating loot toast")
+	eq(#ah.sounds, 3); eq(ah.flashes, 3)
+	eq(A.cards[2].theirs .. "|" .. A.cards[2].yours, "19s 90c|19s 99c")
+end)
+
+it("cards: the frame shows the text, the close X and a right-click drop it, a left-click opens Sell > Auctions", function()
+	local ns, stub, ah = Load()
+	local A = ns.AuctionAlert
+	local opened = 0
+	ns.OpenAuctionsPage = function() opened = opened + 1 end
+	Undercut(ns, RACK, 1998, 1999)
+	Undercut(ns, SWORD, 8000, 9000)
+	local top, second = A.CardFrame(1), A.CardFrame(2)
+	eq(top.itemID, SWORD); eq(top.name.text, "Test Sword", "the name alone")
+	eq((top.detail.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")), "80s, yours 90s"); assert(top.detail.text:find("|cff", 1, true), "the competitor price is coloured")
+	eq(top.close.width >= 22, true, "a hit box bigger than the glyph")
+	eq(top:IsShown(), true); eq(A.CardFrame(3) == nil or not A.CardFrame(3):IsShown(), true)
+	top.scripts.OnClick(top, "LeftButton"); eq(opened, 1); eq(#A.cards, 2, "a left-click only opens the page")
+	top.close.scripts.OnClick(top.close); eq(#A.cards, 1, "the X closes it")
+	eq(A.CardFrame(1).itemID, RACK)
+	A.CardFrame(1).scripts.OnClick(A.CardFrame(1), "RightButton"); eq(#A.cards, 0, "a right-click closes it")
+	eq(A.CardFrame(1):IsShown(), false)
+	Undercut(ns, RACK, 1998, 1999)
+	eq(#A.cards, 1, "it comes back when somebody undercuts again")
+	ah.restore()
+end)
+
+it("cards: the watch drops a card when the undercut is gone, when the item is no longer listed and when the watch goes off", function()
+	local ns, stub, ah = Load()
+	local A = ns.AuctionAlert
+	Post(stub, RACK, 5, 1999)
+	ns.Auctions.Watch.SetEnabled(true)
+	local function answer(id) stub.Fire("COMMODITY_SEARCH_RESULTS_UPDATED", id) end
+	RackRows(stub, { { 1999, 3 } })
+	Round(stub, ah, answer)
+	eq(#A.cards, 1)
+	RackRows(stub, { { 1999, 3 } }); stub.commodity[RACK].rows[1].unitPrice = 1995 -- cheaper but not a new alert? it is: alert
+	Round(stub, ah, answer)
+	eq(#A.cards, 1); eq(A.cards[1].price, 1995)
+	RackRows(stub, { { 2500, 3 } })
+	Round(stub, ah, answer)
+	eq(#A.cards, 0, "the competitor is gone")
+	RackRows(stub, { { 1999, 3 } })
+	Round(stub, ah, answer)
+	eq(#A.cards, 1)
+	-- the player cancelled the listing: the next round has nothing of that item to watch
+	for _, rec in ipairs(ns.Auctions.List()) do rec.st = "cancelled" end
+	Post(stub, SWORD, 1, 9000, true)
+	stub.itemSearch[SWORD] = { rows = {} }
+	Round(stub, ah, function(id)
+		if id == RACK then answer(id) else stub.Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = id }) end
+	end)
+	eq(#A.cards, 0, "no longer listed")
+	Undercut(ns, SWORD, 100, 200)
+	ns.Auctions.Watch.SetEnabled(false)
+	eq(#A.cards, 0, "switching the watch off clears the cards")
+	ah.restore()
+end)
+
+it("cards: at most five are drawn, the rest is a +N more line, and the test card is a normal card", function()
+	local ns, stub, ah = Load()
+	local A = ns.AuctionAlert
+	for i = 1, 7 do
+		stub.items[6000 + i] = { name = "Item " .. i }
+		Undercut(ns, 6000 + i, 100, 200)
+	end
+	eq(#A.cards, 7, "all are kept, five are drawn"); eq(A.CARDS_MAX, 5)
+	eq(A.CardFrame(5):IsShown(), true); eq(A.CardFrame(6), nil, "no sixth card is built")
+	A.CardDrop(6007); A.CardDrop(6006); A.CardDrop(6005)
+	eq(#A.cards, 4)
+	A.TestCard()
+	eq(A.cards[1].itemID, -1); eq(A.cards[1].theirs, "12g 30s"); eq(A.cards[1].yours, "12g 34s")
+	A.SetCardsLocked(false); eq(A.CardsLocked(), false)
+	A.SetCardsLocked(true); eq(A.CardsLocked(), true)
+	A.ResetPosition(); eq(ns.db.settings.undercutPos, nil)
+	ah.restore()
+end)
+
+it("interval: 10 s is the shortest, the chip walks 10 15 20 30 45 60 90 120, and a round never overlaps the last", function()
+	local ns, stub, ah = Load()
+	local W = ns.Auctions.Watch
+	eq(W.MIN_INTERVAL, 10)
+	W.SetInterval(3); eq(W.Interval(), 10); W.SetInterval(500); eq(W.Interval(), 120)
+	local P = ns.Main.Page("auctions").P
+	local seen, v = {}, 10
+	for _ = 1, 8 do seen[#seen + 1] = v; v = P.NextInterval(v) end
+	eq(table.concat(seen, " "), "10 15 20 30 45 60 90 120"); eq(v, 10)
+	Post(stub, RACK, 5, 1999)
+	W.SetEnabled(true); W.SetInterval(10)
+	stub.now = stub.now + 200
+	stub.Tick(); eq(#ah.searches, 1)
+	stub.now = stub.now + 200 -- long past the interval, but the round has not been answered yet
+	stub.Tick(); stub.Tick(); eq(#ah.searches, 1, "no second round while one runs")
+	ah.restore()
+end)
+
+it("cards: the default place is the top right, left of the minimap", function()
+	local ns = Load()
+	local d = ns.AuctionAlert.DEFAULT_POS
+	eq(d.point, "TOPRIGHT"); eq(d.relPoint, "TOPRIGHT"); eq(d.x, -250); eq(d.y, -30)
 end)
