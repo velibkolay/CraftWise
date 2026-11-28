@@ -656,9 +656,60 @@ local function MessagePatterns()
 	return { sold = A.PatternFrom(ERR_AUCTION_SOLD_S), expired = A.PatternFrom(ERR_AUCTION_EXPIRED_S) }
 end
 
+-- The copper a sold message names ("has sold for 2s 44c"), nil when it has none. The client's text is
+-- the payout after the house cut (#437: 1 unit listed at 2s 57c paid 2s 44c). Coin letters as the
+-- client prints them in English.
+function A.MoneyFromText(text)
+	if type(text) ~= "string" then
+		return nil
+	end
+	local plain = text:gsub("|T.-|t", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+	local tail = plain:match("[Ss]old for (.+)$")
+	if not tail then
+		return nil
+	end
+	local g, s, c = tail:match("(%d+)%s*g"), tail:match("(%d+)%s*s"), tail:match("(%d+)%s*c")
+	if not (g or s or c) then
+		return nil
+	end
+	return (tonumber(g) or 0) * 10000 + (tonumber(s) or 0) * 100 + (tonumber(c) or 0)
+end
+
+-- A commodity record marked sold with an unknown unit count: when the message's money matches exactly
+-- one count of units at this record's unit buyout after the confirmed cut, the record is split into the
+-- sold part and the still-active rest. Returns the sold part (the record itself when all units sold),
+-- nil when the count can't be told (the record stays qtyUnknown).
+function A.ResolveByMoney(list, rec, copper)
+	if not (copper and copper > 0 and rec.qtyUnknown and rec.unit and rec.unit > 0 and not rec.bid and rec.q > 1) then
+		return nil
+	end
+	local found
+	for count = 1, rec.q do
+		local payout = AfterCut(rec.unit * count, rec.h)
+		if payout == copper then
+			if found then
+				return nil -- two counts pay the same
+			end
+			found = count
+		end
+	end
+	if not found then
+		return nil
+	end
+	rec.qtyUnknown = nil
+	if found == rec.q then
+		return rec
+	end
+	local part = Split(list, rec, found)
+	part.st, part.qtyUnknown = "sold", nil
+	rec.st, rec.soldT, rec.soldVia, rec.why, rec.uncertain, rec.candidates = "active", nil, nil, nil, nil, nil
+	rec.pendingT = nil
+	return part
+end
+
 -- Marks an auction sold or expired from a message. By ID when the message has one, else the oldest
 -- open auction with that item name, flagged uncertain when there were several.
-function A.MarkByMessage(kind, name, auctionID, quiet)
+function A.MarkByMessage(kind, name, auctionID, quiet, copper)
 	local c = Char()
 	if not c then
 		return nil
@@ -686,8 +737,13 @@ function A.MarkByMessage(kind, name, auctionID, quiet)
 			rec.soldT, rec.soldVia = now, "message"
 		end
 		rec.st, rec.why = "sold", nil
-		if rec.kind == "commodity" and rec.q > 1 and not auctionID then
+		if rec.kind == "commodity" and rec.q > 1 then
+			-- A sold message never says how many units of a commodity sold (#437), with an auction ID
+			-- or without one: the money in it gives the count, else it stays unknown.
 			rec.qtyUnknown = true
+			if n <= 1 then
+				rec = A.ResolveByMoney(c.list, rec, copper) or rec
+			end
 		end
 	else
 		rec.st, rec.expT, rec.why = "expired", now, nil
@@ -710,7 +766,7 @@ end
 -- The same message can reach us from several sources (event, chat, the expired event); each source
 -- counts once per message. notes: { kind, name, at, sources = { [source] = true } }
 local notes = {}
-local function Note(kind, name, auctionID, source)
+local function Note(kind, name, auctionID, source, copper)
 	local now = GetTime()
 	for i = #notes, 1, -1 do
 		if now - notes[i].at > NOTE_SECONDS then
@@ -720,6 +776,15 @@ local function Note(kind, name, auctionID, source)
 	for _, note in ipairs(notes) do
 		if note.kind == kind and (note.name == name or (auctionID and note.id == auctionID)) and not note.sources[source] then
 			note.sources[source] = true
+			if copper and not note.copper and note.rec and note.rec.qtyUnknown then
+				-- The source with the money came second: it settles how many units the first one left open.
+				local c = Char()
+				if c then
+					A.ResolveByMoney(c.list, note.rec, copper)
+					Changed(note.rec)
+				end
+			end
+			note.copper = note.copper or copper
 			if auctionID and not note.id then
 				-- A later source names the auction: if the name picked another one, put that one back.
 				note.id = auctionID
@@ -735,9 +800,9 @@ local function Note(kind, name, auctionID, source)
 			return nil
 		end
 	end
-	local note = { kind = kind, name = name, id = auctionID, at = now, sources = { [source] = true } }
+	local note = { kind = kind, name = name, id = auctionID, at = now, copper = copper, sources = { [source] = true } }
 	notes[#notes + 1] = note
-	note.rec, note.before = A.MarkByMessage(kind, name, auctionID)
+	note.rec, note.before = A.MarkByMessage(kind, name, auctionID, nil, copper)
 	return note.rec
 end
 
@@ -747,7 +812,8 @@ function A.OnNotification(notification, text, auctionID)
 		return
 	end
 	if notification == N.AuctionSold then
-		Note("sold", text, auctionID, "event")
+		-- The text is the item name, or the whole line with the item in brackets and the money.
+	Note("sold", text:match("%[(.-)%]") or text, auctionID, "event", A.MoneyFromText(text))
 	elseif notification == N.AuctionExpired then
 		Note("expired", text, auctionID, "event")
 	end
@@ -760,7 +826,7 @@ function A.OnSystemMessage(message)
 	local patterns = MessagePatterns()
 	local name = patterns.sold and message:match(patterns.sold)
 	if name then
-		Note("sold", name, nil, "chat")
+		Note("sold", name:match("%[(.-)%]") or name, nil, "chat", A.MoneyFromText(message))
 		return
 	end
 	name = patterns.expired and message:match(patterns.expired)
@@ -895,7 +961,7 @@ end
 -- client sends one sale mail per item and batch, so its count is often the sum of several auctions (#278).
 function A.SoldSet(list, name, count)
 	local cands = Candidates(list, function(r)
-		return r.st == "sold" and not r.qtyUnknown and NameOf(r) == name and r.q and r.q <= count
+		return r.st == "sold" and NameOf(r) == name and r.q and r.q <= count
 	end)
 	if #cands < 2 then
 		return nil
@@ -937,6 +1003,7 @@ function A.SettleSale(t)
 	local count = t.count or 1
 	local tests = {
 		function(r) return r.st == "sold" and not r.qtyUnknown and r.q == count end,
+		function(r) return r.st == "sold" and r.q == count end, -- units unknown: the mail's count is the truth (#437)
 		function(r) return r.st == "sold" and r.q > count end,
 		function(r) return r.st == "gone" and r.q == count end,
 		function(r) return r.st == "active" and r.q == count end,
@@ -945,7 +1012,7 @@ function A.SettleSale(t)
 	local found = {}
 	local set -- sold records whose quantities add up to the mail's count (one mail per item and sale batch)
 	for i, test in ipairs(tests) do
-		if i == 3 and not found[1] then
+		if i == 4 and not found[1] then
 			set = A.SoldSet(c.list, t.name, count)
 			if set then
 				found = set
