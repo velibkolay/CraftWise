@@ -364,6 +364,19 @@ local function Groups()
 				S().priceHouse = v
 				Changed("PRICES_CHANGED")
 			end },
+		{ key = "tsm", kind = "check", label = L["TSM data"], text = L["Use TSM data when installed"],
+			sub = function()
+				if not ns.TSM.Loaded() then
+					return L["TradeSkillMaster is not loaded."]
+				end
+				return L["Region sales, and a price when you have no other. Labelled TSM."]
+			end,
+			disabled = function() return not ns.TSM.Loaded() end,
+			get = function() return S().useTSM ~= false end,
+			set = function(v)
+				S().useTSM = v and true or false
+				Changed("PRICES_CHANGED")
+			end },
 	}
 	for i, view in ipairs(ns.COST_BASIS_VIEWS) do
 		priceRows[#priceRows + 1] = { key = "cost_" .. view, kind = "seg",

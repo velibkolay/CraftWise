@@ -258,12 +258,18 @@ function MK.AddReturn(r)
 	Note("  profit / cost to craft = " .. Money(r.profit) .. " / " .. Money(r.cost), true)
 	local Mk = ns.Market
 	local house = ns.ProfitHouse and ns.ProfitHouse()
+	-- TSM's region sales come after our own movement line, never before it (#434).
+	local function AddTSM()
+		for _, line in ipairs(r.outputItemID and ns.TSMLines(r.outputItemID) or {}) do
+			Note("  " .. line[1] .. ": " .. (line[3] and Money(line[3]) or line[2]), true)
+		end
+	end
 	if not (r.outputItemID and Mk and Mk.IsLastOnlyAt and house) then
-		return
+		return AddTSM()
 	end
 	if Mk.IsLastOnlyAt(r.outputItemID, house) == nil then
 		Note("  No market history for the product at this house: movement unknown.", true)
-		return
+		return AddTSM()
 	end
 	local gone = Mk.Disappeared(r.outputItemID, house)
 	if gone > 0 then
@@ -271,6 +277,7 @@ function MK.AddReturn(r)
 	else
 		Note("  No units seen disappearing in 7 days.", true)
 	end
+	AddTSM()
 end
 
 -- Per day (#231): what the market takes of the product and the profit that makes; the history depth; for a recipe

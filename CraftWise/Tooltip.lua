@@ -250,6 +250,25 @@ end
 -- How old the auction price is, "3h old", and whether it is over 24 h (shown in C.danger). Market quotes
 -- know their scan time; Auctionator only gives whole days.
 local DAY = 86400
+-- TSM region demand (#434), next to our own "disappeared" counts, never instead of them: real region sales
+-- from TSM's data (ours also count cancels and expiries). Returns { left, right, copper } entries: the demand line
+-- has right text; the average sale price line has only copper (each caller formats it). {} without TSM data.
+function ns.TSMLines(itemID)
+	local d = ns.TSM.Demand(itemID)
+	if not d then
+		return {}
+	end
+	local lines = {}
+	local text = ns.TSM.DemandText(d)
+	if text ~= "" then
+		lines[#lines + 1] = { ns.L["TSM region"], text }
+	end
+	if d.avg then
+		lines[#lines + 1] = { (#lines > 0 and "  " or "") .. ns.L["TSM avg sale"], nil, d.avg }
+	end
+	return lines
+end
+
 function ns.SaleAgeText(sale)
 	local quote = sale and sale.quote
 	if quote and quote.t then
@@ -450,6 +469,11 @@ function ns.AddTooltipLines(tooltip, itemID)
 	if s.lines.market then
 		for _, line in ipairs(ns.MarketLines(itemID, { mode = "full" })) do
 			lines[#lines + 1] = line
+		end
+	end
+	if s.lines.market then
+		for _, line in ipairs(ns.TSMLines(itemID)) do
+			lines[#lines + 1] = { line[1], line[3] and ns.FormatMoney(line[3]) or (MUTED .. line[2] .. "|r") }
 		end
 	end
 	if #lines == 0 then

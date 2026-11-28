@@ -90,6 +90,7 @@ function MK.PriceBasisText()
 	local _, label = ns.ProfitHouse()
 	return ns.BASIS_TEXT[basis] .. " · " .. (label or "own faction AH")
 		.. (ns.HasAuctionator() and (", else " .. ns.AUCTIONATOR_LABEL) or "")
+		.. (ns.TSM.Enabled() and ", else TSM" or "")
 end
 
 -- The footer's plain-words version of the price basis (#412): "Prices: typical price at the Horde AH
@@ -99,7 +100,9 @@ function MK.FooterPrices(view, rows)
 	local _, label = ns.ProfitHouse()
 	local text = L["Prices"] .. ": " .. (basis == "current" and L["lowest price now"] or L["typical price"])
 		.. " " .. L["at the"] .. " " .. (label or L["your own faction AH"])
-		.. (ns.HasAuctionator() and (" (" .. L["Auctionator when it has none"] .. ")") or "")
+		.. (ns.HasAuctionator() and ns.TSM.Enabled() and (" (" .. L["Auctionator, else TSM, when it has none"] .. ")")
+		or ns.HasAuctionator() and (" (" .. L["Auctionator when it has none"] .. ")")
+		or ns.TSM.Enabled() and (" (" .. L["TSM when it has none"] .. ")") or "")
 	local reagents = ns.CostBasis(view) == "paid" and L["reagents: what you paid, else the AH price"] or L["reagents: bought at the AH"]
 	local note = MK.BasisNote(view, rows):match("(%(.*%))$")
 	return text .. " · " .. reagents .. (note and (" " .. note) or "")

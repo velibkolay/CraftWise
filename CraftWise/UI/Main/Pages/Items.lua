@@ -1380,6 +1380,9 @@ function Items.Card(itemID, now)
 		if gone > 0 then
 			tip[#tip + 1] = (L["%d units disappeared in 7 days (sold or expired)."]):format(gone)
 		end
+		for _, line in ipairs(ns.TSMLines(p.key)) do
+			tip[#tip + 1] = line[1] .. ": " .. (line[3] and ns.FormatMoney(line[3], true) or line[2]) -- #434
+		end
 		if p.thin then
 			tip[#tip + 1] = L["Thin market: little at the lowest price."]
 		end
