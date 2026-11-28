@@ -108,16 +108,15 @@ function T.LineAlpha(line, now)
 end
 
 -- Adds a line (or adds to the same item's line while it is still fully shown) and returns it. A new line
--- starts at the bottom (y = 0); a merged one goes back there with its timer restarted.
+-- starts at the bottom (y = 0). A merged line is updated in place: it keeps its place and height, its timer
+-- restarts, and since the speed follows the way and the life left it still reaches the top as its new life ends.
 function T.Add(entry, now)
 	for i, line in ipairs(lines) do
 		if line.key == entry.key and not line.test == not entry.test and now - line.t <= T.Duration() then
 			line.count = (line.count or 0) + (entry.count or 0)
 			line.copper = (line.copper or 0) + (entry.copper or 0)
 			line.link = entry.link or line.link
-			line.t, line.y, line.floatT = now, 0, now
-			table.remove(lines, i)
-			table.insert(lines, 1, line)
+			line.t, line.floatT = now, now
 			return line
 		end
 	end
@@ -133,8 +132,9 @@ function T.Add(entry, now)
 	return line
 end
 
--- Floating: speed = (height - top margin) / life, so an undisturbed line reaches the top just as its life
--- ends. Lines keep GAP apart, the newer ones push the older ones up (a pushed line may reach the top early).
+-- Floating: a line always moves so that it reaches the top just as its life ends: its speed is the way left
+-- to the top over the life left (at the start (height - top margin) / life, after a merge or a push the
+-- remaining way over the remaining life). Lines keep GAP apart, the newer ones push the older ones up.
 T.GAP = 22
 T.TOP_MARGIN = 18 -- a line that reaches height - this is gone
 function T.Life(line)
@@ -145,7 +145,11 @@ function T.Float(now)
 	for i, line in ipairs(lines) do
 		local dt = math.max(0, now - (line.floatT or now))
 		line.floatT = now
-		local y = (line.y or 0) + (T.HEIGHT - T.TOP_MARGIN) / T.Life(line) * dt
+		local y = line.y or 0
+		local left = line.t + T.Life(line) - (now - dt) -- the life left at the start of this step
+		if dt > 0 and left > 0 then
+			y = y + math.max(0, T.HEIGHT - T.TOP_MARGIN - y) * math.min(dt, left) / left
+		end
 		if i > 1 then
 			y = math.max(y, lines[i - 1].y + T.GAP)
 		end
@@ -192,9 +196,10 @@ function T.Quality(itemID)
 	return q
 end
 
--- What a line shows (#159, spec "Loot toast"): name in its quality colour, "×count" (C.text2), the stack's
--- value in coin digits with its source word (AH / vendor) when "With value" is on, and "test" on the Test
--- lines. The coin line is "Coin" and the coins themselves.
+-- The parts of a line; T.Head and T.Tail put them on screen (#426): the name in its quality colour (with
+-- "+" and the count for loot), the stack's value with its source word (AH / vendor) when "With value" is on,
+-- and "test" on the Test lines. The coin line is "Coin" and the coins themselves. Lines of other features
+-- (text) carry their detail in `count`.
 --   { name, color = Style colour, count = "×4" | nil, money = coins text | nil, source = "AH" | "vendor" | nil,
 --     test = true | nil }
 function T.LineParts(line)
@@ -236,7 +241,7 @@ T.ICON_GAP = 6
 T.SPACE = 8 -- between the name and the value
 T.PAD = 4
 T.FONT_SIZE = 14
-T.MOVE_BG_ALPHA = 0.25
+T.MOVE_BG_ALPHA = 0.6
 
 local anchor -- movable frame the rows float in; while unlocked it is the Move box
 local rows = {}
@@ -299,8 +304,12 @@ local function Plain(text)
 	return (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
 end
 
--- The head of a line: "+name", "+N name"; the coin line "+coins" in gold. Its colour comes with it.
+-- The head of a line: loot "+name" / "+N name", the coin line "+coins" in gold; a line of another feature
+-- (alert, restock, undercut ...) is its text as it is, since it is not a gain. Its colour comes with it.
 function T.Head(line, parts)
+	if line.text then
+		return parts.name, parts.color
+	end
 	if line.key == "money" then
 		return "+" .. Plain(parts.money), ns.Style.C.coinGold
 	end
@@ -327,8 +336,10 @@ function T.Tail(line, parts)
 	return table.concat(out, " ")
 end
 
--- Fills a row; the name is cut (the client's "...") before the value is: its width is what is left of the
--- area after the icon and the value.
+-- Fills a row; a loot name is cut (the client's "...") before the value is: its width is what is left of the
+-- area after the icon and the value. A line of another feature is as wide as its text (up to
+-- T.CUSTOM_MAX), and every row is as wide as what it shows, so the whole line is clickable.
+T.CUSTOM_MAX = 480
 local function Fill(row, line)
 	local parts = T.LineParts(line)
 	local head, color = T.Head(line, parts)
@@ -349,9 +360,12 @@ local function Fill(row, line)
 	row.name:SetTextColor(color[1], color[2], color[3], 1)
 	row.value:SetText(tail)
 	local valueWidth = tail ~= "" and math.ceil(row.value:GetStringWidth() or 0) + T.SPACE or 0
-	local room = (T.WIDTH - 2 * T.PAD) - (hasIcon and (T.ICON + T.ICON_GAP) or 0) - valueWidth
+	local lead = hasIcon and (T.ICON + T.ICON_GAP) or 0
+	local room = (line.text and T.CUSTOM_MAX or (T.WIDTH - 2 * T.PAD)) - lead - valueWidth
 	local want = math.ceil(row.name:GetStringWidth() or 0)
-	row.name:SetWidth(math.max(1, math.min(want, room)))
+	local nameWidth = math.max(1, math.min(want, room))
+	row.name:SetWidth(nameWidth)
+	row:SetWidth(lead + nameWidth + valueWidth)
 	row.value:ClearAllPoints()
 	row.value:SetPoint("LEFT", row.name, "RIGHT", T.SPACE, 0)
 	row.value:SetShown(tail ~= "")
@@ -362,6 +376,7 @@ function T.Render(now)
 	if not anchor then
 		return
 	end
+	T.Expire(now) -- a line that is over must not push the others up
 	T.Float(now)
 	local active = T.Expire(now)
 	for i, line in ipairs(lines) do
@@ -386,7 +401,7 @@ local function OnUpdate()
 	T.Render(GetTime())
 end
 
--- Move (unlocked): the whole area shows as a dim white box with a 1 unit C.text outline and its label; drag it.
+-- Move (unlocked): the whole area shows as a dark box (C.sheet at 0.6) with a 1 unit C.text outline and its label; drag it.
 local function ApplyLock()
 	local s = Settings()
 	local locked = not s or s.locked ~= false
@@ -415,7 +430,7 @@ local function Build()
 	end)
 	anchor.handle = anchor:CreateTexture(nil, "BACKGROUND")
 	anchor.handle:SetAllPoints(anchor)
-	Style.Fill(anchor.handle, C.text, T.MOVE_BG_ALPHA)
+	Style.Fill(anchor.handle, C.sheet, T.MOVE_BG_ALPHA)
 	anchor.label = Style.Text(anchor, "Label", "text")
 	anchor.label:SetPoint("CENTER", anchor, "CENTER", 0, 0)
 	anchor.label:SetText("Loot toast · drag to move")

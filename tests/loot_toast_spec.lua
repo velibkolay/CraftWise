@@ -92,9 +92,10 @@ it("lines stack newest first, the same item adds to its line while shown, at mos
 	stub.now = 102
 	loot(stub, ORE, "Copper Ore", 3)
 	eq(#T.Lines(), 2, "merged")
-	eq(T.Lines()[1].itemID, ORE, "the merged line moves to the top")
-	eq(T.Lines()[1].count, 5)
-	eq(T.Lines()[1].t, 102, "its timer restarts")
+	eq(T.Lines()[1].itemID, CLOTH, "the merged line keeps its place")
+	eq(T.Lines()[2].itemID, ORE)
+	eq(T.Lines()[2].count, 5)
+	eq(T.Lines()[2].t, 102, "its timer restarts")
 	stub.now = 106.5 -- ore line fading (4 s shown): a new ore loot is a new line
 	loot(stub, ORE, "Copper Ore", 1)
 	eq(#T.Lines(), 2, "the faded cloth line is gone, the fading ore line stays")
@@ -358,10 +359,31 @@ it("lines of other features: detail and profit after the name, clickable", funct
 	local clicked
 	T.ShowCustom({ key = "alert", text = "Silk Cloth", detail = "8 or more", copper = 500, icon = 1, onClick = function() clicked = true end })
 	local row = rowsOf(stub)[1]
-	eq(row.name.text, "+Silk Cloth")
+	eq(row.name.text, "Silk Cloth", "not a gain: no +")
 	assert(row.value.text:find("8 or more", 1, true) and row.value.text:find("per craft", 1, true), row.value.text)
 	row.scripts.OnMouseUp(row)
 	eq(clicked, true)
+	-- as wide as its text, not cut at the area's width: icon 24 + name + 8 + value (the stub measures 80 each)
+	T.Clear()
+	local long = T.ShowCustom({ key = "restock", text = "Raptor Hide Harness may be back at Tunkk (Stranglethorn Vale)", icon = 1 })
+	row = rowsOf(stub)[1]
+	eq(row.name.text, long.text)
+	local name = row.name
+	name.GetStringWidth = function() return 400 end
+	T.Render(GetTime())
+	eq(name.width, 400, "not cut at 252")
+	eq(row.width, 24 + 400, "the row is as wide as its content")
+	name.GetStringWidth = function() return 900 end
+	T.Render(GetTime())
+	eq(name.width, 480 - 24, "a cap far wider than the area")
+	-- loot lines are still capped at the area and cut before the value
+	T.Clear()
+	loot(stub, ORE, "Copper Ore", 1)
+	row = rowsOf(stub)[1]
+	eq(row.name.text, "+Copper Ore")
+	row.name.GetStringWidth = function() return 900 end
+	T.Render(GetTime())
+	eq(row.name.width, 252 - 24 - 88, "cut before the value: icon 24, value 80 + 8")
 end)
 
 it("lines float up at (200 - 18) / life, fade in over 0.2 s, fade out over the fade", function()
@@ -403,18 +425,29 @@ it("a new line starts at the bottom and pushes the older ones up to keep 22 apar
 	near(l[1].y, 0.8 * 36.4); near(l[2].y, l[1].y + 22); near(l[3].y, l[2].y + 22)
 end)
 
-it("merging the same item restarts its life, brings it back to the bottom and does not fade it in again", function()
+it("merging updates the line in place: same place and height, timer restarted, slower so it still reaches the top as it fades", function()
 	local ns, stub = setup()
 	local T = ns.LootToast
 	loot(stub, ORE, "Copper Ore", 2)
+	stub.now = 101
+	loot(stub, CLOTH, "Linen Cloth", 1)
 	stub.now = 102
 	T.Render(102)
-	local line = T.Lines()[1]
-	assert(line.y > 50)
+	local l = T.Lines()
+	local ore, cloth = l[2], l[1]
+	local oreY, clothY = ore.y, cloth.y
+	assert(oreY > 50, "the ore line is well up")
 	loot(stub, ORE, "Copper Ore", 1)
-	eq(#T.Lines(), 1); eq(line.count, 3); eq(line.t, 102); eq(line.y, 0)
-	eq(T.LineAlpha(line, 102), 1, "no new fade-in")
-	eq(rowsOf(stub)[1].name.text, "+3 Copper Ore")
+	eq(#l, 2); eq(l[2], ore); eq(l[1], cloth, "order unchanged")
+	eq(ore.count, 3); eq(ore.t, 102)
+	eq(ore.y, oreY, "no jump"); eq(cloth.y, clothY, "nothing else moves")
+	eq(T.LineAlpha(ore, 102), 1, "no new fade-in")
+	T.Render(104.5) -- half of the new life: half of the way left
+	assert(ore.y >= oreY + (182 - oreY) / 2 - 1e-6 and ore.y < 182, "on its way up, no jump back (the cloth line below may push it a little)")
+	T.Render(106.999)
+	assert(math.abs(ore.y - 182) < 0.1, "reaches the top just as its life ends: " .. ore.y)
+	T.Render(107)
+	eq(#l, 0)
 end)
 
 it("a line pushed to the top is removed there; at most 8 lines fit", function()
@@ -433,13 +466,13 @@ it("a line pushed to the top is removed there; at most 8 lines fit", function()
 	eq(#T.Lines(), 7, "past the top margin: gone")
 end)
 
-it("Move: the whole 260 x 200 area shows as a dim white box with a 1 unit outline and a label", function()
+it("Move: the whole 260 x 200 area shows as a dark box with a 1 unit outline and a label", function()
 	local ns = setup()
 	local T, C = ns.LootToast, ns.Style.C
 	SlashCmdList.CRAFTWISE("loottoast unlock")
 	local a = anchor()
 	eq(a.width, 260); eq(a.height, 200)
-	eq(a.handle.vertexColor[1], C.text[1]); eq(a.handle.vertexColor[4], T.MOVE_BG_ALPHA)
+	eq(a.handle.vertexColor[1], C.sheet[1]); eq(a.handle.vertexColor[4], 0.6)
 	eq(a.outline.border.top.vertexColor[1], C.text[1])
 	assert(a.label.text:find("drag", 1, true))
 end)
