@@ -1441,6 +1441,10 @@ local function WatchChanged()
 	ns.Notify("AUCTIONS_CHANGED")
 end
 
+local function Card()
+	return ns.AuctionAlert or { CardDrop = function() end, CardUpdate = function() end, CardsClear = function() end }
+end
+
 -- An answer: judge the item and alert once per new undercut.
 function W.OnAnswer(itemID, isCommodity)
 	local info = run.mine[itemID]
@@ -1449,6 +1453,11 @@ function W.OnAnswer(itemID, isCommodity)
 	end
 	local competitor = W.Competitor(W.Read(itemID, isCommodity), info.mine)
 	local state, alert = W.Judge(run.state[itemID], competitor, info.mine, info.postedT)
+	if not competitor then
+		Card().CardDrop(itemID) -- the undercut is gone: re-posted, cancelled or sold out (#432)
+	elseif not alert then
+		Card().CardUpdate(itemID, competitor)
+	end
 	run.state[itemID] = state
 	local before = run.undercut[itemID]
 	run.undercut[itemID] = competitor and { price = competitor, mine = info.mine } or nil
@@ -1474,6 +1483,12 @@ function W.StartRound(manual)
 		return false, why
 	end
 	local ids, mine = W.Items(ns.Market.CurrentHouse())
+	for itemID in pairs(run.undercut) do
+		if not mine[itemID] then -- no longer listed here: nothing to be undercut (#432)
+			run.undercut[itemID], run.state[itemID] = nil, nil
+			Card().CardDrop(itemID)
+		end
+	end
 	if #ids == 0 then
 		run.nextAt = GetTime() + W.Interval()
 		return false, "nothing"
@@ -1514,6 +1529,7 @@ function W.Sync()
 	end
 	if not W.Enabled() then
 		run.undercut, run.state = {}, {}
+		Card().CardsClear()
 	end
 	WatchChanged()
 end
