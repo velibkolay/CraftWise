@@ -339,3 +339,10 @@ it("plain money: at most two units, no markup", function()
 	eq(P(123456), "12g 34s"); eq(P(1230000), "123g"); eq(P(1999), "19s 99c"); eq(P(5), "5c"); eq(P(0), "0c")
 	eq(P(120005), "12g 5c", "a zero unit is skipped")
 end)
+
+it("PlainPair: a 1 copper undercut is written in full so the two figures differ", function()
+	local P = (LoadAddon()).AuctionAlert.PlainPair
+	local a, b = P(123450, 123451)
+	assert(a ~= b and a:find("50c", 1, true), a .. " / " .. b)
+	a, b = P(123000, 123400); eq(a, "12g 30s"); eq(b, "12g 34s")
+end)

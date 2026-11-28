@@ -305,7 +305,7 @@ P.columns = {
 	{ key = "statusText", label = L["Status"], width = 130, font = "Small", color = function(r) return r.statusColor end,
 		tip = function(r)
 			if r.undercut then
-				return { L["Undercut"], (L["Somebody lists at %s, at or below your %s. Re-post to get the priority back."]):format(ns.AuctionAlert.Plain(r.undercut), ns.AuctionAlert.Plain(r.undercutMine)) }
+				return { L["Undercut"], (L["Somebody lists at %s; yours is %s. Re-post to get the priority back."]):format(ns.AuctionAlert.PlainPair(r.undercut, r.undercutMine)) }
 			elseif r.uncertain then
 				return { L["Uncertain"], (L["Matched by name among %d auctions of this item."]):format(r.uncertain) }
 			elseif r.status == "uncertain" and r.why then

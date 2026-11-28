@@ -109,7 +109,8 @@ local function PlayUndercut()
 	end
 end
 
--- Copper as plain text with at most two units ("12g 34s"), the page's rule; no colours, no icons.
+-- Copper as plain text with at most two units ("12g 34s"), the page's rule; no colours, no icons. A zero unit is skipped
+-- and the next one taken ("12g 5c"): for an undercut the copper is worth keeping.
 function Alert.Plain(copper)
 	copper = math.floor((copper or 0) + 0.5)
 	local g, s, c = math.floor(copper / 10000), math.floor((copper % 10000) / 100), copper % 100
@@ -120,12 +121,22 @@ function Alert.Plain(copper)
 	return #parts > 0 and table.concat(parts, " ") or "0c"
 end
 
+-- Two prices as text. When they differ but read the same in two units (a 1 copper undercut), both are written in full.
+function Alert.PlainPair(a, b)
+	local x, y = Alert.Plain(a), Alert.Plain(b)
+	if x == y and a ~= b then
+		x, y = ns.FormatMoney(a, true), ns.FormatMoney(b, true)
+	end
+	return x, y
+end
+
 -- info = { itemID, price, mine } (copper per unit). Returns the line.
 function Alert.OnUndercut(info)
 	if not (info and info.itemID and ns.db) then
 		return nil
 	end
 	local L = ns.L
+	local theirs, mine = Alert.PlainPair(info.price, info.mine)
 	local name = ns.Auctions.NameOf({ i = info.itemID }) or ("item " .. tostring(info.itemID))
 	local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(info.itemID) or nil
 	local line
@@ -134,7 +145,7 @@ function Alert.OnUndercut(info)
 			key = "undercut:" .. info.itemID, icon = icon, itemID = info.itemID,
 			text = (L["Undercut: %s"]):format(name),
 			-- No copper: the line's money figure reads as a profit ("+12g 30s"); both prices go in the detail.
-			detail = (L["%s, yours %s"]):format(Alert.Plain(info.price), Alert.Plain(info.mine)),
+			detail = (L["%s, yours %s"]):format(theirs, mine),
 			duration = Alert.DURATION,
 			onClick = function()
 				if ns.OpenAuctionsPage then
@@ -149,7 +160,7 @@ function Alert.OnUndercut(info)
 	if FlashClientIcon then
 		FlashClientIcon()
 	end
-	ns.Print((L["Undercut: %s %s (yours %s)"]):format(name, Alert.Plain(info.price), Alert.Plain(info.mine)))
+	ns.Print((L["Undercut: %s %s (yours %s)"]):format(name, theirs, mine))
 	return line
 end
 
