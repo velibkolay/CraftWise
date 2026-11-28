@@ -1544,3 +1544,10 @@ No TOC change; `/reload` is enough. Needs TradeSkillMaster 4.15.9 with AppHelper
 - [ ] **Not a scan**: the TSM-priced item has no entry in Items price history, no "seen ago", and the header AH status does not change.
 - [ ] **Toggle**: Settings > Prices > "Use TSM data when installed" is ticked by default. Untick: every TSM line and the TSM price are gone at once (profit list refreshes). Tick: they return.
 - [ ] **TSM not loaded**: disable TradeSkillMaster, `/reload`. The toggle is greyed out with "TradeSkillMaster is not loaded."; no Lua error, and prices, tooltips and the profit list are exactly as before.
+
+## Partial commodity sale (#437)
+No TOC change; `/reload` is enough. List a commodity stack (for example 20 of one item) at one price, then let a buyer take only part of it (or buy a few units with a second character).
+- [ ] The sale line says the real count and payout ("Sold: <item> ×3 +<payout> you get"), never "×20" with the whole stack's payout. If only the chat line arrived without money it says "some of 20" and shows no "you get".
+- [ ] Sell > Auctions: the sold units show as one sold row, the rest stays listed as active with the remaining quantity (compare with Blizzard's Auctions tab). A second partial sale on the same listing adds another sold row and a second line.
+- [ ] Take the sale mail: the ledger gets only the sold part's money. Sell lists and cost basis do not count the 17 units still listed as sold.
+- [ ] Chat line "has sold for <money>" matches the line's payout (the cut included). Note which text the event carries (`/run` a print of the AUCTION_HOUSE_SHOW_FORMATTED_NOTIFICATION arguments) if the count stays unknown.

@@ -665,6 +665,74 @@ it("sale alert: a commodity sale of unknown size says 'some of N' and shows no n
 	eq(shown[1].copper, nil, "units sold unknown: no payout is guessed")
 end)
 
+-- #437: 1 of 60 Gooey Spider Cake sold (unit 2s 57c, 5% cut: the chat line said "sold for 2s 44c").
+local CAKE = 3000
+local CAKE_LINE = "Your auction of [Gooey Spider Cake] has sold for 2s 44c!"
+
+local function CakeLoad()
+	local ns, stub = Load()
+	stub.items[CAKE] = { name = "Gooey Spider Cake", stack = 20 }
+	local shown = Spy(ns)
+	AtHouse(stub)
+	local id = Post(stub, CAKE, 60, 257)
+	return ns, stub, shown, id
+end
+
+local function Active(ns)
+	local n = 0
+	for _, r in ipairs(Recs(ns)) do
+		if r.st == "active" then n = n + r.q end
+	end
+	return n
+end
+
+it("sold message of a commodity with its auction ID is not all units (#437)", function()
+	local ns, stub, shown, id = CakeLoad()
+	Sold(stub, "Gooey Spider Cake", id)
+	local rec = Recs(ns)[1]
+	eq(rec.st, "sold"); eq(rec.qtyUnknown, true, "no count in the message: unknown even with an ID")
+	eq(shown[1].detail, "some of 60"); eq(shown[1].copper, nil, "no full-stack payout")
+	eq(ns.Auctions.SoldUnits(CAKE, 0), 0, "unknown units are not counted")
+end)
+
+it("sold message with money: splits into 1 sold and 59 still active (#437)", function()
+	for _, withID in ipairs({ true, false }) do
+		local ns, stub, shown, id = CakeLoad()
+		Sold(stub, CAKE_LINE, withID and id or nil)
+		eq(#Recs(ns), 2)
+		local sold = Find(ns, function(r) return r.st == "sold" end)
+		eq(sold.q, 1); eq(sold.qtyUnknown, nil); eq(Active(ns), 59)
+		eq(shown[1].detail, nil, "one unit shows no multiplier"); eq(shown[1].copper, 244); eq(shown[1].sourceText, "you get")
+		eq(ns.Auctions.SoldUnits(CAKE, 0), 1)
+	end
+end)
+
+it("sold money line after the chat line settles the count (#437)", function()
+	local ns, stub, shown, id = CakeLoad()
+	stub.Fire("CHAT_MSG_SYSTEM", "A buyer has been found for your auction of Gooey Spider Cake.")
+	eq(shown[1].detail, "some of 60")
+	Sold(stub, CAKE_LINE, id)
+	eq(#shown, 1, "still one alert")
+	local sold = Find(ns, function(r) return r.st == "sold" end)
+	eq(sold.q, 1); eq(Active(ns), 59)
+end)
+
+it("two partial sales in a row on one listing (#437)", function()
+	local ns, stub, shown, id = CakeLoad()
+	Sold(stub, CAKE_LINE, id)
+	stub.clock = NOW + 600
+	stub.Fire("AUCTION_HOUSE_SHOW_FORMATTED_NOTIFICATION", Enum.AuctionHouseNotification.AuctionSold,
+		"Your auction of [Gooey Spider Cake] has sold for 4s 88c!", id)
+	eq(Active(ns), 57); eq(#shown, 2); eq(shown[2].detail, "×2"); eq(shown[2].copper, 488)
+end)
+
+it("sold message paying the whole stack still shows the full count (#437)", function()
+	local ns, stub, shown, id = CakeLoad()
+	local full = 257 * 60 - math.floor(257 * 60 * 0.05 + 0.5)
+	Sold(stub, "Your auction of [Gooey Spider Cake] has sold for " .. math.floor(full / 100) .. "s " .. (full % 100) .. "c!", id)
+	eq(Active(ns), 0); eq(shown[1].detail, "×60"); eq(shown[1].copper, full)
+end)
+
 it("sale alert: a known quantity shows ×N and the owned list's sale is announced once", function()
 	local ns, stub = Load()
 	local shown = Spy(ns)
