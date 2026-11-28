@@ -14,4 +14,7 @@
 	<Binding name="CRAFTWISE_AH_BUY" category="ADDONS" runOnUp="true">
 		CraftWise_AHBuyKey(keystate)
 	</Binding>
+	<Binding name="CRAFTWISE_AH_CHECK" category="ADDONS" runOnUp="true">
+		CraftWise_AHCheckKey(keystate)
+	</Binding>
 </Bindings>

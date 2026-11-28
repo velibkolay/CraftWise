@@ -474,6 +474,17 @@ C_Timer.NewTimer = function(_, fn)
 	table.insert(stub.timers, t)
 	return t
 end
+-- Tickers (C_Timer.NewTicker): stub.Tick() runs each live one once.
+stub.tickers = {}
+C_Timer.NewTicker = function(_, fn)
+	local t = { fn = fn }
+	function t:Cancel() self.cancelled = true end
+	table.insert(stub.tickers, t)
+	return t
+end
+function stub.Tick()
+	for _, t in ipairs(stub.tickers) do if not t.cancelled then t.fn() end end
+end
 function stub.RunTimers()
 	local list = stub.timers
 	stub.timers = {}

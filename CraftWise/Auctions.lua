@@ -428,8 +428,11 @@ local function Call(fn, ...)
 	return ok and value or nil
 end
 
+local lastPostAt -- GetTime() of the last post the player started: the undercut watch waits a moment after it (#427)
+
 local function StartPost(kind, location, duration, quantity, bid, buyout)
 	pending = nil
+	lastPostAt = GetTime()
 	local itemID = C_Item and Call(C_Item.GetItemID, location)
 	if not (itemID and quantity and quantity > 0) then
 		return
@@ -1299,6 +1302,292 @@ end
 function A.Slash()
 	A.Print()
 end
+
+----------------------------------------------------------------------------------------------------
+-- Undercut watch (#427): while the auction house is open, search the items this character has listed one
+-- after the other (Market.SweepStart's queue and throttle, quiet) and say when somebody else lists at the same
+-- unit price or lower: that loses the priority, and re-posting stays the player's click. Nothing is bought,
+-- listed, cancelled or confirmed here. The decision (W.Competitor, W.Judge) is kept apart from the searching.
+-- Whether the client answers searches a timer sends, without a click or key each, is checked in game
+-- (docs/ingame-checks.md); the key binding "check my auctions now" is the same round on a key press.
+----------------------------------------------------------------------------------------------------
+
+local W = {}
+A.Watch = W
+
+W.MIN_INTERVAL, W.MAX_INTERVAL, W.DEFAULT_INTERVAL = 30, 120, 45
+W.FIRST_CHECK = 5 -- seconds after the window opens (or the toggle goes on) before the first round
+W.POST_GRACE = 10 -- seconds after the player starts a post in which no round starts
+
+local run = { undercut = {}, state = {}, mine = {}, running = false, nextAt = nil, ticker = nil, missed = 0, done = 0 }
+W.run = run
+
+local function Cfg()
+	return ns.db and ns.db.settings or {}
+end
+
+function W.Enabled()
+	return Cfg().undercutWatch == true
+end
+
+function W.Interval()
+	local v = tonumber(Cfg().undercutInterval) or W.DEFAULT_INTERVAL
+	return math.max(W.MIN_INTERVAL, math.min(W.MAX_INTERVAL, math.floor(v + 0.5)))
+end
+
+function W.SoundEnabled()
+	return Cfg().undercutSound ~= false
+end
+
+-- The cheapest unit price of somebody else at or below `mine`, nil when there is none. rows: { unit, qty, own, numOwn }
+-- as the client lists them. A row that holds an auction of mine counts only the units that are not mine; when the
+-- client does not say how many are mine the row is left out (no alert on a guess). A tie is an undercut.
+function W.Competitor(rows, mine)
+	local best
+	for _, r in ipairs(rows or {}) do
+		local others = r.qty or 1
+		if r.own then
+			others = r.numOwn and (others - r.numOwn) or 0
+		end
+		if others > 0 and r.unit and r.unit > 0 and r.unit <= mine and (not best or r.unit < best) then
+			best = r.unit
+		end
+	end
+	return best
+end
+
+-- Once per new undercut. prev = what was kept for the item ({ price, mine, postedT }) or nil; competitor = the price
+-- W.Competitor found or nil. Returns the state to keep and whether to alert: a first undercut, a cheaper one than the
+-- alerted, or the same one after a re-post (my price or the time of my newest post changed). No competitor: nothing is
+-- kept, so the next one is new.
+function W.Judge(prev, competitor, mine, postedT)
+	if not competitor then
+		return nil, false
+	end
+	local alert = not prev or prev.mine ~= mine or prev.postedT ~= postedT or competitor < prev.price
+	return { price = competitor, mine = mine, postedT = postedT }, alert
+end
+
+-- This character's listings that are active in this house: distinct item IDs and, per item, my lowest unit price and the
+-- time of my newest post. Listings with no buyout, or past their end, are not watched.
+function W.Items(house, now)
+	local ids, mine = {}, {}
+	now = now or time()
+	for _, rec in ipairs(A.List() or {}) do
+		if rec.st == "active" and rec.i and rec.unit and rec.unit > 0 and (not house or rec.h == house)
+			and not (rec.exp and now >= rec.exp) then
+			local m = mine[rec.i]
+			if not m then
+				mine[rec.i] = { mine = rec.unit, postedT = rec.t or 0 }
+				ids[#ids + 1] = rec.i
+			else
+				m.mine = math.min(m.mine, rec.unit)
+				m.postedT = math.max(m.postedT, rec.t or 0)
+			end
+		end
+	end
+	return ids, mine
+end
+
+-- The listed rows of an item the last search returned: { unit, qty, own, numOwn }.
+function W.Read(itemID, isCommodity)
+	local rows, AH = {}, C_AuctionHouse
+	if not (AH and itemID) then
+		return rows
+	end
+	if isCommodity then
+		for i = 1, AH.GetNumCommoditySearchResults(itemID) or 0 do
+			local info = AH.GetCommoditySearchResultInfo(itemID, i)
+			if info and info.unitPrice and info.quantity and info.quantity > 0 then
+				rows[#rows + 1] = { unit = info.unitPrice, qty = info.quantity, own = info.containsOwnerItem or false, numOwn = info.numOwnerItems }
+			end
+		end
+	else
+		local key = AH.MakeItemKey(itemID)
+		for i = 1, AH.GetNumItemSearchResults(key) or 0 do
+			local info = AH.GetItemSearchResultInfo(key, i)
+			if info and info.buyoutAmount and info.buyoutAmount > 0 then
+				rows[#rows + 1] = { unit = info.buyoutAmount, qty = info.quantity or 1, own = info.containsOwnerItem or false, numOwn = info.numOwnerItems }
+			end
+		end
+	end
+	return rows
+end
+
+-- The undercut of an item now: { price, mine } or nil (Sell › Auctions marks the rows).
+function W.Undercut(itemID)
+	return run.undercut[itemID]
+end
+
+-- Why no round starts now, nil when one may. manual: the player pressed the key, so the quiet period after their
+-- last use of the Buy panel does not hold it back.
+function W.Paused(manual)
+	if not (ns.Market and ns.Market.CurrentHouse()) then
+		return "closed"
+	end
+	if ns.Market.SweepRunning() and not ns.Market.SweepQuiet() then
+		return "refresh"
+	end
+	if ns.AHBuy and ns.AHBuy.Occupied(manual) then
+		return "buying"
+	end
+	if pending or (not manual and lastPostAt and GetTime() - lastPostAt < W.POST_GRACE) then
+		return "posting"
+	end
+	return nil
+end
+
+local function WatchChanged()
+	ns.Notify("AUCTIONS_CHANGED")
+end
+
+-- An answer: judge the item and alert once per new undercut.
+function W.OnAnswer(itemID, isCommodity)
+	local info = run.mine[itemID]
+	if not info then
+		return
+	end
+	local competitor = W.Competitor(W.Read(itemID, isCommodity), info.mine)
+	local state, alert = W.Judge(run.state[itemID], competitor, info.mine, info.postedT)
+	run.state[itemID] = state
+	local before = run.undercut[itemID]
+	run.undercut[itemID] = competitor and { price = competitor, mine = info.mine } or nil
+	if alert and ns.AuctionAlert and ns.AuctionAlert.OnUndercut then
+		ns.AuctionAlert.OnUndercut({ itemID = itemID, price = competitor, mine = info.mine })
+	end
+	if alert or (before ~= nil) ~= (competitor ~= nil) then
+		WatchChanged()
+	end
+end
+
+function W.OnDone(done, _, missed)
+	run.running, run.done, run.missed = false, done, missed
+	run.lastAt = time()
+	run.nextAt = GetTime() + W.Interval()
+	WatchChanged()
+end
+
+-- One round now: every listed item searched once. Returns true, or false and why.
+function W.StartRound(manual)
+	local why = W.Paused(manual)
+	if why then
+		return false, why
+	end
+	local ids, mine = W.Items(ns.Market.CurrentHouse())
+	if #ids == 0 then
+		run.nextAt = GetTime() + W.Interval()
+		return false, "nothing"
+	end
+	run.mine = mine
+	local ok, reason = ns.Market.SweepStart(ids, { quiet = true, onAnswer = W.OnAnswer, onDone = W.OnDone })
+	if not ok then
+		return false, reason
+	end
+	run.running = true
+	WatchChanged()
+	return true
+end
+
+function W.Tick()
+	if not (W.Enabled() and ns.Market and ns.Market.CurrentHouse()) or run.running then
+		return
+	end
+	run.nextAt = run.nextAt or (GetTime() + W.FIRST_CHECK)
+	if GetTime() >= run.nextAt then
+		W.StartRound(false) -- paused: it stays due and starts on the first tick that may
+	end
+end
+
+-- Starts or stops the one-second timer to match the switch and the open window.
+function W.Sync()
+	local want = W.Enabled() and ns.Market and ns.Market.CurrentHouse() ~= nil
+	if want and not run.ticker and C_Timer and C_Timer.NewTicker then
+		run.nextAt = GetTime() + W.FIRST_CHECK
+		run.ticker = C_Timer.NewTicker(1, W.Tick)
+	elseif not want and run.ticker then
+		run.ticker:Cancel()
+		run.ticker = nil
+		run.nextAt = nil
+		if ns.Market then
+			ns.Market.SweepStopQuiet()
+		end
+	end
+	if not W.Enabled() then
+		run.undercut, run.state = {}, {}
+	end
+	WatchChanged()
+end
+
+function W.SetEnabled(on)
+	Cfg().undercutWatch = on and true or false
+	W.Sync()
+end
+
+function W.SetInterval(seconds)
+	Cfg().undercutInterval = math.max(W.MIN_INTERVAL, math.min(W.MAX_INTERVAL, math.floor((tonumber(seconds) or W.DEFAULT_INTERVAL) + 0.5)))
+	if run.nextAt and not run.running then
+		run.nextAt = math.min(run.nextAt, GetTime() + W.Interval())
+	end
+end
+
+-- The key "check my auctions now": the same round, on a key press, whether or not the timer is on.
+function W.CheckNow()
+	if run.running then
+		ns.Print("Already checking your auctions")
+		return false
+	end
+	local ok, why = W.StartRound(true)
+	if not ok then
+		ns.Print(why == "closed" and "Open the auction house first"
+			or why == "nothing" and "No auction of yours is listed here"
+			or why == "posting" and "Finish posting first"
+			or "Finish or cancel the purchase first")
+	end
+	return ok
+end
+
+local checkHeld
+function CraftWise_AHCheckKey(keystate)
+	if keystate == "up" then
+		checkHeld = false
+		return false
+	end
+	if keystate == "down" then
+		if checkHeld then
+			return false
+		end
+		checkHeld = true
+	end
+	return W.CheckNow()
+end
+
+-- What the page says: nil while the switch is off, else the text and the state.
+function W.Status()
+	if not W.Enabled() then
+		return nil
+	end
+	if not (ns.Market and ns.Market.CurrentHouse()) then
+		return "open the auction house to watch", "closed"
+	end
+	if run.running then
+		return "watching · checking now", "running"
+	end
+	local why = W.Paused(false)
+	if why and why ~= "closed" then
+		return "watching · paused while " .. (why == "buying" and "you buy" or why == "posting" and "you post" or "a refresh runs"), "paused"
+	end
+	if run.lastAt and run.done == 0 and run.missed > 0 then
+		return "watching · no answer: use the key \"check my auctions now\"", "silent"
+	end
+	return ("watching · next check in %d s"):format(math.max(0, math.ceil((run.nextAt or GetTime()) - GetTime()))), "waiting"
+end
+
+ns.On("AUCTION_HOUSE_SHOW", W.Sync)
+ns.On("AUCTION_HOUSE_CLOSED", function()
+	run.running, run.undercut, run.state, run.nextAt = false, {}, {}, nil
+	W.Sync()
+end)
+ns.Listen("DB_READY", W.Sync)
 
 ----------------------------------------------------------------------------------------------------
 -- Events and hooks

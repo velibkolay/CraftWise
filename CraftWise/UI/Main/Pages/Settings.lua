@@ -474,6 +474,21 @@ local function Groups()
 			set = function(v) S().expiredWarn = v and true or false end },
 	} }
 
+	groups[#groups + 1] = { key = "undercut", label = L["Undercut watch"], rows = {
+		{ key = "on", kind = "check", label = L["Watch undercuts"], text = L["On"],
+			sub = L["While the auction house is open, search your listed items every few seconds and tell you when somebody lists at or below your price. Nothing is bought, listed or cancelled. Also on Sell › Auctions."],
+			get = function() return ns.Auctions.Watch.Enabled() end,
+			set = function(v) ns.Auctions.Watch.SetEnabled(v) end },
+		{ key = "interval", kind = "slider", label = L["Check every"], min = ns.Auctions.Watch.MIN_INTERVAL, max = ns.Auctions.Watch.MAX_INTERVAL, step = 5,
+			get = function() return ns.Auctions.Watch.Interval() end,
+			set = function(v) ns.Auctions.Watch.SetInterval(v) end,
+			format = function(v) return ("%d s"):format(v) end },
+		{ key = "sound", kind = "check", label = L["Undercut sound"], text = L["Play a sound"],
+			sub = L["Played on the Master channel. To hear it while the game runs in the background, turn on the client's Sound in Background option (Options › Sound)."],
+			get = function() return ns.Auctions.Watch.SoundEnabled() end,
+			set = function(v) S().undercutSound = v and true or false end },
+	} }
+
 	groups[#groups + 1] = { key = "loops", label = L["Vendor loops"], rows = {
 		{ key = "on", kind = "check", label = L["Loop alert"], text = L["On"],
 			sub = L["After a full scan or a sync, one toast for vendor profits and loops that are new or clearly better. Click opens Make › Craft with Vendor check."],

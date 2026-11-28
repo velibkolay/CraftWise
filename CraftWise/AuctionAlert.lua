@@ -91,4 +91,54 @@ function Alert.OnSale(kind, rec)
 	return line
 end
 
+-- Undercut (#427): somebody else lists at or below my unit price (Auctions.lua, A.Watch). One line, a sound of its own
+-- (setting undercutSound, on the Master channel so it plays while the game runs in the background; the client's
+-- "Sound in background" option has to be on), the taskbar icon blinking (FlashClientIcon) and a chat line.
+-- Clicking the line opens Sell › Auctions. Nothing is bought, listed or cancelled.
+Alert.UNDERCUT_SOUNDS = { "ALARM_CLOCK_WARNING_3", "RAID_WARNING" } -- the first one the client has
+
+local function PlayUndercut()
+	if not (SOUNDKIT and PlaySound) then
+		return
+	end
+	for _, name in ipairs(Alert.UNDERCUT_SOUNDS) do
+		if SOUNDKIT[name] then
+			PlaySound(SOUNDKIT[name], "Master")
+			return
+		end
+	end
+end
+
+-- info = { itemID, price, mine } (copper per unit). Returns the line.
+function Alert.OnUndercut(info)
+	if not (info and info.itemID and ns.db) then
+		return nil
+	end
+	local L = ns.L
+	local name = ns.Auctions.NameOf({ i = info.itemID }) or ("item " .. tostring(info.itemID))
+	local icon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(info.itemID) or nil
+	local line
+	if ns.LootToast and ns.LootToast.ShowCustom then
+		line = ns.LootToast.ShowCustom({
+			key = "undercut:" .. info.itemID, icon = icon, itemID = info.itemID,
+			text = (L["Undercut: %s"]):format(name),
+			detail = (L["yours %s"]):format(ns.FormatCoins(info.mine) or "?"),
+			copper = info.price, duration = Alert.DURATION,
+			onClick = function()
+				if ns.OpenAuctionsPage then
+					ns.OpenAuctionsPage()
+				end
+			end,
+		})
+	end
+	if ns.Auctions.Watch.SoundEnabled() then
+		PlayUndercut()
+	end
+	if FlashClientIcon then
+		FlashClientIcon()
+	end
+	ns.Print((L["Undercut: %s %s (yours %s)"]):format(name, ns.FormatMoney(info.price), ns.FormatMoney(info.mine)))
+	return line
+end
+
 ns.Listen("AUCTION_SALE", Alert.OnSale)

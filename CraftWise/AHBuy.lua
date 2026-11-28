@@ -192,6 +192,11 @@ end
 -- Reading the auction house
 ----------------------------------------------------------------------------------------------------
 
+AHBuy.IDLE_SECONDS = 15 -- the panel counts as in use this long after a pick, search or buy press (#427)
+local function Touch()
+	S.usedAt = GetTime()
+end
+
 local function Throttled()
 	return C_AuctionHouse and C_AuctionHouse.IsThrottledMessageSystemReady and not C_AuctionHouse.IsThrottledMessageSystemReady()
 end
@@ -309,6 +314,7 @@ end
 
 -- Picks a line to buy; nothing is sent.
 function AHBuy.Pick(line)
+	Touch()
 	if S.busy then
 		return false
 	end
@@ -326,6 +332,7 @@ end
 
 -- One search of the picked line (a click, or the key later). Returns true or false, why.
 function AHBuy.Search()
+	Touch()
 	AHBuy.SweepStop() -- a search of a line ends a price refresh (#388)
 	local t = S.target
 	if not t then
@@ -354,6 +361,7 @@ end
 -- round to the first; the picked line again after a purchase or an error (its results are old), when it was
 -- picked and not searched yet, or when it is the only one. One search, nothing more. Returns true or false, why.
 function AHBuy.Next()
+	Touch()
 	AHBuy.SweepStop() -- the search key ends a price refresh (#388)
 	if S.busy then
 		return false, Say("Wait for the purchase")
@@ -394,7 +402,16 @@ end
 ----------------------------------------------------------------------------------------------------
 
 function AHBuy.SweepRunning()
-	return ns.Market.SweepRunning()
+	return ns.Market.SweepRunning() and not ns.Market.SweepQuiet()
+end
+
+-- True while a purchase is out or asked, a search of the panel is in flight, or the panel was used a moment ago
+-- (#427): the undercut watch sends no search then, its answer would replace the results the next buy reads.
+function AHBuy.Occupied(ignoreRecent)
+	if S.busy or S.asking or S.phase == "quoting" or S.phase == "confirm" or S.phase == "buying" or S.phase == "searching" then
+		return true
+	end
+	return not ignoreRecent and S.usedAt ~= nil and GetTime() - S.usedAt < AHBuy.IDLE_SECONDS
 end
 
 function AHBuy.SweepStop(text)
@@ -419,8 +436,10 @@ function AHBuy.SweepStart(items)
 end
 
 -- The run ended (done, stopped, or the auction house closed): its last words go to the panel's line.
-ns.Listen("SWEEP_DONE", function(_, _, _, text)
-	Say(text)
+ns.Listen("SWEEP_DONE", function(_, _, _, text, quiet)
+	if not quiet then
+		Say(text)
+	end
 end)
 ns.Listen("SWEEP_STEP", Changed)
 
@@ -466,6 +485,7 @@ end
 
 -- Starts a purchase of the shown plan after the checks. Called only by Click and Accept. One call at most.
 function AHBuy.Execute(shown)
+	Touch()
 	if S.busy then
 		return Refuse("Wait for the purchase")
 	end
@@ -558,6 +578,8 @@ local EnsureDialog -- below
 -- The click on the Buy button (or the key later). Below the confirm limit it buys; above, it asks the client's
 -- confirm dialog first, whose Accept calls AHBuy.Accept. Returns true, or false and why.
 function AHBuy.Click()
+	Touch()
+	ns.Market.SweepStopQuiet() -- the undercut watch's run gives way to a buy (#427); a run of ours is refused below
 	if S.busy then
 		return false, Say("Wait for the purchase")
 	end
@@ -868,6 +890,7 @@ end
 
 _G.BINDING_NAME_CRAFTWISE_AH_SEARCH = "AH: search next"
 _G.BINDING_NAME_CRAFTWISE_AH_BUY = "AH: buy best"
+_G.BINDING_NAME_CRAFTWISE_AH_CHECK = "AH: check my auctions now"
 function CraftWise_AHSearchKey(keystate)
 	return AHBuy.KeySearch(keystate)
 end
