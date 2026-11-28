@@ -101,10 +101,11 @@ end
 function TSM.DemandText(d)
 	local parts = {}
 	if d.perDay then
-		parts[#parts + 1] = ("%s sold a day"):format(d.perDay >= 10 and ("%d"):format(math.floor(d.perDay + 0.5)) or ("%.1f"):format(d.perDay))
+		local n = d.perDay >= 10 and ("%d"):format(math.floor(d.perDay + 0.5)) or d.perDay < 0.1 and "<0.1" or ("%.1f"):format(d.perDay)
+		parts[#parts + 1] = n .. " " .. ns.L["sold a day"]
 	end
 	if d.rate then
-		parts[#parts + 1] = ("%d%% sale rate"):format(math.floor(d.rate * 100 + 0.5))
+		parts[#parts + 1] = ("%d%% %s"):format(math.floor(d.rate * 100 + 0.5), ns.L["sale rate"])
 	end
 	return table.concat(parts, ", ")
 end

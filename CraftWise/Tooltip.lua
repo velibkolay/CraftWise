@@ -251,7 +251,8 @@ end
 -- know their scan time; Auctionator only gives whole days.
 local DAY = 86400
 -- TSM region demand (#434), next to our own "disappeared" counts, never instead of them: real region sales
--- from TSM's data (ours also count cancels and expiries). Returns { left, right } pairs; {} without TSM data.
+-- from TSM's data (ours also count cancels and expiries). Returns { left, right, copper } entries: the demand line
+-- has right text; the average sale price line has only copper (each caller formats it). {} without TSM data.
 function ns.TSMLines(itemID)
 	local d = ns.TSM.Demand(itemID)
 	if not d then
@@ -260,10 +261,10 @@ function ns.TSMLines(itemID)
 	local lines = {}
 	local text = ns.TSM.DemandText(d)
 	if text ~= "" then
-		lines[#lines + 1] = { "TSM region", text }
+		lines[#lines + 1] = { ns.L["TSM region"], text }
 	end
 	if d.avg then
-		lines[#lines + 1] = { "  TSM sells ~", ns.FormatMoney(d.avg) }
+		lines[#lines + 1] = { (#lines > 0 and "  " or "") .. ns.L["TSM avg sale"], nil, d.avg }
 	end
 	return lines
 end
@@ -472,7 +473,7 @@ function ns.AddTooltipLines(tooltip, itemID)
 	end
 	if s.lines.market then
 		for _, line in ipairs(ns.TSMLines(itemID)) do
-			lines[#lines + 1] = { line[1], MUTED .. line[2] .. "|r" }
+			lines[#lines + 1] = { line[1], line[3] and ns.FormatMoney(line[3]) or (MUTED .. line[2] .. "|r") }
 		end
 	end
 	if #lines == 0 then

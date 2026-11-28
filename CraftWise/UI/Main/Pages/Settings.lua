@@ -369,7 +369,7 @@ local function Groups()
 				if not ns.TSM.Loaded() then
 					return L["TradeSkillMaster is not loaded."]
 				end
-				return L["Region sales next to ours, and TSM's price when Auctionator and your scans have none. Always labelled TSM."]
+				return L["Region sales, and a price when you have no other. Labelled TSM."]
 			end,
 			disabled = function() return not ns.TSM.Loaded() end,
 			get = function() return S().useTSM ~= false end,
