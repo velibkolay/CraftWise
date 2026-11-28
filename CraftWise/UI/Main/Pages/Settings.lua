@@ -451,6 +451,7 @@ local function Groups()
 			get = function() return ns.AuctionAlert.SaleEnabled() end,
 			set = function(v) S().saleToast = v and true or false end },
 		{ key = "sound", kind = "check", label = L["Sale sound"], text = L["Play a sound"],
+			sub = L["Plays even with game sound effects off."],
 			disabled = function() return not ns.AuctionAlert.SaleEnabled() end,
 			get = function() return ns.AuctionAlert.SoundEnabled() end,
 			set = function(v) S().saleSound = v and true or false end },

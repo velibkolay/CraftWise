@@ -919,6 +919,7 @@ Needs a **full game restart**: new file `UI/Main/Docked.lua` in the TOC (after `
 - A commodity stack where only part was bought: "×5" when the owned list showed the quantity drop, "some of 20" when only the sold message came. With "some of N" there is no amount, never a guess.
 - Several sales close together stack as lines, newest on top; clicking a line opens Sell › Auctions. Lines stay 8 seconds.
 - The sound: is the coin sound (SOUNDKIT.LOOT_WINDOW_COIN_SOUND, the one Blizzard's AH buy dialog plays) audible and not harsh? Note here if you want a different one.
+- With Sound Effects off and Master on in the sound options, a sale still plays the chime (it plays on the Master channel).
 - Settings › Sale alert: "Auction sold" off = no line and no sound (the record still moves on the page); "Sale sound" off = line only; "Auction expired" on = a line "Expired: [item]", "×5 · returning by mail", no sound. Let an auction expire to see it (default off).
 
 ## Two machines: the market sync file (#241, part of #237)

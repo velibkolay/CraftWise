@@ -622,7 +622,7 @@ local function Spy(ns)
 	end
 	local sounds = {}
 	SOUNDKIT = { LOOT_WINDOW_COIN_SOUND = 1234 }
-	PlaySound = function(id) sounds[#sounds + 1] = id end
+	PlaySound = function(id, channel) sounds[#sounds + 1] = id; sounds.channel = channel end
 	return shown, sounds
 end
 
@@ -637,7 +637,7 @@ it("sale alert: event then chat for one sale is one line, with the item, the pay
 	eq(shown[1].text, "Sold: Rugged Leather Pants"); eq(shown[1].detail, nil)
 	eq(shown[1].copper, 8550, "9000 less the confirmed 5% cut, as on the page")
 	eq(shown[1].sourceText, "you get"); eq(shown[1].itemID, PANTS)
-	eq(#sounds, 1); eq(sounds[1], 1234)
+	eq(#sounds, 1); eq(sounds[1], 1234); eq(sounds.channel, "Master", "audible with sound effects off")
 	-- The owned list then reporting the same sale at the AH adds nothing.
 	stub.owned = { { auctionID = id, itemKey = { itemID = PANTS }, quantity = 1, status = 1, timeLeftSeconds = 3600 } }
 	stub.Fire("OWNED_AUCTIONS_UPDATED")

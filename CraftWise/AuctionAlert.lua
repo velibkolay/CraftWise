@@ -57,7 +57,7 @@ end
 
 local function PlayChime()
 	if SOUNDKIT and SOUNDKIT[Alert.SOUND] and PlaySound then
-		PlaySound(SOUNDKIT[Alert.SOUND])
+		PlaySound(SOUNDKIT[Alert.SOUND], "Master")
 	end
 end
 
